@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Swaps a package seam for one test
@@ -233,9 +234,9 @@ func runSetupFeishu(t *testing.T, qr *Registration, choices []int, prompts []str
 
 func TestSetupFeishuConnectionModeManualPathWebsocket(t *testing.T) {
 	swap(t, &probeBotFn, func(context.Context, any, any, string) (map[string]any, error) { return nil, nil })
-	env, _ := runSetupFeishu(t, nil, []int{1, 0, 0, 0, 0}, []string{"cli_manual", "secret_manual", ""}, map[string]string{})
-	if env["FEISHU_CONNECTION_MODE"] != "websocket" {
-		t.Fatalf("env %v", env)
+	runSetupFeishu(t, nil, []int{1, 0, 0, 0, 0}, []string{"cli_manual", "secret_manual", ""}, map[string]string{})
+	if mode := settings.FeishuConnectionMode.Get(context.Background()); mode != "websocket" {
+		t.Fatalf("connection mode %q", mode)
 	}
 }
 

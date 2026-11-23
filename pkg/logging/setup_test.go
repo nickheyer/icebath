@@ -452,24 +452,6 @@ func TestSetupVerboseLoggingAddsStreamHandler(t *testing.T) {
 	}
 }
 
-func TestReadLoggingConfig(t *testing.T) {
-	t.Run("returns none when no config", func(t *testing.T) {
-		testHome(t)
-		l, s, b := readLoggingConfig(context.Background())
-		if l != nil || s != nil || b != nil {
-			t.Fatalf("%v %v %v", l, s, b)
-		}
-	})
-	t.Run("reads logging section", func(t *testing.T) {
-		h := testHome(t)
-		_ = os.WriteFile(filepath.Join(h, "config.yaml"), []byte("logging:\n  backup_count: 5\n  level: DEBUG\n  max_size_mb: 10\n"), 0o644)
-		l, s, b := readLoggingConfig(context.Background())
-		if l != "DEBUG" || s != 10 || b != 5 {
-			t.Fatalf("%#v %#v %#v", l, s, b)
-		}
-	})
-}
-
 func TestGatewayLogAttachedAfterExternalRotationThenReSetup(t *testing.T) {
 	h := testHome(t)
 	mustSetup(t, Options{Home: h, Mode: "gateway"})

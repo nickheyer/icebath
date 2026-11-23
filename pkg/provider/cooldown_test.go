@@ -3,8 +3,6 @@ package provider
 import (
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 func contains(s, sub string) bool {
@@ -33,11 +31,5 @@ func TestProviderResetDelay(t *testing.T) {
 	}
 	if _, ok := ProviderResetDelay("junk", now); ok {
 		t.Fatal("junk reset")
-	}
-	if MinSwitchResetFromConfig(config.Tree{"fallback": map[string]any{"min_switch_reset_seconds": "30"}}) != 30*time.Second {
-		t.Fatal("string threshold")
-	}
-	if MinSwitchResetFromConfig(config.Tree{}) != 0 || MinSwitchResetFromConfig(nil) != 0 {
-		t.Fatal("missing threshold is off")
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // ProfileSecretSource is the secret scope and dotenv bookkeeping of pkg/provider the child env builders read
@@ -1358,23 +1359,16 @@ func makeRunEnv(ctx context.Context, env *Env, childEnv map[string]string) (map[
 
 // Login shell init files
 
-// Shell init files and the auto source bashrc flag from config
+// Shell init files and the auto source bashrc flag from settings
 func readTerminalShellInitConfig(env *Env) ([]string, bool) {
+	ctx := envHomeCtx(context.Background(), env)
 	var files []string
-	auto := true
-	if terminal := cfgTree(env).Map("terminal"); terminal != nil {
-		if raw, ok := terminal["shell_init_files"].([]any); ok {
-			for _, f := range raw {
-				if s, ok := f.(string); ok && s != "" {
-					files = append(files, s)
-				}
-			}
-		}
-		if v, ok := terminal["auto_source_bashrc"]; ok && v != nil {
-			auto = config.Truthy(v)
+	for _, f := range settings.TerminalShellInitFiles.Strings(ctx) {
+		if f != "" {
+			files = append(files, f)
 		}
 	}
-	return files, auto
+	return files, settings.TerminalAutoSourceBashrc.Get(ctx)
 }
 
 // Files to source before the login shell snapshot, expanded and existing only
@@ -1498,16 +1492,23 @@ func (l *localEnv) additionalProfileScopedPassthroughNames() []string {
 	return names
 }
 
-// TempDir is a shell safe writable temp dir, TERMINAL_TEMP_DIR then TMPDIR family then the home cache
+// TempDir is a shell safe writable temp dir, the temp folder setting then the TMPDIR family then the home cache
 func (l *localEnv) TempDir() string {
+	configured := ""
+	if policy, err := terminalPolicy(l.env); err == nil {
+		configured = policy.Setting("temp_dir")
+	}
 	lookup := func(key string) string {
+		if key == "" {
+			return configured
+		}
 		if v := l.childEnv[key]; v != "" {
 			return v
 		}
 		return os.Getenv(key)
 	}
 	if isWindowsHost {
-		for _, key := range []string{"TERMINAL_TEMP_DIR", "TMPDIR"} {
+		for _, key := range []string{"", "TMPDIR"} {
 			c := lookup(key)
 			if st, err := os.Stat(c); c != "" && filepath.IsAbs(c) && err == nil && st.IsDir() {
 				return filepath.ToSlash(c)
@@ -1524,12 +1525,12 @@ func (l *localEnv) TempDir() string {
 		}
 		return "/"
 	}
-	for _, key := range []string{"TERMINAL_TEMP_DIR", "TMPDIR", "TMP", "TEMP"} {
+	for _, key := range []string{"", "TMPDIR", "TMP", "TEMP"} {
 		c := lookup(key)
 		if c == "" || !strings.HasPrefix(c, "/") {
 			continue
 		}
-		if key == "TERMINAL_TEMP_DIR" {
+		if key == "" {
 			if st, err := os.Stat(c); err != nil || !st.IsDir() {
 				continue
 			}

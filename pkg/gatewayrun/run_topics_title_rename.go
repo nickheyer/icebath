@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Adapter reporting the connector created auto thread of the latest send into a chat
@@ -144,9 +145,9 @@ func (r *GatewayRunner) awaitRelayAutoThreadInfo(ctx context.Context, source *ga
 	if !ok || adapter == nil || source.ChatID == "" {
 		return nil
 	}
-	timeout := floatEnv("ICEBATH_AGENT_TIMEOUT", 1800)
-	if timeout == 0 {
-		timeout = 1800
+	timeout := settings.AgentGatewayTimeout.Get(ctx).Seconds()
+	if timeout <= 0 {
+		timeout = settings.AgentGatewayTimeout.Default.Seconds()
 	}
 	var info *[2]string
 	suppressPanic(func() {

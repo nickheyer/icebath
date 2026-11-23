@@ -51,11 +51,6 @@ func finishProfileLayout(ctx context.Context, profileDir string, noSkills, clone
 			"This profile opted out of bundled-skill seeding (`icebath profile create --no-skills`).\n"+
 				"Delete this file to re-enable sync on the next `icebath update`.\n", 0)
 	}
-	if !cloneAll {
-		if err := profiles.MigrateProfileConfigIfOutdated(ctx, profileDir); err != nil {
-			return err
-		}
-	}
 	if description != nil && pystr.Strip(*description) != "" {
 		desc := pystr.Strip(*description)
 		auto := false

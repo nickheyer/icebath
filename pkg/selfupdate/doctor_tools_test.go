@@ -177,9 +177,10 @@ func TestDoctorToolAvailabilityOverridesLeavesKanbanUnavailableWhenWorkerEnvIsSe
 
 func TestDoctorReportsVercelBackendDiagnostics(t *testing.T) {
 	d, out := toolsDoctor(t)
-	t.Setenv("TERMINAL_ENV", "vercel_sandbox")
-	t.Setenv("TERMINAL_VERCEL_RUNTIME", "python3.13")
-	t.Setenv("TERMINAL_CONTAINER_DISK", "2048")
+	terminal := "terminal:\n  backend: vercel_sandbox\n  vercel_runtime: python3.13\n  container_disk: 2048\n"
+	if err := os.WriteFile(filepath.Join(d.Home, "config.yaml"), []byte(terminal), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("VERCEL_TOKEN", "super-secret-value")
 	t.Setenv("VERCEL_PROJECT_ID", "")
 	os.Unsetenv("VERCEL_PROJECT_ID")

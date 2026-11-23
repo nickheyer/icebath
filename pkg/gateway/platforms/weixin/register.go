@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Sends the formatted text then each media file through an adapter and wraps the outcome
@@ -55,15 +56,7 @@ func sendWeixinDirect(ctx context.Context, extra map[string]any, token any, chat
 	if err != nil {
 		return nil, err
 	}
-	baseURL, err := extraOrSecret(ctx, extra, "base_url", ilinkBaseURL)
-	if err != nil {
-		return nil, err
-	}
-	cdnBaseURL, err := extraOrSecret(ctx, extra, "cdn_base_url", weixinCDNBaseURL)
-	if err != nil {
-		return nil, err
-	}
-	baseURL, cdnBaseURL = pystr.RstripChars(baseURL, "/"), pystr.RstripChars(cdnBaseURL, "/")
+	baseURL, cdnBaseURL := pystr.RstripChars(settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), "/"), pystr.RstripChars(settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx)), "/")
 	tokenRaw := pyrepr.Or(token, extra["token"])
 	if !pyrepr.Truthy(tokenRaw) {
 		if tokenRaw, err = gateway.GetScopedSecret(ctx, "WEIXIN_TOKEN", "", false); err != nil {
@@ -168,15 +161,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		baseURL, hostErr := extraOrSecret(ctx, extra, "base_url", ilinkBaseURL)
-		if hostErr != nil {
-			return nil, hostErr
-		}
-		cdnBaseURL, hostErr := extraOrSecret(ctx, extra, "cdn_base_url", weixinCDNBaseURL)
-		if hostErr != nil {
-			return nil, hostErr
-		}
-		if shown := proxyErrorShown(ctx, err, baseURL, cdnBaseURL); shown != "" {
+		if shown := proxyErrorShown(ctx, err, settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx))); shown != "" {
 			pkgLog().Debug("Weixin standalone send failed")
 			return gateway.SendError("Weixin send failed: " + shown), nil
 		}
@@ -273,19 +258,9 @@ func InteractiveSetup(ctx context.Context) error {
 		return err
 	}
 	if credentials.baseURL != "" {
-		if err := w.SaveEnvValue(ctx, "WEIXIN_BASE_URL", credentials.baseURL); err != nil {
+		if _, err := settings.Set(gateway.SettingsContext(ctx), settings.WeixinBaseURL.Key, credentials.baseURL, settings.Global); err != nil {
 			return err
 		}
-	}
-	cdnBaseURL, err := w.GetEnvValue(ctx, "WEIXIN_CDN_BASE_URL")
-	if err != nil {
-		return err
-	}
-	if cdnBaseURL == "" {
-		cdnBaseURL = weixinCDNBaseURL
-	}
-	if err := w.SaveEnvValue(ctx, "WEIXIN_CDN_BASE_URL", cdnBaseURL); err != nil {
-		return err
 	}
 	gateway.WizardPrintln("")
 	accessIdx := w.PromptChoice("  How should direct messages be authorized?", []string{"Use DM pairing approval (recommended)",

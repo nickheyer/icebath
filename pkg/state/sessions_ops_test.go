@@ -11,10 +11,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
+// Points the process home at a fresh profile whose config.yaml holds body
+func useTestProfile(t *testing.T, body string) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("ICEBATH_HOME", dir)
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // In memory store carrying the live schema, as the cascade fixture builds it
 func cascadeConn(t *testing.T) SQLiteConn {
 	t.Helper()
-	t.Setenv("ICEBATH_CJK_FTS", "off")
+	useTestProfile(t, "sessions:\n  cjk_fts: false\n")
 	conn, err := ConnectSQLite(":memory:", SQLiteConfig{Timeout: 5})
 	if err != nil {
 		t.Fatal(err)

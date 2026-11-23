@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var walIncompatMarkers = []string{"locking protocol", "not authorized", "disk i/o error"}
@@ -213,27 +215,7 @@ func databaseHasContent(ctx context.Context, conn SQLiteConn) bool {
 
 // Configured database journal_mode, wal unless config names delete
 func resolveJournalModeImpl(ctx context.Context) string {
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return "wal"
-	}
-	var raw any = "wal"
-	if database, present := cfg["database"]; present {
-		m := config.AsMap(database)
-		if m == nil {
-			raw = "wal"
-		} else if v, ok := m["journal_mode"]; ok {
-			raw = v
-		}
-	}
-	mode := ""
-	if s, ok := raw.(string); ok {
-		mode = pyLower(pyStrip(s))
-	}
-	if mode == "wal" || mode == "delete" {
-		return mode
-	}
-	return "wal"
+	return settings.DatabaseJournalMode.Get(ctx)
 }
 
 // Journal mode resolver the policy consults, a var so tests pin the configured mode
@@ -835,28 +817,37 @@ func applySynchronousPragma(ctx context.Context, conn SQLiteConn, rawValue any, 
 	return nil
 }
 
-// Applies the optional sizing pragmas and then the synchronous level from the database config section
+// Applies the optional sizing pragmas and then the synchronous level the database settings name
 func ApplyDatabasePragmas(ctx context.Context, conn SQLiteConn, dbLabel string) error {
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return nil
+	pragmas := []struct {
+		name  string
+		value func() (string, bool)
+	}{
+		{"cache_size", intPragma(ctx, settings.DatabaseCacheSize)},
+		{"mmap_size", intPragma(ctx, settings.DatabaseMmapSize)},
+		{"temp_store", func() (string, bool) { v := settings.DatabaseTempStore.Get(ctx); return v, v != "" }},
+		{"wal_autocheckpoint", intPragma(ctx, settings.DatabaseWalAutocheckpoint)},
+		{"journal_size_limit", intPragma(ctx, settings.DatabaseJournalSizeLimit)},
 	}
-	for _, name := range []string{"cache_size", "mmap_size", "temp_store", "wal_autocheckpoint", "journal_size_limit"} {
-		rawValue, _ := config.CfgGet(cfg, "database", name)
-		if rawValue == nil {
+	for _, p := range pragmas {
+		value, set := p.value()
+		if !set {
 			continue
 		}
-		value, convErr := pyIntOf(pyStr(rawValue))
-		if convErr != nil {
-			pkgLog().Warn(fmt.Sprintf("%s: ignoring non-integer database.%s=%s", dbLabel, name, pyReprValue(rawValue)))
-			continue
-		}
-		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA %s=%s", name, value.String())); err != nil && !isOperationalError(err) {
+		if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA %s=%s", p.name, value)); err != nil && !isOperationalError(err) {
 			return err
 		}
 	}
-	if rawSynchronous, _ := config.CfgGet(cfg, "database", "synchronous"); rawSynchronous != nil {
-		return applySynchronousPragma(ctx, conn, rawSynchronous, dbLabel)
+	if level := settings.DatabaseSynchronous.Get(ctx); level != "" {
+		return applySynchronousPragma(ctx, conn, level, dbLabel)
 	}
 	return nil
+}
+
+// Value of a whole number pragma setting, false when unset
+func intPragma(ctx context.Context, e *settings.Int) func() (string, bool) {
+	return func() (string, bool) {
+		n, set := e.Lookup(ctx)
+		return strconv.Itoa(n), set
+	}
 }

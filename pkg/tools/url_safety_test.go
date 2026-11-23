@@ -39,7 +39,6 @@ func TestIsBlockedHostnameExportReadsTheMetadataBlocklist(t *testing.T) {
 }
 
 func TestSwapLookupHostIPsRoutesTheSafetyCheckAndRestores(t *testing.T) {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "")
 	var asked []string
 	resolver := func(name, answer string) func(context.Context, string) ([]netip.Addr, error) {
 		return func(_ context.Context, host string) ([]netip.Addr, error) {

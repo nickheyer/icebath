@@ -7,11 +7,11 @@ import (
 	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Compressor integer settings with the minimum each live value is clamped to
@@ -251,22 +251,10 @@ func (a *AIAgent) ApplyLiveCompressionConfig(ctx context.Context, cfg map[string
 		a.compressionEnabled = text == "true" || text == "1" || text == "yes"
 	}
 	a.codexResponsesNativeCompaction = isTruthyValue(cfgValue(compression, "codex_responses_native", false), false)
-	nativeRaw := cfgValue(compression, "codex_responses_compact_threshold", 200_000)
-	nativeThreshold := 0
-	if _, isBool := nativeRaw.(bool); !isBool {
-		n, err := pyint.Of(nativeRaw)
-		if err != nil && !liveConfigSuppressed(err) {
-			return err
-		}
-		if err == nil && n.Sign() > 0 {
-			nativeThreshold = liveConfigInt(n)
-		}
+	a.codexResponsesCompactThreshold = 0
+	if n, set := settings.CompressionCodexResponsesCompactThreshold.Lookup(ctx); set && n > 0 {
+		a.codexResponsesCompactThreshold = float64(n)
 	}
-	if nativeThreshold <= 0 {
-		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using 200000.", errchain.Show(nativeRaw)))
-		nativeThreshold = 200_000
-	}
-	a.codexResponsesCompactThreshold = float64(nativeThreshold)
 	idleRaw := cfgValue(compression, "idle_compact_after_seconds", 0)
 	if !pyrepr.Truthy(idleRaw) {
 		idleRaw = 0

@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Secret value caches and the sidecar token, as home relative POSIX paths
@@ -678,21 +679,9 @@ func redactRegisteredVaultValues(env *Env, text string) string {
 	return text
 }
 
-// Effective redaction switch from the env file first, the config second, then the launch snapshot
+// Effective hide secrets switch of the env profile
 func redactionEnabled(env *Env) bool {
-	if env != nil && env.Secrets != nil {
-		if raw, ok := env.Secrets.Get("ICEBATH_REDACT_SECRETS"); ok && strings.TrimSpace(raw) != "" {
-			switch strings.ToLower(strings.TrimSpace(raw)) {
-			case "1", "true", "yes", "on":
-				return true
-			}
-			return false
-		}
-	}
-	if env != nil && env.Config != nil {
-		return env.Config.Bool("security.redact_secrets", true)
-	}
-	return launchRedactEnabled()
+	return redactionForced.Load() || settings.RedactSecrets.Get(envHomeCtx(context.Background(), env))
 }
 
 // Submatch index arrays of every match that passes the boundary check, retrying one rune past a rejected start

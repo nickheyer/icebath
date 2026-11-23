@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
@@ -17,7 +18,7 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 		"commands.catalog": c.commandCatalog, "complete.slash": c.slashCompletions,
 		"plugins.list": c.pluginsList, "command.observe": c.commandObserve,
 		"slash.exec": c.slashExec, "command.dispatch": c.commandDispatch,
-		"session.list": c.listSessions, "session.info": c.info,
+		"session.list": c.listSessions, "session.info": c.info, "session.revision": c.revision,
 		"session.mutate": c.mutate, "bot_relay.deliver": c.botDeliver,
 		"bot_relay.settle": c.botSettle, "a2a.forward": c.a2aForward,
 		"kanban.run":  c.kanbanRun,
@@ -35,7 +36,7 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 	}
 	for _, group := range []map[string]controlHandler{
 		busyControlHandlers(c), queuedHandlersOf(c), sessionConfigHandlers(c), tuiConfigHandlers(c),
-		ancillaryHandlers(c), shellHandlers(c), tuiOpsHandlers(c), tuiSideHandlers(c), handoffHandlers(c),
+		ancillaryHandlers(c), shellHandlers(c), tuiOpsHandlers(c), tuiSideHandlers(c), handoffHandlers(c), loginHandlers(c),
 	} {
 		for name, handler := range group {
 			verbs[name] = handler
@@ -132,12 +133,14 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 		}
 	}
 	verbs := c.handlers()
-	scoped := ownerScope(ctx, a, false)
+	scoped := settings.WithSession(ownerScope(ctx, a, false), ref.SessionID)
 	var result any
 	var err error
 	switch {
 	case groupMethods[method] != "" || method == "profiles.list":
 		result, err = dispatchGroupControl(scoped, c, method, params)
+	case verbs[method] == nil && ServiceVerbs(method) != nil:
+		return c.dispatchServiceVerb(scoped, ServiceVerbs(method), method, rid, request), nil
 	case verbs[method] == nil || (connectionMethods[method] && !sessionOwned(params)):
 		return refusalReply(rid, -32601, tuigateway.UnknownMethodMessage(method), map[string]any{"reason": "unknown_method"}), nil
 	default:

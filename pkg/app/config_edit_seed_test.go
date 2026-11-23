@@ -17,40 +17,34 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Every platform resolves every tier key and its tool progress exactly as with no config at all
-func assertKeepsPlatformDisplayDefaults(t *testing.T, ctx context.Context, cfg map[string]any) {
+// Every chat platform resolves every display setting it may override exactly as with no config at all
+func assertKeepsPlatformDisplayDefaults(t *testing.T, ctx context.Context) {
 	t.Helper()
 	plugins.DiscoverPlugins(ctx, false)
-	platforms := map[string]bool{}
-	for _, p := range config.CoreDisplayPlatforms() {
-		platforms[p] = true
-	}
+	platforms := settings.CorePlatforms()
 	for _, e := range gateway.Registry.AllEntries(ctx) {
 		if e.DisplayTier != "" {
-			platforms[e.Name] = true
+			platforms = append(platforms, e.Name)
 		}
 	}
-	tierKeys := map[string]bool{}
-	var names []string
-	for p := range platforms {
-		names = append(names, p)
-		for key := range config.PlatformDisplayDefaults(ctx, p) {
-			tierKeys[key] = true
-		}
-	}
-	slices.Sort(names)
-	for _, p := range names {
-		gotMode, gotOK := config.ResolveToolProgress(ctx, cfg, p, "")
-		wantMode, wantOK := config.ResolveToolProgress(ctx, map[string]any{}, p, "")
-		if !reflect.DeepEqual(gotMode, wantMode) || gotOK != wantOK {
-			t.Fatalf("%s tool progress %v want %v", p, gotMode, wantMode)
-		}
-		for key := range tierKeys {
-			if got, want := config.ResolveDisplaySetting(ctx, cfg, p, key, nil), config.ResolveDisplaySetting(ctx, map[string]any{}, p, key, nil); !reflect.DeepEqual(got, want) {
-				t.Fatalf("%s %s resolves %v want %v", p, key, got, want)
+	slices.Sort(platforms)
+	for _, p := range platforms {
+		chat := settings.WithPlatform(ctx, p)
+		for _, e := range settings.All() {
+			if !e.Info().Platforms {
+				continue
+			}
+			got, err := settings.Resolve(chat, e.Info().Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, _ := settings.Resolve(settings.DefaultsOnly(chat), e.Info().Key)
+			if !reflect.DeepEqual(got.Value, want.Value) {
+				t.Fatalf("%s %s resolves %v want %v", p, e.Info().Key, got.Value, want.Value)
 			}
 		}
 	}
@@ -147,7 +141,15 @@ func TestEverySeederKeepsEveryPlatformDisplayDefault(t *testing.T) {
 			if _, err := os.Stat(configPath); err != nil {
 				t.Fatalf("seeder left no config.yaml: %v", err)
 			}
-			assertKeepsPlatformDisplayDefaults(t, ctx, gateway.LoadGatewayConfigMap(ctx, configPath))
+			assertKeepsPlatformDisplayDefaults(t, ctx)
 		})
 	}
+}
+
+// Replaces a seam for the test, restoring it at cleanup
+func swapSeam[T any](t *testing.T, target *T, value T) {
+	t.Helper()
+	prev := *target
+	*target = value
+	t.Cleanup(func() { *target = prev })
 }

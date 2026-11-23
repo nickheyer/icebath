@@ -416,8 +416,7 @@ func modelFlowQwenOAuth(r *ModelFlowRun) error {
 
 // MiniMax OAuth provider, ensure logged in then pick a curated model at the resolved base URL
 func modelFlowMinimaxOAuth(r *ModelFlowRun) error {
-	state, _ := r.store().GetProviderAuthState("minimax-oauth")
-	if len(state) == 0 || !truthy(state["access_token"]) {
+	if !LoadSelectedPool(r.Env, "minimax-oauth").HasAvailable("") {
 		flowSay(r.Out, "Not logged into MiniMax. Starting OAuth login...", "")
 		args := r.Args
 		if args == nil {
@@ -898,9 +897,8 @@ func anthropicAuthenticate(r *ModelFlowRun) (bool, error) {
 	return false, nil
 }
 
-// Pasted Anthropic API key saved to the env file, false when the user cancelled
+// Pasted Anthropic API key saved as the default owned login, false when the user cancelled
 func anthropicAPIKeyEntry(r *ModelFlowRun) (bool, error) {
-	h := r.home()
 	flowSay(r.Out, "", "  Get an API key at: https://platform.claude.com/settings/keys", "")
 	apiKey, ok := flowAskFn(r.Out, "  API key (sk-ant-...): ", flowAskOptions{Secret: true, CancelMsg: optStr("")})
 	if !ok {
@@ -910,7 +908,7 @@ func anthropicAPIKeyEntry(r *ModelFlowRun) (bool, error) {
 		fmt.Fprintln(r.Out, "  Cancelled.")
 		return false, nil
 	}
-	if err := config.SaveAnthropicAPIKey(r.ctx(), h, apiKey, func(name, value string) error { return config.SaveEnvValue(h, name, value) }); err != nil {
+	if err := saveAnthropicFlowLogin(r.Env, apiKey); err != nil {
 		return false, err
 	}
 	fmt.Fprintln(r.Out, "  ✓ API key saved.")

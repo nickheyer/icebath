@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -674,22 +675,25 @@ func TestLedgerFloodClassifiers(t *testing.T) {
 }
 
 func TestLedgerEnabledGate(t *testing.T) {
-	ctx := context.Background()
 	cases := []struct {
-		cfg  map[string]any
+		yaml string
 		want bool
 	}{
-		{map[string]any{}, true},
-		{map[string]any{"gateway": nil}, true},
-		{map[string]any{"gateway": "junk"}, true},
-		{map[string]any{"gateway": map[string]any{"delivery_ledger": false}}, false},
-		{map[string]any{"gateway": map[string]any{"delivery_ledger": " Off "}}, false},
-		{map[string]any{"gateway": map[string]any{"delivery_ledger": "yes"}}, true},
-		{map[string]any{"gateway": map[string]any{"delivery_ledger": 0}}, false},
+		{"", true},
+		{"gateway:\n", true},
+		{"gateway: junk\n", true},
+		{"gateway:\n  delivery_ledger: false\n", false},
+		{"gateway:\n  delivery_ledger: ' Off '\n", false},
+		{"gateway:\n  delivery_ledger: 'yes'\n", true},
+		{"gateway:\n  delivery_ledger: 0\n", false},
 	}
 	for _, tc := range cases {
-		if got := LedgerEnabled(ctx, tc.cfg); got != tc.want {
-			t.Fatalf("%v gives %v", tc.cfg, got)
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(tc.yaml), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := LedgerEnabled(home.WithOverride(context.Background(), dir)); got != tc.want {
+			t.Fatalf("%q gives %v", tc.yaml, got)
 		}
 	}
 }

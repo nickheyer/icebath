@@ -38,7 +38,7 @@ func (w *e2eStallingWire) shutDown() { w.shutOnce.Do(func() { close(w.socketsShu
 
 func TestE2eCronTurnIsBoundedThroughTheRealAgentRouting(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv(provider.APICallStaleTimeoutEnv, "0.3")
+	setSettingsForTest(t, map[string]any{"agent.api_call_stale_timeout": 0.3})
 	wire := newE2eStallingWire()
 	a := &AIAgent{platform: "cron", apiMode: "chat_completions", provider: "openrouter", model: "some/model",
 		clientKwargs: map[string]any{"api_key": "***", "base_url": "https://openrouter.ai/api/v1"}}

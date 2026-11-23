@@ -301,7 +301,18 @@ func emptyAuthData() AuthData {
 	return AuthData{"version": float64(AuthStoreVersion), "providers": map[string]any{}}
 }
 
-// LoadFile parses one auth.json, quarantining corrupt content and failing on unreadable files
+// UnreadableStoreError is an auth.json in another format than the one this icebath reads
+type UnreadableStoreError struct {
+	Path    string
+	Version any
+}
+
+func (e *UnreadableStoreError) Error() string {
+	return fmt.Sprintf("%s is not in the format this icebath reads (format %v, expected %d). Move it aside and sign in again with `icebath auth add`.",
+		e.Path, e.Version, AuthStoreVersion)
+}
+
+// LoadFile parses one auth.json, quarantining corrupt content and failing on unreadable files and on another format
 func (s *Store) LoadFile(path string) (AuthData, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -327,39 +338,18 @@ func (s *Store) LoadFile(path string) (AuthData, error) {
 	if obj == nil {
 		return emptyAuthData(), nil
 	}
+	if version, _ := anyFloat(obj["version"]); version != AuthStoreVersion {
+		return nil, &UnreadableStoreError{Path: path, Version: obj["version"]}
+	}
 	_, hasProviders := obj["providers"].(map[string]any)
 	_, hasPool := obj["credential_pool"].(map[string]any)
 	if hasProviders || hasPool {
 		if _, ok := obj["providers"]; !ok {
 			obj["providers"] = map[string]any{}
 		}
-		if renameRetiredSourceLabels(obj) {
-			s.storeRenamedSourceLabels(path)
-		}
 		return AuthData(obj), nil
 	}
 	return emptyAuthData(), nil
-}
-
-// Stores the renamed source labels when the file lock is free, a busy lock leaving it to a later load
-func (s *Store) storeRenamedSourceLabels(path string) {
-	unlock, err := s.takeFileLock(path, AuthLockTimeout, false)
-	if err != nil {
-		s.Log.Debug("auth: source label rename deferred", "path", path, "err", err)
-		return
-	}
-	defer unlock()
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	var obj map[string]any
-	if json.Unmarshal([]byte(strings.TrimPrefix(string(raw), "\ufeff")), &obj) != nil || obj == nil || !renameRetiredSourceLabels(obj) {
-		return
-	}
-	if err := s.SaveTo(AuthData(obj), path); err != nil {
-		s.Log.Warn("auth: could not store renamed source labels", "path", path, "err", err)
-	}
 }
 
 func copyFile(src, dst string) error {
@@ -452,9 +442,10 @@ func marshalIndented(data any) ([]byte, error) {
 	return []byte(strings.TrimRight(b.String(), "\n")), nil
 }
 
-// SaveTo stamps version and updated_at then atomically writes the document to a specific path
+// SaveTo stamps the store format, updated_at and the pool rows it drops, then atomically writes it to a specific path
 func (s *Store) SaveTo(data AuthData, target string) error {
 	data["version"] = float64(AuthStoreVersion)
+	recordPoolTombstones(data, target)
 	data["updated_at"] = utcNowISO()
 	if err := savePrivateJSON(target, data); err != nil {
 		return err
@@ -781,6 +772,32 @@ func TokenPairsByID(entries []map[string]any) map[string]TokenPair {
 }
 
 func mergePoolRowGeneration(entry, disk map[string]any, providerID string, base *TokenPair, statusCleared bool) map[string]any {
+	return keepDiskLoginMeta(mergePoolRowTokens(entry, disk, providerID, base, statusCleared), disk)
+}
+
+// Merged row with the disk row's login name, account and rotation flag, which only disk edits change
+func keepDiskLoginMeta(merged, disk map[string]any) map[string]any {
+	if disk == nil {
+		return merged
+	}
+	var out map[string]any
+	for _, key := range loginMetaKeys {
+		value, held := disk[key]
+		if !held || sameAnyValue(merged[key], value) {
+			continue
+		}
+		if out == nil {
+			out = cloneMap(merged)
+		}
+		out[key] = value
+	}
+	if out == nil {
+		return merged
+	}
+	return out
+}
+
+func mergePoolRowTokens(entry, disk map[string]any, providerID string, base *TokenPair, statusCleared bool) map[string]any {
 	mergeDisk := disk
 	if statusCleared {
 		mergeDisk = nil
@@ -862,7 +879,7 @@ func cooldownsToAny(m map[string]float64) map[string]any {
 	return out
 }
 
-// WriteCredentialPool persists one provider's rows merging concurrent disk rows and newer disk cooldowns
+// WriteCredentialPool persists one provider's rows merging concurrent disk rows and newer disk cooldowns, never writing back a removed login
 func (s *Store) WriteCredentialPool(providerID string, entries []map[string]any, removedIDs, statusClearedIDs []string, tokenBases map[string]TokenPair) ([]map[string]any, error) {
 	removed := map[string]bool{}
 	for _, id := range removedIDs {
@@ -888,6 +905,7 @@ func (s *Store) WriteCredentialPool(providerID string, entries []map[string]any,
 	pool := section(data, "credential_pool")
 	existing := poolEntries(pool[providerID])
 	existingByID := entryIDs(existing)
+	entries = withoutTombstoned(entries, s.tombstonedIDs(data, providerID))
 	merged := make([]map[string]any, 0, len(entries)+len(existing))
 	newIDs := map[string]bool{}
 	for _, e := range entries {

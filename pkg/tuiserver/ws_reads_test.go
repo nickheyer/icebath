@@ -38,8 +38,9 @@ func wsTestReadRig(t *testing.T) (*wsTestSocket, *wsTestGates, *wsTestLog) {
 	wsTestNoOrphanGrace(t)
 	gates, log := &wsTestGates{gates: map[string]chan struct{}{}}, &wsTestLog{}
 	prevDispatch, prevClose := wsDispatchRequestFn, wsCloseSessionsForTransport
-	wsDispatchRequestFn = func(ctx context.Context, _ authorityConn, req any, method string, _ *tuihost.WSTransport) (any, error) {
+	wsDispatchRequestFn = func(ctx context.Context, _ authorityConn, req any, _ *tuihost.WSTransport) (any, error) {
 		id := pyrepr.Str(req.(*pyjson.Object).GetOr("id", nil))
+		method := pyrepr.Str(req.(*pyjson.Object).GetOr("method", ""))
 		log.add("start:" + id)
 		if gate := gates.of(method); gate != nil {
 			select {

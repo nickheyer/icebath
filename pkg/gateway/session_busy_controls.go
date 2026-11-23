@@ -7,12 +7,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -24,11 +24,6 @@ var yoloWords = map[string]bool{"1": true, "on": true, "true": true, "0": false,
 
 // Sources whose unset reasoning flag follows display.show_reasoning
 var configDefaultSources = map[string]bool{"tui": true, "gui": true}
-
-// Runner reading the routed profile busy input mode, GatewayRunner._effective_busy_input_mode
-type busyModeRunner interface {
-	EffectiveBusyInputMode(ctx context.Context, source *SessionSource) string
-}
 
 // Runner holding the session scoped /fast pick, GatewayRunner._set_session_service_tier_override
 type serviceTierRunner interface {
@@ -73,6 +68,40 @@ func authorizeBusy(ctx context.Context, a *SessionAuthority, actor Principal, re
 	return nil
 }
 
+// Context whose settings reads and session writes belong to one session of the authority's profile
+func sessionSettingsCtx(ctx context.Context, a *SessionAuthority, sessionID string) context.Context {
+	return settings.WithSession(profileRuntimeScope(ctx, a.ProfileID, true), sessionID)
+}
+
+// Records a session's own choice in the settings session layer, which validates it
+func storeSessionSetting(ctx context.Context, a *SessionAuthority, sessionID, key string, value any) error {
+	if _, err := settings.Set(sessionSettingsCtx(ctx, a, sessionID), key, value, settings.Session); err != nil {
+		return settingsRefusal(err)
+	}
+	return nil
+}
+
+// Session a local live session runs, the id its source chat names
+func liveSessionID(live *LiveSession) string {
+	if live == nil || live.Source == nil {
+		return ""
+	}
+	return live.Source.ChatID
+}
+
+// Value a local live session chose for a setting itself, false when it follows the profile
+func SessionOwnSetting(ctx context.Context, live *LiveSession, key string) (any, bool) {
+	sid := liveSessionID(live)
+	if sid == "" {
+		return nil, false
+	}
+	v, err := settings.Resolve(settings.WithSession(ctx, sid), key)
+	if err != nil || v.Source != settings.SourceSession {
+		return nil, false
+	}
+	return v.Value, true
+}
+
 // Capability a read or a write of a session preference needs
 func preferenceCapability(write bool) string {
 	if write {
@@ -110,54 +139,15 @@ func busyConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref S
 	if err := authorizeBusy(ctx, a, actor, ref, params, preferenceCapability(write)); err != nil {
 		return nil, err
 	}
-	live, err := liveSession(a, ref.SessionID)
-	if err != nil {
+	if _, err := liveSession(a, ref.SessionID); err != nil {
 		return nil, err
 	}
 	if write {
-		live.BusyInputMode = mode
-	}
-	current := live.BusyInputMode
-	if current == "" {
-		policy, err := policyForSource(ctx, a.Runner, live.Source)
-		if err != nil {
+		if err := storeSessionSetting(ctx, a, ref.SessionID, settings.BusyMode.Key, mode); err != nil {
 			return nil, err
 		}
-		fallback := "interrupt"
-		if policy != nil && policy.Source == "tui" {
-			fallback = "queue"
-		}
-		if policy != nil {
-			cfg, err := policy.config(ctx, nil, true)
-			if err != nil {
-				return nil, err
-			}
-			display, err := pyGet(cfg, "display", nil)
-			if err != nil {
-				return nil, err
-			}
-			if !pyrepr.Truthy(display) {
-				display = map[string]any{}
-			}
-			chosen, err := pyGet(display, "busy_input_mode", nil)
-			if err != nil {
-				return nil, err
-			}
-			if !pyrepr.Truthy(chosen) {
-				chosen = fallback
-			}
-			current, _ = chosen.(string)
-		} else {
-			runner, ok := a.Runner.(busyModeRunner)
-			if !ok {
-				return nil, errors.New("the gateway runner cannot report the busy input mode")
-			}
-			current = runner.EffectiveBusyInputMode(ctx, live.Source)
-		}
-		if !busyModes[current] {
-			current = fallback
-		}
 	}
+	current := settings.BusyMode.Get(sessionSettingsCtx(ctx, a, ref.SessionID))
 	return pyjson.ObjectOf("key", "busy", "value", current, "scope", "session"), nil
 }
 
@@ -171,25 +161,23 @@ func verboseConfig(ctx context.Context, a *SessionAuthority, actor Principal, re
 	if err := authorizeBusy(ctx, a, actor, ref, params, preferenceCapability(write)); err != nil {
 		return nil, err
 	}
-	live, err := liveSession(a, ref.SessionID)
-	if err != nil {
+	if _, err := liveSession(a, ref.SessionID); err != nil {
 		return nil, err
 	}
-	current := live.ToolProgressMode
-	if current == "" {
-		current = "all"
-	}
+	current := settings.ToolProgress.Get(sessionSettingsCtx(ctx, a, ref.SessionID))
 	if write {
 		if word == "cycle" {
 			index := slices.Index(verboseCycle, current)
 			if index < 0 {
 				return nil, fmt.Errorf("tool progress mode %s is not one of %s", current, strings.Join(verboseCycle, ", "))
 			}
-			current = verboseCycle[(index+1)%4]
+			current = verboseCycle[(index+1)%len(verboseCycle)]
 		} else {
 			current = word
 		}
-		live.ToolProgressMode = current
+		if err := storeSessionSetting(ctx, a, ref.SessionID, settings.ToolProgress.Key, current); err != nil {
+			return nil, err
+		}
 	}
 	return pyjson.ObjectOf("key", "verbose", "value", current, "scope", "session"), nil
 }
@@ -210,19 +198,13 @@ func showReasoningConfig(ctx context.Context, a *SessionAuthority, actor Princip
 		return nil, err
 	}
 	if write {
-		live.ShowReasoning = &setting
+		if err := storeSessionSetting(ctx, a, ref.SessionID, settings.ShowThinking.Key, setting); err != nil {
+			return nil, err
+		}
 	}
-	var shown bool
-	if live.ShowReasoning != nil {
-		shown = *live.ShowReasoning
-	} else {
-		policy, err := policyForSource(ctx, a.Runner, live.Source)
-		if err != nil {
-			return nil, err
-		}
-		if shown, err = launchShowsReasoning(ctx, policy, a); err != nil {
-			return nil, err
-		}
+	shown, err := sessionShowsReasoning(sessionSettingsCtx(ctx, a, ref.SessionID), a, live)
+	if err != nil {
+		return nil, err
 	}
 	flag := "0"
 	if shown {
@@ -231,21 +213,29 @@ func showReasoningConfig(ctx context.Context, a *SessionAuthority, actor Princip
 	return pyjson.ObjectOf("key", "show_reasoning", "value", flag, "scope", "session"), nil
 }
 
-// Whether an unset reasoning flag shows reasoning, display.show_reasoning for a TUI launch
-func launchShowsReasoning(ctx context.Context, policy *LocalSessionPolicy, a *SessionAuthority) (bool, error) {
-	if policy == nil || !configDefaultSources[policy.Source] {
-		return false, nil
-	}
-	cfg, err := policy.config(ctx, a, false)
+// Whether a session shows the model's thinking: its own pick, else the profile's for a terminal UI launch, else hidden
+func sessionShowsReasoning(sctx context.Context, a *SessionAuthority, live *LiveSession) (bool, error) {
+	v, err := settings.Resolve(sctx, settings.ShowThinking.Key)
 	if err != nil {
 		return false, err
 	}
-	display := config.LocalDisplayConfig(cfg["display"])
-	value, ok := display["show_reasoning"]
-	if !ok {
-		return true, nil
+	if v.Source == settings.SourceSession {
+		on, _ := v.Value.(bool)
+		return on, nil
 	}
-	return pyrepr.Truthy(value), nil
+	policy, err := policyForSource(sctx, a.Runner, live.Source)
+	if err != nil {
+		return false, err
+	}
+	return launchShowsReasoning(sctx, policy), nil
+}
+
+// Whether a session that never picked shows reasoning, the profile's choice for a terminal UI launch
+func launchShowsReasoning(ctx context.Context, policy *LocalSessionPolicy) bool {
+	if policy == nil || !configDefaultSources[policy.Source] {
+		return false
+	}
+	return settings.ShowThinking.Get(settings.WithPlatform(settings.WithSession(ctx, ""), settings.LocalPlatform))
 }
 
 // Session scoped fast tier pick the next turn reads, normal pinning the normal tier
@@ -269,6 +259,9 @@ func serviceTierConfig(ctx context.Context, a *SessionAuthority, actor Principal
 	runner, ok := a.Runner.(serviceTierRunner)
 	if !ok {
 		return nil, errors.New("the gateway runner cannot set a session service tier override")
+	}
+	if err := storeSessionSetting(ctx, a, ref.SessionID, settings.FastMode.Key, provider.ServiceTierWord(tier)); err != nil {
+		return nil, err
 	}
 	var picked *string
 	if tier != "" {

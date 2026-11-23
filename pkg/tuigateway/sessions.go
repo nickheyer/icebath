@@ -91,8 +91,15 @@ type TranscriptMessage struct {
 	IsError         *bool            `json:"is_error,omitzero"`
 	Refused         *bool            `json:"refused,omitzero"`
 	Error           *string          `json:"error,omitzero"`
-	Archived        *bool            `json:"archived,omitzero"`
-	Extra           map[string]any   `json:"-" wire:"extra"`
+	// What a tool call printed, how long it ran, the diff of an edit and the image it made or looked at, as its tool.complete carried them
+	ResultText *string  `json:"result_text,omitzero"`
+	DurationS  *float64 `json:"duration_s,omitzero"`
+	InlineDiff *string  `json:"inline_diff,omitzero"`
+	ImagePath  *string  `json:"image_path,omitzero"`
+	// What a shell line a person ran printed and its exit status, on a shell row
+	Shell    *ShellExecResult `json:"shell,omitzero"`
+	Archived *bool            `json:"archived,omitzero"`
+	Extra    map[string]any   `json:"-" wire:"extra"`
 }
 
 // MCP server of the session with its transport, tool count, connection state and sampling metrics
@@ -475,6 +482,8 @@ type SessionCreateParams struct {
 	RoomPlumbing        bool          `json:"room_plumbing,omitzero"`
 	FollowProfileConfig bool          `json:"follow_profile_config,omitzero"`
 	IdempotencyKey      *string       `json:"idempotency_key,omitzero"`
+	// Session whose login choices, every provider's pin and exhaustion reaction, the new session starts with
+	LoginsFrom *string `json:"logins_from,omitzero"`
 }
 
 type SeedMessage struct {
@@ -660,6 +669,12 @@ type CanonicalSessionListRow struct {
 	Model        *string  `json:"model,omitzero"`
 	ResolvedID   *string  `json:"resolved_id,omitzero"`
 	RootTitle    *string  `json:"root_title,omitzero"`
+	// Opening words of the session's last exchange
+	Preview  *string `json:"preview,omitzero"`
+	Pinned   bool    `json:"pinned,omitzero"`
+	Archived bool    `json:"archived,omitzero"`
+	// Last activity in epoch seconds, on stored rows
+	LastActive *float64 `json:"last_active,omitzero"`
 }
 
 type CanonicalListParamsScope string
@@ -672,6 +687,8 @@ type CanonicalListParams struct {
 	Limit         *int64                    `json:"limit,omitzero"`
 	Title         *string                   `json:"title,omitzero"`
 	IncludeHidden bool                      `json:"include_hidden,omitzero"`
+	// Stored scope only, archived sessions listed too
+	IncludeArchived bool `json:"include_archived,omitzero"`
 }
 
 type CanonicalSnapshot struct {
@@ -694,6 +711,8 @@ type CanonicalSnapshot struct {
 	PendingConnection   *ConnectionRequestPayload   `json:"pending_connection,omitzero"`
 	TodoState           *TodoState                  `json:"todo_state,omitzero"`
 	OpenRequests        []OpenRequestEntry          `json:"open_requests,omitzero"`
+	// Set when the resume named a replay cursor: true when the events after it were replayed, false when the transcript came back instead
+	Replayed *bool `json:"replayed,omitzero"`
 }
 
 type CanonicalPendingPromptKind string
@@ -762,6 +781,27 @@ type CanonicalResumeParams struct {
 	OmitMessages      bool                         `json:"omit_messages,omitzero"`
 	Cols              *int64                       `json:"cols,omitzero"`
 	DisplayProjection bool                         `json:"display_projection,omitzero"`
+	// Replays the events after this cursor instead of the whole transcript, the transcript coming back when the cursor fell out of the window
+	ReplayFrom *ReplayCursor `json:"replay_from,omitzero"`
+}
+
+// Replay epoch and last sequence a client saw of one session
+type ReplayCursor struct {
+	Epoch    string `json:"epoch"`
+	Sequence int64  `json:"sequence"`
+}
+
+type SessionRevisionParams struct {
+	SessionID string `json:"session_id"`
+}
+
+// Fences of a session read without attaching to it
+type SessionRevisionResult struct {
+	SessionID           string `json:"session_id"`
+	Revision            int64  `json:"revision"`
+	ExecutionGeneration int64  `json:"execution_generation"`
+	Running             bool   `json:"running"`
+	AuthorityEpoch      int64  `json:"authority_epoch"`
 }
 
 type CanonicalCreateParams struct {
@@ -794,6 +834,8 @@ type CanonicalCreateParams struct {
 	RunBudget           *float64          `json:"run_budget,omitzero"`
 	Verbose             bool              `json:"verbose,omitzero"`
 	ClientEnv           map[string]string `json:"client_env,omitzero"`
+	// Session whose login choices, every provider's pin and exhaustion reaction, the new session starts with
+	LoginsFrom *string `json:"logins_from,omitzero"`
 }
 
 type RuntimeDescribeResult struct {
@@ -967,6 +1009,9 @@ var CanonicalSessionCreate = NewCanonicalMethod[CanonicalCreateParams, Canonical
 
 // Attaches to a stored or live session, by id, title or the latest of a source
 var CanonicalSessionResume = NewCanonicalMethod[CanonicalResumeParams, CanonicalSnapshot]("session.resume")
+
+// Revision and generation of a session read with no side effect, the fences a session.mutate checks
+var CanonicalSessionRevision = NewCanonicalMethod[SessionRevisionParams, SessionRevisionResult]("session.revision")
 
 // Lists the live or stored sessions of the profile
 var CanonicalSessionList = NewCanonicalMethod[CanonicalListParams, CanonicalListResult]("session.list")

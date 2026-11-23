@@ -83,6 +83,6 @@ func messageHeightKey(m msg) string {
 	if m.Kind == "intro" {
 		introSig = val(infoOf(m.Info).Version)
 	}
-	body := strings.Join([]string{m.Text, m.Thinking, strings.Join(m.Tools, "\n"), strings.Join(todoSig, "\u0001"), strings.Join(panelSig, "\u0001"), introSig}, "\x00")
+	body := strings.Join([]string{m.Text, m.Thinking, toolRowsSignature(m.Tools), strings.Join(todoSig, "\u0001"), strings.Join(panelSig, "\u0001"), introSig}, "\x00")
 	return m.Role + ":" + m.Kind + ":" + hashText(body)
 }

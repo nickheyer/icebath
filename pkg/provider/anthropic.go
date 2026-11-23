@@ -1207,7 +1207,7 @@ func (c *anthropicClient) sdkClientSpec(ctx context.Context, betas []string) (an
 		}
 		headers := anthBetaHeaderDict(betas)
 		if c.variant == "bedrock" {
-			headers.update(bedrockGuardrailHeaderDict(bedrockProcessConfig(ctx)))
+			headers.update(bedrockGuardrailHeaderDict(ctx))
 		}
 		spec.custom = stainlessMergeHeaders(headers, c.defaultHeaders)
 		return spec, "platform"
@@ -1482,15 +1482,12 @@ func (c *anthropicClient) staleTimeout(req *Request, settings wireSettings, estT
 	if base <= 0 {
 		base = defaultStreamStaleTimeout
 	}
-	if _, explicit := os.LookupEnv(StreamStaleTimeoutEnv); explicit {
-		base = envFloat(StreamStaleTimeoutEnv, base)
-	}
 	if base == defaultStreamStaleTimeout && c.route.Local {
 		local := settings.localStreamStale
 		if local <= 0 {
 			local = 900
 		}
-		return envFloat(LocalStreamStaleTimeoutEnv, local)
+		return local
 	}
 	timeout := scaleStaleTimeoutForContext(base, estTokens)
 	if floor, ok := ReasoningStaleTimeoutFloor(req.Model); ok && floor.Seconds() > timeout {

@@ -1,6 +1,9 @@
 package wecom
 
-import "github.com/nickheyer/icebath/pkg/gateway"
+import (
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
+)
 
 var envEnableCredentials = []string{"WECOM_BOT_ID", "WECOM_SECRET"}
 
@@ -29,8 +32,11 @@ var authz = map[string]any{"allowed_users_env": "WECOM_ALLOWED_USERS", "allow_al
 var callbackAuthz = map[string]any{"allowed_users_env": "WECOM_CALLBACK_ALLOWED_USERS", "allow_all_env": "WECOM_CALLBACK_ALLOW_ALL_USERS",
 	"allowlist_suppresses_pairing": true}
 
-// Registers the wecom and wecom callback env declarations with the gateway config bridge
+// Registers the wecom and wecom callback env declarations with the gateway config bridge, and the settings their names moved to
 func init() {
 	gateway.RegisterBundledEnv("wecom", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
 	gateway.RegisterBundledEnv("wecom", "CALLBACK_", gateway.BundledEnvRows{Overrides: callbackEnvOverrides, EnableCredentials: callbackEnvEnableCredentials, Authz: callbackAuthz})
+	gateway.RegisterEnvSettings(map[string]settings.Entry{"WECOM_BOT_ID": settings.WecomBotID, "WECOM_WEBSOCKET_URL": settings.WecomWebsocketURL,
+		"WECOM_CALLBACK_CORP_ID": settings.WecomCallbackCorpID, "WECOM_CALLBACK_AGENT_ID": settings.WecomCallbackAgentID,
+		"WECOM_CALLBACK_HOST": settings.WecomCallbackHost, "WECOM_CALLBACK_PORT": settings.WecomCallbackPort})
 }

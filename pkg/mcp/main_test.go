@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 const freshLaunchEnvChild = "ICEBATH_MCP_FRESH_LAUNCH_ENV_CHILD"
@@ -30,9 +29,6 @@ func TestMain(m *testing.M) {
 		code, _ := strconv.Atoi(parts[len(parts)-2])
 		os.Stderr.WriteString(parts[len(parts)-1])
 		os.Exit(code)
-	}
-	if provider.GatewayHooks.BridgedAllowAllUsers == nil {
-		provider.GatewayHooks.BridgedAllowAllUsers = func() (string, bool) { return "", false }
 	}
 	if os.Getenv(freshLaunchEnvChild) != "" {
 		flag.Parse()

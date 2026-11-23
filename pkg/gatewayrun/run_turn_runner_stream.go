@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Stream delta and interim commentary callbacks the turn hands its agent
@@ -28,12 +29,8 @@ func (t *TurnRunner) setupStreamConsumer(ctx context.Context, platformKey string
 	if t.runner.config != nil {
 		scfg = t.runner.config.Streaming
 	}
-	var platStreaming any
-	if tc.resolveDisplaySetting != nil {
-		platStreaming = tc.resolveDisplaySetting(ctx, tc.userConfig, platformKey, "streaming", nil)
-	}
 	held := plugins.StreamHeld(ctx)
-	wantStreamDeltas := !held && !tc.scheduledHeartbeat && scfg.EnabledFor(platStreaming)
+	wantStreamDeltas := !held && !tc.scheduledHeartbeat && scfg.EnabledFor(settings.DisplayStreaming.Get(settings.WithPlatform(ctx, platformKey)))
 	wantInterimMessages := tc.interimAssistantMessagesEnabled && !tc.scheduledHeartbeat && !held && !finiteViewerTurn(ctx)
 	if wantStreamDeltas || wantInterimMessages {
 		if err := t.buildStreamConsumer(ctx, scfg, wantStreamDeltas, wantInterimMessages, &streamConsumer); err != nil {

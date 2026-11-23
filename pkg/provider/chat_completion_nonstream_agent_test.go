@@ -81,7 +81,7 @@ func (a *fakeChatAgent) setInterrupted(on bool) {
 func agentFormCodexAgent(t *testing.T, provider, baseURL string) *fakeChatAgent {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	unsetEnvForTest(t, CodexTTFBTimeoutEnv, CodexTTFBMaxEnv, CodexTTFBDisableAboveEnv, CodexTTFBStrictEnv, CodexEventStaleTimeoutEnv, LocalStreamStaleTimeoutEnv)
+	unsetEnvForTest(t, CodexTTFBTimeoutEnv, CodexTTFBMaxEnv, CodexTTFBDisableAboveEnv, CodexTTFBStrictEnv, CodexEventStaleTimeoutEnv)
 	client := &fakeChatClient{}
 	return &fakeChatAgent{provider: provider, apiMode: "codex_responses", baseURL: baseURL, model: "gpt-5.5", plat: "cli",
 		resolve: func(map[string]any) (any, error) { return 60.0, nil },

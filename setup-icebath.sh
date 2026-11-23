@@ -24,7 +24,7 @@ echo ""
 command -v go >/dev/null 2>&1 || { echo -e "${RED}✗${NC} Go is required (see go.mod for the version)" >&2; exit 1; }
 
 echo -e "${CYAN}→${NC} Building icebath..."
-CGO_ENABLED=0 go build -tags goolm -trimpath -o icebath ./cmd/icebath
+CGO_ENABLED=0 go build -tags goolm -trimpath -ldflags "-s -w" -o icebath ./cmd/icebath
 echo -e "${GREEN}✓${NC} Built $SCRIPT_DIR/icebath"
 
 echo -e "${CYAN}→${NC} Preparing the test environment..."

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -23,7 +24,7 @@ var (
 	wsOrphanInterruptReapPollS    = 1.0
 	wsOrphanInterruptReapMaxPolls = 60
 	wsOrphanActivityStaleS        = sync.OnceValue(func() float64 {
-		return wsOrphanSetting(context.Background(), "ICEBATH_TUI_WS_ORPHAN_ACTIVITY_STALE_S", "ws_orphan_activity_stale_s", 600.0)
+		return settings.SessionsWsOrphanActivityStaleS.Get(context.Background()).Seconds()
 	})
 )
 

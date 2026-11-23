@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Discards orphan turn markers then consumes the clean exit receipt, failing closed
@@ -29,7 +30,7 @@ func (r *GatewayRunner) consumeCleanShutdownMarker(ctx context.Context, markerPa
 
 // Recovers only the turns the dead process left marked, returning the resumed and ledgered counts
 func (r *GatewayRunner) recoverUncleanSessions(ctx context.Context) (int, int) {
-	maxAge := max(60*60, int(max(1.0, floatEnv("ICEBATH_AGENT_TIMEOUT", 1800))*2))
+	maxAge := max(60*60, int(max(1.0, settings.AgentGatewayTimeout.Get(ctx).Seconds())*2))
 	ledgered, err := r.ledgerCrashLeftReplies(ctx, maxAge)
 	logSuppressed(slog.LevelWarn, err, "Crash-left reply recovery on startup failed: %s")
 	resumed, err := r.sessionStore.RecoverInterruptedTurns(ctx, maxAge)
@@ -47,7 +48,7 @@ type crashMarkedTurn struct {
 
 // Settles every marked turn whose final reply persisted, ledgering the owed reply and clearing its marker
 func (r *GatewayRunner) ledgerCrashLeftReplies(ctx context.Context, maxAgeSeconds int) (int, error) {
-	ledgerOn := gateway.LedgerEnabled(ctx, nil)
+	ledgerOn := gateway.LedgerEnabled(ctx)
 	cutoff := float64(time.Now().UnixNano())/1e9 - float64(maxAgeSeconds)
 	var marked []crashMarkedTurn
 	r.sessionStore.FilterLoadedEntries(ctx, func(e *gateway.SessionEntry) bool {
@@ -139,7 +140,7 @@ func (r *GatewayRunner) crashLeftReply(ctx context.Context, history []any, start
 			pkgLog().Debug(fmt.Sprintf("Crash-left reply: no routed scope for %s", origin.ChatID), "exc_info", err)
 			scoped, release = ctx, func() {}
 		}
-		muted := config.DiagnosticTurnMuted(scoped, displayMetadata, string(origin.Platform), nil)
+		muted := config.DiagnosticTurnMuted(scoped, displayMetadata, string(origin.Platform))
 		release()
 		if muted {
 			empty := ""

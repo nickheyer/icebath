@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Connected adapters by bot token, the registry standalone sends reuse a live session through
@@ -97,34 +97,6 @@ type WeixinAdapter struct {
 	rateLimitEvents       []float64
 }
 
-// Config value of none, comma text, a sequence or a scalar as a trimmed list without empty items
-func coerceList(value any) []string {
-	var items []any
-	switch v := value.(type) {
-	case nil:
-		return []string{}
-	case string:
-		for _, part := range strings.Split(v, ",") {
-			items = append(items, part)
-		}
-	case []any:
-		items = v
-	case []string:
-		for _, s := range v {
-			items = append(items, s)
-		}
-	default:
-		items = []any{v}
-	}
-	out := []string{}
-	for _, item := range items {
-		if s := pystr.Strip(pyrepr.Str(item)); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
 // Adapter configured from the platform config, the scoped WEIXIN env and the account saved by QR login
 func NewWeixinAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*WeixinAdapter, error) {
 	if cfg == nil {
@@ -181,29 +153,24 @@ func NewWeixinAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Weixin
 		tokenRaw, err = gateway.GetScopedSecret(ctx, "WEIXIN_TOKEN", "", false)
 	}
 	a.token = pystr.Strip(pyrepr.Str(tokenRaw))
-	a.baseURL = pystr.RstripChars(setting("base_url", ilinkBaseURL), "/")
-	a.cdnBaseURL = pystr.RstripChars(setting("cdn_base_url", weixinCDNBaseURL), "/")
+	a.baseURL = pystr.RstripChars(settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), "/")
+	a.cdnBaseURL = pystr.RstripChars(settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx)), "/")
 	a.sendChunkDelaySeconds = floatSetting("send_chunk_delay_seconds", "1.5")
 	a.sendChunkRetries = intSetting("send_chunk_retries", "4")
 	a.sendChunkRetryDelaySeconds = floatSetting("send_chunk_retry_delay_seconds", "1.0")
 	a.rateLimitCircuitThreshold = max(1, intSetting("rate_limit_circuit_threshold", "1"))
 	a.rateLimitCircuitWindowSeconds = floatSetting("rate_limit_circuit_window_seconds", "30.0")
 	a.rateLimitCircuitOpenSeconds = floatSetting("rate_limit_circuit_open_seconds", "30.0")
-	a.DMPolicy = pystr.Lower(setting("dm_policy", "pairing"))
-	a.GroupPolicy = pystr.Lower(setting("group_policy", "disabled"))
-	for _, list := range []struct {
-		key, env string
-		target   map[string]bool
-	}{{"allow_from", "WEIXIN_ALLOWED_USERS", a.AllowFrom}, {"group_allow_from", "WEIXIN_GROUP_ALLOWED_USERS", a.GroupAllowFrom}} {
-		raw := extra[list.key]
-		if err == nil && raw == nil {
-			raw, err = gateway.GetScopedSecret(ctx, list.env, "", false)
-		}
-		for _, entry := range coerceList(raw) {
-			list.target[entry] = true
-		}
+	sctx := gateway.SettingsContext(ctx)
+	a.DMPolicy = pystr.Lower(settings.WeixinDmPolicy.Get(sctx))
+	a.GroupPolicy = pystr.Lower(settings.WeixinGroupPolicy.Get(sctx))
+	for _, entry := range gateway.SettingList(ctx, settings.WeixinAllowFrom) {
+		a.AllowFrom[entry] = true
 	}
-	a.splitMultilineMessages = coerceBool(setting("split_multiline_messages", ""), false)
+	for _, entry := range gateway.SettingList(ctx, settings.WeixinGroupAllowFrom) {
+		a.GroupAllowFrom[entry] = true
+	}
+	a.splitMultilineMessages = settings.WeixinSplitMultilineMessages.Get(gateway.SettingsContext(ctx))
 	if err != nil {
 		return nil, err
 	}

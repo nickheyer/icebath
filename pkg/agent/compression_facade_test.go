@@ -432,17 +432,16 @@ func TestCompressContextMirrorsPersistedStampsAndRebindsTheCaller(t *testing.T) 
 // Agent whose owned progress timeout wrapper runs worker under idle and ceiling seconds against a real compressor
 func ownedTimeoutAgent(t *testing.T, idle, ceiling float64, worker func(messages []map[string]any, fence *CompressionCommitFence) ([]map[string]any, string)) (*terminalActivitySession, *ContextCompressor, *atomic.Int32) {
 	t.Helper()
-	t.Setenv("ICEBATH_HOME", t.TempDir())
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	writeCompressionSection(t, h, map[string]any{"context_timeout_seconds": idle, "context_total_ceiling_seconds": ceiling})
 	s := newTerminalActivitySession(t)
 	s.agent.cachedSystemPrompt = "sys"
 	compressor := newCompressorWith(t, 128_000, nil)
 	s.agent.contextCompressor = compressor
 	pinCompressionAuxTimeout(t, 0)
 	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{})
-	prevCfg, prevCompress := loadCompressionConfig, facadeCompressContext
-	loadCompressionConfig = func(context.Context) any {
-		return map[string]any{"context_timeout_seconds": idle, "context_total_ceiling_seconds": ceiling}
-	}
+	prevCompress := facadeCompressContext
 	calls := &atomic.Int32{}
 	var workers sync.WaitGroup
 	facadeCompressContext = func(_ context.Context, _ *AIAgent, messages []map[string]any, _ *string, o compressContextOptions) ([]map[string]any, string, error) {
@@ -461,7 +460,7 @@ func ownedTimeoutAgent(t *testing.T, idle, ceiling float64, worker func(messages
 			time.Sleep(5 * time.Millisecond)
 		}
 		workers.Wait()
-		loadCompressionConfig, facadeCompressContext = prevCfg, prevCompress
+		facadeCompressContext = prevCompress
 	})
 	return s, compressor, calls
 }

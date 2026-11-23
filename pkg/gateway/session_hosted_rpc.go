@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Encoded receipts per results read, under the private socket response line
@@ -211,7 +211,7 @@ func (r *HostedRoomAuthorityRPC) create(ctx context.Context, params map[string]a
 		}
 	}
 	disabled := map[string]bool{"clarify": true}
-	for _, name := range tools.ParseConfigStringList(agentCfg["disabled_toolsets"]) {
+	for _, name := range settings.AgentDisabledToolsets.Strings(ctx) {
 		disabled[name] = true
 	}
 	disabledList := make([]any, 0, len(disabled))

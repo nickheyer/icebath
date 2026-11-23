@@ -1097,7 +1097,7 @@ func (n *kanbanNotification) sendEvent(ctx context.Context, ev *kanban.Event, ms
 		}
 		sendRes = &res
 		return nil
-	}, n.platformStr, kanbanDiagnosticEvent(ev), nil)
+	}, n.platformStr, kanbanDiagnosticEvent(ev))
 	if err != nil {
 		return false, err
 	}
@@ -1218,7 +1218,7 @@ func (n *kanbanNotification) deliver(ctx context.Context) error {
 		return err
 	}
 	originalEvents := n.d.events
-	split := !config.WarningNotificationsEnabled(scoped, n.platformStr, nil)
+	split := !config.WarningNotificationsEnabled(scoped, n.platformStr)
 	groups := [][]*kanban.Event{originalEvents}
 	if split {
 		var diag, plain []*kanban.Event

@@ -11,15 +11,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // CuratorArgs holds every flag and positional of the curator subcommands
@@ -735,14 +735,7 @@ func (c *CuratorCLI) cmdPurge(ctx context.Context, a CuratorArgs) (int, error) {
 	if a.Days != nil {
 		ttl = *a.Days
 	} else {
-		cfg, err := config.Load(h, configLookup(&tools.Env{Home: h}))
-		if err != nil {
-			return 1, err
-		}
-		v := curatorGetOr(curatorSubdict(map[string]any(cfg), "curator"), "archive_ttl_days", 0)
-		if ttl, err = curatorIntOrZero(v); err != nil {
-			return 1, err
-		}
+		ttl = int(settings.CuratorArchiveTtlDays.Get(home.WithOverride(ctx, h)) / (24 * time.Hour))
 	}
 	if ttl <= 0 {
 		c.println("curator: purge disabled (curator.archive_ttl_days is 0). Set the config key or pass --days N to purge archives older than N days.")

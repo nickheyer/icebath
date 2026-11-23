@@ -32,6 +32,8 @@ type Action struct {
 	Overlay bool
 	// Stays out of the palette, for editing and movement keys
 	Quiet bool
+	// Line of the leader strip the key is listed on, empty for the last line
+	Group string
 }
 
 // LabelText is the legend word of the action in the language of the application, the registered word when the application has none
@@ -152,20 +154,84 @@ func (m *Map) DisplayAll(id string) string {
 // Records whether the terminal reports ctrl and shift on a letter apart from ctrl alone
 func (m *Map) SetShiftApart(on bool) { m.shiftApart = on }
 
-// Chords of the action the terminal can send, ctrl and shift on a letter needing a terminal reporting them apart and the command key a Mac whose terminal reports it
+// Whether the terminal reports modified keys apart, as the kitty keyboard protocol does
+func (m *Map) ShiftApart() bool { return m.shiftApart }
+
+// Why this terminal cannot send the chord, empty when it can: ctrl and shift on a letter, a modified enter, tab or backspace and the command
+// key all need a terminal reporting modified keys apart, the command key a Mac besides
+func (m *Map) Unsendable(chord string) string {
+	p, err := parse(chord)
+	if err != nil {
+		return ""
+	}
+	switch {
+	case p.mods&tea.ModSuper != 0 && !(m.shiftApart && runtime.GOOS == "darwin"):
+		return "cmd"
+	case m.shiftApart:
+		return ""
+	case p.name == "" && unicode.IsLetter(p.r) && p.mods&(tea.ModCtrl|tea.ModShift) == tea.ModCtrl|tea.ModShift:
+		return "kitty"
+	case (p.name == "enter" || p.name == "backspace") && p.mods&(tea.ModCtrl|tea.ModShift) != 0, p.name == "tab" && p.mods&tea.ModCtrl != 0:
+		return "kitty"
+	}
+	return ""
+}
+
+// Chords of the action the terminal can send
 func (m *Map) Sendable(id string) []string {
 	var out []string
 	for _, c := range m.binds[id] {
-		p, err := parse(c)
-		if err == nil && !m.shiftApart && p.name == "" && unicode.IsLetter(p.r) && p.mods&(tea.ModCtrl|tea.ModShift) == tea.ModCtrl|tea.ModShift {
-			continue
+		if m.Unsendable(c) == "" {
+			out = append(out, c)
 		}
-		if err == nil && p.mods&tea.ModSuper != 0 && !(m.shiftApart && runtime.GOOS == "darwin") {
-			continue
-		}
-		out = append(out, c)
 	}
 	return out
+}
+
+// Keys to press for the action as text names them, the leader first for a key of the leader strip, empty while it is unbound
+func (m *Map) Chord(id string) string {
+	key := m.Display(id)
+	if key == "" {
+		return ""
+	}
+	if a, ok := m.Action(id); ok && a.Context == Leader {
+		if lead := m.Display("leader"); lead != "" {
+			return lead + " " + key
+		}
+		return ""
+	}
+	return key
+}
+
+// Changes the keys the action starts with, keeping the keys a person bound in its place and taking the new ones only while it holds the old
+// default; a chord another action of the same context holds is left out
+func (m *Map) SetDefault(id string, chords []string) error {
+	a, ok := m.Action(id)
+	if !ok {
+		return fmt.Errorf("keys: unknown action %q", id)
+	}
+	next, err := parseAll(chords)
+	if err != nil {
+		return err
+	}
+	following := slices.Equal(m.binds[id], a.Default)
+	a.Default = next
+	m.actions[m.index[id]] = a
+	if !following {
+		return nil
+	}
+	var free []string
+	var taken error
+	for _, c := range next {
+		if h := m.Holder(id, c); h != "" {
+			taken = fmt.Errorf("keys: %s is bound to %s", Format(c), h)
+			continue
+		}
+		free = append(free, c)
+	}
+	m.binds[id] = free
+	m.byChord = nil
+	return taken
 }
 
 // Id of another action in the same context holding the chord, empty when it is free
@@ -226,6 +292,9 @@ func (m *Map) Reset(id string) error {
 }
 
 // Returns every action to its default keys
+// Entry of the keybind file holding the options of the keys rather than a context, such as reading Option typed characters as alt chords
+const optionsSection = "options"
+
 func (m *Map) defaults() {
 	for _, a := range m.actions {
 		m.binds[a.ID] = slices.Clone(a.Default)
@@ -663,7 +732,18 @@ func (m *Map) Read(data []byte) error {
 	}
 	var errs []error
 	wanted := map[string][]string{}
+	SetOption(false)
 	for _, ctx := range slices.Sorted(maps.Keys(contexts)) {
+		if ctx == optionsSection {
+			var opts struct {
+				OptionAsAlt bool `json:"option_as_alt"`
+			}
+			if err := json.Unmarshal(contexts[ctx], &opts); err != nil {
+				errs = append(errs, fmt.Errorf("keys: %s: %w", optionsSection, err))
+			}
+			SetOption(opts.OptionAsAlt)
+			continue
+		}
 		if ContextDocs[ctx] == "" {
 			errs = append(errs, unknownError(fmt.Sprintf("keys: unknown context %q", ctx)))
 			continue
@@ -766,6 +846,7 @@ func chordList(raw json.RawMessage) ([]string, error) {
 func (m *Map) Text() []byte {
 	var sb bytes.Buffer
 	sb.WriteString("{\n")
+	fmt.Fprintf(&sb, "  %s: {%s: %t},\n", quote(optionsSection), quote("option_as_alt"), OptionOn())
 	for ci, ctx := range m.contexts {
 		fmt.Fprintf(&sb, "  %s: {\n", quote(ctx))
 		var ids []string

@@ -61,13 +61,6 @@ func seedRoutingView(ctx context.Context, cfg map[string]any) map[string]any {
 		config.SetMappingKeys(expanded, config.MappingKeys(providers))
 		view["providers"] = expanded
 	}
-	if custom, ok := cfg["custom_providers"].([]any); ok {
-		expanded := make([]any, len(custom))
-		for i, e := range custom {
-			expanded[i] = seedExpandFields(ctx, e, seedRoutingFields)
-		}
-		view["custom_providers"] = expanded
-	}
 	return view
 }
 
@@ -105,12 +98,7 @@ func selectedModelSeed(ctx context.Context, sourceCfg map[string]any) (map[strin
 		}
 		return seed, false
 	}
-	if found.Section == "providers" {
-		assignKey(seed, "providers", map[string]any{found.Key: providers[found.Key]})
-		return seed, true
-	}
-	legacy, _ := asList(sourceCfg["custom_providers"])
-	assignKey(seed, "custom_providers", []any{legacy[found.Index]})
+	assignKey(seed, "providers", map[string]any{found.Key: providers[found.Key]})
 	return seed, true
 }
 
@@ -149,13 +137,6 @@ func seedClaimedAliases(ctx context.Context, seed map[string]any) map[string]boo
 			}
 		}
 	}
-	if custom, ok := seed["custom_providers"].([]any); ok {
-		for _, e := range custom {
-			for a := range seedAliases(ctx, e, "") {
-				claimed[a] = true
-			}
-		}
-	}
 	return claimed
 }
 
@@ -172,13 +153,6 @@ func PrepareInheritedEndpointSeed(ctx context.Context, sourceCfg map[string]any)
 		}
 		config.SetMappingKeys(frozen, config.MappingKeys(providers))
 		seed["providers"] = frozen
-	}
-	if custom, ok := seed["custom_providers"].([]any); ok {
-		frozen := make([]any, len(custom))
-		for i, v := range custom {
-			frozen[i] = seedExpandFields(ctx, v, seedIdentityFields)
-		}
-		seed["custom_providers"] = frozen
 	}
 	return seed, seedClaimedAliases(ctx, seed)
 }
@@ -197,10 +171,9 @@ func MergeEndpointSeed(ctx context.Context, dstCfg, seed map[string]any, claimed
 	return mergeEndpointSeed(ctx, dstCfg, seed, claimed)
 }
 
-// Destination config with the seed's entries written first, same key and claimed identity entries removed from both sections
+// Destination config with the seed's providers entries written first, same key and claimed identity entries removed
 func mergeEndpointSeed(ctx context.Context, dstCfg, seed map[string]any, claimed map[string]bool) map[string]any {
 	seedProviders, _ := seed["providers"].(map[string]any)
-	seedCustom, _ := seed["custom_providers"].([]any)
 	merged := make(map[string]any, len(dstCfg))
 	for k, v := range dstCfg {
 		merged[k] = v
@@ -221,16 +194,6 @@ func mergeEndpointSeed(ctx context.Context, dstCfg, seed map[string]any, claimed
 		}
 		config.SetMappingKeys(out, order)
 		assignKey(merged, "providers", out)
-	}
-	dstCustom, dstIsList := dstCfg["custom_providers"].([]any)
-	if dstIsList || len(seedCustom) > 0 {
-		out := append([]any{}, seedCustom...)
-		for _, e := range dstCustom {
-			if !aliasesIntersect(claimed, seedAliases(ctx, e, "")) {
-				out = append(out, e)
-			}
-		}
-		assignKey(merged, "custom_providers", out)
 	}
 	return merged
 }

@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // In memory registry of background processes with rolling output, poll, log, wait, kill and crash recovery
@@ -2078,9 +2079,9 @@ func sliceIndices(start, stop, n int) (int, int) {
 
 // Ordered dict form of the exported method result, keys in insertion order
 func (r *ProcessRegistry) waitDict(ctx context.Context, env *Env, sessionID string, timeout *int) *pyjson.Object {
-	maxTimeout := 180
-	if raw := os.Getenv("TERMINAL_TIMEOUT"); raw != "" {
-		if n, err := strconv.Atoi(raw); err == nil {
+	maxTimeout := int(settings.TerminalTimeout.Default / time.Second)
+	if policy, err := terminalPolicy(env); err == nil {
+		if n, err := parseTerminalInt(policy, "timeout"); err == nil {
 			maxTimeout = n
 		}
 	}

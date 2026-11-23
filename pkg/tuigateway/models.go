@@ -109,6 +109,8 @@ type ModelSaveKeyParams struct {
 	Slug      string  `json:"slug"`
 	APIKey    string  `json:"api_key"`
 	SessionID string  `json:"session_id,omitzero"`
+	// Login name for the key, an existing owned login of that name taking the new key
+	Name string `json:"name,omitzero"`
 }
 
 type ModelSaveKeyResult struct {
@@ -119,19 +121,27 @@ type ModelDisconnectParams struct {
 	Profile   *string `json:"profile,omitzero"`
 	Slug      string  `json:"slug"`
 	SessionID string  `json:"session_id,omitzero"`
+	// Login to remove, the provider's default login when omitted
+	Login string `json:"login,omitzero"`
+	// Every login, env key and sign in state of the provider, the old disconnect
+	All bool `json:"all,omitzero"`
 }
 
 type ModelDisconnectResult struct {
 	Slug         string `json:"slug"`
 	Name         string `json:"name"`
 	Disconnected bool   `json:"disconnected"`
+	// Login removed, empty when every credential went
+	Login string `json:"login,omitzero"`
+	// Logins of the provider left after the removal
+	Remaining int64 `json:"remaining,omitzero"`
 }
 
 // Provider and model inventory of the picker, layered over the live provider of the session when named
 var ModelOptions = NewMethod[ModelOptionsParams, ModelOptionsResult]("model.options")
 
-// Saves an API key for a provider and returns its refreshed picker row
+// Saves an API key as an owned login of the provider, its profile default, and returns its refreshed picker row
 var ModelSaveKey = NewMethod[ModelSaveKeyParams, ModelSaveKeyResult]("model.save_key")
 
-// Removes every credential of a provider, its env keys and its sign in state
+// Removes the provider's default login, or every credential, env key and sign in state with all
 var ModelDisconnect = NewMethod[ModelDisconnectParams, ModelDisconnectResult]("model.disconnect")

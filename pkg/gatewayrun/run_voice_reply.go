@@ -30,10 +30,7 @@ func (r *GatewayRunner) shouldSendVoiceReply(ctx context.Context, event *gateway
 		return false
 	}
 	chatID := event.Source.ChatID
-	voiceMode, hasMode := "", false
-	if r.voiceMode != nil {
-		voiceMode, hasMode = r.voiceMode.Get(r.voiceKeyForSource(event.Source))
-	}
+	voiceMode, hasMode := chatVoiceMode(r.voiceKeyForSource(event.Source))
 	isVoiceInput := event.MessageType == gateway.MessageTypeVoice
 	adapterAutoTTS := false
 	func() {

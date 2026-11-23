@@ -665,7 +665,7 @@ func (a *SlackAdapter) hintAllowBots(ctx context.Context) {
 		pkgLog().Info(fmt.Sprintf("[Slack] allow_bots=%s — for bot-to-bot interop also ensure: (a) the Slack "+
 			"app manifest subscribes to message.channels / message.groups / message.im as "+
 			"appropriate (run 'icebath slack manifest' if unsure), and (b) the other bot's "+
-			"Slack user id is in SLACK_ALLOWED_USERS or GATEWAY_ALLOW_ALL_USERS=true. "+
+			"Slack user id is in SLACK_ALLOWED_USERS or Allow all users is on. "+
 			"Without these, bot events are silently dropped upstream of the allow_bots "+
 			"gate.", policy))
 	}

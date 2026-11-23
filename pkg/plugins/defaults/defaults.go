@@ -112,7 +112,6 @@ func record(ctx context.Context, h string, names map[string]bool) error {
 		cfg = map[string]any{}
 	}
 	cfg[installedKey] = marker
-	provider.StampCreatedConfig(h, cfg)
 	return config.SaveUser(ctx, h, cfg)
 }
 

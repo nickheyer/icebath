@@ -10,6 +10,8 @@ import (
 	"sync"
 	"unsafe"
 	"weak"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Credential source tags for callable keys that mint a bearer on first use
@@ -128,14 +130,7 @@ var (
 
 // AdoptExternalLoginsEnabled is auth.adopt_external_logins, default true, logged once when off
 func AdoptExternalLoginsEnabled(env PoolEnv) bool {
-	cfg := env.config()
-	authCfg, ok := cfg["auth"].(map[string]any)
-	enabled := true
-	if ok {
-		if v, has := authCfg["adopt_external_logins"]; has {
-			enabled = truthyAny(v)
-		}
-	}
+	enabled := settings.AuthAdoptExternalLogins.Get(env.loginCtx())
 	if !enabled {
 		externalLoginsNoticeMu.Lock()
 		if !externalLoginsNoticeLogged {
@@ -237,58 +232,6 @@ func removeEnvSource(env PoolEnv, provider string, removed PooledCredential) Rem
 	return result
 }
 
-// Deletes the icebath owned PKCE file outright
-func removeIcebathPKCE(env PoolEnv, provider string, removed PooledCredential) RemovalResult {
-	result := RemovalResult{Suppress: true}
-	oauthFile := IcebathOAuthFile(env)
-	if _, err := os.Stat(oauthFile); err == nil {
-		if err := os.Remove(oauthFile); err != nil {
-			result.Hints = append(result.Hints, fmt.Sprintf("Could not delete %s: %v", oauthFile, err))
-		} else {
-			result.Cleaned = append(result.Cleaned, "Cleared Icebath Anthropic OAuth credentials")
-		}
-	}
-	return result
-}
-
-// Clears the auth.json providers block of an OAuth provider
-func removeAuthStoreOAuth(env PoolEnv, provider string, removed PooledCredential) RemovalResult {
-	result := RemovalResult{Suppress: true}
-	err := env.Store.Update(func(data AuthData) (bool, error) {
-		providers, ok := data["providers"].(map[string]any)
-		if !ok {
-			return false, nil
-		}
-		if _, has := providers[provider]; !has {
-			return false, nil
-		}
-		delete(providers, provider)
-		result.Cleaned = append(result.Cleaned, fmt.Sprintf("Cleared %s OAuth tokens from auth store", provider))
-		return true, nil
-	})
-	if err != nil {
-		result.Hints = append(result.Hints, fmt.Sprintf("Could not update %s: %v", env.Store.Path(), err))
-	}
-	return result
-}
-
-func removeXAIOAuthDeviceCode(env PoolEnv, provider string, removed PooledCredential) RemovalResult {
-	result := removeAuthStoreOAuth(env, provider, removed)
-	result.Hints = append(result.Hints, "Run `icebath model` → xAI Grok OAuth (SuperGrok / Premium+) to re-authenticate if needed.")
-	return result
-}
-
-// Codex tokens also live in the Codex CLI's own file which is kept, the canonical source is suppressed
-func removeCodexDeviceCode(env PoolEnv, provider string, removed PooledCredential) RemovalResult {
-	result := removeAuthStoreOAuth(env, provider, removed)
-	_ = env.Store.SuppressCredentialSource(provider, "device_code")
-	result.Hints = append(result.Hints,
-		"Suppressed openai-codex device_code source — it will not be re-seeded.",
-		"Note: Codex CLI credentials still live in ~/.codex/auth.json",
-		"Run `icebath auth add openai-codex` to re-enable if needed.")
-	return result
-}
-
 // Removal that never deletes a file another tool owns, suppress and explain only
 func suppressOnly(hints ...string) func(PoolEnv, string, PooledCredential) RemovalResult {
 	return func(env PoolEnv, provider string, removed PooledCredential) RemovalResult {
@@ -308,15 +251,10 @@ var removalRegistry = []RemovalStep{
 		"Suppressed claude_code credential — it will not be re-seeded.",
 		"Note: Claude Code credentials still live in ~/.claude/.credentials.json",
 		"Run `icebath auth add anthropic` to re-enable if needed."), Description: "~/.claude/.credentials.json"},
-	{Provider: "anthropic", SourceID: IcebathPKCESource, Remove: removeIcebathPKCE, Description: "~/.icebath/.anthropic_oauth.json"},
-	{Provider: "openai-codex", SourceID: "device_code", Match: func(src string) bool { return src == "device_code" || strings.HasSuffix(src, ":device_code") },
-		Remove: removeCodexDeviceCode, Description: "auth.json providers.openai-codex + ~/.codex/auth.json"},
-	{Provider: "xai-oauth", SourceID: "device_code", Remove: removeXAIOAuthDeviceCode, Description: "auth.json providers.xai-oauth"},
 	{Provider: "qwen-oauth", SourceID: "qwen-cli", Remove: suppressOnly(
 		"Suppressed qwen-cli credential — it will not be re-seeded.",
 		"Note: Qwen CLI credentials still live in ~/.qwen/oauth_creds.json",
 		"Run `icebath auth add qwen-oauth` to re-enable if needed."), Description: "~/.qwen/oauth_creds.json"},
-	{Provider: "minimax-oauth", SourceID: "oauth", Remove: removeAuthStoreOAuth, Description: "auth.json providers.minimax-oauth"},
 	{Provider: "*", SourceID: "config:", Match: func(src string) bool { return strings.HasPrefix(src, "config:") || src == "model_config" },
 		Remove: suppressOnly(
 			"Suppressed {source} — it will not be re-seeded.",

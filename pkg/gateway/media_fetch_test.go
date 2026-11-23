@@ -35,11 +35,21 @@ func (f *fakeRemoteEnv) FetchFile(_ context.Context, remote, dest string, maxByt
 	return os.WriteFile(dest, data, 0o600)
 }
 
+// Writes the media delivery settings of a test home's config.yaml
+func writeMediaPolicy(t *testing.T, h, body string) {
+	t.Helper()
+	if err := os.MkdirAll(h, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // Installs a fake ssh sandbox as the active remote env with the document cache as the only safe root
 func withRemoteEnv(t *testing.T) (*fakeRemoteEnv, string) {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "")
 	env := &fakeRemoteEnv{
 		files: map[string][]byte{"/home/agent/out/report.txt": []byte("hello from sandbox"), "/home/agent/.ssh/id_rsa": []byte("SECRET")},
 		links: map[string]string{"/home/agent/out/innocent.txt": "/home/agent/.ssh/id_rsa"},
@@ -72,11 +82,11 @@ func TestSandboxArtifactIsFetchedButCredentialsAndSymlinksToThemAreNot(t *testin
 func TestLocalBackendAndStrictModeDoNotFetch(t *testing.T) {
 	env, dir := withRemoteEnv(t)
 	ctx := context.Background()
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "1")
+	writeMediaPolicy(t, dir, "gateway:\n  strict: true\n")
 	if got, err := FilterMediaDeliveryPaths(ctx, []MediaRef{{Path: "/home/agent/out/report.txt"}}); err != nil || len(got) != 0 {
 		t.Fatalf("strict %v %v", got, err)
 	}
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "")
+	writeMediaPolicy(t, dir, "gateway: {}\n")
 	activeRemoteEnvSeam = func(context.Context) (tools.Environment, error) { return nil, nil }
 	var dropped []map[string]any
 	if got, err := FilterMediaDeliveryPathsFor(ctx, []MediaRef{{Path: filepath.Join(dir, "nope.txt")}}, "", &dropped); err != nil || len(got) != 0 {
@@ -89,8 +99,7 @@ func TestLocalBackendAndStrictModeDoNotFetch(t *testing.T) {
 
 func TestFilterKeepsSafeMediaAndDropsUnsafe(t *testing.T) {
 	_, dir := withRemoteEnv(t)
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "1")
-	t.Setenv("ICEBATH_MEDIA_TRUST_RECENT_FILES", "0")
+	writeMediaPolicy(t, dir, "gateway:\n  strict: true\n  trust_recent_files: false\n")
 	root := filepath.Join(dir, "cache", "documents")
 	safe, unsafe := filepath.Join(root, "speech.ogg"), filepath.Join(dir, "outside.ogg")
 	if err := os.MkdirAll(root, 0o755); err != nil {

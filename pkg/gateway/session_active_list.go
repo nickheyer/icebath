@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Live state of a turn, waiting on a prompt, working, starting before its claim or idle
@@ -61,8 +62,8 @@ func activeList(ctx context.Context, c *AuthorityConnection, ref SessionRef, par
 		}
 		rows = append(rows, map[string]any{"current": entry.sessionID == current, "id": entry.sessionID,
 			"session_key": entry.sessionID, "last_active": lastActive, "started_at": started,
-			"message_count": anyInt64(row["message_count"]), "model": model, "preview": "", "title": title,
-			"source": row["source"], "status": activeStatus(entry.live, entry.handle, entry.pending)})
+			"message_count": anyInt64(row["message_count"]), "model": model, "preview": state.ShapePreview(row["_preview_raw"]),
+			"title": title, "source": row["source"], "status": activeStatus(entry.live, entry.handle, entry.pending)})
 	}
 	return map[string]any{"sessions": rows}, nil
 }

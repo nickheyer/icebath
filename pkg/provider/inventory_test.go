@@ -196,12 +196,12 @@ func TestExplicitOnlyDropsAnthropicRowWithoutOAuthCredentials(t *testing.T) {
 
 func TestAnthropicOAuthPresenceAcceptsPoolOnlyOAuthEntry(t *testing.T) {
 	h := invTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"anthropic": []any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"anthropic": []any{
 		map[string]any{"id": "a1", "auth_type": "oauth", "access_token": "sk-ant-oat01-pool"}}}})
 	if !anthropicOAuthCredentialsPresent(context.Background()) {
 		t.Fatal("pool oauth entry not accepted")
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"anthropic": []any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"anthropic": []any{
 		map[string]any{"id": "a1", "auth_type": "api_key", "access_token": "sk-ant-api03-key"}}}})
 	if anthropicOAuthCredentialsPresent(context.Background()) {
 		t.Fatal("api key pool entry counted as oauth")

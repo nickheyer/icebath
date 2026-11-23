@@ -38,10 +38,9 @@ func toolLifecyclePayload(ctx context.Context, callID, toolName, args any) *pyjs
 	if _, isObject := pyjson.AsObject(args); !isObject {
 		args = pyjson.NewObject()
 	}
-	limit := 80
 	plain := toolArgsMap(args)
 	payload := pyjson.ObjectOf("tool_id", toolText(callID, ""), "name", name,
-		"context", tools.BuildToolPreview(nil, name, plain, &limit),
+		"context", tuihost.ToolCtx(name, plain),
 		"tool_call_id", toolText(callID, ""), "tool_name", name, "args", boundedArgs(args))
 	var labels []any
 	for _, label := range tools.ToolLabelsForCall(ctx, nil, name, plain) {
@@ -57,8 +56,8 @@ func toolLifecyclePayload(ctx context.Context, callID, toolName, args any) *pyjs
 	return payload
 }
 
-// Tool complete event as every viewer reads it, the start contract plus the verdict and its reason, result and verbose text
-func toolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool, verbose bool) *pyjson.Object {
+// Tool complete event as every viewer reads it, the start contract plus the verdict and its reason, the result and the text it printed
+func toolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool) *pyjson.Object {
 	failed, refused, reason := tools.ToolOutcome(ctx, pyrepr.Str(toolName), result)
 	if isError != nil {
 		failed = *isError || refused
@@ -72,9 +71,7 @@ func toolCompletePayload(ctx context.Context, callID, toolName, args, result any
 		payload.Set("error", reason)
 	}
 	payload.Set("result", boundedResult(result, failed))
-	if verbose {
-		payload.Set("result_text", tuihost.ToolResultText(result))
-	}
+	payload.Set("result_text", tuihost.ToolResultText(result))
 	return payload
 }
 
@@ -120,12 +117,11 @@ func publishWorkerToolEvent(ctx context.Context, a *SessionAuthority, sessionID 
 	if kind == "tool.start" {
 		payload = toolLifecyclePayload(ctx, callID, name, args)
 	} else {
-		live, ok := a.live(sessionID)
-		if !ok {
+		if _, ok := a.live(sessionID); !ok {
 			return false, &pyKeyError{sessionID}
 		}
 		isError := flag.(bool)
-		payload = toolCompletePayload(ctx, callID, name, args, result, &isError, live.ToolProgressMode == "verbose")
+		payload = toolCompletePayload(ctx, callID, name, args, result, &isError)
 	}
 	if _, err := a.PublishExecution(sessionID, generation, kind.(string), payload); err != nil {
 		return false, err

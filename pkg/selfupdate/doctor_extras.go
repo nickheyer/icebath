@@ -7,14 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"reflect"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Adds the Optional Python Features section of the package manager before the profiles check
@@ -34,41 +33,23 @@ type extraDemand struct {
 	extra   string
 }
 
-// Lower cased text of a dotted config key, empty when any level is missing
-func configText(cfg map[string]any, path ...string) string {
-	var node any = cfg
-	for _, key := range path {
-		section, ok := node.(map[string]any)
-		if !ok {
-			return ""
-		}
-		node = section[key]
-	}
-	if node == nil {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(node)))
-}
-
 // Features the config switches on that run on an extra, the Relay plugins left to their own check
 func switchedOnExtras(ctx context.Context, h string) []extraDemand {
 	var out []extraDemand
-	cfg, err := config.LoadUserEffective(filepath.Join(h, "config.yaml"), config.EnvRefLookup)
-	if err == nil {
-		if configText(cfg, "stt", "provider") == "local" {
-			out = append(out, extraDemand{"Local Whisper speech to text (stt.provider local)", "stt-whisper"})
-		}
-		switch provider := configText(cfg, "tts", "provider"); provider {
-		case "neutts", "kittentts":
-			out = append(out, extraDemand{"text to speech (tts.provider " + provider + ")", provider})
-		}
-		if configText(cfg, "wake_word", "enabled") == "true" {
-			switch provider := configText(cfg, "wake_word", "provider"); provider {
-			case "openwakeword", "oww", "local":
-				out = append(out, extraDemand{"wake word (wake_word.provider " + provider + ")", "wake-openwakeword"})
-			case "porcupine":
-				out = append(out, extraDemand{"wake word (wake_word.provider porcupine)", "wake-porcupine"})
-			}
+	sctx := home.WithOverride(ctx, h)
+	if settings.RecognitionService.Get(sctx) == "local" {
+		out = append(out, extraDemand{"Local Whisper speech to text (stt.provider local)", "stt-whisper"})
+	}
+	switch provider := settings.SpeechVoice.Get(sctx); provider {
+	case "neutts", "kittentts":
+		out = append(out, extraDemand{"text to speech (tts.provider " + provider + ")", provider})
+	}
+	if settings.WakeWord.Get(sctx) {
+		switch provider := strings.ToLower(strings.TrimSpace(settings.WakeWordProvider.Get(sctx))); provider {
+		case "openwakeword", "oww", "local":
+			out = append(out, extraDemand{"wake word (wake_word.provider " + provider + ")", "wake-openwakeword"})
+		case "porcupine":
+			out = append(out, extraDemand{"wake word (wake_word.provider porcupine)", "wake-porcupine"})
 		}
 	}
 	if gw, err := gateway.LoadGatewayConfig(ctx); err == nil {

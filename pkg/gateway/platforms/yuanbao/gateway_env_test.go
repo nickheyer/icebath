@@ -29,10 +29,9 @@ func TestYuanbaoEnvAppKeyAlternative(t *testing.T) {
 		t.Fatal("enabled without the secret")
 	}
 	t.Setenv("YUANBAO_APP_SECRET", "sec")
-	t.Setenv("YUANBAO_DM_POLICY", " Open ")
 	applyEnv(t, cfg)
 	pc := cfg.Platforms[gateway.PlatformYuanbao]
-	if !pc.Enabled || pc.Extra["app_id"] != "key" || pc.Extra["app_secret"] != "sec" || pc.Extra["dm_policy"] != "open" || pc.Extra["bot_id"] != nil {
+	if !pc.Enabled || pc.Extra["app_id"] != "key" || pc.Extra["app_secret"] != "sec" || pc.Extra["bot_id"] != nil {
 		t.Fatalf("yuanbao config %+v", pc.Extra)
 	}
 }

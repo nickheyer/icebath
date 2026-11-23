@@ -21,8 +21,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // In turn secret read with no env fallback, empty on a miss
@@ -39,23 +41,11 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	pconfig, _ := kwargs["pconfig"].(*gateway.PlatformConfig)
 	chatID := strOf(kwargs["chat_id"])
 	message := strOf(kwargs["message"])
-	var extra map[string]any
 	var token string
 	if pconfig != nil {
-		extra = pconfig.Extra
 		token = tokenOf(pconfig.Token)
 	}
-	homeserver := ""
-	if v := extra["homeserver"]; pyTruthy(v) {
-		homeserver = strOf(v)
-	} else {
-		secret, err := standaloneSecret(ctx, "MATRIX_HOMESERVER")
-		if err != nil {
-			return gateway.SendError("Matrix send failed: " + pyrepr.Str(err)), nil
-		}
-		homeserver = secret
-	}
-	homeserver = strings.TrimRight(homeserver, "/")
+	homeserver := strings.TrimRight(pystr.Strip(settings.MatrixHomeserver.Get(gateway.SettingsContext(ctx))), "/")
 	if token == "" {
 		secret, err := standaloneSecret(ctx, "MATRIX_ACCESS_TOKEN")
 		if err != nil {
@@ -64,7 +54,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		token = secret
 	}
 	if homeserver == "" || token == "" {
-		return gateway.SendError("Matrix not configured (MATRIX_HOMESERVER, MATRIX_ACCESS_TOKEN required)"), nil
+		return gateway.SendError("Matrix not configured: set the homeserver in /settings and MATRIX_ACCESS_TOKEN"), nil
 	}
 	client := &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: nil}}
 	defer client.CloseIdleConnections()

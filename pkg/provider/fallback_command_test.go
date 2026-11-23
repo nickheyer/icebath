@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -175,7 +174,7 @@ func TestAddCommandAddPreservesPrimaryWhenPickerChangesIt(t *testing.T) {
 func TestAddCommandRestorePreservesAbsentActiveProvider(t *testing.T) {
 	h, _ := fallbackTestHome(t)
 	store := NewStore(h)
-	if err := store.Save(AuthData{"version": 1, "providers": map[string]any{}}); err != nil {
+	if err := store.Save(AuthData{"version": 2, "providers": map[string]any{}}); err != nil {
 		t.Fatal(err)
 	}
 	before, present, err := SnapshotAuthActiveProvider(store)
@@ -443,7 +442,7 @@ func TestFallbackCommandWritesTheRecordedConfigBytes(t *testing.T) {
 		writePickerConfig(t, h, "model:\n  default: claude-sonnet-4-6\n  provider: anthropic\n")
 		fallbackPickerDouble(t, fallbackPickerWriting(t, h, picked, nil))
 		runFallback(t, ctx, h, "add")
-		want := "model:\n  default: claude-sonnet-4-6\n  provider: anthropic\n_config_version: " + strconv.Itoa(config.Version) + "\nfallback_providers:\n  - provider: openrouter\n    model: anthropic/claude-sonnet-4.6\n    base_url: https://openrouter.ai/api/v1\n    api_mode: chat_completions\n"
+		want := "model:\n  default: claude-sonnet-4-6\n  provider: anthropic\nfallback_providers:\n  - provider: openrouter\n    model: anthropic/claude-sonnet-4.6\n    base_url: https://openrouter.ai/api/v1\n    api_mode: chat_completions\n"
 		if got := configBytes(t, h); got != want {
 			t.Fatalf("config %q", got)
 		}
@@ -453,7 +452,7 @@ func TestFallbackCommandWritesTheRecordedConfigBytes(t *testing.T) {
 		writePickerConfig(t, h, "fallback_providers:\n- model: gpt-5.4\n  provider: openrouter\n- model: deepseek-v4\n  provider: deepseek\n- model: claude-sonnet-4-6\n  provider: anthropic\n")
 		swapFlowSeam(t, &fallbackChooseFn, func(string, []string, int, string) (int, error) { return 1, nil })
 		runFallback(t, ctx, h, "rm")
-		want := "fallback_providers:\n  - model: gpt-5.4\n    provider: openrouter\n  - model: claude-sonnet-4-6\n    provider: anthropic\n_config_version: " + strconv.Itoa(config.Version) + "\n"
+		want := "fallback_providers:\n  - model: gpt-5.4\n    provider: openrouter\n  - model: claude-sonnet-4-6\n    provider: anthropic\n"
 		if got := configBytes(t, h); got != want {
 			t.Fatalf("config %q", got)
 		}
@@ -463,7 +462,7 @@ func TestFallbackCommandWritesTheRecordedConfigBytes(t *testing.T) {
 		writePickerConfig(t, h, "fallback_providers:\n- model: gpt-5.4\n  provider: openrouter\n- model: deepseek-v4\n  provider: deepseek\n")
 		swapFlowSeam(t, &fallbackConfirmFn, func(io.Writer, string) (string, error) { return "y", nil })
 		runFallback(t, ctx, h, "clear")
-		if got := configBytes(t, h); got != "fallback_providers: []\n_config_version: "+strconv.Itoa(config.Version)+"\n" {
+		if got := configBytes(t, h); got != "fallback_providers: []\n" {
 			t.Fatalf("config %q", got)
 		}
 	})

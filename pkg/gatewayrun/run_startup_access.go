@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Builtin platforms whose allowed users and allow all env vars count as an allowlist or open access opt in
@@ -93,12 +93,12 @@ func ownPolicyOpenStartupViolation(ctx context.Context, cfg *gateway.GatewayConf
 			if env == "" {
 				return "pairing"
 			}
-			return pystr.Lower(pystr.Strip(gateway.Getenv(ctx, env, "pairing")))
+			return pystr.Lower(pystr.Strip(gateway.PlatformGateEnv(ctx, env, "pairing")))
 		}
 		if policy("dm_policy", dmEnv) != "open" && policy("group_policy", groupEnv) != "open" {
 			continue
 		}
-		if envOptIn(gateway.Getenv(ctx, "GATEWAY_ALLOW_ALL_USERS", "")) || (allowAllEnv != "" && envOptIn(gateway.Getenv(ctx, allowAllEnv, ""))) {
+		if settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx)) || (allowAllEnv != "" && envOptIn(gateway.PlatformGateEnv(ctx, allowAllEnv, ""))) {
 			continue
 		}
 		return string(platform) + ": open policy without allow-all opt-in"
@@ -109,7 +109,7 @@ func ownPolicyOpenStartupViolation(ctx context.Context, cfg *gateway.GatewayConf
 // Warns about missing allowlists and returns true when an open policy without opt in refuses startup
 func (r *GatewayRunner) startCheckAccessPolicy(ctx context.Context) bool {
 	allowedVars := builtinAllowedUsersVars()
-	allowAllVars := append([]string{"GATEWAY_ALLOW_ALL_USERS"}, builtinAllowAllVars()...)
+	allowAllVars := builtinAllowAllVars()
 	func() {
 		defer func() { _ = recover() }()
 		entries := gateway.Registry.LoadedEntries(ctx)
@@ -135,13 +135,13 @@ func (r *GatewayRunner) startCheckAccessPolicy(ctx context.Context) bool {
 	for _, platform := range enabledPlatforms(r.config) {
 		hasMessaging = hasMessaging || !nonMessaging[platform]
 	}
-	anyAllowed := slices.ContainsFunc(allowedVars, func(v string) bool { return os.Getenv(v) != "" })
-	anyAllowAll := slices.ContainsFunc(allowAllVars, func(v string) bool { return envOptIn(os.Getenv(v)) })
+	anyAllowed := slices.ContainsFunc(allowedVars, func(v string) bool { return gateway.PlatformGateEnv(ctx, v, "") != "" })
+	anyAllowAll := settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx)) ||
+		slices.ContainsFunc(allowAllVars, func(v string) bool { return envOptIn(gateway.PlatformGateEnv(ctx, v, "")) })
 	if hasMessaging && !anyAllowed && !anyAllowAll {
-		pkgLog().Warn("No env user allowlists configured. Messaging platforms default to pairing/allowlist " +
-			"policies and will deny unknown senders unless you configure platform allowlists (e.g., " +
-			"TELEGRAM_ALLOWED_USERS=your_id) or explicitly opt in with GATEWAY_ALLOW_ALL_USERS=true " +
-			"plus dm_policy/group_policy: open on the platform.")
+		pkgLog().Warn("No allowed users are set for any chat app. Chat apps fall back to pairing and deny unknown " +
+			"senders until you list allowed users for each chat app or turn on Allow all users in /settings, Chat apps, " +
+			"together with an open policy on that chat app.")
 	}
 	reason := ownPolicyOpenStartupViolation(ctx, r.config)
 	if reason == "" {
@@ -156,7 +156,7 @@ func (r *GatewayRunner) startCheckAccessPolicy(ctx context.Context) bool {
 		allowAllEnv = "a platform allow-all flag"
 	}
 	pkgLog().Error(fmt.Sprintf("Refusing to start: %s has dm_policy/group_policy set to 'open' "+
-		"but neither GATEWAY_ALLOW_ALL_USERS nor %s is enabled.", platformValue, allowAllEnv))
+		"but neither Allow all users nor %s is on.", platformValue, allowAllEnv))
 	writeRuntimeStatusQuiet(ctx, gateway.RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "startup_failed", "exit_reason": reason}})
 	r.requestCleanExit(reason)
 	return true

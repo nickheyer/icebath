@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"maps"
 	"math/big"
 	"slices"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Role allowlist and guild a recovered grant is checked against
@@ -27,29 +29,14 @@ func (p rolePolicy) equal(o rolePolicy) bool {
 	return p.guildID == nil || p.guildID.Cmp(o.guildID) == 0
 }
 
-// Current transport scoped role policy resolved like ingress from the config the loader builds now
+// Current role policy of the profile the request serves, read like ingress reads it
 func (a *DiscordAdapter) nativeRolePolicy(ctx context.Context, source *gateway.SessionSource) (rolePolicy, error) {
-	gcfg, err := gateway.LoadGatewayConfig(ctx)
+	roles, err := canonicalRoleIDs(a.settingSet(gateway.SettingsContext(ctx), settings.DiscordAllowedRoles))
 	if err != nil {
 		return rolePolicy{}, err
 	}
-	current := gcfg.Platforms[gateway.PlatformDiscord]
-	if current == nil {
-		current = gateway.NewPlatformConfig()
-	}
-	seen := map[string]bool{}
 	var p rolePolicy
-	for item := range gateCSVSet(a.gateRaw(ctx, "allowed_roles", "DISCORD_ALLOWED_ROLES", current)) {
-		item = pystr.Strip(item)
-		if !isDigitString(item) {
-			continue
-		}
-		if n, ok := pyint.Parse(item); ok && !seen[n.String()] {
-			seen[n.String()] = true
-			p.roles = append(p.roles, n.String())
-		}
-	}
-	slices.Sort(p.roles)
+	p.roles = slices.Sorted(maps.Keys(roles))
 	if source.ChatType == "dm" {
 		p.guildID, err = ReadDMRoleAuthGuild(ctx)
 		return p, err

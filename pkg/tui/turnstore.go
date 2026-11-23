@@ -85,54 +85,98 @@ type notice struct {
 	TTLms *float64
 }
 
-// Session level UI state the turn core reads and writes
-type uiState struct {
+// Display preferences and connection state of the window, one copy every session card reads and writes
+type sharedUI struct {
 	Battery                    bool
 	BatteryStatus              *batteryInfo
-	BgTasks                    map[string]bool
-	Busy                       bool
-	BusyInputMode              string
 	Compact                    bool
-	Compacting                 bool
 	DestructiveSlashConfirm    bool
 	DetailsMode                string
 	DetailsModeCommandOverride bool
-	FocusView                  bool
-	GatewayConnected           *bool
-	IndicatorStyle             string
-	MouseTracking              string
-	PasteCollapseLines         int
-	PasteCollapseChars         int
-	Sections                   map[string]string
-	SessionTitle               string
-	StatusBar                  string
-	StatusBarFields            map[string]bool
-	Timestamps                 bool
-	Info                       *tuigateway.SessionInfo
-	InlineDiffs                bool
-	InlineImages               bool
-	Notice                     *notice
-	ShowReasoning              bool
-	Sid                        string
-	Status                     string
-	StoredSid                  string
-	Streaming                  bool
-	Theme                      theme
-	Usage                      *tuigateway.Usage
-	Arena                      any
-	PetRenderMode              tuigateway.PetRenderMode
+	// Details mode and section modes the config last named, a command's override standing until the config names others
+	configuredDetailsMode string
+	configuredSections    map[string]string
+	FocusView             bool
+	// Whether the background service is reachable, nil until the first session attached
+	GatewayConnected   *bool
+	IndicatorStyle     string
+	MouseTracking      string
+	PasteCollapseLines int
+	PasteCollapseChars int
+	Sections           map[string]string
+	StatusBar          string
+	StatusBarFields    map[string]bool
+	Timestamps         bool
+	InlineDiffs        bool
+	InlineImages       bool
+	ShowReasoning      bool
+	Streaming          bool
+	Theme              theme
+	Arena              any
+	PetRenderMode      tuigateway.PetRenderMode
 	// Whether a turn closes with the line of what it did, and whether the status line counts the tokens it produced so far
 	TurnSummary      bool
 	SpinnerTokenFlow bool
+	// Config revision the display preferences were last read at, so several session cards read a changed config once
+	configMtime float64
+	// Told when the theme or the reachability of the background service changed, unset in a store without a window
+	themeChanged      func()
+	connectionChanged func(connected bool)
 }
 
-// UI state of a fresh session
-func newUIState() uiState {
-	return uiState{
-		BgTasks: map[string]bool{}, BusyInputMode: defaultBusyMode, DestructiveSlashConfirm: true, DetailsMode: "collapsed", IndicatorStyle: defaultIndicator,
-		InlineDiffs: true, InlineImages: true, MouseTracking: bootMouseTracking(), PasteCollapseLines: defaultPasteLines, PasteCollapseChars: defaultPasteChars, Sections: map[string]string{},
-		Status: tr(txt.StatusSummoning), StatusBar: "top", Streaming: true, Theme: startupTheme(), Usage: zeroUsage(), TurnSummary: true, SpinnerTokenFlow: true,
+// Display preferences before any config was read
+func newSharedUI() *sharedUI {
+	return &sharedUI{
+		DestructiveSlashConfirm: true, DetailsMode: "collapsed", IndicatorStyle: defaultIndicator, InlineDiffs: true, InlineImages: true,
+		MouseTracking: bootMouseTracking(), PasteCollapseLines: defaultPasteLines, PasteCollapseChars: defaultPasteChars, Sections: map[string]string{},
+		StatusBar: "top", Streaming: true, Theme: startupTheme(), TurnSummary: true, SpinnerTokenFlow: true,
 	}
+}
+
+// Whether the background service is known to be out of reach
+func (u *sharedUI) offline() bool { return u.GatewayConnected != nil && !*u.GatewayConnected }
+
+// Marks the background service reachable or not, telling the window when that changed
+func (u *sharedUI) setConnected(connected bool) {
+	was := u.GatewayConnected
+	u.GatewayConnected = &connected
+	if (was == nil || *was != connected) && u.connectionChanged != nil {
+		u.connectionChanged(connected)
+	}
+}
+
+// Makes a theme current, telling the window when it paints differently
+func (u *sharedUI) setTheme(t theme) {
+	changed := !themesEqual(u.Theme, t)
+	u.Theme = t
+	if changed && u.themeChanged != nil {
+		u.themeChanged()
+	}
+}
+
+// UI state of one session over the display preferences every session shares
+type uiState struct {
+	*sharedUI
+	BgTasks       map[string]bool
+	Busy          bool
+	BusyInputMode string
+	// Whether approvals are off for the session
+	Yolo bool
+	// Whether no model is set up, a typed prompt opening setup instead of waiting in the queue
+	SetupRequired bool
+	Compacting    bool
+	SessionTitle  string
+	Info          *tuigateway.SessionInfo
+	Notice        *notice
+	Sid           string
+	Status        string
+	StoredSid     string
+	Usage         *tuigateway.Usage
+}
+
+// UI state of a fresh session with display preferences of its own, a window pointing every session at one copy
+func newUIState() uiState {
+	return uiState{sharedUI: newSharedUI(), BgTasks: map[string]bool{}, BusyInputMode: defaultBusyMode, Status: tr(txt.StatusSummoning), Usage: zeroUsage()}
 }
 
 // Live state of the turn in flight
@@ -143,7 +187,7 @@ type turnState struct {
 	ReasoningActive    bool
 	ReasoningStreaming bool
 	ReasoningTokens    int
-	StreamPendingTools []string
+	StreamPendingTools []toolRow
 	StreamSegments     []msg
 	Streaming          string
 	Subagents          []subagentProgress
@@ -168,6 +212,12 @@ type spawnSnapshot struct {
 
 // App state shared by the turn core, holding the ui, turn and spawn history stores
 type tuiStore struct {
+	// Canonical profile home, resolved on first use
+	home struct {
+		path string
+		err  error
+		done bool
+	}
 	ui           uiState
 	turn         turnState
 	spawnHistory []spawnSnapshot
@@ -176,10 +226,12 @@ type tuiStore struct {
 	// Follows a full repaint of the screen, drawing again the pictures the terminal held, unset in a store without a screen
 	screenCleared func() tea.Cmd
 
-	serverRequests         map[string]*serverRequest
-	delegation             delegationState
-	petFlash               *petFlash
-	goodVibesTick          int
+	serverRequests map[string]*serverRequest
+	delegation     delegationState
+	petFlash       *petFlash
+	// When the affection heart of the status row goes out and the tone it drew
+	heartUntil             time.Time
+	heartTone              int
 	transcriptGen          int
 	bubblesShown           map[string]bool
 	voicePartial           string
@@ -192,11 +244,49 @@ type tuiStore struct {
 	agentSnapshot          agentSnapshot
 	pendingVoiceTranscript *string
 	pendingMutations       map[string]pendingMutation
-	themes                 themeSync
-	lastAdmission          map[string]string
-	wakeUserDisabled       bool
+	// Theme negotiation with the terminal, one copy every session of a window shares
+	themes           *themeSync
+	lastAdmission    map[string]string
+	wakeUserDisabled bool
 	// Chip display and paste bodies of the newest submissions, oldest first, until the row of each is painted
 	sentPastes []stagedPastes
+	// Replay epoch and sequence of the last event of the session that was applied, where a reconnect asks the background service to resume
+	// from; an empty epoch when no event carried one yet
+	replayEpoch string
+	lastSeq     int64
+	// Told when a turn of the session starts or ends, unset in a store without a session card
+	busyChanged func(busy bool)
+	// Whether the one second countdown of a loop runs
+	loopTickerOn bool
+}
+
+// Notes the place of an applied event in the session's event stream
+func (s *tuiStore) sawFrame(ev gatewayEventMsg) {
+	seq, epoch := ev.Frame.Seq, ev.Frame.ReplayEpoch
+	if seq == nil || epoch == nil || ev.SessionID == "" || ev.SessionID != s.ui.Sid {
+		return
+	}
+	if *epoch != s.replayEpoch {
+		s.replayEpoch, s.lastSeq = *epoch, *seq
+		return
+	}
+	s.lastSeq = max(s.lastSeq, *seq)
+}
+
+// Where the session's event stream was read up to, false while nothing says
+func (s *tuiStore) replayCursor() (tuigateway.ReplayCursor, bool) {
+	return tuigateway.ReplayCursor{Epoch: s.replayEpoch, Sequence: s.lastSeq}, s.replayEpoch != ""
+}
+
+// Marks a turn of the session running or over, telling the session card when that changed
+func (s *tuiStore) setBusy(busy bool) {
+	if s.ui.Busy == busy {
+		return
+	}
+	s.ui.Busy = busy
+	if s.busyChanged != nil {
+		s.busyChanged(busy)
+	}
 }
 
 // Marks the next submit of this transcript as a voice turn
@@ -211,7 +301,7 @@ func (s *tuiStore) takeVoiceTranscript() *string {
 
 // Store of a fresh session on wall time
 func newTUIStore() *tuiStore {
-	return &tuiStore{ui: newUIState(), now: time.Now, themes: themeSync{configPinned: loadBootTheme().seededPin}}
+	return &tuiStore{ui: newUIState(), now: time.Now, themes: &themeSync{configPinned: loadBootTheme().seededPin}}
 }
 
 // Moves the turn's task list into a transcript trail row, collapsed when every item finished
@@ -403,21 +493,33 @@ func canonicalHome(path string) (string, error) {
 	return filepath.Join(resolved, filepath.Base(path)), nil
 }
 
-// Destination of a submission typed now, the session, profile and owner home in view
-func (s *tuiStore) captureDestination() (submissionDestination, error) {
+// Canonical profile home, resolved once since render paths ask for it
+func (s *tuiStore) profileHome() (string, error) {
+	if s.home.done {
+		return s.home.path, s.home.err
+	}
+	s.home.done = true
 	root := os.Getenv("ICEBATH_HOME")
 	if _, set := os.LookupEnv("ICEBATH_HOME"); !set {
 		userHome, err := os.UserHomeDir()
 		if err != nil {
-			return submissionDestination{}, err
+			s.home.err = err
+			return "", err
 		}
 		root = filepath.Join(userHome, ".icebath")
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
-		return submissionDestination{}, err
+		s.home.err = err
+		return "", err
 	}
-	profileHome, err := canonicalHome(abs)
+	s.home.path, s.home.err = canonicalHome(abs)
+	return s.home.path, s.home.err
+}
+
+// Destination of a submission typed now, the session, profile and owner home in view
+func (s *tuiStore) captureDestination() (submissionDestination, error) {
+	profileHome, err := s.profileHome()
 	if err != nil {
 		return submissionDestination{}, err
 	}

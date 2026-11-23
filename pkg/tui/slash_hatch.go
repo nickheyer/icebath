@@ -51,7 +51,7 @@ type hatchJob struct {
 
 // Slash command that hatches a new pet from a description on the pet verbs, cancel stopping a run
 func (a *app) hatchCommands() []slashCommand {
-	return []slashCommand{{name: "hatch", aliases: []string{"generate-pet"}, help: tr(txt.SlashCmdSessionHatchHelp), helpFn: helpOf(txt.SlashCmdSessionHatchHelp), usage: "[description|cancel]",
+	return []slashCommand{{name: "hatch", help: tr(txt.SlashCmdSessionHatchHelp), helpFn: helpOf(txt.SlashCmdSessionHatchHelp), usage: "[description|cancel]",
 		suggest: func(string) []string { return []string{"cancel"} },
 		run: func(r *slashRun) tea.Cmd {
 			concept := trimJS(r.arg)

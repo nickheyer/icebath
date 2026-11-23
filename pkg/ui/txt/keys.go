@@ -3,6 +3,23 @@
 package txt
 
 var (
+	AfterExitColWhy                                        = Key{"afterExit.colWhy"}
+	AfterExitEmpty                                         = Key{"afterExit.empty"}
+	AfterExitFromClosedWindow                              = Key{"afterExit.fromClosedWindow"}
+	AfterExitKeep                                          = Key{"afterExit.keep"}
+	AfterExitKeepDoes                                      = Key{"afterExit.keepDoes"}
+	AfterExitKept                                          = Key{"afterExit.kept"}
+	AfterExitOrphanDetail                                  = Key{"afterExit.orphanDetail"}
+	AfterExitQueueFailed                                   = Key{"afterExit.queueFailed"}
+	AfterExitQueued                                        = Key{"afterExit.queued"}
+	AfterExitQuitNow                                       = Key{"afterExit.quitNow"}
+	AfterExitQuitNowDoes                                   = Key{"afterExit.quitNowDoes"}
+	AfterExitRemove                                        = Key{"afterExit.remove"}
+	AfterExitRemoveConfirm                                 = Key{"afterExit.removeConfirm"}
+	AfterExitRemoveDoes                                    = Key{"afterExit.removeDoes"}
+	AfterExitRemoved                                       = Key{"afterExit.removed"}
+	AfterExitStatus                                        = Key{"afterExit.status"}
+	AfterExitUnread                                        = Key{"afterExit.unread"}
 	CanonicalControlsCompressed                            = Key{"canonical.controls.compressed"}
 	CanonicalControlsCompressedStale                       = Key{"canonical.controls.compressedStale"}
 	CanonicalControlsIdentityUnavailable                   = Key{"canonical.controls.identityUnavailable"}
@@ -98,6 +115,8 @@ var (
 	ComposerClipboardNoDesktop                             = Key{"composer.clipboardNoDesktop"}
 	ComposerDetailsMode                                    = Key{"composer.detailsMode"}
 	ComposerEnterMode                                      = Key{"composer.enterMode"}
+	ComposerHistorySearch                                  = Key{"composer.historySearch"}
+	ComposerHistorySearchNone                              = Key{"composer.historySearchNone"}
 	ComposerImagesAttachedOne                              = Key{"composer.imagesAttachedOne"}
 	ComposerImagesAttachedOther                            = Key{"composer.imagesAttachedOther"}
 	ComposerNoClipboardImage                               = Key{"composer.noClipboardImage"}
@@ -105,10 +124,8 @@ var (
 	ComposerNoImageAt                                      = Key{"composer.noImageAt"}
 	ComposerPasteCollapseHint                              = Key{"composer.pasteCollapseHint"}
 	ComposerPasteExpandHint                                = Key{"composer.pasteExpandHint"}
-	ComposerPlaceholdersAsk                                = Key{"composer.placeholders.ask"}
 	ComposerPlaceholdersConfig                             = Key{"composer.placeholders.config"}
 	ComposerPlaceholdersExplain                            = Key{"composer.placeholders.explain"}
-	ComposerPlaceholdersHelp                               = Key{"composer.placeholders.help"}
 	ComposerPlaceholdersLint                               = Key{"composer.placeholders.lint"}
 	ComposerPlaceholdersRefactor                           = Key{"composer.placeholders.refactor"}
 	ComposerPlaceholdersTest                               = Key{"composer.placeholders.test"}
@@ -170,7 +187,6 @@ var (
 	ContentSetupActions                                    = Key{"content.setup.actions"}
 	ContentSetupExitRow                                    = Key{"content.setup.exitRow"}
 	ContentSetupIntro                                      = Key{"content.setup.intro"}
-	ContentSetupModelRow                                   = Key{"content.setup.modelRow"}
 	ContentSetupSetupRow                                   = Key{"content.setup.setupRow"}
 	ContentSetupTitle                                      = Key{"content.setup.title"}
 	ContentVerbsBrowser                                    = Key{"content.verbs.browser"}
@@ -212,6 +228,7 @@ var (
 	ControlsLoopRunsOf                                     = Key{"controls.loop.runsOf"}
 	ControlsLoopRunsOne                                    = Key{"controls.loop.runsOne"}
 	ControlsLoopRunsOther                                  = Key{"controls.loop.runsOther"}
+	ExitSummaryAlsoOpen                                    = Key{"exitSummary.alsoOpen"}
 	ExitSummaryDuration                                    = Key{"exitSummary.duration"}
 	ExitSummaryId                                          = Key{"exitSummary.id"}
 	ExitSummaryNoSession                                   = Key{"exitSummary.noSession"}
@@ -228,8 +245,14 @@ var (
 	GatewayMsgGoalPaused                                   = Key{"gatewayMsg.goal.paused"}
 	GatewayMsgMoaAggregating                               = Key{"gatewayMsg.moa.aggregating"}
 	GatewayMsgMoaRefs                                      = Key{"gatewayMsg.moa.refs"}
+	GatewayMsgOtherBuildDetail                             = Key{"gatewayMsg.otherBuild.detail"}
+	GatewayMsgOtherBuildKeep                               = Key{"gatewayMsg.otherBuild.keep"}
 	GatewayMsgOtherBuildLine                               = Key{"gatewayMsg.otherBuild.line"}
 	GatewayMsgOtherBuildMisfit                             = Key{"gatewayMsg.otherBuild.misfit"}
+	GatewayMsgOtherBuildRestart                            = Key{"gatewayMsg.otherBuild.restart"}
+	GatewayMsgOtherBuildRestartFailed                      = Key{"gatewayMsg.otherBuild.restartFailed"}
+	GatewayMsgOtherBuildRestarting                         = Key{"gatewayMsg.otherBuild.restarting"}
+	GatewayMsgOtherBuildTitle                              = Key{"gatewayMsg.otherBuild.title"}
 	GatewayMsgProtocolNoise                                = Key{"gatewayMsg.protocol.noise"}
 	GatewayMsgProtocolNoiseDetected                        = Key{"gatewayMsg.protocol.noiseDetected"}
 	GatewayMsgStatusForgingSession                         = Key{"gatewayMsg.status.forgingSession"}
@@ -243,6 +266,7 @@ var (
 	GatewayMsgVoiceStopPhrase                              = Key{"gatewayMsg.voice.stopPhrase"}
 	GatewayMsgWakeFailed                                   = Key{"gatewayMsg.wake.failed"}
 	GatewayMsgWakeOtherProfile                             = Key{"gatewayMsg.wake.otherProfile"}
+	HelpColKeyOrCommand                                    = Key{"help.colKeyOrCommand"}
 	HelpCommandsClear                                      = Key{"help.commands.clear"}
 	HelpCommandsCopy                                       = Key{"help.commands.copy"}
 	HelpCommandsDetails                                    = Key{"help.commands.details"}
@@ -253,26 +277,45 @@ var (
 	HelpHotkeys                                            = Key{"help.hotkeys"}
 	HelpQuickHelp                                          = Key{"help.quickHelp"}
 	HelpQuickHelpTail                                      = Key{"help.quickHelpTail"}
+	HelpTitle                                              = Key{"help.title"}
 	HintsApplyCompletion                                   = Key{"hints.applyCompletion"}
 	HintsArrows                                            = Key{"hints.arrows"}
 	HintsContinuation                                      = Key{"hints.continuation"}
 	HintsCopySelection                                     = Key{"hints.copySelection"}
 	HintsCtrlC                                             = Key{"hints.ctrlC"}
-	HintsDiscardDraft                                      = Key{"hints.discardDraft"}
+	HintsEscapeLayers                                      = Key{"hints.escapeLayers"}
 	HintsInterpolate                                       = Key{"hints.interpolate"}
 	HintsJumpWord                                          = Key{"hints.jumpWord"}
+	HintsLabelAdd                                          = Key{"hints.label.add"}
 	HintsLabelAnswer                                       = Key{"hints.label.answer"}
 	HintsLabelBack                                         = Key{"hints.label.back"}
 	HintsLabelCancel                                       = Key{"hints.label.cancel"}
+	HintsLabelChange                                       = Key{"hints.label.change"}
 	HintsLabelChoose                                       = Key{"hints.label.choose"}
 	HintsLabelClose                                        = Key{"hints.label.close"}
+	HintsLabelDelete                                       = Key{"hints.label.delete"}
 	HintsLabelDenyAndSend                                  = Key{"hints.label.denyAndSend"}
 	HintsLabelEditQueued                                   = Key{"hints.label.editQueued"}
+	HintsLabelInsert                                       = Key{"hints.label.insert"}
+	HintsLabelInstall                                      = Key{"hints.label.install"}
 	HintsLabelMove                                         = Key{"hints.label.move"}
+	HintsLabelNew                                          = Key{"hints.label.new"}
+	HintsLabelOpen                                         = Key{"hints.label.open"}
 	HintsLabelQuestion                                     = Key{"hints.label.question"}
+	HintsLabelReset                                        = Key{"hints.label.reset"}
 	HintsLabelResume                                       = Key{"hints.label.resume"}
+	HintsLabelRotation                                     = Key{"hints.label.rotation"}
+	HintsLabelSignInAgain                                  = Key{"hints.label.signInAgain"}
 	HintsLabelStart                                        = Key{"hints.label.start"}
 	HintsLabelSwitch                                       = Key{"hints.label.switch"}
+	HintsLabelUninstall                                    = Key{"hints.label.uninstall"}
+	HintsLabelUse                                          = Key{"hints.label.use"}
+	HintsLegendBusy                                        = Key{"hints.legend.busy"}
+	HintsLegendHistory                                     = Key{"hints.legend.history"}
+	HintsLegendIdle                                        = Key{"hints.legend.idle"}
+	HintsLegendPopup                                       = Key{"hints.legend.popup"}
+	HintsLegendQueued                                      = Key{"hints.legend.queued"}
+	HintsLegendSearch                                      = Key{"hints.legend.search"}
 	HintsLineStartEnd                                      = Key{"hints.lineStartEnd"}
 	HintsPaste                                             = Key{"hints.paste"}
 	HintsPasteExpand                                       = Key{"hints.pasteExpand"}
@@ -386,41 +429,964 @@ var (
 	HubsAgentsPanelProcs                                   = Key{"hubs.agentsPanel.procs"}
 	HubsAgentsPanelProcsDone                               = Key{"hubs.agentsPanel.procsDone"}
 	HubsAgentsPanelRunning                                 = Key{"hubs.agentsPanel.running"}
+	HubsBundlesDescriptionLabel                            = Key{"hubs.bundles.descriptionLabel"}
+	HubsBundlesEmpty                                       = Key{"hubs.bundles.empty"}
+	HubsBundlesFormTitle                                   = Key{"hubs.bundles.formTitle"}
+	HubsBundlesInstructionHelp                             = Key{"hubs.bundles.instructionHelp"}
+	HubsBundlesInstructionLabel                            = Key{"hubs.bundles.instructionLabel"}
+	HubsBundlesNameHelp                                    = Key{"hubs.bundles.nameHelp"}
+	HubsBundlesReloaded                                    = Key{"hubs.bundles.reloaded"}
+	HubsBundlesRemoveConfirm                               = Key{"hubs.bundles.removeConfirm"}
+	HubsBundlesRemoved                                     = Key{"hubs.bundles.removed"}
+	HubsBundlesSaved                                       = Key{"hubs.bundles.saved"}
+	HubsBundlesSkillsLabel                                 = Key{"hubs.bundles.skillsLabel"}
+	HubsChatappsAddPeer                                    = Key{"hubs.chatapps.addPeer"}
+	HubsChatappsAddPeerDoes                                = Key{"hubs.chatapps.addPeerDoes"}
+	HubsChatappsAddTitle                                   = Key{"hubs.chatapps.addTitle"}
+	HubsChatappsAddWebhook                                 = Key{"hubs.chatapps.addWebhook"}
+	HubsChatappsAddWebhookDoes                             = Key{"hubs.chatapps.addWebhookDoes"}
+	HubsChatappsAllowed                                    = Key{"hubs.chatapps.allowed"}
+	HubsChatappsApproveCode                                = Key{"hubs.chatapps.approveCode"}
+	HubsChatappsApproveCodeDoes                            = Key{"hubs.chatapps.approveCodeDoes"}
+	HubsChatappsApproveCodeIntro                           = Key{"hubs.chatapps.approveCodeIntro"}
+	HubsChatappsApproveConfirm                             = Key{"hubs.chatapps.approveConfirm"}
+	HubsChatappsApproveHint                                = Key{"hubs.chatapps.approveHint"}
+	HubsChatappsApproveLabel                               = Key{"hubs.chatapps.approveLabel"}
+	HubsChatappsChats                                      = Key{"hubs.chatapps.chats"}
+	HubsChatappsClearConfirm                               = Key{"hubs.chatapps.clearConfirm"}
+	HubsChatappsColDetail                                  = Key{"hubs.chatapps.colDetail"}
+	HubsChatappsColName                                    = Key{"hubs.chatapps.colName"}
+	HubsChatappsCopyUrl                                    = Key{"hubs.chatapps.copyUrl"}
+	HubsChatappsCopyUrlDoes                                = Key{"hubs.chatapps.copyUrlDoes"}
+	HubsChatappsDeliverLog                                 = Key{"hubs.chatapps.deliverLog"}
+	HubsChatappsDeliverLogMeaning                          = Key{"hubs.chatapps.deliverLogMeaning"}
+	HubsChatappsDeliversTo                                 = Key{"hubs.chatapps.deliversTo"}
+	HubsChatappsDirect                                     = Key{"hubs.chatapps.direct"}
+	HubsChatappsDismissLabel                               = Key{"hubs.chatapps.dismissLabel"}
+	HubsChatappsEdit                                       = Key{"hubs.chatapps.edit"}
+	HubsChatappsEmpty                                      = Key{"hubs.chatapps.empty"}
+	HubsChatappsEveryEvent                                 = Key{"hubs.chatapps.everyEvent"}
+	HubsChatappsFieldAddress                               = Key{"hubs.chatapps.fieldAddress"}
+	HubsChatappsFieldAgent                                 = Key{"hubs.chatapps.fieldAgent"}
+	HubsChatappsFieldChat                                  = Key{"hubs.chatapps.fieldChat"}
+	HubsChatappsFieldCode                                  = Key{"hubs.chatapps.fieldCode"}
+	HubsChatappsFieldDeliver                               = Key{"hubs.chatapps.fieldDeliver"}
+	HubsChatappsFieldDeliverOnly                           = Key{"hubs.chatapps.fieldDeliverOnly"}
+	HubsChatappsFieldDescription                           = Key{"hubs.chatapps.fieldDescription"}
+	HubsChatappsFieldEvents                                = Key{"hubs.chatapps.fieldEvents"}
+	HubsChatappsFieldKey                                   = Key{"hubs.chatapps.fieldKey"}
+	HubsChatappsFieldMessage                               = Key{"hubs.chatapps.fieldMessage"}
+	HubsChatappsFieldName                                  = Key{"hubs.chatapps.fieldName"}
+	HubsChatappsFieldNote                                  = Key{"hubs.chatapps.fieldNote"}
+	HubsChatappsFieldOther                                 = Key{"hubs.chatapps.fieldOther"}
+	HubsChatappsFieldPlatform                              = Key{"hubs.chatapps.fieldPlatform"}
+	HubsChatappsFieldPrompt                                = Key{"hubs.chatapps.fieldPrompt"}
+	HubsChatappsFieldSkills                                = Key{"hubs.chatapps.fieldSkills"}
+	HubsChatappsFieldSubject                               = Key{"hubs.chatapps.fieldSubject"}
+	HubsChatappsFieldTo                                    = Key{"hubs.chatapps.fieldTo"}
+	HubsChatappsHome                                       = Key{"hubs.chatapps.home"}
+	HubsChatappsHomeOf                                     = Key{"hubs.chatapps.homeOf"}
+	HubsChatappsKeySet                                     = Key{"hubs.chatapps.keySet"}
+	HubsChatappsKindAllowed                                = Key{"hubs.chatapps.kindAllowed"}
+	HubsChatappsKindApp                                    = Key{"hubs.chatapps.kindApp"}
+	HubsChatappsKindPairing                                = Key{"hubs.chatapps.kindPairing"}
+	HubsChatappsKindPeer                                   = Key{"hubs.chatapps.kindPeer"}
+	HubsChatappsKindWebhook                                = Key{"hubs.chatapps.kindWebhook"}
+	HubsChatappsLoading                                    = Key{"hubs.chatapps.loading"}
+	HubsChatappsLockedOut                                  = Key{"hubs.chatapps.lockedOut"}
+	HubsChatappsManifestWord                               = Key{"hubs.chatapps.manifestWord"}
+	HubsChatappsNoChats                                    = Key{"hubs.chatapps.noChats"}
+	HubsChatappsNoKey                                      = Key{"hubs.chatapps.noKey"}
+	HubsChatappsPeerAgentHelp                              = Key{"hubs.chatapps.peerAgentHelp"}
+	HubsChatappsPeerEditDoes                               = Key{"hubs.chatapps.peerEditDoes"}
+	HubsChatappsPeerIntro                                  = Key{"hubs.chatapps.peerIntro"}
+	HubsChatappsPeerKeyHelp                                = Key{"hubs.chatapps.peerKeyHelp"}
+	HubsChatappsPeerKeyKept                                = Key{"hubs.chatapps.peerKeyKept"}
+	HubsChatappsPeerMessage                                = Key{"hubs.chatapps.peerMessage"}
+	HubsChatappsPeerMessageDoes                            = Key{"hubs.chatapps.peerMessageDoes"}
+	HubsChatappsPeerNameHelp                               = Key{"hubs.chatapps.peerNameHelp"}
+	HubsChatappsPeerNoKey                                  = Key{"hubs.chatapps.peerNoKey"}
+	HubsChatappsPeerRemoveConfirm                          = Key{"hubs.chatapps.peerRemoveConfirm"}
+	HubsChatappsPeerRemoveDoes                             = Key{"hubs.chatapps.peerRemoveDoes"}
+	HubsChatappsPendingDetail                              = Key{"hubs.chatapps.pendingDetail"}
+	HubsChatappsRemove                                     = Key{"hubs.chatapps.remove"}
+	HubsChatappsRevoke                                     = Key{"hubs.chatapps.revoke"}
+	HubsChatappsRevokeConfirm                              = Key{"hubs.chatapps.revokeConfirm"}
+	HubsChatappsRevokeDoes                                 = Key{"hubs.chatapps.revokeDoes"}
+	HubsChatappsRevokeLabel                                = Key{"hubs.chatapps.revokeLabel"}
+	HubsChatappsSave                                       = Key{"hubs.chatapps.save"}
+	HubsChatappsSaving                                     = Key{"hubs.chatapps.saving"}
+	HubsChatappsSend                                       = Key{"hubs.chatapps.send"}
+	HubsChatappsSendDoes                                   = Key{"hubs.chatapps.sendDoes"}
+	HubsChatappsSendLabel                                  = Key{"hubs.chatapps.sendLabel"}
+	HubsChatappsSendNone                                   = Key{"hubs.chatapps.sendNone"}
+	HubsChatappsSendOtherHelp                              = Key{"hubs.chatapps.sendOtherHelp"}
+	HubsChatappsSending                                    = Key{"hubs.chatapps.sending"}
+	HubsChatappsSent                                       = Key{"hubs.chatapps.sent"}
+	HubsChatappsServiceInstalled                           = Key{"hubs.chatapps.serviceInstalled"}
+	HubsChatappsServiceNeeded                              = Key{"hubs.chatapps.serviceNeeded"}
+	HubsChatappsServiceQuitNow                             = Key{"hubs.chatapps.serviceQuitNow"}
+	HubsChatappsSetup                                      = Key{"hubs.chatapps.setup"}
+	HubsChatappsSetupDoes                                  = Key{"hubs.chatapps.setupDoes"}
+	HubsChatappsSlackManifest                              = Key{"hubs.chatapps.slackManifest"}
+	HubsChatappsSlackManifestDoes                          = Key{"hubs.chatapps.slackManifestDoes"}
+	HubsChatappsStateConnected                             = Key{"hubs.chatapps.stateConnected"}
+	HubsChatappsStateFailed                                = Key{"hubs.chatapps.stateFailed"}
+	HubsChatappsStateRetrying                              = Key{"hubs.chatapps.stateRetrying"}
+	HubsChatappsStateUnknown                               = Key{"hubs.chatapps.stateUnknown"}
+	HubsChatappsTesting                                    = Key{"hubs.chatapps.testing"}
+	HubsChatappsUrlWord                                    = Key{"hubs.chatapps.urlWord"}
+	HubsChatappsUserDetail                                 = Key{"hubs.chatapps.userDetail"}
+	HubsChatappsWaiting                                    = Key{"hubs.chatapps.waiting"}
+	HubsChatappsWebhookChatHelp                            = Key{"hubs.chatapps.webhookChatHelp"}
+	HubsChatappsWebhookEditDoes                            = Key{"hubs.chatapps.webhookEditDoes"}
+	HubsChatappsWebhookEvents                              = Key{"hubs.chatapps.webhookEvents"}
+	HubsChatappsWebhookEventsHelp                          = Key{"hubs.chatapps.webhookEventsHelp"}
+	HubsChatappsWebhookNameHelp                            = Key{"hubs.chatapps.webhookNameHelp"}
+	HubsChatappsWebhookOnlyHelp                            = Key{"hubs.chatapps.webhookOnlyHelp"}
+	HubsChatappsWebhookPrompt                              = Key{"hubs.chatapps.webhookPrompt"}
+	HubsChatappsWebhookPromptHelp                          = Key{"hubs.chatapps.webhookPromptHelp"}
+	HubsChatappsWebhookRemoveConfirm                       = Key{"hubs.chatapps.webhookRemoveConfirm"}
+	HubsChatappsWebhookRemoveDoes                          = Key{"hubs.chatapps.webhookRemoveDoes"}
+	HubsChatappsWebhookSkills                              = Key{"hubs.chatapps.webhookSkills"}
+	HubsChatappsWebhookSkillsHelp                          = Key{"hubs.chatapps.webhookSkillsHelp"}
+	HubsChatappsWebhookTest                                = Key{"hubs.chatapps.webhookTest"}
+	HubsChatappsWebhookTestDoes                            = Key{"hubs.chatapps.webhookTestDoes"}
+	HubsChatappsWebhooksOff                                = Key{"hubs.chatapps.webhooksOff"}
+	HubsColAccount                                         = Key{"hubs.col.account"}
+	HubsColAction                                          = Key{"hubs.col.action"}
 	HubsColCategory                                        = Key{"hubs.col.category"}
+	HubsColChoice                                          = Key{"hubs.col.choice"}
+	HubsColCommand                                         = Key{"hubs.col.command"}
 	HubsColCovers                                          = Key{"hubs.col.covers"}
+	HubsColFrom                                            = Key{"hubs.col.from"}
+	HubsColGroup                                           = Key{"hubs.col.group"}
 	HubsColId                                              = Key{"hubs.col.id"}
+	HubsColKey                                             = Key{"hubs.col.key"}
+	HubsColKind                                            = Key{"hubs.col.kind"}
 	HubsColLanguage                                        = Key{"hubs.col.language"}
-	HubsColLastMessage                                     = Key{"hubs.col.lastMessage"}
 	HubsColLog                                             = Key{"hubs.col.log"}
+	HubsColLogin                                           = Key{"hubs.col.login"}
 	HubsColMembers                                         = Key{"hubs.col.members"}
 	HubsColMsgs                                            = Key{"hubs.col.msgs"}
+	HubsColName                                            = Key{"hubs.col.name"}
 	HubsColOn                                              = Key{"hubs.col.on"}
+	HubsColPart                                            = Key{"hubs.col.part"}
 	HubsColPlugin                                          = Key{"hubs.col.plugin"}
 	HubsColPrompt                                          = Key{"hubs.col.prompt"}
+	HubsColProvider                                        = Key{"hubs.col.provider"}
 	HubsColRoom                                            = Key{"hubs.col.room"}
+	HubsColScreen                                          = Key{"hubs.col.screen"}
 	HubsColServer                                          = Key{"hubs.col.server"}
 	HubsColSession                                         = Key{"hubs.col.session"}
+	HubsColSetting                                         = Key{"hubs.col.setting"}
 	HubsColSkill                                           = Key{"hubs.col.skill"}
 	HubsColSource                                          = Key{"hubs.col.source"}
+	HubsColStartedWith                                     = Key{"hubs.col.startedWith"}
 	HubsColStatus                                          = Key{"hubs.col.status"}
 	HubsColTools                                           = Key{"hubs.col.tools"}
 	HubsColTransport                                       = Key{"hubs.col.transport"}
+	HubsColTrust                                           = Key{"hubs.col.trust"}
+	HubsColValue                                           = Key{"hubs.col.value"}
+	HubsColVersion                                         = Key{"hubs.col.version"}
 	HubsColWhatItAdds                                      = Key{"hubs.col.whatItAdds"}
+	HubsColWhatItCovers                                    = Key{"hubs.col.whatItCovers"}
+	HubsColWhatItDoes                                      = Key{"hubs.col.whatItDoes"}
 	HubsColWhen                                            = Key{"hubs.col.when"}
 	HubsColWhere                                           = Key{"hubs.col.where"}
+	HubsCopied                                             = Key{"hubs.copied"}
+	HubsCopiedTerminal                                     = Key{"hubs.copiedTerminal"}
+	HubsCronAckConfirm                                     = Key{"hubs.cron.ackConfirm"}
+	HubsCronAcked                                          = Key{"hubs.cron.acked"}
+	HubsCronActCancel                                      = Key{"hubs.cron.act.cancel"}
+	HubsCronActCancelDoes                                  = Key{"hubs.cron.act.cancelDoes"}
+	HubsCronActEdit                                        = Key{"hubs.cron.act.edit"}
+	HubsCronActEditDoes                                    = Key{"hubs.cron.act.editDoes"}
+	HubsCronActHistory                                     = Key{"hubs.cron.act.history"}
+	HubsCronActHistoryDoes                                 = Key{"hubs.cron.act.historyDoes"}
+	HubsCronActNotepad                                     = Key{"hubs.cron.act.notepad"}
+	HubsCronActNotepadDoes                                 = Key{"hubs.cron.act.notepadDoes"}
+	HubsCronActPause                                       = Key{"hubs.cron.act.pause"}
+	HubsCronActPauseDoes                                   = Key{"hubs.cron.act.pauseDoes"}
+	HubsCronActRemove                                      = Key{"hubs.cron.act.remove"}
+	HubsCronActRemoveDoes                                  = Key{"hubs.cron.act.removeDoes"}
+	HubsCronActResume                                      = Key{"hubs.cron.act.resume"}
+	HubsCronActResumeDoes                                  = Key{"hubs.cron.act.resumeDoes"}
+	HubsCronActRun                                         = Key{"hubs.cron.act.run"}
+	HubsCronActRunDoes                                     = Key{"hubs.cron.act.runDoes"}
+	HubsCronCancelConfirm                                  = Key{"hubs.cron.cancelConfirm"}
+	HubsCronCancelled                                      = Key{"hubs.cron.cancelled"}
+	HubsCronColJob                                         = Key{"hubs.cron.colJob"}
+	HubsCronColLast                                        = Key{"hubs.cron.colLast"}
+	HubsCronColNext                                        = Key{"hubs.cron.colNext"}
+	HubsCronColSchedule                                    = Key{"hubs.cron.colSchedule"}
+	HubsCronCreated                                        = Key{"hubs.cron.created"}
+	HubsCronCreating                                       = Key{"hubs.cron.creating"}
+	HubsCronDetailDeliver                                  = Key{"hubs.cron.detail.deliver"}
+	HubsCronDetailError                                    = Key{"hubs.cron.detail.error"}
+	HubsCronDetailLast                                     = Key{"hubs.cron.detail.last"}
+	HubsCronDetailModel                                    = Key{"hubs.cron.detail.model"}
+	HubsCronDetailNext                                     = Key{"hubs.cron.detail.next"}
+	HubsCronDetailPausedWhy                                = Key{"hubs.cron.detail.pausedWhy"}
+	HubsCronDetailRepeat                                   = Key{"hubs.cron.detail.repeat"}
+	HubsCronDetailRepeatOf                                 = Key{"hubs.cron.detail.repeatOf"}
+	HubsCronDetailScript                                   = Key{"hubs.cron.detail.script"}
+	HubsCronDetailSkills                                   = Key{"hubs.cron.detail.skills"}
+	HubsCronDetailTask                                     = Key{"hubs.cron.detail.task"}
+	HubsCronDetailTimezone                                 = Key{"hubs.cron.detail.timezone"}
+	HubsCronDetailWorkdir                                  = Key{"hubs.cron.detail.workdir"}
+	HubsCronEmpty                                          = Key{"hubs.cron.empty"}
+	HubsCronFailed                                         = Key{"hubs.cron.failed"}
+	HubsCronFormCreate                                     = Key{"hubs.cron.form.create"}
+	HubsCronFormDeliverHelp                                = Key{"hubs.cron.form.deliverHelp"}
+	HubsCronFormEffort                                     = Key{"hubs.cron.form.effort"}
+	HubsCronFormEffortDefault                              = Key{"hubs.cron.form.effortDefault"}
+	HubsCronFormModelHelp                                  = Key{"hubs.cron.form.modelHelp"}
+	HubsCronFormName                                       = Key{"hubs.cron.form.name"}
+	HubsCronFormNameHelp                                   = Key{"hubs.cron.form.nameHelp"}
+	HubsCronFormPaused                                     = Key{"hubs.cron.form.paused"}
+	HubsCronFormPausedHelp                                 = Key{"hubs.cron.form.pausedHelp"}
+	HubsCronFormPromptHelp                                 = Key{"hubs.cron.form.promptHelp"}
+	HubsCronFormProvider                                   = Key{"hubs.cron.form.provider"}
+	HubsCronFormProviderHelp                               = Key{"hubs.cron.form.providerHelp"}
+	HubsCronFormRepeatHelp                                 = Key{"hubs.cron.form.repeatHelp"}
+	HubsCronFormSave                                       = Key{"hubs.cron.form.save"}
+	HubsCronFormSchedule                                   = Key{"hubs.cron.form.schedule"}
+	HubsCronFormScheduleHelp                               = Key{"hubs.cron.form.scheduleHelp"}
+	HubsCronFormSkillsHelp                                 = Key{"hubs.cron.form.skillsHelp"}
+	HubsCronFormTitleEdit                                  = Key{"hubs.cron.form.titleEdit"}
+	HubsCronFormTitleNew                                   = Key{"hubs.cron.form.titleNew"}
+	HubsCronFormWorkdirHelp                                = Key{"hubs.cron.form.workdirHelp"}
+	HubsCronHealthDoctor                                   = Key{"hubs.cron.health.doctor"}
+	HubsCronHealthDoctorDoes                               = Key{"hubs.cron.health.doctorDoes"}
+	HubsCronHealthNoFailures                               = Key{"hubs.cron.health.noFailures"}
+	HubsCronHealthSeen                                     = Key{"hubs.cron.health.seen"}
+	HubsCronHealthStatus                                   = Key{"hubs.cron.health.status"}
+	HubsCronHealthStatusDoes                               = Key{"hubs.cron.health.statusDoes"}
+	HubsCronHealthTitle                                    = Key{"hubs.cron.health.title"}
+	HubsCronHistoryColSource                               = Key{"hubs.cron.history.colSource"}
+	HubsCronHistoryDelivery                                = Key{"hubs.cron.history.delivery"}
+	HubsCronHistoryEmpty                                   = Key{"hubs.cron.history.empty"}
+	HubsCronHistoryFinished                                = Key{"hubs.cron.history.finished"}
+	HubsCronHistoryNoOutput                                = Key{"hubs.cron.history.noOutput"}
+	HubsCronHistoryTitle                                   = Key{"hubs.cron.history.title"}
+	HubsCronIncidentAck                                    = Key{"hubs.cron.incidentAck"}
+	HubsCronLoading                                        = Key{"hubs.cron.loading"}
+	HubsCronNotepadDeleted                                 = Key{"hubs.cron.notepad.deleted"}
+	HubsCronNotepadKey                                     = Key{"hubs.cron.notepad.key"}
+	HubsCronNotepadSaved                                   = Key{"hubs.cron.notepad.saved"}
+	HubsCronNotepadSet                                     = Key{"hubs.cron.notepad.set"}
+	HubsCronNotepadTitle                                   = Key{"hubs.cron.notepad.title"}
+	HubsCronNotepadValue                                   = Key{"hubs.cron.notepad.value"}
+	HubsCronPaused                                         = Key{"hubs.cron.paused"}
+	HubsCronReading                                        = Key{"hubs.cron.reading"}
+	HubsCronRemoveConfirm                                  = Key{"hubs.cron.removeConfirm"}
+	HubsCronRemoved                                        = Key{"hubs.cron.removed"}
+	HubsCronResultCancelled                                = Key{"hubs.cron.result.cancelled"}
+	HubsCronResultClaimed                                  = Key{"hubs.cron.result.claimed"}
+	HubsCronResultCompleted                                = Key{"hubs.cron.result.completed"}
+	HubsCronResultDeliveryFailed                           = Key{"hubs.cron.result.delivery_failed"}
+	HubsCronResultError                                    = Key{"hubs.cron.result.error"}
+	HubsCronResultFailed                                   = Key{"hubs.cron.result.failed"}
+	HubsCronResultMissed                                   = Key{"hubs.cron.result.missed"}
+	HubsCronResultOk                                       = Key{"hubs.cron.result.ok"}
+	HubsCronResultRunning                                  = Key{"hubs.cron.result.running"}
+	HubsCronResultUnknown                                  = Key{"hubs.cron.result.unknown"}
+	HubsCronResumed                                        = Key{"hubs.cron.resumed"}
+	HubsCronSaved                                          = Key{"hubs.cron.saved"}
+	HubsCronSaving                                         = Key{"hubs.cron.saving"}
+	HubsCronServiceNeeded                                  = Key{"hubs.cron.serviceNeeded"}
+	HubsCronServiceWhy                                     = Key{"hubs.cron.serviceWhy"}
+	HubsCronStarted                                        = Key{"hubs.cron.started"}
+	HubsCronStarting                                       = Key{"hubs.cron.starting"}
+	HubsCronStateCompleted                                 = Key{"hubs.cron.state.completed"}
+	HubsCronStateError                                     = Key{"hubs.cron.state.error"}
+	HubsCronStatePaused                                    = Key{"hubs.cron.state.paused"}
+	HubsCronStateRunning                                   = Key{"hubs.cron.state.running"}
+	HubsCronStateScheduled                                 = Key{"hubs.cron.state.scheduled"}
+	HubsGroupBanner                                        = Key{"hubs.group.banner"}
+	HubsGroupShow                                          = Key{"hubs.group.show"}
+	HubsKanbanActArchive                                   = Key{"hubs.kanban.act.archive"}
+	HubsKanbanActArchiveDoes                               = Key{"hubs.kanban.act.archiveDoes"}
+	HubsKanbanActAssign                                    = Key{"hubs.kanban.act.assign"}
+	HubsKanbanActAssignDoes                                = Key{"hubs.kanban.act.assignDoes"}
+	HubsKanbanActComment                                   = Key{"hubs.kanban.act.comment"}
+	HubsKanbanActCommentDoes                               = Key{"hubs.kanban.act.commentDoes"}
+	HubsKanbanActComplete                                  = Key{"hubs.kanban.act.complete"}
+	HubsKanbanActCompleteDoes                              = Key{"hubs.kanban.act.completeDoes"}
+	HubsKanbanActDelete                                    = Key{"hubs.kanban.act.delete"}
+	HubsKanbanActDeleteDoes                                = Key{"hubs.kanban.act.deleteDoes"}
+	HubsKanbanActEdit                                      = Key{"hubs.kanban.act.edit"}
+	HubsKanbanActEditDoes                                  = Key{"hubs.kanban.act.editDoes"}
+	HubsKanbanActMove                                      = Key{"hubs.kanban.act.move"}
+	HubsKanbanActMoveDoes                                  = Key{"hubs.kanban.act.moveDoes"}
+	HubsKanbanActReopen                                    = Key{"hubs.kanban.act.reopen"}
+	HubsKanbanActReopenDoes                                = Key{"hubs.kanban.act.reopenDoes"}
+	HubsKanbanAdded                                        = Key{"hubs.kanban.added"}
+	HubsKanbanArchiveConfirm                               = Key{"hubs.kanban.archiveConfirm"}
+	HubsKanbanArchivedColumn                               = Key{"hubs.kanban.archivedColumn"}
+	HubsKanbanArchivedOne                                  = Key{"hubs.kanban.archivedOne"}
+	HubsKanbanArchivedShown                                = Key{"hubs.kanban.archivedShown"}
+	HubsKanbanAssignTitle                                  = Key{"hubs.kanban.assignTitle"}
+	HubsKanbanAssigned                                     = Key{"hubs.kanban.assigned"}
+	HubsKanbanBoardCreated                                 = Key{"hubs.kanban.boardCreated"}
+	HubsKanbanBoardTitle                                   = Key{"hubs.kanban.boardTitle"}
+	HubsKanbanColAge                                       = Key{"hubs.kanban.colAge"}
+	HubsKanbanColTask                                      = Key{"hubs.kanban.colTask"}
+	HubsKanbanColWho                                       = Key{"hubs.kanban.colWho"}
+	HubsKanbanCommented                                    = Key{"hubs.kanban.commented"}
+	HubsKanbanCompleted                                    = Key{"hubs.kanban.completed"}
+	HubsKanbanDeleteConfirm                                = Key{"hubs.kanban.deleteConfirm"}
+	HubsKanbanDeleted                                      = Key{"hubs.kanban.deleted"}
+	HubsKanbanDetailChildren                               = Key{"hubs.kanban.detail.children"}
+	HubsKanbanDetailComments                               = Key{"hubs.kanban.detail.comments"}
+	HubsKanbanDetailError                                  = Key{"hubs.kanban.detail.error"}
+	HubsKanbanDetailModel                                  = Key{"hubs.kanban.detail.model"}
+	HubsKanbanDetailParents                                = Key{"hubs.kanban.detail.parents"}
+	HubsKanbanDetailResult                                 = Key{"hubs.kanban.detail.result"}
+	HubsKanbanDetailRuns                                   = Key{"hubs.kanban.detail.runs"}
+	HubsKanbanEmpty                                        = Key{"hubs.kanban.empty"}
+	HubsKanbanFailed                                       = Key{"hubs.kanban.failed"}
+	HubsKanbanFormAssigneeHelp                             = Key{"hubs.kanban.form.assigneeHelp"}
+	HubsKanbanFormBoardCreate                              = Key{"hubs.kanban.form.boardCreate"}
+	HubsKanbanFormBoardName                                = Key{"hubs.kanban.form.boardName"}
+	HubsKanbanFormBoardNameHelp                            = Key{"hubs.kanban.form.boardNameHelp"}
+	HubsKanbanFormBoardNew                                 = Key{"hubs.kanban.form.boardNew"}
+	HubsKanbanFormBody                                     = Key{"hubs.kanban.form.body"}
+	HubsKanbanFormBodyHelp                                 = Key{"hubs.kanban.form.bodyHelp"}
+	HubsKanbanFormCreate                                   = Key{"hubs.kanban.form.create"}
+	HubsKanbanFormNobody                                   = Key{"hubs.kanban.form.nobody"}
+	HubsKanbanFormPriority                                 = Key{"hubs.kanban.form.priority"}
+	HubsKanbanFormPriorityHelp                             = Key{"hubs.kanban.form.priorityHelp"}
+	HubsKanbanFormSave                                     = Key{"hubs.kanban.form.save"}
+	HubsKanbanFormSkills                                   = Key{"hubs.kanban.form.skills"}
+	HubsKanbanFormSkillsHelp                               = Key{"hubs.kanban.form.skillsHelp"}
+	HubsKanbanFormSlug                                     = Key{"hubs.kanban.form.slug"}
+	HubsKanbanFormSlugHelp                                 = Key{"hubs.kanban.form.slugHelp"}
+	HubsKanbanFormTitle                                    = Key{"hubs.kanban.form.title"}
+	HubsKanbanFormTitleHelp                                = Key{"hubs.kanban.form.titleHelp"}
+	HubsKanbanFormTitleNew                                 = Key{"hubs.kanban.form.titleNew"}
+	HubsKanbanFormTriage                                   = Key{"hubs.kanban.form.triage"}
+	HubsKanbanFormTriageHelp                               = Key{"hubs.kanban.form.triageHelp"}
+	HubsKanbanLoading                                      = Key{"hubs.kanban.loading"}
+	HubsKanbanMoveArchive                                  = Key{"hubs.kanban.move.archive"}
+	HubsKanbanMoveBlock                                    = Key{"hubs.kanban.move.block"}
+	HubsKanbanMoveChanges                                  = Key{"hubs.kanban.move.changes"}
+	HubsKanbanMoveComplete                                 = Key{"hubs.kanban.move.complete"}
+	HubsKanbanMovePromote                                  = Key{"hubs.kanban.move.promote"}
+	HubsKanbanMoveReopen                                   = Key{"hubs.kanban.move.reopen"}
+	HubsKanbanMoveReview                                   = Key{"hubs.kanban.move.review"}
+	HubsKanbanMoveSchedule                                 = Key{"hubs.kanban.move.schedule"}
+	HubsKanbanMoveSpecify                                  = Key{"hubs.kanban.move.specify"}
+	HubsKanbanMoveUnblock                                  = Key{"hubs.kanban.move.unblock"}
+	HubsKanbanMoveTitle                                    = Key{"hubs.kanban.moveTitle"}
+	HubsKanbanMoved                                        = Key{"hubs.kanban.moved"}
+	HubsKanbanNewBoard                                     = Key{"hubs.kanban.newBoard"}
+	HubsKanbanReason                                       = Key{"hubs.kanban.reason"}
+	HubsKanbanReasonHelp                                   = Key{"hubs.kanban.reasonHelp"}
+	HubsKanbanReopened                                     = Key{"hubs.kanban.reopened"}
+	HubsKanbanSaved                                        = Key{"hubs.kanban.saved"}
+	HubsKanbanSaving                                       = Key{"hubs.kanban.saving"}
+	HubsKanbanSwitched                                     = Key{"hubs.kanban.switched"}
 	HubsListErrorLine                                      = Key{"hubs.list.errorLine"}
-	HubsPluginsAllScope                                    = Key{"hubs.plugins.allScope"}
-	HubsPluginsBundledSuffix                               = Key{"hubs.plugins.bundledSuffix"}
+	HubsLoading                                            = Key{"hubs.loading"}
+	HubsLoginsAddEnv                                       = Key{"hubs.logins.addEnv"}
+	HubsLoginsAddEnvTitle                                  = Key{"hubs.logins.addEnvTitle"}
+	HubsLoginsAddHow                                       = Key{"hubs.logins.addHow"}
+	HubsLoginsAddKey                                       = Key{"hubs.logins.addKey"}
+	HubsLoginsAddKeyTitle                                  = Key{"hubs.logins.addKeyTitle"}
+	HubsLoginsAddProvider                                  = Key{"hubs.logins.addProvider"}
+	HubsLoginsAddSignIn                                    = Key{"hubs.logins.addSignIn"}
+	HubsLoginsAddSubmit                                    = Key{"hubs.logins.addSubmit"}
+	HubsLoginsAddTool                                      = Key{"hubs.logins.addTool"}
+	HubsLoginsAddToolDetail                                = Key{"hubs.logins.addToolDetail"}
+	HubsLoginsAdded                                        = Key{"hubs.logins.added"}
+	HubsLoginsBrowserDidNotOpen                            = Key{"hubs.logins.browserDidNotOpen"}
+	HubsLoginsConvertConfirm                               = Key{"hubs.logins.convertConfirm"}
+	HubsLoginsConverted                                    = Key{"hubs.logins.converted"}
+	HubsLoginsDefaultNone                                  = Key{"hubs.logins.defaultNone"}
+	HubsLoginsDefaultNoneMeaning                           = Key{"hubs.logins.defaultNoneMeaning"}
+	HubsLoginsDefaultRotate                                = Key{"hubs.logins.defaultRotate"}
+	HubsLoginsDefaultRotateMeaning                         = Key{"hubs.logins.defaultRotateMeaning"}
+	HubsLoginsDefaultSet                                   = Key{"hubs.logins.defaultSet"}
+	HubsLoginsDetailAccount                                = Key{"hubs.logins.detailAccount"}
+	HubsLoginsDetailCount                                  = Key{"hubs.logins.detailCount"}
+	HubsLoginsDetailFingerprint                            = Key{"hubs.logins.detailFingerprint"}
+	HubsLoginsDetailFrom                                   = Key{"hubs.logins.detailFrom"}
+	HubsLoginsDetailSelection                              = Key{"hubs.logins.detailSelection"}
+	HubsLoginsDetailShared                                 = Key{"hubs.logins.detailShared"}
+	HubsLoginsDetailUsage                                  = Key{"hubs.logins.detailUsage"}
+	HubsLoginsEmpty                                        = Key{"hubs.logins.empty"}
+	HubsLoginsEnvHelp                                      = Key{"hubs.logins.envHelp"}
+	HubsLoginsEnvLabel                                     = Key{"hubs.logins.envLabel"}
+	HubsLoginsExhaustedAlways                              = Key{"hubs.logins.exhaustedAlways"}
+	HubsLoginsExhaustedAlwaysDoes                          = Key{"hubs.logins.exhaustedAlwaysDoes"}
+	HubsLoginsExhaustedAsk                                 = Key{"hubs.logins.exhaustedAsk"}
+	HubsLoginsExhaustedAskMeaning                          = Key{"hubs.logins.exhaustedAskMeaning"}
+	HubsLoginsExhaustedLead                                = Key{"hubs.logins.exhaustedLead"}
+	HubsLoginsExhaustedNoReset                             = Key{"hubs.logins.exhaustedNoReset"}
+	HubsLoginsExhaustedResets                              = Key{"hubs.logins.exhaustedResets"}
+	HubsLoginsExhaustedRetried                             = Key{"hubs.logins.exhaustedRetried"}
+	HubsLoginsExhaustedRetry                               = Key{"hubs.logins.exhaustedRetry"}
+	HubsLoginsExhaustedRetryDoes                           = Key{"hubs.logins.exhaustedRetryDoes"}
+	HubsLoginsExhaustedRotate                              = Key{"hubs.logins.exhaustedRotate"}
+	HubsLoginsExhaustedRotateMeaning                       = Key{"hubs.logins.exhaustedRotateMeaning"}
+	HubsLoginsExhaustedRotateSession                       = Key{"hubs.logins.exhaustedRotateSession"}
+	HubsLoginsExhaustedRotateSessionDoes                   = Key{"hubs.logins.exhaustedRotateSessionDoes"}
+	HubsLoginsExhaustedRotating                            = Key{"hubs.logins.exhaustedRotating"}
+	HubsLoginsExhaustedSwitch                              = Key{"hubs.logins.exhaustedSwitch"}
+	HubsLoginsExhaustedSwitchDoes                          = Key{"hubs.logins.exhaustedSwitchDoes"}
+	HubsLoginsExhaustedSwitched                            = Key{"hubs.logins.exhaustedSwitched"}
+	HubsLoginsExhaustedTitle                               = Key{"hubs.logins.exhaustedTitle"}
+	HubsLoginsExhaustedWait                                = Key{"hubs.logins.exhaustedWait"}
+	HubsLoginsExhaustedWaitDoes                            = Key{"hubs.logins.exhaustedWaitDoes"}
+	HubsLoginsExhaustedWaiting                             = Key{"hubs.logins.exhaustedWaiting"}
+	HubsLoginsFieldDefault                                 = Key{"hubs.logins.fieldDefault"}
+	HubsLoginsFieldExhausted                               = Key{"hubs.logins.fieldExhausted"}
+	HubsLoginsFieldStrategy                                = Key{"hubs.logins.fieldStrategy"}
+	HubsLoginsFollowDefault                                = Key{"hubs.logins.followDefault"}
+	HubsLoginsHelp                                         = Key{"hubs.logins.help"}
+	HubsLoginsInRotation                                   = Key{"hubs.logins.inRotation"}
+	HubsLoginsInRotationHelp                               = Key{"hubs.logins.inRotationHelp"}
+	HubsLoginsKeyHelp                                      = Key{"hubs.logins.keyHelp"}
+	HubsLoginsKeyLabel                                     = Key{"hubs.logins.keyLabel"}
+	HubsLoginsKindKey                                      = Key{"hubs.logins.kindKey"}
+	HubsLoginsKindSubscription                             = Key{"hubs.logins.kindSubscription"}
+	HubsLoginsLegend                                       = Key{"hubs.logins.legend"}
+	HubsLoginsLinkedEdit                                   = Key{"hubs.logins.linkedEdit"}
+	HubsLoginsMakeDefault                                  = Key{"hubs.logins.makeDefault"}
+	HubsLoginsMakeDefaultHelp                              = Key{"hubs.logins.makeDefaultHelp"}
+	HubsLoginsMissing                                      = Key{"hubs.logins.missing"}
+	HubsLoginsNameHint                                     = Key{"hubs.logins.nameHint"}
+	HubsLoginsNameLabel                                    = Key{"hubs.logins.nameLabel"}
+	HubsLoginsNoSession                                    = Key{"hubs.logins.noSession"}
+	HubsLoginsPinnedLater                                  = Key{"hubs.logins.pinnedLater"}
+	HubsLoginsPinning                                      = Key{"hubs.logins.pinning"}
+	HubsLoginsRemoveConfirm                                = Key{"hubs.logins.removeConfirm"}
+	HubsLoginsRemoveLinkedConfirm                          = Key{"hubs.logins.removeLinkedConfirm"}
+	HubsLoginsRemoved                                      = Key{"hubs.logins.removed"}
+	HubsLoginsRenameTitle                                  = Key{"hubs.logins.renameTitle"}
+	HubsLoginsRenamed                                      = Key{"hubs.logins.renamed"}
+	HubsLoginsReplaceKeyTitle                              = Key{"hubs.logins.replaceKeyTitle"}
+	HubsLoginsRotationOff                                  = Key{"hubs.logins.rotationOff"}
+	HubsLoginsRotationOn                                   = Key{"hubs.logins.rotationOn"}
+	HubsLoginsSave                                         = Key{"hubs.logins.save"}
+	HubsLoginsSaved                                        = Key{"hubs.logins.saved"}
+	HubsLoginsSaving                                       = Key{"hubs.logins.saving"}
+	HubsLoginsSignInBrowser                                = Key{"hubs.logins.signInBrowser"}
+	HubsLoginsSignInCodeLabel                              = Key{"hubs.logins.signInCodeLabel"}
+	HubsLoginsSignInLoopback                               = Key{"hubs.logins.signInLoopback"}
+	HubsLoginsSignInOpenThis                               = Key{"hubs.logins.signInOpenThis"}
+	HubsLoginsSignInStarting                               = Key{"hubs.logins.signInStarting"}
+	HubsLoginsSignInStopped                                = Key{"hubs.logins.signInStopped"}
+	HubsLoginsSignInTitle                                  = Key{"hubs.logins.signInTitle"}
+	HubsLoginsSignInWaiting                                = Key{"hubs.logins.signInWaiting"}
+	HubsLoginsSignInWaitingLink                            = Key{"hubs.logins.signInWaitingLink"}
+	HubsLoginsStatusDead                                   = Key{"hubs.logins.statusDead"}
+	HubsLoginsStatusLimited                                = Key{"hubs.logins.statusLimited"}
+	HubsLoginsStatusNeedsSignIn                            = Key{"hubs.logins.statusNeedsSignIn"}
+	HubsLoginsStatusReady                                  = Key{"hubs.logins.statusReady"}
+	HubsLoginsStatusUnavailable                            = Key{"hubs.logins.statusUnavailable"}
+	HubsLoginsStrategyFillFirst                            = Key{"hubs.logins.strategyFillFirst"}
+	HubsLoginsStrategyFillFirstMeaning                     = Key{"hubs.logins.strategyFillFirstMeaning"}
+	HubsLoginsStrategyLeastUsed                            = Key{"hubs.logins.strategyLeastUsed"}
+	HubsLoginsStrategyLeastUsedMeaning                     = Key{"hubs.logins.strategyLeastUsedMeaning"}
+	HubsLoginsStrategyRandom                               = Key{"hubs.logins.strategyRandom"}
+	HubsLoginsStrategyRandomMeaning                        = Key{"hubs.logins.strategyRandomMeaning"}
+	HubsLoginsStrategyRoundRobin                           = Key{"hubs.logins.strategyRoundRobin"}
+	HubsLoginsStrategyRoundRobinMeaning                    = Key{"hubs.logins.strategyRoundRobinMeaning"}
+	HubsLoginsSummaryDefault                               = Key{"hubs.logins.summaryDefault"}
+	HubsLoginsSummaryRotateOnExhausted                     = Key{"hubs.logins.summaryRotateOnExhausted"}
+	HubsLoginsSummaryRotation                              = Key{"hubs.logins.summaryRotation"}
+	HubsLoginsUntil                                        = Key{"hubs.logins.until"}
+	HubsLoginsUsed                                         = Key{"hubs.logins.used"}
+	HubsLoginsWhatCode                                     = Key{"hubs.logins.whatCode"}
+	HubsLoginsWhatLink                                     = Key{"hubs.logins.whatLink"}
+	HubsPickEmpty                                          = Key{"hubs.pick.empty"}
+	HubsPluginsAccept                                      = Key{"hubs.plugins.accept"}
+	HubsPluginsAcceptDoes                                  = Key{"hubs.plugins.acceptDoes"}
+	HubsPluginsActCapabilities                             = Key{"hubs.plugins.actCapabilities"}
+	HubsPluginsActCapabilitiesDoes                         = Key{"hubs.plugins.actCapabilitiesDoes"}
+	HubsPluginsActDoctor                                   = Key{"hubs.plugins.actDoctor"}
+	HubsPluginsActDoctorDoes                               = Key{"hubs.plugins.actDoctorDoes"}
+	HubsPluginsActRemove                                   = Key{"hubs.plugins.actRemove"}
+	HubsPluginsActRemoveDoes                               = Key{"hubs.plugins.actRemoveDoes"}
+	HubsPluginsActSettings                                 = Key{"hubs.plugins.actSettings"}
+	HubsPluginsActSettingsDoes                             = Key{"hubs.plugins.actSettingsDoes"}
+	HubsPluginsActShow                                     = Key{"hubs.plugins.actShow"}
+	HubsPluginsActShowDoes                                 = Key{"hubs.plugins.actShowDoes"}
+	HubsPluginsActToggle                                   = Key{"hubs.plugins.actToggle"}
+	HubsPluginsActToggleDoes                               = Key{"hubs.plugins.actToggleDoes"}
+	HubsPluginsActTrustURL                                 = Key{"hubs.plugins.actTrustURL"}
+	HubsPluginsActTrustURLDoes                             = Key{"hubs.plugins.actTrustURLDoes"}
+	HubsPluginsActUpdate                                   = Key{"hubs.plugins.actUpdate"}
+	HubsPluginsActUpdateDoes                               = Key{"hubs.plugins.actUpdateDoes"}
+	HubsPluginsBundledStays                                = Key{"hubs.plugins.bundledStays"}
+	HubsPluginsCatalogEmpty                                = Key{"hubs.plugins.catalogEmpty"}
+	HubsPluginsConsentTitle                                = Key{"hubs.plugins.consentTitle"}
+	HubsPluginsDetailPath                                  = Key{"hubs.plugins.detailPath"}
+	HubsPluginsDetailSource                                = Key{"hubs.plugins.detailSource"}
+	HubsPluginsDetailTools                                 = Key{"hubs.plugins.detailTools"}
+	HubsPluginsDetailUpdate                                = Key{"hubs.plugins.detailUpdate"}
+	HubsPluginsDisabled                                    = Key{"hubs.plugins.disabled"}
 	HubsPluginsEmpty                                       = Key{"hubs.plugins.empty"}
-	HubsPluginsInstallHint                                 = Key{"hubs.plugins.installHint"}
-	HubsPluginsUserScope                                   = Key{"hubs.plugins.userScope"}
-	HubsSkillsLoadingOne                                   = Key{"hubs.skills.loadingOne"}
+	HubsPluginsEnabled                                     = Key{"hubs.plugins.enabled"}
+	HubsPluginsFromSource                                  = Key{"hubs.plugins.fromSource"}
+	HubsPluginsInstall                                     = Key{"hubs.plugins.install"}
+	HubsPluginsInstallAnyway                               = Key{"hubs.plugins.installAnyway"}
+	HubsPluginsInstallAnywayConfirm                        = Key{"hubs.plugins.installAnywayConfirm"}
+	HubsPluginsInstallAnywayDoes                           = Key{"hubs.plugins.installAnywayDoes"}
+	HubsPluginsInstallDoes                                 = Key{"hubs.plugins.installDoes"}
+	HubsPluginsInstallNext                                 = Key{"hubs.plugins.installNext"}
+	HubsPluginsInstallTitle                                = Key{"hubs.plugins.installTitle"}
+	HubsPluginsInstalled                                   = Key{"hubs.plugins.installed"}
+	HubsPluginsInstalling                                  = Key{"hubs.plugins.installing"}
+	HubsPluginsMissingEnv                                  = Key{"hubs.plugins.missingEnv"}
+	HubsPluginsNoSettings                                  = Key{"hubs.plugins.noSettings"}
+	HubsPluginsNothingAsked                                = Key{"hubs.plugins.nothingAsked"}
+	HubsPluginsPartBundles                                 = Key{"hubs.plugins.partBundles"}
+	HubsPluginsPartCatalog                                 = Key{"hubs.plugins.partCatalog"}
+	HubsPluginsPartHub                                     = Key{"hubs.plugins.partHub"}
+	HubsPluginsPartPlugins                                 = Key{"hubs.plugins.partPlugins"}
+	HubsPluginsPartSkills                                  = Key{"hubs.plugins.partSkills"}
+	HubsPluginsPartSources                                 = Key{"hubs.plugins.partSources"}
+	HubsPluginsPartTrusted                                 = Key{"hubs.plugins.partTrusted"}
+	HubsPluginsReading                                     = Key{"hubs.plugins.reading"}
+	HubsPluginsRefHelp                                     = Key{"hubs.plugins.refHelp"}
+	HubsPluginsRefLabel                                    = Key{"hubs.plugins.refLabel"}
+	HubsPluginsRemoveConfirm                               = Key{"hubs.plugins.removeConfirm"}
+	HubsPluginsRemoved                                     = Key{"hubs.plugins.removed"}
+	HubsPluginsRemoving                                    = Key{"hubs.plugins.removing"}
+	HubsPluginsScanBlocked                                 = Key{"hubs.plugins.scanBlocked"}
+	HubsPluginsSecretSet                                   = Key{"hubs.plugins.secretSet"}
+	HubsPluginsSettingsSaved                               = Key{"hubs.plugins.settingsSaved"}
+	HubsPluginsSettingsTitle                               = Key{"hubs.plugins.settingsTitle"}
+	HubsPluginsSourceHelp                                  = Key{"hubs.plugins.sourceHelp"}
+	HubsPluginsSourceLabel                                 = Key{"hubs.plugins.sourceLabel"}
+	HubsPluginsTrustURLConfirm                             = Key{"hubs.plugins.trustURLConfirm"}
+	HubsPluginsUpdated                                     = Key{"hubs.plugins.updated"}
+	HubsPluginsUpdating                                    = Key{"hubs.plugins.updating"}
+	HubsProfilesAddTitle                                   = Key{"hubs.profiles.addTitle"}
+	HubsProfilesAliasAdd                                   = Key{"hubs.profiles.aliasAdd"}
+	HubsProfilesAliasAddDoes                               = Key{"hubs.profiles.aliasAddDoes"}
+	HubsProfilesAliasAdded                                 = Key{"hubs.profiles.aliasAdded"}
+	HubsProfilesAliasRemove                                = Key{"hubs.profiles.aliasRemove"}
+	HubsProfilesAliasRemoveConfirm                         = Key{"hubs.profiles.aliasRemoveConfirm"}
+	HubsProfilesAliasRemoveDoes                            = Key{"hubs.profiles.aliasRemoveDoes"}
+	HubsProfilesAliasRemoved                               = Key{"hubs.profiles.aliasRemoved"}
+	HubsProfilesAlreadyOn                                  = Key{"hubs.profiles.alreadyOn"}
+	HubsProfilesColFor                                     = Key{"hubs.profiles.colFor"}
+	HubsProfilesColModel                                   = Key{"hubs.profiles.colModel"}
+	HubsProfilesColProfile                                 = Key{"hubs.profiles.colProfile"}
+	HubsProfilesColSkills                                  = Key{"hubs.profiles.colSkills"}
+	HubsProfilesCreate                                     = Key{"hubs.profiles.create"}
+	HubsProfilesCreateDoes                                 = Key{"hubs.profiles.createDoes"}
+	HubsProfilesCreateSubmit                               = Key{"hubs.profiles.createSubmit"}
+	HubsProfilesCreated                                    = Key{"hubs.profiles.created"}
+	HubsProfilesCreating                                   = Key{"hubs.profiles.creating"}
+	HubsProfilesDelete                                     = Key{"hubs.profiles.delete"}
+	HubsProfilesDeleteConfirm                              = Key{"hubs.profiles.deleteConfirm"}
+	HubsProfilesDeleteDoes                                 = Key{"hubs.profiles.deleteDoes"}
+	HubsProfilesDeleteMine                                 = Key{"hubs.profiles.deleteMine"}
+	HubsProfilesDescribe                                   = Key{"hubs.profiles.describe"}
+	HubsProfilesDescribeAuto                               = Key{"hubs.profiles.describeAuto"}
+	HubsProfilesDescribeAutoDoes                           = Key{"hubs.profiles.describeAutoDoes"}
+	HubsProfilesDescribeAutoFailed                         = Key{"hubs.profiles.describeAutoFailed"}
+	HubsProfilesDescribeDoes                               = Key{"hubs.profiles.describeDoes"}
+	HubsProfilesDescribeField                              = Key{"hubs.profiles.describeField"}
+	HubsProfilesDescribeLabel                              = Key{"hubs.profiles.describeLabel"}
+	HubsProfilesDescribed                                  = Key{"hubs.profiles.described"}
+	HubsProfilesDescriptionAuto                            = Key{"hubs.profiles.descriptionAuto"}
+	HubsProfilesDetailActive                               = Key{"hubs.profiles.detailActive"}
+	HubsProfilesDetailAlias                                = Key{"hubs.profiles.detailAlias"}
+	HubsProfilesDetailDistribution                         = Key{"hubs.profiles.detailDistribution"}
+	HubsProfilesDetailMine                                 = Key{"hubs.profiles.detailMine"}
+	HubsProfilesDetailMineActive                           = Key{"hubs.profiles.detailMineActive"}
+	HubsProfilesDetailModel                                = Key{"hubs.profiles.detailModel"}
+	HubsProfilesDetailService                              = Key{"hubs.profiles.detailService"}
+	HubsProfilesDetailWas                                  = Key{"hubs.profiles.detailWas"}
+	HubsProfilesDistInfo                                   = Key{"hubs.profiles.distInfo"}
+	HubsProfilesDistInfoDoes                               = Key{"hubs.profiles.distInfoDoes"}
+	HubsProfilesDistUpdate                                 = Key{"hubs.profiles.distUpdate"}
+	HubsProfilesDistUpdateConfirm                          = Key{"hubs.profiles.distUpdateConfirm"}
+	HubsProfilesDistUpdateDoes                             = Key{"hubs.profiles.distUpdateDoes"}
+	HubsProfilesEmpty                                      = Key{"hubs.profiles.empty"}
+	HubsProfilesExport                                     = Key{"hubs.profiles.export"}
+	HubsProfilesExportDoes                                 = Key{"hubs.profiles.exportDoes"}
+	HubsProfilesExportIntro                                = Key{"hubs.profiles.exportIntro"}
+	HubsProfilesExportPath                                 = Key{"hubs.profiles.exportPath"}
+	HubsProfilesExportPathDefault                          = Key{"hubs.profiles.exportPathDefault"}
+	HubsProfilesExportPathHelp                             = Key{"hubs.profiles.exportPathHelp"}
+	HubsProfilesExportSubmit                               = Key{"hubs.profiles.exportSubmit"}
+	HubsProfilesExported                                   = Key{"hubs.profiles.exported"}
+	HubsProfilesExporting                                  = Key{"hubs.profiles.exporting"}
+	HubsProfilesFieldAlias                                 = Key{"hubs.profiles.fieldAlias"}
+	HubsProfilesFieldAliasHelp                             = Key{"hubs.profiles.fieldAliasHelp"}
+	HubsProfilesFieldChannels                              = Key{"hubs.profiles.fieldChannels"}
+	HubsProfilesFieldChannelsHelp                          = Key{"hubs.profiles.fieldChannelsHelp"}
+	HubsProfilesFieldDescription                           = Key{"hubs.profiles.fieldDescription"}
+	HubsProfilesFieldDescriptionHelp                       = Key{"hubs.profiles.fieldDescriptionHelp"}
+	HubsProfilesFieldFrom                                  = Key{"hubs.profiles.fieldFrom"}
+	HubsProfilesFieldFromHelp                              = Key{"hubs.profiles.fieldFromHelp"}
+	HubsProfilesFieldLogins                                = Key{"hubs.profiles.fieldLogins"}
+	HubsProfilesFieldModel                                 = Key{"hubs.profiles.fieldModel"}
+	HubsProfilesFieldModelHelp                             = Key{"hubs.profiles.fieldModelHelp"}
+	HubsProfilesFieldName                                  = Key{"hubs.profiles.fieldName"}
+	HubsProfilesFieldNameHelp                              = Key{"hubs.profiles.fieldNameHelp"}
+	HubsProfilesFieldProvider                              = Key{"hubs.profiles.fieldProvider"}
+	HubsProfilesFieldSkills                                = Key{"hubs.profiles.fieldSkills"}
+	HubsProfilesFieldSkillsHelp                            = Key{"hubs.profiles.fieldSkillsHelp"}
+	HubsProfilesFieldStart                                 = Key{"hubs.profiles.fieldStart"}
+	HubsProfilesImport                                     = Key{"hubs.profiles.import"}
+	HubsProfilesImportArchive                              = Key{"hubs.profiles.importArchive"}
+	HubsProfilesImportDoes                                 = Key{"hubs.profiles.importDoes"}
+	HubsProfilesImportNameHelp                             = Key{"hubs.profiles.importNameHelp"}
+	HubsProfilesImportSubmit                               = Key{"hubs.profiles.importSubmit"}
+	HubsProfilesImported                                   = Key{"hubs.profiles.imported"}
+	HubsProfilesImporting                                  = Key{"hubs.profiles.importing"}
+	HubsProfilesInstall                                    = Key{"hubs.profiles.install"}
+	HubsProfilesInstallDoes                                = Key{"hubs.profiles.installDoes"}
+	HubsProfilesInstallForce                               = Key{"hubs.profiles.installForce"}
+	HubsProfilesInstallForceHelp                           = Key{"hubs.profiles.installForceHelp"}
+	HubsProfilesInstallNameHelp                            = Key{"hubs.profiles.installNameHelp"}
+	HubsProfilesInstallSource                              = Key{"hubs.profiles.installSource"}
+	HubsProfilesInstallSourceHelp                          = Key{"hubs.profiles.installSourceHelp"}
+	HubsProfilesInstallSubmit                              = Key{"hubs.profiles.installSubmit"}
+	HubsProfilesLegend                                     = Key{"hubs.profiles.legend"}
+	HubsProfilesLoading                                    = Key{"hubs.profiles.loading"}
+	HubsProfilesLoginsCopy                                 = Key{"hubs.profiles.loginsCopy"}
+	HubsProfilesLoginsCopyMeaning                          = Key{"hubs.profiles.loginsCopyMeaning"}
+	HubsProfilesLoginsNone                                 = Key{"hubs.profiles.loginsNone"}
+	HubsProfilesLoginsNoneMeaning                          = Key{"hubs.profiles.loginsNoneMeaning"}
+	HubsProfilesLoginsShare                                = Key{"hubs.profiles.loginsShare"}
+	HubsProfilesLoginsShareMeaning                         = Key{"hubs.profiles.loginsShareMeaning"}
+	HubsProfilesQuitNow                                    = Key{"hubs.profiles.quitNow"}
+	HubsProfilesRename                                     = Key{"hubs.profiles.rename"}
+	HubsProfilesRenameDefaultField                         = Key{"hubs.profiles.renameDefaultField"}
+	HubsProfilesRenameDoes                                 = Key{"hubs.profiles.renameDoes"}
+	HubsProfilesRenameField                                = Key{"hubs.profiles.renameField"}
+	HubsProfilesRestoreUsage                               = Key{"hubs.profiles.restoreUsage"}
+	HubsProfilesSaving                                     = Key{"hubs.profiles.saving"}
+	HubsProfilesShow                                       = Key{"hubs.profiles.show"}
+	HubsProfilesShowDoes                                   = Key{"hubs.profiles.showDoes"}
+	HubsProfilesStartEverything                            = Key{"hubs.profiles.startEverything"}
+	HubsProfilesStartEverythingMeaning                     = Key{"hubs.profiles.startEverythingMeaning"}
+	HubsProfilesStartFresh                                 = Key{"hubs.profiles.startFresh"}
+	HubsProfilesStartFreshMeaning                          = Key{"hubs.profiles.startFreshMeaning"}
+	HubsProfilesStartSettings                              = Key{"hubs.profiles.startSettings"}
+	HubsProfilesStartSettingsMeaning                       = Key{"hubs.profiles.startSettingsMeaning"}
+	HubsProfilesUse                                        = Key{"hubs.profiles.use"}
+	HubsProfilesUseDoes                                    = Key{"hubs.profiles.useDoes"}
+	HubsProfilesUseLabel                                   = Key{"hubs.profiles.useLabel"}
+	HubsRunBusy                                            = Key{"hubs.run.busy"}
+	HubsRunDone                                            = Key{"hubs.run.done"}
+	HubsRunExit                                            = Key{"hubs.run.exit"}
+	HubsRunFailed                                          = Key{"hubs.run.failed"}
+	HubsRunNoOutput                                        = Key{"hubs.run.noOutput"}
+	HubsRunRunning                                         = Key{"hubs.run.running"}
+	HubsSessionsArchiveOpen                                = Key{"hubs.sessions.archiveOpen"}
+	HubsSessionsArchived                                   = Key{"hubs.sessions.archived"}
+	HubsSessionsArchivedShown                              = Key{"hubs.sessions.archivedShown"}
+	HubsSessionsCloseConfirm                               = Key{"hubs.sessions.closeConfirm"}
+	HubsSessionsClosed                                     = Key{"hubs.sessions.closed"}
+	HubsSessionsDeleted                                    = Key{"hubs.sessions.deleted"}
+	HubsSessionsDeleting                                   = Key{"hubs.sessions.deleting"}
+	HubsSessionsDetailID                                   = Key{"hubs.sessions.detailID"}
+	HubsSessionsDetailMessages                             = Key{"hubs.sessions.detailMessages"}
+	HubsSessionsDetailModel                                = Key{"hubs.sessions.detailModel"}
+	HubsSessionsDetailSource                               = Key{"hubs.sessions.detailSource"}
+	HubsSessionsDetailState                                = Key{"hubs.sessions.detailState"}
+	HubsSessionsEmpty                                      = Key{"hubs.sessions.empty"}
+	HubsSessionsExportFile                                 = Key{"hubs.sessions.exportFile"}
+	HubsSessionsExportFileHint                             = Key{"hubs.sessions.exportFileHint"}
+	HubsSessionsExportFormat                               = Key{"hubs.sessions.exportFormat"}
+	HubsSessionsExportHTML                                 = Key{"hubs.sessions.exportHTML"}
+	HubsSessionsExportJSON                                 = Key{"hubs.sessions.exportJSON"}
+	HubsSessionsExportMd                                   = Key{"hubs.sessions.exportMd"}
+	HubsSessionsExportRedact                               = Key{"hubs.sessions.exportRedact"}
+	HubsSessionsExportRedactHelp                           = Key{"hubs.sessions.exportRedactHelp"}
+	HubsSessionsExportSubmit                               = Key{"hubs.sessions.exportSubmit"}
+	HubsSessionsExportTitle                                = Key{"hubs.sessions.exportTitle"}
+	HubsSessionsExported                                   = Key{"hubs.sessions.exported"}
+	HubsSessionsExporting                                  = Key{"hubs.sessions.exporting"}
+	HubsSessionsLegend                                     = Key{"hubs.sessions.legend"}
+	HubsSessionsOpenInCard                                 = Key{"hubs.sessions.openInCard"}
+	HubsSessionsPinned                                     = Key{"hubs.sessions.pinned"}
+	HubsSessionsPruneArchived                              = Key{"hubs.sessions.pruneArchived"}
+	HubsSessionsPruneArchivedHelp                          = Key{"hubs.sessions.pruneArchivedHelp"}
+	HubsSessionsPruneConfirm                               = Key{"hubs.sessions.pruneConfirm"}
+	HubsSessionsPruneDays                                  = Key{"hubs.sessions.pruneDays"}
+	HubsSessionsPruneDaysHelp                              = Key{"hubs.sessions.pruneDaysHelp"}
+	HubsSessionsPruneIntro                                 = Key{"hubs.sessions.pruneIntro"}
+	HubsSessionsPrunePinned                                = Key{"hubs.sessions.prunePinned"}
+	HubsSessionsPruneSubmit                                = Key{"hubs.sessions.pruneSubmit"}
+	HubsSessionsPruneTitle                                 = Key{"hubs.sessions.pruneTitle"}
+	HubsSessionsPruned                                     = Key{"hubs.sessions.pruned"}
+	HubsSessionsPruning                                    = Key{"hubs.sessions.pruning"}
+	HubsSessionsRenameLabel                                = Key{"hubs.sessions.renameLabel"}
+	HubsSessionsRenameTitle                                = Key{"hubs.sessions.renameTitle"}
+	HubsSessionsRenamed                                    = Key{"hubs.sessions.renamed"}
+	HubsSessionsSaving                                     = Key{"hubs.sessions.saving"}
+	HubsSessionsStateArchived                              = Key{"hubs.sessions.stateArchived"}
+	HubsSessionsStateLive                                  = Key{"hubs.sessions.stateLive"}
+	HubsSessionsStateOpen                                  = Key{"hubs.sessions.stateOpen"}
+	HubsSessionsStatePinned                                = Key{"hubs.sessions.statePinned"}
+	HubsSessionsStateStored                                = Key{"hubs.sessions.stateStored"}
+	HubsSessionsStateWorking                               = Key{"hubs.sessions.stateWorking"}
+	HubsSessionsUnarchived                                 = Key{"hubs.sessions.unarchived"}
+	HubsSessionsUnpinned                                   = Key{"hubs.sessions.unpinned"}
+	HubsSettingsAddSubmit                                  = Key{"hubs.settings.addSubmit"}
+	HubsSettingsAdvancedShown                              = Key{"hubs.settings.advancedShown"}
+	HubsSettingsApplyLive                                  = Key{"hubs.settings.applyLive"}
+	HubsSettingsApplyNewSession                            = Key{"hubs.settings.applyNewSession"}
+	HubsSettingsApplyNextTurn                              = Key{"hubs.settings.applyNextTurn"}
+	HubsSettingsApplyRestart                               = Key{"hubs.settings.applyRestart"}
+	HubsSettingsDetailApply                                = Key{"hubs.settings.detailApply"}
+	HubsSettingsDetailDefault                              = Key{"hubs.settings.detailDefault"}
+	HubsSettingsDetailSessionValue                         = Key{"hubs.settings.detailSessionValue"}
+	HubsSettingsDetailSource                               = Key{"hubs.settings.detailSource"}
+	HubsSettingsEmpty                                      = Key{"hubs.settings.empty"}
+	HubsSettingsEntries                                    = Key{"hubs.settings.entries"}
+	HubsSettingsEntryAdd                                   = Key{"hubs.settings.entryAdd"}
+	HubsSettingsEntryAdded                                 = Key{"hubs.settings.entryAdded"}
+	HubsSettingsEntryHelp                                  = Key{"hubs.settings.entryHelp"}
+	HubsSettingsEntryName                                  = Key{"hubs.settings.entryName"}
+	HubsSettingsEntryRemoveConfirm                         = Key{"hubs.settings.entryRemoveConfirm"}
+	HubsSettingsEntryRemoved                               = Key{"hubs.settings.entryRemoved"}
+	HubsSettingsEntrySaved                                 = Key{"hubs.settings.entrySaved"}
+	HubsSettingsEntryValue                                 = Key{"hubs.settings.entryValue"}
+	HubsSettingsHelp                                       = Key{"hubs.settings.help"}
+	HubsSettingsLegend                                     = Key{"hubs.settings.legend"}
+	HubsSettingsListHelp                                   = Key{"hubs.settings.listHelp"}
+	HubsSettingsLocked                                     = Key{"hubs.settings.locked"}
+	HubsSettingsMapEmpty                                   = Key{"hubs.settings.mapEmpty"}
+	HubsSettingsNoMatch                                    = Key{"hubs.settings.noMatch"}
+	HubsSettingsNotEditable                                = Key{"hubs.settings.notEditable"}
+	HubsSettingsOff                                        = Key{"hubs.settings.off"}
+	HubsSettingsOn                                         = Key{"hubs.settings.on"}
+	HubsSettingsOpenChoices                                = Key{"hubs.settings.openChoices"}
+	HubsSettingsPlaceCLI                                   = Key{"hubs.settings.placeCLI"}
+	HubsSettingsPlaceEnv                                   = Key{"hubs.settings.placeEnv"}
+	HubsSettingsPlaceSetup                                 = Key{"hubs.settings.placeSetup"}
+	HubsSettingsPlaceSlash                                 = Key{"hubs.settings.placeSlash"}
+	HubsSettingsPlacesTitle                                = Key{"hubs.settings.placesTitle"}
+	HubsSettingsResetConfirm                               = Key{"hubs.settings.resetConfirm"}
+	HubsSettingsSave                                       = Key{"hubs.settings.save"}
+	HubsSettingsSaved                                      = Key{"hubs.settings.saved"}
+	HubsSettingsScopeAlways                                = Key{"hubs.settings.scopeAlways"}
+	HubsSettingsScopeAlwaysMeaning                         = Key{"hubs.settings.scopeAlwaysMeaning"}
+	HubsSettingsScopeLabel                                 = Key{"hubs.settings.scopeLabel"}
+	HubsSettingsScopeSession                               = Key{"hubs.settings.scopeSession"}
+	HubsSettingsScopeSessionMeaning                        = Key{"hubs.settings.scopeSessionMeaning"}
+	HubsSettingsSearchTitle                                = Key{"hubs.settings.searchTitle"}
+	HubsSettingsSecretHelp                                 = Key{"hubs.settings.secretHelp"}
+	HubsSettingsSourceDefault                              = Key{"hubs.settings.source.default"}
+	HubsSettingsSourceEnv                                  = Key{"hubs.settings.source.env"}
+	HubsSettingsSourceGlobal                               = Key{"hubs.settings.source.global"}
+	HubsSettingsSourceManaged                              = Key{"hubs.settings.source.managed"}
+	HubsSettingsSourceSession                              = Key{"hubs.settings.source.session"}
+	HubsSettingsSourceWorkspace                            = Key{"hubs.settings.source.workspace"}
+	HubsSetupActionBusy                                    = Key{"hubs.setup.actionBusy"}
+	HubsSetupActionDone                                    = Key{"hubs.setup.actionDone"}
+	HubsSetupActionFailed                                  = Key{"hubs.setup.actionFailed"}
+	HubsSetupAgentDetail                                   = Key{"hubs.setup.agent.detail"}
+	HubsSetupAgentTitle                                    = Key{"hubs.setup.agent.title"}
+	HubsSetupBlankApplied                                  = Key{"hubs.setup.blank.applied"}
+	HubsSetupBlankApply                                    = Key{"hubs.setup.blank.apply"}
+	HubsSetupBlankApplyHelp                                = Key{"hubs.setup.blank.applyHelp"}
+	HubsSetupBlankDetail                                   = Key{"hubs.setup.blank.detail"}
+	HubsSetupBlankIntro                                    = Key{"hubs.setup.blank.intro"}
+	HubsSetupBlankSkills                                   = Key{"hubs.setup.blank.skills"}
+	HubsSetupBlankSkillsHelp                               = Key{"hubs.setup.blank.skillsHelp"}
+	HubsSetupBlankTitle                                    = Key{"hubs.setup.blank.title"}
+	HubsSetupChatDetail                                    = Key{"hubs.setup.chat.detail"}
+	HubsSetupChatFormTitle                                 = Key{"hubs.setup.chat.formTitle"}
+	HubsSetupChatHasKeys                                   = Key{"hubs.setup.chat.hasKeys"}
+	HubsSetupChatInstall                                   = Key{"hubs.setup.chat.install"}
+	HubsSetupChatInstallHelp                               = Key{"hubs.setup.chat.installHelp"}
+	HubsSetupChatIntro                                     = Key{"hubs.setup.chat.intro"}
+	HubsSetupChatNone                                      = Key{"hubs.setup.chat.none"}
+	HubsSetupChatPick                                      = Key{"hubs.setup.chat.pick"}
+	HubsSetupChatTitle                                     = Key{"hubs.setup.chat.title"}
+	HubsSetupClose                                         = Key{"hubs.setup.close"}
+	HubsSetupHelpersAuto                                   = Key{"hubs.setup.helpers.auto"}
+	HubsSetupHelpersAutoMeaning                            = Key{"hubs.setup.helpers.autoMeaning"}
+	HubsSetupHelpersDetail                                 = Key{"hubs.setup.helpers.detail"}
+	HubsSetupHelpersIntro                                  = Key{"hubs.setup.helpers.intro"}
+	HubsSetupHelpersModelPick                              = Key{"hubs.setup.helpers.modelPick"}
+	HubsSetupHelpersTitle                                  = Key{"hubs.setup.helpers.title"}
+	HubsSetupImportBackup                                  = Key{"hubs.setup.import.backup"}
+	HubsSetupImportBackupHelp                              = Key{"hubs.setup.import.backupHelp"}
+	HubsSetupImportDetail                                  = Key{"hubs.setup.import.detail"}
+	HubsSetupImportOpenclaw                                = Key{"hubs.setup.import.openclaw"}
+	HubsSetupImportOpenclawHelp                            = Key{"hubs.setup.import.openclawHelp"}
+	HubsSetupImportSession                                 = Key{"hubs.setup.import.session"}
+	HubsSetupImportSessionHelp                             = Key{"hubs.setup.import.sessionHelp"}
+	HubsSetupImportTitle                                   = Key{"hubs.setup.import.title"}
+	HubsSetupIntro                                         = Key{"hubs.setup.intro"}
+	HubsSetupKeyRemoved                                    = Key{"hubs.setup.keyRemoved"}
+	HubsSetupKeySaved                                      = Key{"hubs.setup.keySaved"}
+	HubsSetupKeySet                                        = Key{"hubs.setup.keySet"}
+	HubsSetupKeyURL                                        = Key{"hubs.setup.keyURL"}
+	HubsSetupModelDetail                                   = Key{"hubs.setup.model.detail"}
+	HubsSetupModelTitle                                    = Key{"hubs.setup.model.title"}
+	HubsSetupNoCommand                                     = Key{"hubs.setup.noCommand"}
+	HubsSetupQuickDetail                                   = Key{"hubs.setup.quick.detail"}
+	HubsSetupQuickIntro                                    = Key{"hubs.setup.quick.intro"}
+	HubsSetupQuickModel                                    = Key{"hubs.setup.quick.model"}
+	HubsSetupQuickNone                                     = Key{"hubs.setup.quick.none"}
+	HubsSetupQuickTitle                                    = Key{"hubs.setup.quick.title"}
+	HubsSetupSaving                                        = Key{"hubs.setup.saving"}
+	HubsSetupTerminalDetail                                = Key{"hubs.setup.terminal.detail"}
+	HubsSetupTerminalNoDocker                              = Key{"hubs.setup.terminal.noDocker"}
+	HubsSetupTerminalPlugin                                = Key{"hubs.setup.terminal.plugin"}
+	HubsSetupTerminalPluginHelp                            = Key{"hubs.setup.terminal.pluginHelp"}
+	HubsSetupTerminalTest                                  = Key{"hubs.setup.terminal.test"}
+	HubsSetupTerminalTestHelp                              = Key{"hubs.setup.terminal.testHelp"}
+	HubsSetupTerminalTitle                                 = Key{"hubs.setup.terminal.title"}
+	HubsSetupToolsDetail                                   = Key{"hubs.setup.tools.detail"}
+	HubsSetupToolsNeedsKey                                 = Key{"hubs.setup.tools.needsKey"}
+	HubsSetupToolsTitle                                    = Key{"hubs.setup.tools.title"}
+	HubsSetupToolsetSaved                                  = Key{"hubs.setup.toolsetSaved"}
+	HubsSetupUnknown                                       = Key{"hubs.setup.unknown"}
+	HubsSetupVoiceDetail                                   = Key{"hubs.setup.voice.detail"}
+	HubsSetupVoiceEspeak                                   = Key{"hubs.setup.voice.espeak"}
+	HubsSetupVoiceInstall                                  = Key{"hubs.setup.voice.install"}
+	HubsSetupVoiceInstallHelp                              = Key{"hubs.setup.voice.installHelp"}
+	HubsSetupVoiceSignIn                                   = Key{"hubs.setup.voice.signIn"}
+	HubsSetupVoiceSignInHelp                               = Key{"hubs.setup.voice.signInHelp"}
+	HubsSetupVoiceTitle                                    = Key{"hubs.setup.voice.title"}
+	HubsSetupVoiceUnsupported                              = Key{"hubs.setup.voice.unsupported"}
+	HubsShortAfterExit                                     = Key{"hubs.short.afterExit"}
+	HubsShortChatapps                                      = Key{"hubs.short.chatapps"}
+	HubsShortCommands                                      = Key{"hubs.short.commands"}
+	HubsShortCron                                          = Key{"hubs.short.cron"}
+	HubsShortFallback                                      = Key{"hubs.short.fallback"}
+	HubsShortHooks                                         = Key{"hubs.short.hooks"}
+	HubsShortHubs                                          = Key{"hubs.short.hubs"}
+	HubsShortKanban                                        = Key{"hubs.short.kanban"}
+	HubsShortLogins                                        = Key{"hubs.short.logins"}
+	HubsShortMcp                                           = Key{"hubs.short.mcp"}
+	HubsShortMemoryProvider                                = Key{"hubs.short.memoryProvider"}
+	HubsShortMixes                                         = Key{"hubs.short.mixes"}
+	HubsShortPlugins                                       = Key{"hubs.short.plugins"}
+	HubsShortProfiles                                      = Key{"hubs.short.profiles"}
+	HubsShortProjects                                      = Key{"hubs.short.projects"}
+	HubsShortSecrets                                       = Key{"hubs.short.secrets"}
+	HubsShortSessions                                      = Key{"hubs.short.sessions"}
+	HubsShortSettings                                      = Key{"hubs.short.settings"}
+	HubsShortSystem                                        = Key{"hubs.short.system"}
+	HubsShortVault                                         = Key{"hubs.short.vault"}
+	HubsSkillsActAudit                                     = Key{"hubs.skills.actAudit"}
+	HubsSkillsActAuditDoes                                 = Key{"hubs.skills.actAuditDoes"}
+	HubsSkillsActCheck                                     = Key{"hubs.skills.actCheck"}
+	HubsSkillsActCheckDoes                                 = Key{"hubs.skills.actCheckDoes"}
+	HubsSkillsActDiff                                      = Key{"hubs.skills.actDiff"}
+	HubsSkillsActDiffDoes                                  = Key{"hubs.skills.actDiffDoes"}
+	HubsSkillsActExport                                    = Key{"hubs.skills.actExport"}
+	HubsSkillsActExportDoes                                = Key{"hubs.skills.actExportDoes"}
+	HubsSkillsActImport                                    = Key{"hubs.skills.actImport"}
+	HubsSkillsActImportDoes                                = Key{"hubs.skills.actImportDoes"}
+	HubsSkillsActInspect                                   = Key{"hubs.skills.actInspect"}
+	HubsSkillsActInspectDoes                               = Key{"hubs.skills.actInspectDoes"}
+	HubsSkillsActModified                                  = Key{"hubs.skills.actModified"}
+	HubsSkillsActModifiedDoes                              = Key{"hubs.skills.actModifiedDoes"}
+	HubsSkillsActOptDoes                                   = Key{"hubs.skills.actOptDoes"}
+	HubsSkillsActOptIn                                     = Key{"hubs.skills.actOptIn"}
+	HubsSkillsActOptOut                                    = Key{"hubs.skills.actOptOut"}
+	HubsSkillsActRepair                                    = Key{"hubs.skills.actRepair"}
+	HubsSkillsActRepairDoes                                = Key{"hubs.skills.actRepairDoes"}
+	HubsSkillsActReset                                     = Key{"hubs.skills.actReset"}
+	HubsSkillsActResetDoes                                 = Key{"hubs.skills.actResetDoes"}
+	HubsSkillsActToggle                                    = Key{"hubs.skills.actToggle"}
+	HubsSkillsActToggleDoes                                = Key{"hubs.skills.actToggleDoes"}
+	HubsSkillsActUninstall                                 = Key{"hubs.skills.actUninstall"}
+	HubsSkillsActUninstallDoes                             = Key{"hubs.skills.actUninstallDoes"}
+	HubsSkillsActUpdate                                    = Key{"hubs.skills.actUpdate"}
+	HubsSkillsActUpdateAll                                 = Key{"hubs.skills.actUpdateAll"}
+	HubsSkillsActUpdateAllDoes                             = Key{"hubs.skills.actUpdateAllDoes"}
+	HubsSkillsActUpdateDoes                                = Key{"hubs.skills.actUpdateDoes"}
+	HubsSkillsByName                                       = Key{"hubs.skills.byName"}
+	HubsSkillsDetailEssential                              = Key{"hubs.skills.detailEssential"}
+	HubsSkillsDetailOrigin                                 = Key{"hubs.skills.detailOrigin"}
+	HubsSkillsDisabled                                     = Key{"hubs.skills.disabled"}
+	HubsSkillsEnabled                                      = Key{"hubs.skills.enabled"}
+	HubsSkillsEssential                                    = Key{"hubs.skills.essential"}
+	HubsSkillsEveryDetail                                  = Key{"hubs.skills.everyDetail"}
+	HubsSkillsEveryLabel                                   = Key{"hubs.skills.everyLabel"}
+	HubsSkillsEveryTitle                                   = Key{"hubs.skills.everyTitle"}
+	HubsSkillsFileLabel                                    = Key{"hubs.skills.fileLabel"}
+	HubsSkillsHubEmpty                                     = Key{"hubs.skills.hubEmpty"}
+	HubsSkillsIdentifierLabel                              = Key{"hubs.skills.identifierLabel"}
+	HubsSkillsInstallTitle                                 = Key{"hubs.skills.installTitle"}
+	HubsSkillsLoadingRegistries                            = Key{"hubs.skills.loadingRegistries"}
+	HubsSkillsNextPage                                     = Key{"hubs.skills.nextPage"}
+	HubsSkillsNotFromHub                                   = Key{"hubs.skills.notFromHub"}
+	HubsSkillsPage                                         = Key{"hubs.skills.page"}
 	HubsSkillsPathLine                                     = Key{"hubs.skills.pathLine"}
+	HubsSkillsRan                                          = Key{"hubs.skills.ran"}
+	HubsSkillsResetConfirm                                 = Key{"hubs.skills.resetConfirm"}
+	HubsSkillsRunFailed                                    = Key{"hubs.skills.runFailed"}
+	HubsSkillsRunning                                      = Key{"hubs.skills.running"}
+	HubsSkillsSourceBuiltin                                = Key{"hubs.skills.sourceBuiltin"}
+	HubsSkillsSourceHub                                    = Key{"hubs.skills.sourceHub"}
+	HubsSkillsSourceLocal                                  = Key{"hubs.skills.sourceLocal"}
+	HubsSkillsUninstallConfirm                             = Key{"hubs.skills.uninstallConfirm"}
+	HubsSkillsUninstallTitle                               = Key{"hubs.skills.uninstallTitle"}
+	HubsSkillsUpdateTitle                                  = Key{"hubs.skills.updateTitle"}
+	HubsSourcesAddTitle                                    = Key{"hubs.sources.addTitle"}
+	HubsSourcesEmpty                                       = Key{"hubs.sources.empty"}
+	HubsSourcesRemoveConfirm                               = Key{"hubs.sources.removeConfirm"}
+	HubsSourcesRemoveTitle                                 = Key{"hubs.sources.removeTitle"}
+	HubsSourcesRepoLabel                                   = Key{"hubs.sources.repoLabel"}
+	HubsStartAddressBad                                    = Key{"hubs.start.addressBad"}
+	HubsStartAddressHelp                                   = Key{"hubs.start.addressHelp"}
+	HubsStartAddressLabel                                  = Key{"hubs.start.addressLabel"}
+	HubsStartEndpoint                                      = Key{"hubs.start.endpoint"}
+	HubsStartEndpointDetail                                = Key{"hubs.start.endpointDetail"}
+	HubsStartEndpointIntro                                 = Key{"hubs.start.endpointIntro"}
+	HubsStartEndpointSubmit                                = Key{"hubs.start.endpointSubmit"}
+	HubsStartHelp                                          = Key{"hubs.start.help"}
+	HubsStartIntro                                         = Key{"hubs.start.intro"}
+	HubsStartKeyHelp                                       = Key{"hubs.start.keyHelp"}
+	HubsStartNeedsLogin                                    = Key{"hubs.start.needsLogin"}
+	HubsStartNoModels                                      = Key{"hubs.start.noModels"}
+	HubsStartNoProvider                                    = Key{"hubs.start.noProvider"}
+	HubsStartPickModel                                     = Key{"hubs.start.pickModel"}
+	HubsStartPrice                                         = Key{"hubs.start.price"}
+	HubsStartReady                                         = Key{"hubs.start.ready"}
+	HubsStartSaving                                        = Key{"hubs.start.saving"}
+	HubsStartSignedIn                                      = Key{"hubs.start.signedIn"}
+	HubsTitleAfterExit                                     = Key{"hubs.title.afterExit"}
+	HubsTitleChatapps                                      = Key{"hubs.title.chatapps"}
+	HubsTitleCommands                                      = Key{"hubs.title.commands"}
+	HubsTitleCron                                          = Key{"hubs.title.cron"}
+	HubsTitleFallback                                      = Key{"hubs.title.fallback"}
+	HubsTitleGetStarted                                    = Key{"hubs.title.getStarted"}
+	HubsTitleHooks                                         = Key{"hubs.title.hooks"}
+	HubsTitleHubs                                          = Key{"hubs.title.hubs"}
+	HubsTitleKanban                                        = Key{"hubs.title.kanban"}
 	HubsTitleLanguage                                      = Key{"hubs.title.language"}
+	HubsTitleLogins                                        = Key{"hubs.title.logins"}
+	HubsTitleMcp                                           = Key{"hubs.title.mcp"}
+	HubsTitleMemoryProvider                                = Key{"hubs.title.memoryProvider"}
+	HubsTitleMixes                                         = Key{"hubs.title.mixes"}
 	HubsTitlePlugins                                       = Key{"hubs.title.plugins"}
+	HubsTitleProfiles                                      = Key{"hubs.title.profiles"}
+	HubsTitleProjects                                      = Key{"hubs.title.projects"}
 	HubsTitleRewind                                        = Key{"hubs.title.rewind"}
+	HubsTitleSecrets                                       = Key{"hubs.title.secrets"}
 	HubsTitleSessions                                      = Key{"hubs.title.sessions"}
-	HubsTitleSkills                                        = Key{"hubs.title.skills"}
+	HubsTitleSettings                                      = Key{"hubs.title.settings"}
+	HubsTitleSetup                                         = Key{"hubs.title.setup"}
+	HubsTitleSystem                                        = Key{"hubs.title.system"}
+	HubsTitleVault                                         = Key{"hubs.title.vault"}
+	HubsTrustedAdd                                         = Key{"hubs.trusted.add"}
+	HubsTrustedEmpty                                       = Key{"hubs.trusted.empty"}
+	HubsTrustedHelp                                        = Key{"hubs.trusted.help"}
+	HubsTrustedPathLabel                                   = Key{"hubs.trusted.pathLabel"}
+	HubsTrustedRemoveConfirm                               = Key{"hubs.trusted.removeConfirm"}
+	HubsTrustedRemoveTitle                                 = Key{"hubs.trusted.removeTitle"}
 	JourneyCloseHint                                       = Key{"journey.closeHint"}
 	JourneyConfirmDelete                                   = Key{"journey.confirmDelete"}
 	JourneyEmpty                                           = Key{"journey.empty"}
@@ -538,60 +1504,22 @@ var (
 	KeysCompleteNextLabel                                  = Key{"keys.complete.next.label"}
 	KeysCompletePrevDoc                                    = Key{"keys.complete.prev.doc"}
 	KeysCompletePrevLabel                                  = Key{"keys.complete.prev.label"}
+	KeysCompleteStartDoc                                   = Key{"keys.complete.start.doc"}
+	KeysCompleteStartLabel                                 = Key{"keys.complete.start.label"}
 	KeysComposerAttachmentsClearDoc                        = Key{"keys.composer.attachments.clear.doc"}
 	KeysComposerAttachmentsClearLabel                      = Key{"keys.composer.attachments.clear.label"}
-	KeysComposerCopyDoc                                    = Key{"keys.composer.copy.doc"}
-	KeysComposerCopyLabel                                  = Key{"keys.composer.copy.label"}
-	KeysComposerDeleteBackDoc                              = Key{"keys.composer.delete.back.doc"}
-	KeysComposerDeleteBackLabel                            = Key{"keys.composer.delete.back.label"}
-	KeysComposerDeleteForwardDoc                           = Key{"keys.composer.delete.forward.doc"}
-	KeysComposerDeleteForwardLabel                         = Key{"keys.composer.delete.forward.label"}
-	KeysComposerDeleteLineAfterDoc                         = Key{"keys.composer.delete.line.after.doc"}
-	KeysComposerDeleteLineAfterLabel                       = Key{"keys.composer.delete.line.after.label"}
-	KeysComposerDeleteLineBeforeDoc                        = Key{"keys.composer.delete.line.before.doc"}
-	KeysComposerDeleteLineBeforeLabel                      = Key{"keys.composer.delete.line.before.label"}
-	KeysComposerDeleteWordBackDoc                          = Key{"keys.composer.delete.word.back.doc"}
-	KeysComposerDeleteWordBackLabel                        = Key{"keys.composer.delete.word.back.label"}
-	KeysComposerDeleteWordForwardDoc                       = Key{"keys.composer.delete.word.forward.doc"}
-	KeysComposerDeleteWordForwardLabel                     = Key{"keys.composer.delete.word.forward.label"}
 	KeysComposerDownDoc                                    = Key{"keys.composer.down.doc"}
 	KeysComposerDownLabel                                  = Key{"keys.composer.down.label"}
-	KeysComposerLeftDoc                                    = Key{"keys.composer.left.doc"}
-	KeysComposerLeftLabel                                  = Key{"keys.composer.left.label"}
-	KeysComposerLineEndDoc                                 = Key{"keys.composer.line.end.doc"}
-	KeysComposerLineEndLabel                               = Key{"keys.composer.line.end.label"}
-	KeysComposerLineStartDoc                               = Key{"keys.composer.line.start.doc"}
-	KeysComposerLineStartLabel                             = Key{"keys.composer.line.start.label"}
-	KeysComposerPasteDoc                                   = Key{"keys.composer.paste.doc"}
-	KeysComposerPasteLabel                                 = Key{"keys.composer.paste.label"}
-	KeysComposerRedoDoc                                    = Key{"keys.composer.redo.doc"}
-	KeysComposerRedoLabel                                  = Key{"keys.composer.redo.label"}
-	KeysComposerRightDoc                                   = Key{"keys.composer.right.doc"}
-	KeysComposerRightLabel                                 = Key{"keys.composer.right.label"}
-	KeysComposerSelectAllDoc                               = Key{"keys.composer.select.all.doc"}
-	KeysComposerSelectAllLabel                             = Key{"keys.composer.select.all.label"}
-	KeysComposerSelectDownDoc                              = Key{"keys.composer.select.down.doc"}
-	KeysComposerSelectDownLabel                            = Key{"keys.composer.select.down.label"}
-	KeysComposerSelectLeftDoc                              = Key{"keys.composer.select.left.doc"}
-	KeysComposerSelectLeftLabel                            = Key{"keys.composer.select.left.label"}
-	KeysComposerSelectRightDoc                             = Key{"keys.composer.select.right.doc"}
-	KeysComposerSelectRightLabel                           = Key{"keys.composer.select.right.label"}
-	KeysComposerSelectUpDoc                                = Key{"keys.composer.select.up.doc"}
-	KeysComposerSelectUpLabel                              = Key{"keys.composer.select.up.label"}
-	KeysComposerSelectWordLeftDoc                          = Key{"keys.composer.select.word.left.doc"}
-	KeysComposerSelectWordLeftLabel                        = Key{"keys.composer.select.word.left.label"}
-	KeysComposerSelectWordRightDoc                         = Key{"keys.composer.select.word.right.doc"}
-	KeysComposerSelectWordRightLabel                       = Key{"keys.composer.select.word.right.label"}
+	KeysComposerHistoryNextDoc                             = Key{"keys.composer.history.next.doc"}
+	KeysComposerHistoryNextLabel                           = Key{"keys.composer.history.next.label"}
+	KeysComposerHistoryPrevDoc                             = Key{"keys.composer.history.prev.doc"}
+	KeysComposerHistoryPrevLabel                           = Key{"keys.composer.history.prev.label"}
+	KeysComposerHistorySearchDoc                           = Key{"keys.composer.history.search.doc"}
+	KeysComposerHistorySearchLabel                         = Key{"keys.composer.history.search.label"}
 	KeysComposerSendDoc                                    = Key{"keys.composer.send.doc"}
 	KeysComposerSendLabel                                  = Key{"keys.composer.send.label"}
-	KeysComposerUndoDoc                                    = Key{"keys.composer.undo.doc"}
-	KeysComposerUndoLabel                                  = Key{"keys.composer.undo.label"}
 	KeysComposerUpDoc                                      = Key{"keys.composer.up.doc"}
 	KeysComposerUpLabel                                    = Key{"keys.composer.up.label"}
-	KeysComposerWordLeftDoc                                = Key{"keys.composer.word.left.doc"}
-	KeysComposerWordLeftLabel                              = Key{"keys.composer.word.left.label"}
-	KeysComposerWordRightDoc                               = Key{"keys.composer.word.right.doc"}
-	KeysComposerWordRightLabel                             = Key{"keys.composer.word.right.label"}
 	KeysConfirmNoDoc                                       = Key{"keys.confirm.no.doc"}
 	KeysConfirmNoLabel                                     = Key{"keys.confirm.no.label"}
 	KeysConfirmYesDoc                                      = Key{"keys.confirm.yes.doc"}
@@ -604,14 +1532,48 @@ var (
 	KeysEditApplyLabel                                     = Key{"keys.edit.apply.label"}
 	KeysEditCancelDoc                                      = Key{"keys.edit.cancel.doc"}
 	KeysEditCancelLabel                                    = Key{"keys.edit.cancel.label"}
-	KeysEditClearDoc                                       = Key{"keys.edit.clear.doc"}
-	KeysEditClearLabel                                     = Key{"keys.edit.clear.label"}
-	KeysEditDeleteBackDoc                                  = Key{"keys.edit.delete.back.doc"}
-	KeysEditDeleteBackLabel                                = Key{"keys.edit.delete.back.label"}
-	KeysEditEndDoc                                         = Key{"keys.edit.end.doc"}
-	KeysEditEndLabel                                       = Key{"keys.edit.end.label"}
 	KeysFilterToggleDoc                                    = Key{"keys.filter.toggle.doc"}
 	KeysFilterToggleLabel                                  = Key{"keys.filter.toggle.label"}
+	KeysFormCancelDoc                                      = Key{"keys.form.cancel.doc"}
+	KeysFormCancelLabel                                    = Key{"keys.form.cancel.label"}
+	KeysFormChoiceNextDoc                                  = Key{"keys.form.choice.next.doc"}
+	KeysFormChoiceNextLabel                                = Key{"keys.form.choice.next.label"}
+	KeysFormChoicePrevDoc                                  = Key{"keys.form.choice.prev.doc"}
+	KeysFormChoicePrevLabel                                = Key{"keys.form.choice.prev.label"}
+	KeysFormEnterDoc                                       = Key{"keys.form.enter.doc"}
+	KeysFormEnterLabel                                     = Key{"keys.form.enter.label"}
+	KeysFormNextDoc                                        = Key{"keys.form.next.doc"}
+	KeysFormNextLabel                                      = Key{"keys.form.next.label"}
+	KeysFormPrevDoc                                        = Key{"keys.form.prev.doc"}
+	KeysFormPrevLabel                                      = Key{"keys.form.prev.label"}
+	KeysFormSubmitDoc                                      = Key{"keys.form.submit.doc"}
+	KeysFormSubmitLabel                                    = Key{"keys.form.submit.label"}
+	KeysFormToggleDoc                                      = Key{"keys.form.toggle.doc"}
+	KeysFormToggleLabel                                    = Key{"keys.form.toggle.label"}
+	KeysHubAddDoc                                          = Key{"keys.hub.add.doc"}
+	KeysHubAddLabel                                        = Key{"keys.hub.add.label"}
+	KeysHubBackDoc                                         = Key{"keys.hub.back.doc"}
+	KeysHubBackLabel                                       = Key{"keys.hub.back.label"}
+	KeysHubDefaultDoc                                      = Key{"keys.hub.default.doc"}
+	KeysHubDefaultLabel                                    = Key{"keys.hub.default.label"}
+	KeysHubEditDoc                                         = Key{"keys.hub.edit.doc"}
+	KeysHubEditLabel                                       = Key{"keys.hub.edit.label"}
+	KeysHubHelpDoc                                         = Key{"keys.hub.help.doc"}
+	KeysHubHelpLabel                                       = Key{"keys.hub.help.label"}
+	KeysHubPickDoc                                         = Key{"keys.hub.pick.doc"}
+	KeysHubPickLabel                                       = Key{"keys.hub.pick.label"}
+	KeysHubRefreshDoc                                      = Key{"keys.hub.refresh.doc"}
+	KeysHubRefreshLabel                                    = Key{"keys.hub.refresh.label"}
+	KeysHubRemoveDoc                                       = Key{"keys.hub.remove.doc"}
+	KeysHubRemoveLabel                                     = Key{"keys.hub.remove.label"}
+	KeysHubRenameDoc                                       = Key{"keys.hub.rename.doc"}
+	KeysHubRenameLabel                                     = Key{"keys.hub.rename.label"}
+	KeysHubRunDoc                                          = Key{"keys.hub.run.doc"}
+	KeysHubRunLabel                                        = Key{"keys.hub.run.label"}
+	KeysHubToggleDoc                                       = Key{"keys.hub.toggle.doc"}
+	KeysHubToggleLabel                                     = Key{"keys.hub.toggle.label"}
+	KeysHubUseDoc                                          = Key{"keys.hub.use.doc"}
+	KeysHubUseLabel                                        = Key{"keys.hub.use.label"}
 	KeysInterruptDoc                                       = Key{"keys.interrupt.doc"}
 	KeysInterruptLabel                                     = Key{"keys.interrupt.label"}
 	KeysLayoutDwindleDoc                                   = Key{"keys.layout.dwindle.doc"}
@@ -628,6 +1590,116 @@ var (
 	KeysLayoutSplitLabel                                   = Key{"keys.layout.split.label"}
 	KeysLayoutToggleDoc                                    = Key{"keys.layout.toggle.doc"}
 	KeysLayoutToggleLabel                                  = Key{"keys.layout.toggle.label"}
+	KeysLeaderCancelDoc                                    = Key{"keys.leader.cancel.doc"}
+	KeysLeaderCancelLabel                                  = Key{"keys.leader.cancel.label"}
+	KeysLeaderDoc                                          = Key{"keys.leader.doc"}
+	KeysLeaderLabel                                        = Key{"keys.leader.label"}
+	KeysLeaderLayoutMainFewerDoc                           = Key{"keys.leader.layout.main.fewer.doc"}
+	KeysLeaderLayoutMainFewerLabel                         = Key{"keys.leader.layout.main.fewer.label"}
+	KeysLeaderLayoutMainMoreDoc                            = Key{"keys.leader.layout.main.more.doc"}
+	KeysLeaderLayoutMainMoreLabel                          = Key{"keys.leader.layout.main.more.label"}
+	KeysLeaderLayoutResetDoc                               = Key{"keys.leader.layout.reset.doc"}
+	KeysLeaderLayoutResetLabel                             = Key{"keys.leader.layout.reset.label"}
+	KeysLeaderLayoutSplitDoc                               = Key{"keys.leader.layout.split.doc"}
+	KeysLeaderLayoutSplitLabel                             = Key{"keys.leader.layout.split.label"}
+	KeysLeaderLayoutToggleDoc                              = Key{"keys.leader.layout.toggle.doc"}
+	KeysLeaderLayoutToggleLabel                            = Key{"keys.leader.layout.toggle.label"}
+	KeysLeaderLiteralDoc                                   = Key{"keys.leader.literal.doc"}
+	KeysLeaderLiteralLabel                                 = Key{"keys.leader.literal.label"}
+	KeysLeaderModelSwitchDoc                               = Key{"keys.leader.model.switch.doc"}
+	KeysLeaderModelSwitchLabel                             = Key{"keys.leader.model.switch.label"}
+	KeysLeaderOpenSessionsDoc                              = Key{"keys.leader.open.sessions.doc"}
+	KeysLeaderOpenSessionsLabel                            = Key{"keys.leader.open.sessions.label"}
+	KeysLeaderPaletteDoc                                   = Key{"keys.leader.palette.doc"}
+	KeysLeaderPaletteLabel                                 = Key{"keys.leader.palette.label"}
+	KeysLeaderSessionBesideDoc                             = Key{"keys.leader.session.beside.doc"}
+	KeysLeaderSessionBesideLabel                           = Key{"keys.leader.session.beside.label"}
+	KeysLeaderTabsCycleBackDoc                             = Key{"keys.leader.tabs.cycle.back.doc"}
+	KeysLeaderTabsCycleBackLabel                           = Key{"keys.leader.tabs.cycle.back.label"}
+	KeysLeaderTabsCycleDoc                                 = Key{"keys.leader.tabs.cycle.doc"}
+	KeysLeaderTabsCycleLabel                               = Key{"keys.leader.tabs.cycle.label"}
+	KeysLeaderTabsJoinDoc                                  = Key{"keys.leader.tabs.join.doc"}
+	KeysLeaderTabsJoinLabel                                = Key{"keys.leader.tabs.join.label"}
+	KeysLeaderTabsSplitDoc                                 = Key{"keys.leader.tabs.split.doc"}
+	KeysLeaderTabsSplitLabel                               = Key{"keys.leader.tabs.split.label"}
+	KeysLeaderTerminalNewDoc                               = Key{"keys.leader.terminal.new.doc"}
+	KeysLeaderTerminalNewLabel                             = Key{"keys.leader.terminal.new.label"}
+	KeysLeaderTerminalTabDoc                               = Key{"keys.leader.terminal.tab.doc"}
+	KeysLeaderTerminalTabLabel                             = Key{"keys.leader.terminal.tab.label"}
+	KeysLeaderTuiAgentsDoc                                 = Key{"keys.leader.tui.agents.doc"}
+	KeysLeaderTuiAgentsLabel                               = Key{"keys.leader.tui.agents.label"}
+	KeysLeaderTuiEditorDoc                                 = Key{"keys.leader.tui.editor.doc"}
+	KeysLeaderTuiEditorLabel                               = Key{"keys.leader.tui.editor.label"}
+	KeysLeaderTuiHelpDoc                                   = Key{"keys.leader.tui.help.doc"}
+	KeysLeaderTuiHelpLabel                                 = Key{"keys.leader.tui.help.label"}
+	KeysLeaderTuiPasteExpandDoc                            = Key{"keys.leader.tui.paste.expand.doc"}
+	KeysLeaderTuiPasteExpandLabel                          = Key{"keys.leader.tui.paste.expand.label"}
+	KeysLeaderTuiPasteImageDoc                             = Key{"keys.leader.tui.paste.image.doc"}
+	KeysLeaderTuiPasteImageLabel                           = Key{"keys.leader.tui.paste.image.label"}
+	KeysLeaderTuiQueueDeleteDoc                            = Key{"keys.leader.tui.queue.delete.doc"}
+	KeysLeaderTuiQueueDeleteLabel                          = Key{"keys.leader.tui.queue.delete.label"}
+	KeysLeaderTuiRoomAttachDoc                             = Key{"keys.leader.tui.room.attach.doc"}
+	KeysLeaderTuiRoomAttachLabel                           = Key{"keys.leader.tui.room.attach.label"}
+	KeysLeaderTuiRoomFilesDoc                              = Key{"keys.leader.tui.room.files.doc"}
+	KeysLeaderTuiRoomFilesLabel                            = Key{"keys.leader.tui.room.files.label"}
+	KeysLeaderTuiRoomMenuDoc                               = Key{"keys.leader.tui.room.menu.doc"}
+	KeysLeaderTuiRoomMenuLabel                             = Key{"keys.leader.tui.room.menu.label"}
+	KeysLeaderTuiRoomPendingDoc                            = Key{"keys.leader.tui.room.pending.doc"}
+	KeysLeaderTuiRoomPendingLabel                          = Key{"keys.leader.tui.room.pending.label"}
+	KeysLeaderTuiRoomStopDoc                               = Key{"keys.leader.tui.room.stop.doc"}
+	KeysLeaderTuiRoomStopLabel                             = Key{"keys.leader.tui.room.stop.label"}
+	KeysLeaderTuiVoiceDoc                                  = Key{"keys.leader.tui.voice.doc"}
+	KeysLeaderTuiVoiceLabel                                = Key{"keys.leader.tui.voice.label"}
+	KeysLeaderViewFindDoc                                  = Key{"keys.leader.view.find.doc"}
+	KeysLeaderViewFindLabel                                = Key{"keys.leader.view.find.label"}
+	KeysLeaderViewStartDoc                                 = Key{"keys.leader.view.start.doc"}
+	KeysLeaderViewStartLabel                               = Key{"keys.leader.view.start.label"}
+	KeysLeaderWindowAttentionDoc                           = Key{"keys.leader.window.attention.doc"}
+	KeysLeaderWindowAttentionLabel                         = Key{"keys.leader.window.attention.label"}
+	KeysLeaderWindowCloseDoc                               = Key{"keys.leader.window.close.doc"}
+	KeysLeaderWindowCloseLabel                             = Key{"keys.leader.window.close.label"}
+	KeysLeaderWindowCycleBackDoc                           = Key{"keys.leader.window.cycle.back.doc"}
+	KeysLeaderWindowCycleBackLabel                         = Key{"keys.leader.window.cycle.back.label"}
+	KeysLeaderWindowCycleDoc                               = Key{"keys.leader.window.cycle.doc"}
+	KeysLeaderWindowCycleLabel                             = Key{"keys.leader.window.cycle.label"}
+	KeysLeaderWindowFloatDoc                               = Key{"keys.leader.window.float.doc"}
+	KeysLeaderWindowFloatLabel                             = Key{"keys.leader.window.float.label"}
+	KeysLeaderWindowFocusDownDoc                           = Key{"keys.leader.window.focus.down.doc"}
+	KeysLeaderWindowFocusDownLabel                         = Key{"keys.leader.window.focus.down.label"}
+	KeysLeaderWindowFocusLabel                             = Key{"keys.leader.window.focus.label"}
+	KeysLeaderWindowFocusLeftDoc                           = Key{"keys.leader.window.focus.left.doc"}
+	KeysLeaderWindowFocusLeftLabel                         = Key{"keys.leader.window.focus.left.label"}
+	KeysLeaderWindowFocusRightDoc                          = Key{"keys.leader.window.focus.right.doc"}
+	KeysLeaderWindowFocusRightLabel                        = Key{"keys.leader.window.focus.right.label"}
+	KeysLeaderWindowFocusUpDoc                             = Key{"keys.leader.window.focus.up.doc"}
+	KeysLeaderWindowFocusUpLabel                           = Key{"keys.leader.window.focus.up.label"}
+	KeysLeaderWindowGrowDoc                                = Key{"keys.leader.window.grow.doc"}
+	KeysLeaderWindowGrowLabel                              = Key{"keys.leader.window.grow.label"}
+	KeysLeaderWindowMasterDoc                              = Key{"keys.leader.window.master.doc"}
+	KeysLeaderWindowMasterLabel                            = Key{"keys.leader.window.master.label"}
+	KeysLeaderWindowMoveDownDoc                            = Key{"keys.leader.window.move.down.doc"}
+	KeysLeaderWindowMoveDownLabel                          = Key{"keys.leader.window.move.down.label"}
+	KeysLeaderWindowMoveLabel                              = Key{"keys.leader.window.move.label"}
+	KeysLeaderWindowMoveLeftDoc                            = Key{"keys.leader.window.move.left.doc"}
+	KeysLeaderWindowMoveLeftLabel                          = Key{"keys.leader.window.move.left.label"}
+	KeysLeaderWindowMoveRightDoc                           = Key{"keys.leader.window.move.right.doc"}
+	KeysLeaderWindowMoveRightLabel                         = Key{"keys.leader.window.move.right.label"}
+	KeysLeaderWindowMoveUpDoc                              = Key{"keys.leader.window.move.up.doc"}
+	KeysLeaderWindowMoveUpLabel                            = Key{"keys.leader.window.move.up.label"}
+	KeysLeaderWindowShrinkDoc                              = Key{"keys.leader.window.shrink.doc"}
+	KeysLeaderWindowShrinkLabel                            = Key{"keys.leader.window.shrink.label"}
+	KeysLeaderWindowZoomDoc                                = Key{"keys.leader.window.zoom.doc"}
+	KeysLeaderWindowZoomLabel                              = Key{"keys.leader.window.zoom.label"}
+	KeysLeaderWorkspaceCloseDoc                            = Key{"keys.leader.workspace.close.doc"}
+	KeysLeaderWorkspaceCloseLabel                          = Key{"keys.leader.workspace.close.label"}
+	KeysLeaderWorkspaceNDoc                                = Key{"keys.leader.workspace.n.doc"}
+	KeysLeaderWorkspaceNLabel                              = Key{"keys.leader.workspace.n.label"}
+	KeysLeaderWorkspaceNewDoc                              = Key{"keys.leader.workspace.new.doc"}
+	KeysLeaderWorkspaceNewLabel                            = Key{"keys.leader.workspace.new.label"}
+	KeysLeaderWorkspaceNextDoc                             = Key{"keys.leader.workspace.next.doc"}
+	KeysLeaderWorkspaceNextLabel                           = Key{"keys.leader.workspace.next.label"}
+	KeysLeaderWorkspacePrevDoc                             = Key{"keys.leader.workspace.prev.doc"}
+	KeysLeaderWorkspacePrevLabel                           = Key{"keys.leader.workspace.prev.label"}
 	KeysListBottomDoc                                      = Key{"keys.list.bottom.doc"}
 	KeysListBottomLabel                                    = Key{"keys.list.bottom.label"}
 	KeysListDownDoc                                        = Key{"keys.list.down.doc"}
@@ -644,42 +1716,24 @@ var (
 	KeysModelSwitchLabel                                   = Key{"keys.model.switch.label"}
 	KeysOpenAgentsDoc                                      = Key{"keys.open.agents.doc"}
 	KeysOpenAgentsLabel                                    = Key{"keys.open.agents.label"}
-	KeysOpenDoc                                            = Key{"keys.open.doc"}
-	KeysOpenLabel                                          = Key{"keys.open.label"}
 	KeysOpenPluginsDoc                                     = Key{"keys.open.plugins.doc"}
 	KeysOpenPluginsLabel                                   = Key{"keys.open.plugins.label"}
 	KeysOpenSessionsDoc                                    = Key{"keys.open.sessions.doc"}
 	KeysOpenSessionsLabel                                  = Key{"keys.open.sessions.label"}
 	KeysOpenSkillsDoc                                      = Key{"keys.open.skills.doc"}
 	KeysOpenSkillsLabel                                    = Key{"keys.open.skills.label"}
-	KeysPaletteClearDoc                                    = Key{"keys.palette.clear.doc"}
-	KeysPaletteClearLabel                                  = Key{"keys.palette.clear.label"}
 	KeysPaletteCloseDoc                                    = Key{"keys.palette.close.doc"}
 	KeysPaletteCloseLabel                                  = Key{"keys.palette.close.label"}
-	KeysPaletteDeleteBackDoc                               = Key{"keys.palette.delete.back.doc"}
-	KeysPaletteDeleteBackLabel                             = Key{"keys.palette.delete.back.label"}
-	KeysPaletteDeleteForwardDoc                            = Key{"keys.palette.delete.forward.doc"}
-	KeysPaletteDeleteForwardLabel                          = Key{"keys.palette.delete.forward.label"}
-	KeysPaletteDeleteWordDoc                               = Key{"keys.palette.delete.word.doc"}
-	KeysPaletteDeleteWordLabel                             = Key{"keys.palette.delete.word.label"}
 	KeysPaletteDoc                                         = Key{"keys.palette.doc"}
 	KeysPaletteDownDoc                                     = Key{"keys.palette.down.doc"}
 	KeysPaletteDownLabel                                   = Key{"keys.palette.down.label"}
-	KeysPaletteEndDoc                                      = Key{"keys.palette.end.doc"}
-	KeysPaletteEndLabel                                    = Key{"keys.palette.end.label"}
-	KeysPaletteHomeDoc                                     = Key{"keys.palette.home.doc"}
-	KeysPaletteHomeLabel                                   = Key{"keys.palette.home.label"}
 	KeysPaletteLabel                                       = Key{"keys.palette.label"}
-	KeysPaletteLeftDoc                                     = Key{"keys.palette.left.doc"}
-	KeysPaletteLeftLabel                                   = Key{"keys.palette.left.label"}
 	KeysPalettePageDownDoc                                 = Key{"keys.palette.page.down.doc"}
 	KeysPalettePageDownLabel                               = Key{"keys.palette.page.down.label"}
 	KeysPalettePageUpDoc                                   = Key{"keys.palette.page.up.doc"}
 	KeysPalettePageUpLabel                                 = Key{"keys.palette.page.up.label"}
 	KeysPalettePickDoc                                     = Key{"keys.palette.pick.doc"}
 	KeysPalettePickLabel                                   = Key{"keys.palette.pick.label"}
-	KeysPaletteRightDoc                                    = Key{"keys.palette.right.doc"}
-	KeysPaletteRightLabel                                  = Key{"keys.palette.right.label"}
 	KeysPaletteUpDoc                                       = Key{"keys.palette.up.doc"}
 	KeysPaletteUpLabel                                     = Key{"keys.palette.up.label"}
 	KeysPanelCloseDoc                                      = Key{"keys.panel.close.doc"}
@@ -690,14 +1744,8 @@ var (
 	KeysRunCancelLabel                                     = Key{"keys.run.cancel.label"}
 	KeysSearchAcceptDoc                                    = Key{"keys.search.accept.doc"}
 	KeysSearchAcceptLabel                                  = Key{"keys.search.accept.label"}
-	KeysSearchClearDoc                                     = Key{"keys.search.clear.doc"}
-	KeysSearchClearLabel                                   = Key{"keys.search.clear.label"}
 	KeysSearchCloseDoc                                     = Key{"keys.search.close.doc"}
 	KeysSearchCloseLabel                                   = Key{"keys.search.close.label"}
-	KeysSearchDeleteBackDoc                                = Key{"keys.search.delete.back.doc"}
-	KeysSearchDeleteBackLabel                              = Key{"keys.search.delete.back.label"}
-	KeysSearchDeleteWordDoc                                = Key{"keys.search.delete.word.doc"}
-	KeysSearchDeleteWordLabel                              = Key{"keys.search.delete.word.label"}
 	KeysSearchNextDoc                                      = Key{"keys.search.next.doc"}
 	KeysSearchNextLabel                                    = Key{"keys.search.next.label"}
 	KeysSearchPrevDoc                                      = Key{"keys.search.prev.doc"}
@@ -764,78 +1812,126 @@ var (
 	KeysTerminalSelectAllLabel                             = Key{"keys.terminal.select.all.label"}
 	KeysTerminalTabDoc                                     = Key{"keys.terminal.tab.doc"}
 	KeysTerminalTabLabel                                   = Key{"keys.terminal.tab.label"}
-	KeysTranscriptBottomDoc                                = Key{"keys.transcript.bottom.doc"}
-	KeysTranscriptBottomLabel                              = Key{"keys.transcript.bottom.label"}
-	KeysTranscriptDownDoc                                  = Key{"keys.transcript.down.doc"}
-	KeysTranscriptDownLabel                                = Key{"keys.transcript.down.label"}
-	KeysTranscriptPageDownDoc                              = Key{"keys.transcript.page.down.doc"}
-	KeysTranscriptPageDownLabel                            = Key{"keys.transcript.page.down.label"}
-	KeysTranscriptPageUpDoc                                = Key{"keys.transcript.page.up.doc"}
-	KeysTranscriptPageUpLabel                              = Key{"keys.transcript.page.up.label"}
-	KeysTranscriptTopDoc                                   = Key{"keys.transcript.top.doc"}
-	KeysTranscriptTopLabel                                 = Key{"keys.transcript.top.label"}
-	KeysTranscriptUpDoc                                    = Key{"keys.transcript.up.doc"}
-	KeysTranscriptUpLabel                                  = Key{"keys.transcript.up.label"}
+	KeysTextCopyDoc                                        = Key{"keys.text.copy.doc"}
+	KeysTextCopyLabel                                      = Key{"keys.text.copy.label"}
+	KeysTextDeleteBackDoc                                  = Key{"keys.text.delete.back.doc"}
+	KeysTextDeleteBackLabel                                = Key{"keys.text.delete.back.label"}
+	KeysTextDeleteForwardDoc                               = Key{"keys.text.delete.forward.doc"}
+	KeysTextDeleteForwardLabel                             = Key{"keys.text.delete.forward.label"}
+	KeysTextDeleteLineAfterDoc                             = Key{"keys.text.delete.line.after.doc"}
+	KeysTextDeleteLineAfterLabel                           = Key{"keys.text.delete.line.after.label"}
+	KeysTextDeleteLineBeforeDoc                            = Key{"keys.text.delete.line.before.doc"}
+	KeysTextDeleteLineBeforeLabel                          = Key{"keys.text.delete.line.before.label"}
+	KeysTextDeleteWordBackDoc                              = Key{"keys.text.delete.word.back.doc"}
+	KeysTextDeleteWordBackLabel                            = Key{"keys.text.delete.word.back.label"}
+	KeysTextDeleteWordForwardDoc                           = Key{"keys.text.delete.word.forward.doc"}
+	KeysTextDeleteWordForwardLabel                         = Key{"keys.text.delete.word.forward.label"}
+	KeysTextLeftDoc                                        = Key{"keys.text.left.doc"}
+	KeysTextLeftLabel                                      = Key{"keys.text.left.label"}
+	KeysTextLineEndDoc                                     = Key{"keys.text.line.end.doc"}
+	KeysTextLineEndLabel                                   = Key{"keys.text.line.end.label"}
+	KeysTextLineStartDoc                                   = Key{"keys.text.line.start.doc"}
+	KeysTextLineStartLabel                                 = Key{"keys.text.line.start.label"}
+	KeysTextNewlineDoc                                     = Key{"keys.text.newline.doc"}
+	KeysTextNewlineLabel                                   = Key{"keys.text.newline.label"}
+	KeysTextPasteDoc                                       = Key{"keys.text.paste.doc"}
+	KeysTextPasteLabel                                     = Key{"keys.text.paste.label"}
+	KeysTextRedoDoc                                        = Key{"keys.text.redo.doc"}
+	KeysTextRedoLabel                                      = Key{"keys.text.redo.label"}
+	KeysTextRightDoc                                       = Key{"keys.text.right.doc"}
+	KeysTextRightLabel                                     = Key{"keys.text.right.label"}
+	KeysTextSelectAllDoc                                   = Key{"keys.text.select.all.doc"}
+	KeysTextSelectAllLabel                                 = Key{"keys.text.select.all.label"}
+	KeysTextSelectDownDoc                                  = Key{"keys.text.select.down.doc"}
+	KeysTextSelectDownLabel                                = Key{"keys.text.select.down.label"}
+	KeysTextSelectLeftDoc                                  = Key{"keys.text.select.left.doc"}
+	KeysTextSelectLeftLabel                                = Key{"keys.text.select.left.label"}
+	KeysTextSelectRightDoc                                 = Key{"keys.text.select.right.doc"}
+	KeysTextSelectRightLabel                               = Key{"keys.text.select.right.label"}
+	KeysTextSelectUpDoc                                    = Key{"keys.text.select.up.doc"}
+	KeysTextSelectUpLabel                                  = Key{"keys.text.select.up.label"}
+	KeysTextSelectWordLeftDoc                              = Key{"keys.text.select.word.left.doc"}
+	KeysTextSelectWordLeftLabel                            = Key{"keys.text.select.word.left.label"}
+	KeysTextSelectWordRightDoc                             = Key{"keys.text.select.word.right.doc"}
+	KeysTextSelectWordRightLabel                           = Key{"keys.text.select.word.right.label"}
+	KeysTextUndoDoc                                        = Key{"keys.text.undo.doc"}
+	KeysTextUndoLabel                                      = Key{"keys.text.undo.label"}
+	KeysTextWordLeftDoc                                    = Key{"keys.text.word.left.doc"}
+	KeysTextWordLeftLabel                                  = Key{"keys.text.word.left.label"}
+	KeysTextWordRightDoc                                   = Key{"keys.text.word.right.doc"}
+	KeysTextWordRightLabel                                 = Key{"keys.text.word.right.label"}
+	KeysTuiAfterexitQuitDoc                                = Key{"keys.tui.afterexit.quit.doc"}
+	KeysTuiAfterexitQuitLabel                              = Key{"keys.tui.afterexit.quit.label"}
 	KeysTuiAgentsDoc                                       = Key{"keys.tui.agents.doc"}
 	KeysTuiAgentsDockDoc                                   = Key{"keys.tui.agents.dock.doc"}
 	KeysTuiAgentsDockLabel                                 = Key{"keys.tui.agents.dock.label"}
 	KeysTuiAgentsLabel                                     = Key{"keys.tui.agents.label"}
 	KeysTuiApprovalPageDoc                                 = Key{"keys.tui.approval.page.doc"}
 	KeysTuiApprovalPageLabel                               = Key{"keys.tui.approval.page.label"}
+	KeysTuiChatappsSendDoc                                 = Key{"keys.tui.chatapps.send.doc"}
+	KeysTuiChatappsSendLabel                               = Key{"keys.tui.chatapps.send.label"}
+	KeysTuiCronHealthDoc                                   = Key{"keys.tui.cron.health.doc"}
+	KeysTuiCronHealthLabel                                 = Key{"keys.tui.cron.health.label"}
+	KeysTuiCronHistoryDoc                                  = Key{"keys.tui.cron.history.doc"}
+	KeysTuiCronHistoryLabel                                = Key{"keys.tui.cron.history.label"}
+	KeysTuiCronNotepadDeleteDoc                            = Key{"keys.tui.cron.notepad.delete.doc"}
+	KeysTuiCronNotepadDeleteLabel                          = Key{"keys.tui.cron.notepad.delete.label"}
+	KeysTuiCronNotepadSetDoc                               = Key{"keys.tui.cron.notepad.set.doc"}
+	KeysTuiCronNotepadSetLabel                             = Key{"keys.tui.cron.notepad.set.label"}
+	KeysTuiCronRunDoc                                      = Key{"keys.tui.cron.run.doc"}
+	KeysTuiCronRunLabel                                    = Key{"keys.tui.cron.run.label"}
+	KeysTuiCronServiceDoc                                  = Key{"keys.tui.cron.service.doc"}
+	KeysTuiCronServiceLabel                                = Key{"keys.tui.cron.service.label"}
 	KeysTuiCutDoc                                          = Key{"keys.tui.cut.doc"}
 	KeysTuiCutLabel                                        = Key{"keys.tui.cut.label"}
 	KeysTuiEditorDoc                                       = Key{"keys.tui.editor.doc"}
 	KeysTuiEditorLabel                                     = Key{"keys.tui.editor.label"}
 	KeysTuiExitDoc                                         = Key{"keys.tui.exit.doc"}
 	KeysTuiExitLabel                                       = Key{"keys.tui.exit.label"}
+	KeysTuiHelpDoc                                         = Key{"keys.tui.help.doc"}
+	KeysTuiHelpLabel                                       = Key{"keys.tui.help.label"}
 	KeysTuiJourneyBackDoc                                  = Key{"keys.tui.journey.back.doc"}
 	KeysTuiJourneyBackLabel                                = Key{"keys.tui.journey.back.label"}
+	KeysTuiKanbanArchivedDoc                               = Key{"keys.tui.kanban.archived.doc"}
+	KeysTuiKanbanArchivedLabel                             = Key{"keys.tui.kanban.archived.label"}
+	KeysTuiKanbanAssignDoc                                 = Key{"keys.tui.kanban.assign.doc"}
+	KeysTuiKanbanAssignLabel                               = Key{"keys.tui.kanban.assign.label"}
+	KeysTuiKanbanBoardDoc                                  = Key{"keys.tui.kanban.board.doc"}
+	KeysTuiKanbanBoardLabel                                = Key{"keys.tui.kanban.board.label"}
+	KeysTuiKanbanCommentDoc                                = Key{"keys.tui.kanban.comment.doc"}
+	KeysTuiKanbanCommentLabel                              = Key{"keys.tui.kanban.comment.label"}
+	KeysTuiKanbanMoveDoc                                   = Key{"keys.tui.kanban.move.doc"}
+	KeysTuiKanbanMoveLabel                                 = Key{"keys.tui.kanban.move.label"}
 	KeysTuiLanguageUseDoc                                  = Key{"keys.tui.language.use.doc"}
 	KeysTuiLanguageUseLabel                                = Key{"keys.tui.language.use.label"}
-	KeysTuiMcpAddDoc                                       = Key{"keys.tui.mcp.add.doc"}
-	KeysTuiMcpAddLabel                                     = Key{"keys.tui.mcp.add.label"}
-	KeysTuiMcpAuthOpenDoc                                  = Key{"keys.tui.mcp.auth.open.doc"}
-	KeysTuiMcpAuthOpenLabel                                = Key{"keys.tui.mcp.auth.open.label"}
-	KeysTuiMcpAuthStopDoc                                  = Key{"keys.tui.mcp.auth.stop.doc"}
-	KeysTuiMcpAuthStopLabel                                = Key{"keys.tui.mcp.auth.stop.label"}
-	KeysTuiMcpAuthorizeDoc                                 = Key{"keys.tui.mcp.authorize.doc"}
-	KeysTuiMcpAuthorizeLabel                               = Key{"keys.tui.mcp.authorize.label"}
-	KeysTuiMcpRemoveDoc                                    = Key{"keys.tui.mcp.remove.doc"}
-	KeysTuiMcpRemoveLabel                                  = Key{"keys.tui.mcp.remove.label"}
+	KeysTuiLoginsConvertDoc                                = Key{"keys.tui.logins.convert.doc"}
+	KeysTuiLoginsConvertLabel                              = Key{"keys.tui.logins.convert.label"}
+	KeysTuiMcpSigninDoc                                    = Key{"keys.tui.mcp.signin.doc"}
+	KeysTuiMcpSigninLabel                                  = Key{"keys.tui.mcp.signin.label"}
 	KeysTuiMcpTestDoc                                      = Key{"keys.tui.mcp.test.doc"}
 	KeysTuiMcpTestLabel                                    = Key{"keys.tui.mcp.test.label"}
-	KeysTuiMcpToggleDoc                                    = Key{"keys.tui.mcp.toggle.doc"}
-	KeysTuiMcpToggleLabel                                  = Key{"keys.tui.mcp.toggle.label"}
 	KeysTuiModelDoc                                        = Key{"keys.tui.model.doc"}
 	KeysTuiModelLabel                                      = Key{"keys.tui.model.label"}
 	KeysTuiModelsDisconnectDoc                             = Key{"keys.tui.models.disconnect.doc"}
 	KeysTuiModelsDisconnectLabel                           = Key{"keys.tui.models.disconnect.label"}
 	KeysTuiModelsScopeDoc                                  = Key{"keys.tui.models.scope.doc"}
 	KeysTuiModelsScopeLabel                                = Key{"keys.tui.models.scope.label"}
-	KeysTuiNewlineDoc                                      = Key{"keys.tui.newline.doc"}
-	KeysTuiNewlineLabel                                    = Key{"keys.tui.newline.label"}
 	KeysTuiPasteExpandDoc                                  = Key{"keys.tui.paste.expand.doc"}
 	KeysTuiPasteExpandLabel                                = Key{"keys.tui.paste.expand.label"}
 	KeysTuiPasteImageDoc                                   = Key{"keys.tui.paste.image.doc"}
 	KeysTuiPasteImageLabel                                 = Key{"keys.tui.paste.image.label"}
-	KeysTuiPluginsScopeDoc                                 = Key{"keys.tui.plugins.scope.doc"}
-	KeysTuiPluginsScopeLabel                               = Key{"keys.tui.plugins.scope.label"}
-	KeysTuiPluginsToggleDoc                                = Key{"keys.tui.plugins.toggle.doc"}
-	KeysTuiPluginsToggleLabel                              = Key{"keys.tui.plugins.toggle.label"}
+	KeysTuiPluginsNextDoc                                  = Key{"keys.tui.plugins.next.doc"}
+	KeysTuiPluginsNextLabel                                = Key{"keys.tui.plugins.next.label"}
+	KeysTuiPluginsPrevDoc                                  = Key{"keys.tui.plugins.prev.doc"}
+	KeysTuiPluginsPrevLabel                                = Key{"keys.tui.plugins.prev.label"}
+	KeysTuiPluginsUpdateDoc                                = Key{"keys.tui.plugins.update.doc"}
+	KeysTuiPluginsUpdateLabel                              = Key{"keys.tui.plugins.update.label"}
 	KeysTuiProcessesKillDoc                                = Key{"keys.tui.processes.kill.doc"}
 	KeysTuiProcessesKillLabel                              = Key{"keys.tui.processes.kill.label"}
 	KeysTuiProcessesReadDoc                                = Key{"keys.tui.processes.read.doc"}
 	KeysTuiProcessesReadLabel                              = Key{"keys.tui.processes.read.label"}
 	KeysTuiPromptCancelDoc                                 = Key{"keys.tui.prompt.cancel.doc"}
 	KeysTuiPromptCancelLabel                               = Key{"keys.tui.prompt.cancel.label"}
-	KeysTuiPromptDeleteAfterDoc                            = Key{"keys.tui.prompt.delete.after.doc"}
-	KeysTuiPromptDeleteAfterLabel                          = Key{"keys.tui.prompt.delete.after.label"}
-	KeysTuiPromptDeleteWordBackDoc                         = Key{"keys.tui.prompt.delete.word.back.doc"}
-	KeysTuiPromptDeleteWordBackLabel                       = Key{"keys.tui.prompt.delete.word.back.label"}
-	KeysTuiPromptDeleteWordForwardDoc                      = Key{"keys.tui.prompt.delete.word.forward.doc"}
-	KeysTuiPromptDeleteWordForwardLabel                    = Key{"keys.tui.prompt.delete.word.forward.label"}
-	KeysTuiPromptNewlineDoc                                = Key{"keys.tui.prompt.newline.doc"}
-	KeysTuiPromptNewlineLabel                              = Key{"keys.tui.prompt.newline.label"}
 	KeysTuiPromptNextDoc                                   = Key{"keys.tui.prompt.next.doc"}
 	KeysTuiPromptNextLabel                                 = Key{"keys.tui.prompt.next.label"}
 	KeysTuiPromptPrevDoc                                   = Key{"keys.tui.prompt.prev.doc"}
@@ -844,10 +1940,6 @@ var (
 	KeysTuiPromptScrollDownLabel                           = Key{"keys.tui.prompt.scroll.down.label"}
 	KeysTuiPromptScrollUpDoc                               = Key{"keys.tui.prompt.scroll.up.doc"}
 	KeysTuiPromptScrollUpLabel                             = Key{"keys.tui.prompt.scroll.up.label"}
-	KeysTuiPromptWordLeftDoc                               = Key{"keys.tui.prompt.word.left.doc"}
-	KeysTuiPromptWordLeftLabel                             = Key{"keys.tui.prompt.word.left.label"}
-	KeysTuiPromptWordRightDoc                              = Key{"keys.tui.prompt.word.right.doc"}
-	KeysTuiPromptWordRightLabel                            = Key{"keys.tui.prompt.word.right.label"}
 	KeysTuiQueueDeleteDoc                                  = Key{"keys.tui.queue.delete.doc"}
 	KeysTuiQueueDeleteLabel                                = Key{"keys.tui.queue.delete.label"}
 	KeysTuiQueueDropDoc                                    = Key{"keys.tui.queue.drop.doc"}
@@ -886,34 +1978,38 @@ var (
 	KeysTuiRoomsRenameLabel                                = Key{"keys.tui.rooms.rename.label"}
 	KeysTuiRoomsStopDoc                                    = Key{"keys.tui.rooms.stop.doc"}
 	KeysTuiRoomsStopLabel                                  = Key{"keys.tui.rooms.stop.label"}
+	KeysTuiRuncommandLineDoc                               = Key{"keys.tui.runcommand.line.doc"}
+	KeysTuiRuncommandLineLabel                             = Key{"keys.tui.runcommand.line.label"}
 	KeysTuiScrollLineDownDoc                               = Key{"keys.tui.scroll.line.down.doc"}
 	KeysTuiScrollLineDownLabel                             = Key{"keys.tui.scroll.line.down.label"}
 	KeysTuiScrollLineUpDoc                                 = Key{"keys.tui.scroll.line.up.doc"}
 	KeysTuiScrollLineUpLabel                               = Key{"keys.tui.scroll.line.up.label"}
-	KeysTuiSessionsCloseDoc                                = Key{"keys.tui.sessions.close.doc"}
-	KeysTuiSessionsCloseLabel                              = Key{"keys.tui.sessions.close.label"}
-	KeysTuiSessionsDeleteDoc                               = Key{"keys.tui.sessions.delete.doc"}
-	KeysTuiSessionsDeleteLabel                             = Key{"keys.tui.sessions.delete.label"}
+	KeysTuiSessionsArchiveDoc                              = Key{"keys.tui.sessions.archive.doc"}
+	KeysTuiSessionsArchiveLabel                            = Key{"keys.tui.sessions.archive.label"}
+	KeysTuiSessionsArchivedDoc                             = Key{"keys.tui.sessions.archived.doc"}
+	KeysTuiSessionsArchivedLabel                           = Key{"keys.tui.sessions.archived.label"}
+	KeysTuiSessionsBesideDoc                               = Key{"keys.tui.sessions.beside.doc"}
+	KeysTuiSessionsBesideLabel                             = Key{"keys.tui.sessions.beside.label"}
 	KeysTuiSessionsDoc                                     = Key{"keys.tui.sessions.doc"}
-	KeysTuiSessionsDraftDownDoc                            = Key{"keys.tui.sessions.draft.down.doc"}
-	KeysTuiSessionsDraftDownLabel                          = Key{"keys.tui.sessions.draft.down.label"}
-	KeysTuiSessionsDraftModelDoc                           = Key{"keys.tui.sessions.draft.model.doc"}
-	KeysTuiSessionsDraftModelLabel                         = Key{"keys.tui.sessions.draft.model.label"}
-	KeysTuiSessionsDraftUpDoc                              = Key{"keys.tui.sessions.draft.up.doc"}
-	KeysTuiSessionsDraftUpLabel                            = Key{"keys.tui.sessions.draft.up.label"}
+	KeysTuiSessionsExportDoc                               = Key{"keys.tui.sessions.export.doc"}
+	KeysTuiSessionsExportLabel                             = Key{"keys.tui.sessions.export.label"}
 	KeysTuiSessionsLabel                                   = Key{"keys.tui.sessions.label"}
-	KeysTuiSessionsNewDoc                                  = Key{"keys.tui.sessions.new.doc"}
-	KeysTuiSessionsNewLabel                                = Key{"keys.tui.sessions.new.label"}
-	KeysTuiSessionsOpenDoc                                 = Key{"keys.tui.sessions.open.doc"}
-	KeysTuiSessionsOpenLabel                               = Key{"keys.tui.sessions.open.label"}
-	KeysTuiSessionsRefreshDoc                              = Key{"keys.tui.sessions.refresh.doc"}
-	KeysTuiSessionsRefreshLabel                            = Key{"keys.tui.sessions.refresh.label"}
-	KeysTuiSkillsInspectDoc                                = Key{"keys.tui.skills.inspect.doc"}
-	KeysTuiSkillsInspectLabel                              = Key{"keys.tui.skills.inspect.label"}
-	KeysTuiSkillsInstallDoc                                = Key{"keys.tui.skills.install.doc"}
-	KeysTuiSkillsInstallLabel                              = Key{"keys.tui.skills.install.label"}
-	KeysTuiSkillsReinspectDoc                              = Key{"keys.tui.skills.reinspect.doc"}
-	KeysTuiSkillsReinspectLabel                            = Key{"keys.tui.skills.reinspect.label"}
+	KeysTuiSessionsPinDoc                                  = Key{"keys.tui.sessions.pin.doc"}
+	KeysTuiSessionsPinLabel                                = Key{"keys.tui.sessions.pin.label"}
+	KeysTuiSessionsPruneDoc                                = Key{"keys.tui.sessions.prune.doc"}
+	KeysTuiSessionsPruneLabel                              = Key{"keys.tui.sessions.prune.label"}
+	KeysTuiSessionsSpaceDoc                                = Key{"keys.tui.sessions.space.doc"}
+	KeysTuiSessionsSpaceLabel                              = Key{"keys.tui.sessions.space.label"}
+	KeysTuiSettingsAdvancedDoc                             = Key{"keys.tui.settings.advanced.doc"}
+	KeysTuiSettingsAdvancedLabel                           = Key{"keys.tui.settings.advanced.label"}
+	KeysTuiSettingsSearchDoc                               = Key{"keys.tui.settings.search.doc"}
+	KeysTuiSettingsSearchLabel                             = Key{"keys.tui.settings.search.label"}
+	KeysTuiSigninCodeDoc                                   = Key{"keys.tui.signin.code.doc"}
+	KeysTuiSigninCodeLabel                                 = Key{"keys.tui.signin.code.label"}
+	KeysTuiSigninCopyDoc                                   = Key{"keys.tui.signin.copy.doc"}
+	KeysTuiSigninCopyLabel                                 = Key{"keys.tui.signin.copy.label"}
+	KeysTuiSigninOpenDoc                                   = Key{"keys.tui.signin.open.doc"}
+	KeysTuiSigninOpenLabel                                 = Key{"keys.tui.signin.open.label"}
 	KeysTuiSpawntreeBackDoc                                = Key{"keys.tui.spawntree.back.doc"}
 	KeysTuiSpawntreeBackLabel                              = Key{"keys.tui.spawntree.back.label"}
 	KeysTuiSpawntreesLoadDoc                               = Key{"keys.tui.spawntrees.load.doc"}
@@ -932,10 +2028,50 @@ var (
 	KeysTuiStashUpLabel                                    = Key{"keys.tui.stash.up.label"}
 	KeysTuiSuspendDoc                                      = Key{"keys.tui.suspend.doc"}
 	KeysTuiSuspendLabel                                    = Key{"keys.tui.suspend.label"}
+	KeysTuiSystemLevelDoc                                  = Key{"keys.tui.system.level.doc"}
+	KeysTuiSystemLevelLabel                                = Key{"keys.tui.system.level.label"}
 	KeysTuiVoiceDoc                                        = Key{"keys.tui.voice.doc"}
 	KeysTuiVoiceLabel                                      = Key{"keys.tui.voice.label"}
 	KeysTuiYoloDoc                                         = Key{"keys.tui.yolo.doc"}
 	KeysTuiYoloLabel                                       = Key{"keys.tui.yolo.label"}
+	KeysViewBottomDoc                                      = Key{"keys.view.bottom.doc"}
+	KeysViewBottomLabel                                    = Key{"keys.view.bottom.label"}
+	KeysViewCopyDoc                                        = Key{"keys.view.copy.doc"}
+	KeysViewCopyLabel                                      = Key{"keys.view.copy.label"}
+	KeysViewDownDoc                                        = Key{"keys.view.down.doc"}
+	KeysViewDownLabel                                      = Key{"keys.view.down.label"}
+	KeysViewHalfDownDoc                                    = Key{"keys.view.half.down.doc"}
+	KeysViewHalfDownLabel                                  = Key{"keys.view.half.down.label"}
+	KeysViewHalfUpDoc                                      = Key{"keys.view.half.up.doc"}
+	KeysViewHalfUpLabel                                    = Key{"keys.view.half.up.label"}
+	KeysViewLeaveDoc                                       = Key{"keys.view.leave.doc"}
+	KeysViewLeaveLabel                                     = Key{"keys.view.leave.label"}
+	KeysViewMatchNextDoc                                   = Key{"keys.view.match.next.doc"}
+	KeysViewMatchNextLabel                                 = Key{"keys.view.match.next.label"}
+	KeysViewMatchPrevDoc                                   = Key{"keys.view.match.prev.doc"}
+	KeysViewMatchPrevLabel                                 = Key{"keys.view.match.prev.label"}
+	KeysViewOpenDoc                                        = Key{"keys.view.open.doc"}
+	KeysViewOpenLabel                                      = Key{"keys.view.open.label"}
+	KeysViewPageDownDoc                                    = Key{"keys.view.page.down.doc"}
+	KeysViewPageDownLabel                                  = Key{"keys.view.page.down.label"}
+	KeysViewPageUpDoc                                      = Key{"keys.view.page.up.doc"}
+	KeysViewPageUpLabel                                    = Key{"keys.view.page.up.label"}
+	KeysViewPromptNextDoc                                  = Key{"keys.view.prompt.next.doc"}
+	KeysViewPromptNextLabel                                = Key{"keys.view.prompt.next.label"}
+	KeysViewPromptPrevDoc                                  = Key{"keys.view.prompt.prev.doc"}
+	KeysViewPromptPrevLabel                                = Key{"keys.view.prompt.prev.label"}
+	KeysViewSearchBackDoc                                  = Key{"keys.view.search.back.doc"}
+	KeysViewSearchBackLabel                                = Key{"keys.view.search.back.label"}
+	KeysViewSearchDoc                                      = Key{"keys.view.search.doc"}
+	KeysViewSearchLabel                                    = Key{"keys.view.search.label"}
+	KeysViewSelectDoc                                      = Key{"keys.view.select.doc"}
+	KeysViewSelectLabel                                    = Key{"keys.view.select.label"}
+	KeysViewTopDoc                                         = Key{"keys.view.top.doc"}
+	KeysViewTopLabel                                       = Key{"keys.view.top.label"}
+	KeysViewUpDoc                                          = Key{"keys.view.up.doc"}
+	KeysViewUpLabel                                        = Key{"keys.view.up.label"}
+	KeysWindowAttentionDoc                                 = Key{"keys.window.attention.doc"}
+	KeysWindowAttentionLabel                               = Key{"keys.window.attention.label"}
 	KeysWindowCloseDoc                                     = Key{"keys.window.close.doc"}
 	KeysWindowCloseLabel                                   = Key{"keys.window.close.label"}
 	KeysWindowCycleBackDoc                                 = Key{"keys.window.cycle.back.doc"}
@@ -978,21 +2114,62 @@ var (
 	KeysWorkspaceNextLabel                                 = Key{"keys.workspace.next.label"}
 	KeysWorkspacePrevDoc                                   = Key{"keys.workspace.prev.doc"}
 	KeysWorkspacePrevLabel                                 = Key{"keys.workspace.prev.label"}
+	KeysPanelApplied                                       = Key{"keysPanel.applied"}
+	KeysPanelAppliedErrors                                 = Key{"keysPanel.appliedErrors"}
+	KeysPanelFileError                                     = Key{"keysPanel.fileError"}
+	KeysPanelNeedsCmd                                      = Key{"keysPanel.needsCmd"}
+	KeysPanelNeedsKitty                                    = Key{"keysPanel.needsKitty"}
+	KeysPanelNeedsOption                                   = Key{"keysPanel.needsOption"}
+	KeysPanelNoFile                                        = Key{"keysPanel.noFile"}
+	KeysPanelNoFileYet                                     = Key{"keysPanel.noFileYet"}
+	KeysPanelNoMatch                                       = Key{"keysPanel.noMatch"}
+	KeysPanelNote                                          = Key{"keysPanel.note"}
+	KeysPanelOptionOff                                     = Key{"keysPanel.optionOff"}
+	KeysPanelOptionOn                                      = Key{"keysPanel.optionOn"}
+	KeysPanelOptionUsage                                   = Key{"keysPanel.optionUsage"}
+	KeysPanelReset                                         = Key{"keysPanel.reset"}
+	KeysPanelTerminalPasses                                = Key{"keysPanel.terminalPasses"}
+	KeysPanelTitle                                         = Key{"keysPanel.title"}
+	KeysPanelUnbound                                       = Key{"keysPanel.unbound"}
+	KitComposerHistoryAt                                   = Key{"kit.composer.historyAt"}
+	KitComposerHistorySearchMine                           = Key{"kit.composer.historySearchMine"}
+	KitComposerPlaceholder                                 = Key{"kit.composer.placeholder"}
+	KitFormLess                                            = Key{"kit.form.less"}
+	KitFormMore                                            = Key{"kit.form.more"}
+	KitFormNo                                              = Key{"kit.form.no"}
+	KitFormNumber                                          = Key{"kit.form.number"}
+	KitFormRequired                                        = Key{"kit.form.required"}
+	KitFormSend                                            = Key{"kit.form.send"}
+	KitFormYes                                             = Key{"kit.form.yes"}
 	KitHintBack                                            = Key{"kit.hint.back"}
 	KitHintCancel                                          = Key{"kit.hint.cancel"}
 	KitHintConfirm                                         = Key{"kit.hint.confirm"}
 	KitHintMatches                                         = Key{"kit.hint.matches"}
 	KitHintMove                                            = Key{"kit.hint.move"}
 	KitHintNextTab                                         = Key{"kit.hint.nextTab"}
+	KitHintPick                                            = Key{"kit.hint.pick"}
 	KitHintScroll                                          = Key{"kit.hint.scroll"}
 	KitHintScrollDetail                                    = Key{"kit.hint.scrollDetail"}
+	KitHubHelp                                             = Key{"kit.hub.help"}
+	KitHubKeys                                             = Key{"kit.hub.keys"}
+	KitReaderAt                                            = Key{"kit.reader.at"}
+	KitReaderMatches                                       = Key{"kit.reader.matches"}
+	KitReaderMode                                          = Key{"kit.reader.mode"}
+	KitReaderNoPrompt                                      = Key{"kit.reader.noPrompt"}
+	KitReaderSelecting                                     = Key{"kit.reader.selecting"}
+	KitTerminalEnterCloses                                 = Key{"kit.terminal.enterCloses"}
+	KitTerminalEnterRestarts                               = Key{"kit.terminal.enterRestarts"}
 	KitWmCommandPlaceholder                                = Key{"kit.wm.commandPlaceholder"}
 	KitWmCopiedLine                                        = Key{"kit.wm.copiedLine"}
 	KitWmCopiedLines                                       = Key{"kit.wm.copiedLines"}
+	KitWmFocusMoved                                        = Key{"kit.wm.focusMoved"}
 	KitWmMoreAbove                                         = Key{"kit.wm.moreAbove"}
 	KitWmMoreBelow                                         = Key{"kit.wm.moreBelow"}
 	KitWmNoMatch                                           = Key{"kit.wm.noMatch"}
 	KitWmNothingOpen                                       = Key{"kit.wm.nothingOpen"}
+	KitWmSheetArming                                       = Key{"kit.wm.sheetArming"}
+	KitWmSheetOf                                           = Key{"kit.wm.sheetOf"}
+	KitWmSheetWaiting                                      = Key{"kit.wm.sheetWaiting"}
 	KitWmTabsTitle                                         = Key{"kit.wm.tabsTitle"}
 	LibTextAgentRowsAgent                                  = Key{"libText.agentRows.agent"}
 	LibTextAgentRowsStarting                               = Key{"libText.agentRows.starting"}
@@ -1056,15 +2233,39 @@ var (
 	LibTextTextPasteLinesChip                              = Key{"libText.text.pasteLinesChip"}
 	LibTextTextResultLabel                                 = Key{"libText.text.resultLabel"}
 	LibTextTextShowingLiveTail                             = Key{"libText.text.showingLiveTail"}
-	McpAddNone                                             = Key{"mcp.add.none"}
+	McpActKey                                              = Key{"mcp.actKey"}
+	McpActKeyDoes                                          = Key{"mcp.actKeyDoes"}
+	McpActRemove                                           = Key{"mcp.actRemove"}
+	McpActRemoveDoes                                       = Key{"mcp.actRemoveDoes"}
+	McpActSignIn                                           = Key{"mcp.actSignIn"}
+	McpActSignInDoes                                       = Key{"mcp.actSignInDoes"}
+	McpActTest                                             = Key{"mcp.actTest"}
+	McpActTestDoes                                         = Key{"mcp.actTestDoes"}
+	McpActToggle                                           = Key{"mcp.actToggle"}
+	McpActToggleDoes                                       = Key{"mcp.actToggleDoes"}
+	McpActTools                                            = Key{"mcp.actTools"}
+	McpActToolsDoes                                        = Key{"mcp.actToolsDoes"}
 	McpAddPick                                             = Key{"mcp.add.pick"}
-	McpAddValue                                            = Key{"mcp.add.value"}
+	McpAddCustom                                           = Key{"mcp.addCustom"}
+	McpAddCustomDetail                                     = Key{"mcp.addCustomDetail"}
+	McpAdding                                              = Key{"mcp.adding"}
+	McpArgsHelp                                            = Key{"mcp.argsHelp"}
+	McpArgsLabel                                           = Key{"mcp.argsLabel"}
 	McpAuthStarting                                        = Key{"mcp.auth.starting"}
 	McpAuthTitle                                           = Key{"mcp.auth.title"}
 	McpAuthWaiting                                         = Key{"mcp.auth.waiting"}
+	McpCustomTitle                                         = Key{"mcp.customTitle"}
+	McpDetailCommand                                       = Key{"mcp.detailCommand"}
+	McpDetailEnv                                           = Key{"mcp.detailEnv"}
+	McpDetailPlugin                                        = Key{"mcp.detailPlugin"}
+	McpDetailSignedIn                                      = Key{"mcp.detailSignedIn"}
+	McpDetailSignedOut                                     = Key{"mcp.detailSignedOut"}
+	McpDetailURL                                           = Key{"mcp.detailURL"}
 	McpEmpty                                               = Key{"mcp.empty"}
-	McpErrorLine                                           = Key{"mcp.errorLine"}
-	McpLoading                                             = Key{"mcp.loading"}
+	McpEnvBad                                              = Key{"mcp.envBad"}
+	McpEnvHelp                                             = Key{"mcp.envHelp"}
+	McpEnvLabel                                            = Key{"mcp.envLabel"}
+	McpFromPlugin                                          = Key{"mcp.fromPlugin"}
 	McpNoticeAdded                                         = Key{"mcp.notice.added"}
 	McpNoticeAuthFailed                                    = Key{"mcp.notice.authFailed"}
 	McpNoticeAuthStopped                                   = Key{"mcp.notice.authStopped"}
@@ -1083,7 +2284,23 @@ var (
 	McpStatusDisabled                                      = Key{"mcp.status.disabled"}
 	McpStatusFailed                                        = Key{"mcp.status.failed"}
 	McpStatusLazy                                          = Key{"mcp.status.lazy"}
+	McpTargetHelp                                          = Key{"mcp.targetHelp"}
+	McpTargetLabel                                         = Key{"mcp.targetLabel"}
+	McpTesting                                             = Key{"mcp.testing"}
 	McpTitle                                               = Key{"mcp.title"}
+	McpTokenHelp                                           = Key{"mcp.tokenHelp"}
+	McpTokenLabel                                          = Key{"mcp.tokenLabel"}
+	McpToolsEmpty                                          = Key{"mcp.toolsEmpty"}
+	McpToolsHelp                                           = Key{"mcp.toolsHelp"}
+	McpToolsLabel                                          = Key{"mcp.toolsLabel"}
+	McpToolsSaved                                          = Key{"mcp.toolsSaved"}
+	McpToolsTitle                                          = Key{"mcp.toolsTitle"}
+	McpTransportHTTP                                       = Key{"mcp.transportHTTP"}
+	McpTransportHTTPMeaning                                = Key{"mcp.transportHTTPMeaning"}
+	McpTransportStdio                                      = Key{"mcp.transportStdio"}
+	McpTransportStdioMeaning                               = Key{"mcp.transportStdioMeaning"}
+	McpValueHelp                                           = Key{"mcp.valueHelp"}
+	McpValuesTitle                                         = Key{"mcp.valuesTitle"}
 	PagerLinesOne                                          = Key{"pager.linesOne"}
 	PagerLinesOther                                        = Key{"pager.linesOther"}
 	PagerRange                                             = Key{"pager.range"}
@@ -1096,12 +2313,16 @@ var (
 	PaletteLayoutToggleTitle                               = Key{"palette.layout.toggle.title"}
 	PaletteModelSwitchTitle                                = Key{"palette.model.switch.title"}
 	PaletteOpenAgentsTitle                                 = Key{"palette.open.agents.title"}
+	PaletteOpenLoginsTitle                                 = Key{"palette.open.logins.title"}
 	PaletteOpenPluginsTitle                                = Key{"palette.open.plugins.title"}
 	PaletteOpenRoomsTitle                                  = Key{"palette.open.rooms.title"}
 	PaletteOpenSessionsTitle                               = Key{"palette.open.sessions.title"}
+	PaletteOpenSettingsTitle                               = Key{"palette.open.settings.title"}
 	PaletteOpenSkillsTitle                                 = Key{"palette.open.skills.title"}
 	PaletteQuitTitle                                       = Key{"palette.quit.title"}
 	PaletteRunCancelTitle                                  = Key{"palette.run.cancel.title"}
+	PaletteRunCommandTitle                                 = Key{"palette.run.command.title"}
+	PaletteSessionBesideTitle                              = Key{"palette.session.beside.title"}
 	PaletteSessionCompactTitle                             = Key{"palette.session.compact.title"}
 	PaletteSessionNewTitle                                 = Key{"palette.session.new.title"}
 	PaletteTabsCycleBackTitle                              = Key{"palette.tabs.cycle.back.title"}
@@ -1110,6 +2331,8 @@ var (
 	PaletteTabsSplitTitle                                  = Key{"palette.tabs.split.title"}
 	PaletteTerminalNewTitle                                = Key{"palette.terminal.new.title"}
 	PaletteTerminalTabTitle                                = Key{"palette.terminal.tab.title"}
+	PaletteTuiHelpTitle                                    = Key{"palette.tui.help.title"}
+	PaletteWindowAttentionTitle                            = Key{"palette.window.attention.title"}
 	PaletteWindowCloseTitle                                = Key{"palette.window.close.title"}
 	PaletteWindowCycleBackTitle                            = Key{"palette.window.cycle.back.title"}
 	PaletteWindowCycleTitle                                = Key{"palette.window.cycle.title"}
@@ -1126,7 +2349,9 @@ var (
 	PaletteWindowMoveUpTitle                               = Key{"palette.window.move.up.title"}
 	PaletteWindowShrinkTitle                               = Key{"palette.window.shrink.title"}
 	PaletteWindowZoomTitle                                 = Key{"palette.window.zoom.title"}
+	PaletteWorkspaceCloseTitle                             = Key{"palette.workspace.close.title"}
 	PaletteWorkspaceNTitle                                 = Key{"palette.workspace.n.title"}
+	PaletteWorkspaceNewTitle                               = Key{"palette.workspace.new.title"}
 	PaletteWorkspaceNextTitle                              = Key{"palette.workspace.next.title"}
 	PaletteWorkspacePrevTitle                              = Key{"palette.workspace.prev.title"}
 	PdfAttached                                            = Key{"pdf.attached"}
@@ -1140,31 +2365,24 @@ var (
 	PickersCommonInvalidResponse                           = Key{"pickers.common.invalidResponse"}
 	PickersCommonMoreAbove                                 = Key{"pickers.common.moreAbove"}
 	PickersCommonMoreBelow                                 = Key{"pickers.common.moreBelow"}
-	PickersModelDisconnectDisconnecting                    = Key{"pickers.model.disconnect.disconnecting"}
-	PickersModelDisconnectReauthLater                      = Key{"pickers.model.disconnect.reauthLater"}
-	PickersModelDisconnectRemovesCredentials               = Key{"pickers.model.disconnect.removesCredentials"}
-	PickersModelDisconnectTitle                            = Key{"pickers.model.disconnect.title"}
+	PickersModelAddLogin                                   = Key{"pickers.model.addLogin"}
+	PickersModelAddLoginDetail                             = Key{"pickers.model.addLoginDetail"}
+	PickersModelAddLoginFor                                = Key{"pickers.model.addLoginFor"}
 	PickersModelEffortPrompt                               = Key{"pickers.model.effort.prompt"}
 	PickersModelEffortSubtitle                             = Key{"pickers.model.effort.subtitle"}
-	PickersModelFailedToSaveKey                            = Key{"pickers.model.failedToSaveKey"}
-	PickersModelKeyNote                                    = Key{"pickers.model.key.note"}
-	PickersModelKeySaving                                  = Key{"pickers.model.key.saving"}
-	PickersModelKeyTitle                                   = Key{"pickers.model.key.title"}
 	PickersModelLoading                                    = Key{"pickers.model.loading"}
 	PickersModelModelStageNoneListed                       = Key{"pickers.model.modelStage.noneListed"}
 	PickersModelNoProviders                                = Key{"pickers.model.noProviders"}
-	PickersModelPasteKeyToActivate                         = Key{"pickers.model.pasteKeyToActivate"}
 	PickersModelPersistLabel                               = Key{"pickers.model.persist.label"}
 	PickersModelPersistOnlySuffix                          = Key{"pickers.model.persist.onlySuffix"}
 	PickersModelPersistScopeGlobal                         = Key{"pickers.model.persist.scopeGlobal"}
 	PickersModelPersistScopeSession                        = Key{"pickers.model.persist.scopeSession"}
 	PickersModelPrompt                                     = Key{"pickers.model.prompt"}
-	PickersModelProviderNeedsSetup                         = Key{"pickers.model.provider.needsSetup"}
-	PickersModelProviderNoKey                              = Key{"pickers.model.provider.noKey"}
 	PickersModelProviderWarning                            = Key{"pickers.model.provider.warning"}
 	PickersModelReasoningKeepCurrent                       = Key{"pickers.model.reasoning.keepCurrent"}
 	PickersModelReasoningNone                              = Key{"pickers.model.reasoning.none"}
-	PickersModelRunModelToConfigure                        = Key{"pickers.model.runModelToConfigure"}
+	PickersModelVia                                        = Key{"pickers.model.via"}
+	PickersModelViaRotation                                = Key{"pickers.model.viaRotation"}
 	PickersPetAdopting                                     = Key{"pickers.pet.adopting"}
 	PickersPetLoading                                      = Key{"pickers.pet.loading"}
 	PickersPetNoneAvailable                                = Key{"pickers.pet.noneAvailable"}
@@ -1172,20 +2390,9 @@ var (
 	PickersPetPetCountOne                                  = Key{"pickers.pet.petCountOne"}
 	PickersPetPetCountOther                                = Key{"pickers.pet.petCountOther"}
 	PickersPetTitle                                        = Key{"pickers.pet.title"}
-	PickersSessionCurrentOrDefault                         = Key{"pickers.session.currentOrDefault"}
 	PickersSessionDeleteConfirm                            = Key{"pickers.session.deleteConfirm"}
-	PickersSessionDraftModel                               = Key{"pickers.session.draftModel"}
-	PickersSessionErrorsAlreadyClosed                      = Key{"pickers.session.errors.alreadyClosed"}
 	PickersSessionErrorsCouldNotLoadResumable              = Key{"pickers.session.errors.couldNotLoadResumable"}
-	PickersSessionErrorsNotAttached                        = Key{"pickers.session.errors.notAttached"}
 	PickersSessionRowClosing                               = Key{"pickers.session.row.closing"}
-	PickersSessionRowNew                                   = Key{"pickers.session.row.new"}
-	PickersSessionRowStartNew                              = Key{"pickers.session.row.startNew"}
-	PickersSessionStatusIdle                               = Key{"pickers.session.status.idle"}
-	PickersSessionStatusStarting                           = Key{"pickers.session.status.starting"}
-	PickersSessionStatusWaiting                            = Key{"pickers.session.status.waiting"}
-	PickersSessionStatusWorking                            = Key{"pickers.session.status.working"}
-	PickersSessionStaysInView                              = Key{"pickers.session.staysInView"}
 	ProcessesAlreadyExited                                 = Key{"processes.alreadyExited"}
 	ProcessesBackgroundProcess                             = Key{"processes.backgroundProcess"}
 	ProcessesColumnCommand                                 = Key{"processes.column.command"}
@@ -1339,6 +2546,23 @@ var (
 	RoomsWhereFrom                                         = Key{"rooms.where.from"}
 	RoomsWhereHere                                         = Key{"rooms.where.here"}
 	RpcRequestFailed                                       = Key{"rpc.requestFailed"}
+	RunCommandAfterExit                                    = Key{"runCommand.afterExit"}
+	RunCommandArguments                                    = Key{"runCommand.arguments"}
+	RunCommandDefault                                      = Key{"runCommand.default"}
+	RunCommandEmpty                                        = Key{"runCommand.empty"}
+	RunCommandExclusive                                    = Key{"runCommand.exclusive"}
+	RunCommandFailed                                       = Key{"runCommand.failed"}
+	RunCommandLine                                         = Key{"runCommand.line"}
+	RunCommandLoading                                      = Key{"runCommand.loading"}
+	RunCommandNoOutput                                     = Key{"runCommand.noOutput"}
+	RunCommandOtherCommand                                 = Key{"runCommand.otherCommand"}
+	RunCommandQueue                                        = Key{"runCommand.queue"}
+	RunCommandRun                                          = Key{"runCommand.run"}
+	RunCommandRunsAfterExit                                = Key{"runCommand.runsAfterExit"}
+	RunCommandSeveral                                      = Key{"runCommand.several"}
+	RunCommandSeveralWords                                 = Key{"runCommand.severalWords"}
+	RunCommandUnclosed                                     = Key{"runCommand.unclosed"}
+	RunCommandValueOf                                      = Key{"runCommand.valueOf"}
 	ScreenControl                                          = Key{"screen.control"}
 	ScreenHeldByAgent                                      = Key{"screen.heldByAgent"}
 	ScreenHeldByPerson                                     = Key{"screen.heldByPerson"}
@@ -1406,9 +2630,11 @@ var (
 	SessionInputFailedToOpenEditorWith                     = Key{"session.input.failedToOpenEditorWith"}
 	SessionInputLoginNotSaved                              = Key{"session.input.loginNotSaved"}
 	SessionInputSecretCancelled                            = Key{"session.input.secretCancelled"}
+	SessionInputSetupFirst                                 = Key{"session.input.setupFirst"}
 	SessionInputSudoCancelled                              = Key{"session.input.sudoCancelled"}
 	SessionInputVaultStaysLocked                           = Key{"session.input.vaultStaysLocked"}
 	SessionInputVoiceError                                 = Key{"session.input.voiceError"}
+	SessionInputVoiceKeyTaken                              = Key{"session.input.voiceKeyTaken"}
 	SessionInputVoiceModeOff                               = Key{"session.input.voiceModeOff"}
 	SessionInputVoiceStillTranscribing                     = Key{"session.input.voiceStillTranscribing"}
 	SessionInputYoloNeedsSession                           = Key{"session.input.yoloNeedsSession"}
@@ -1420,6 +2646,7 @@ var (
 	SessionLifecycleFailedToSetTitle                       = Key{"session.lifecycle.failedToSetTitle"}
 	SessionLifecycleInterruptBeforeSwitch                  = Key{"session.lifecycle.interruptBeforeSwitch"}
 	SessionLifecycleNewLiveSessionStarted                  = Key{"session.lifecycle.newLiveSessionStarted"}
+	SessionLifecycleQuestionElsewhere                      = Key{"session.lifecycle.questionElsewhere"}
 	SessionLifecycleReclaimed                              = Key{"session.lifecycle.reclaimed"}
 	SessionLifecycleSessionTitleSet                        = Key{"session.lifecycle.sessionTitleSet"}
 	SessionLifecycleSwitchSessions                         = Key{"session.lifecycle.switchSessions"}
@@ -1438,6 +2665,7 @@ var (
 	SessionMainWidgetFailedToLoad                          = Key{"session.main.widgetFailedToLoad"}
 	SessionMainWidgetLive                                  = Key{"session.main.widgetLive"}
 	SessionMainWidgetRemoved                               = Key{"session.main.widgetRemoved"}
+	SessionNoticesDraftStashed                             = Key{"session.notices.draftStashed"}
 	SessionNoticesNotReady                                 = Key{"session.notices.notReady"}
 	SessionNoticesPressAgainToExit                         = Key{"session.notices.pressAgainToExit"}
 	SessionNoticesProjectSkillsLoaded                      = Key{"session.notices.projectSkillsLoaded"}
@@ -1468,214 +2696,15 @@ var (
 	SessionStatusVerificationCode                          = Key{"session.status.verificationCode"}
 	SessionStatusWaitingForInput                           = Key{"session.status.waitingForInput"}
 	SessionTurnInterrupted                                 = Key{"session.turn.interrupted"}
-	SetupFlowAgentDetail                                   = Key{"setupFlow.agent.detail"}
-	SetupFlowAgentIntro                                    = Key{"setupFlow.agent.intro"}
-	SetupFlowAgentMaxTurns                                 = Key{"setupFlow.agent.maxTurns"}
-	SetupFlowAgentMaxTurnsRange                            = Key{"setupFlow.agent.maxTurnsRange"}
-	SetupFlowAgentProgressAll                              = Key{"setupFlow.agent.progress.all"}
-	SetupFlowAgentProgressKeep                             = Key{"setupFlow.agent.progress.keep"}
-	SetupFlowAgentProgressKeepDetail                       = Key{"setupFlow.agent.progress.keepDetail"}
-	SetupFlowAgentProgressLog                              = Key{"setupFlow.agent.progress.log"}
-	SetupFlowAgentProgressNew                              = Key{"setupFlow.agent.progress.new"}
-	SetupFlowAgentProgressOff                              = Key{"setupFlow.agent.progress.off"}
-	SetupFlowAgentProgressVerbose                          = Key{"setupFlow.agent.progress.verbose"}
-	SetupFlowAgentProgressLabel                            = Key{"setupFlow.agent.progressLabel"}
-	SetupFlowAgentThreshold                                = Key{"setupFlow.agent.threshold"}
-	SetupFlowAgentThresholdRange                           = Key{"setupFlow.agent.thresholdRange"}
-	SetupFlowAgentTitle                                    = Key{"setupFlow.agent.title"}
-	SetupFlowAuxDetail                                     = Key{"setupFlow.aux.detail"}
-	SetupFlowAuxTitle                                      = Key{"setupFlow.aux.title"}
-	SetupFlowBlankDetail                                   = Key{"setupFlow.blank.detail"}
-	SetupFlowBlankTitle                                    = Key{"setupFlow.blank.title"}
-	SetupFlowFlowChecklistHint                             = Key{"setupFlow.flow.checklistHint"}
-	SetupFlowFlowDone                                      = Key{"setupFlow.flow.done"}
-	SetupFlowFlowFailed                                    = Key{"setupFlow.flow.failed"}
-	SetupFlowFlowKeepWaiting                               = Key{"setupFlow.flow.keepWaiting"}
-	SetupFlowFlowRunning                                   = Key{"setupFlow.flow.running"}
-	SetupFlowFlowSave                                      = Key{"setupFlow.flow.save"}
-	SetupFlowFlowStarting                                  = Key{"setupFlow.flow.starting"}
-	SetupFlowFlowStop                                      = Key{"setupFlow.flow.stop"}
-	SetupFlowFlowStopped                                   = Key{"setupFlow.flow.stopped"}
-	SetupFlowFlowStopping                                  = Key{"setupFlow.flow.stopping"}
-	SetupFlowFlowTokens                                    = Key{"setupFlow.flow.tokens"}
-	SetupFlowFlowTokensK                                   = Key{"setupFlow.flow.tokensK"}
-	SetupFlowFlowWaitTitle                                 = Key{"setupFlow.flow.waitTitle"}
-	SetupFlowFlowWorking                                   = Key{"setupFlow.flow.working"}
-	SetupFlowGatewayDetail                                 = Key{"setupFlow.gateway.detail"}
-	SetupFlowGatewayTitle                                  = Key{"setupFlow.gateway.title"}
 	SetupFlowHelpLine                                      = Key{"setupFlow.helpLine"}
-	SetupFlowImportDetail                                  = Key{"setupFlow.import.detail"}
-	SetupFlowImportTitle                                   = Key{"setupFlow.import.title"}
-	SetupFlowModelDetail                                   = Key{"setupFlow.model.detail"}
-	SetupFlowModelSaved                                    = Key{"setupFlow.model.saved"}
-	SetupFlowModelSavedLive                                = Key{"setupFlow.model.savedLive"}
-	SetupFlowModelTitle                                    = Key{"setupFlow.model.title"}
-	SetupFlowPlaceholder                                   = Key{"setupFlow.placeholder"}
 	SetupFlowQuickCoreDetail                               = Key{"setupFlow.quick.core_detail"}
 	SetupFlowQuickDetail                                   = Key{"setupFlow.quick.detail"}
-	SetupFlowQuickTitle                                    = Key{"setupFlow.quick.title"}
-	SetupFlowSectionCommandFailed                          = Key{"setupFlow.section.commandFailed"}
-	SetupFlowSectionEnvValue                               = Key{"setupFlow.section.envValue"}
-	SetupFlowSectionKeep                                   = Key{"setupFlow.section.keep"}
-	SetupFlowSectionKeeps                                  = Key{"setupFlow.section.keeps"}
-	SetupFlowSectionLoading                                = Key{"setupFlow.section.loading"}
-	SetupFlowSectionMissing                                = Key{"setupFlow.section.missing"}
-	SetupFlowSectionNotNumber                              = Key{"setupFlow.section.notNumber"}
-	SetupFlowSectionNotWhole                               = Key{"setupFlow.section.notWhole"}
-	SetupFlowSectionRemoved                                = Key{"setupFlow.section.removed"}
-	SetupFlowSectionSaved                                  = Key{"setupFlow.section.saved"}
-	SetupFlowSectionSaving                                 = Key{"setupFlow.section.saving"}
-	SetupFlowSectionSecretHeld                             = Key{"setupFlow.section.secretHeld"}
-	SetupFlowSectionSecretSaved                            = Key{"setupFlow.section.secretSaved"}
-	SetupFlowSectionUnchanged                              = Key{"setupFlow.section.unchanged"}
-	SetupFlowSectionValue                                  = Key{"setupFlow.section.value"}
-	SetupFlowTerminalBackendDaytona                        = Key{"setupFlow.terminal.backend.daytona"}
-	SetupFlowTerminalBackendDaytonaDetail                  = Key{"setupFlow.terminal.backend.daytonaDetail"}
-	SetupFlowTerminalBackendDocker                         = Key{"setupFlow.terminal.backend.docker"}
-	SetupFlowTerminalBackendDockerDetail                   = Key{"setupFlow.terminal.backend.dockerDetail"}
-	SetupFlowTerminalBackendLocal                          = Key{"setupFlow.terminal.backend.local"}
-	SetupFlowTerminalBackendLocalDetail                    = Key{"setupFlow.terminal.backend.localDetail"}
-	SetupFlowTerminalBackendModal                          = Key{"setupFlow.terminal.backend.modal"}
-	SetupFlowTerminalBackendModalDetail                    = Key{"setupFlow.terminal.backend.modalDetail"}
-	SetupFlowTerminalBackendSsh                            = Key{"setupFlow.terminal.backend.ssh"}
-	SetupFlowTerminalBackendSshDetail                      = Key{"setupFlow.terminal.backend.sshDetail"}
-	SetupFlowTerminalBackendVercelSandbox                  = Key{"setupFlow.terminal.backend.vercel_sandbox"}
-	SetupFlowTerminalBackendVercelSandboxDetail            = Key{"setupFlow.terminal.backend.vercel_sandboxDetail"}
-	SetupFlowTerminalBackendLabel                          = Key{"setupFlow.terminal.backendLabel"}
-	SetupFlowTerminalDaytona                               = Key{"setupFlow.terminal.daytona"}
-	SetupFlowTerminalDaytonaConfigured                     = Key{"setupFlow.terminal.daytonaConfigured"}
-	SetupFlowTerminalDaytonaHeld                           = Key{"setupFlow.terminal.daytonaHeld"}
-	SetupFlowTerminalDaytonaKey                            = Key{"setupFlow.terminal.daytonaKey"}
-	SetupFlowTerminalDaytonaUpdateLabel                    = Key{"setupFlow.terminal.daytonaUpdateLabel"}
-	SetupFlowTerminalDaytonaUpdated                        = Key{"setupFlow.terminal.daytonaUpdated"}
-	SetupFlowTerminalDetail                                = Key{"setupFlow.terminal.detail"}
-	SetupFlowTerminalDockerFound                           = Key{"setupFlow.terminal.dockerFound"}
-	SetupFlowTerminalDockerMissing                         = Key{"setupFlow.terminal.dockerMissing"}
-	SetupFlowTerminalEgressNo                              = Key{"setupFlow.terminal.egress.no"}
-	SetupFlowTerminalEgressNoDetail                        = Key{"setupFlow.terminal.egress.noDetail"}
-	SetupFlowTerminalEgressYes                             = Key{"setupFlow.terminal.egress.yes"}
-	SetupFlowTerminalEgressYesDetail                       = Key{"setupFlow.terminal.egress.yesDetail"}
-	SetupFlowTerminalEgressIntro                           = Key{"setupFlow.terminal.egressIntro"}
-	SetupFlowTerminalEgressLabel                           = Key{"setupFlow.terminal.egressLabel"}
-	SetupFlowTerminalEgressOff                             = Key{"setupFlow.terminal.egressOff"}
-	SetupFlowTerminalEgressOn                              = Key{"setupFlow.terminal.egressOn"}
-	SetupFlowTerminalIntro                                 = Key{"setupFlow.terminal.intro"}
-	SetupFlowTerminalKeep                                  = Key{"setupFlow.terminal.keep"}
-	SetupFlowTerminalKeepDetail                            = Key{"setupFlow.terminal.keepDetail"}
-	SetupFlowTerminalKept                                  = Key{"setupFlow.terminal.kept"}
-	SetupFlowTerminalLocal                                 = Key{"setupFlow.terminal.local"}
-	SetupFlowTerminalModal                                 = Key{"setupFlow.terminal.modal"}
-	SetupFlowTerminalModalDirect                           = Key{"setupFlow.terminal.modalDirect"}
-	SetupFlowTerminalModalHeld                             = Key{"setupFlow.terminal.modalHeld"}
-	SetupFlowTerminalModalTokenID                          = Key{"setupFlow.terminal.modalTokenID"}
-	SetupFlowTerminalModalTokenSecret                      = Key{"setupFlow.terminal.modalTokenSecret"}
-	SetupFlowTerminalModalUpdateLabel                      = Key{"setupFlow.terminal.modalUpdateLabel"}
-	SetupFlowTerminalPersistNo                             = Key{"setupFlow.terminal.persist.no"}
-	SetupFlowTerminalPersistNoDetail                       = Key{"setupFlow.terminal.persist.noDetail"}
-	SetupFlowTerminalPersistYes                            = Key{"setupFlow.terminal.persist.yes"}
-	SetupFlowTerminalPersistYesDetail                      = Key{"setupFlow.terminal.persist.yesDetail"}
-	SetupFlowTerminalPluginSetup                           = Key{"setupFlow.terminal.pluginSetup"}
-	SetupFlowTerminalSsh                                   = Key{"setupFlow.terminal.ssh"}
-	SetupFlowTerminalSshHost                               = Key{"setupFlow.terminal.sshHost"}
-	SetupFlowTerminalSshKey                                = Key{"setupFlow.terminal.sshKey"}
-	SetupFlowTerminalSshPort                               = Key{"setupFlow.terminal.sshPort"}
-	SetupFlowTerminalSshTestNo                             = Key{"setupFlow.terminal.sshTest.no"}
-	SetupFlowTerminalSshTestNoDetail                       = Key{"setupFlow.terminal.sshTest.noDetail"}
-	SetupFlowTerminalSshTestYes                            = Key{"setupFlow.terminal.sshTest.yes"}
-	SetupFlowTerminalSshTestYesDetail                      = Key{"setupFlow.terminal.sshTest.yesDetail"}
-	SetupFlowTerminalSshTestLabel                          = Key{"setupFlow.terminal.sshTestLabel"}
-	SetupFlowTerminalSshTesting                            = Key{"setupFlow.terminal.sshTesting"}
-	SetupFlowTerminalSshUser                               = Key{"setupFlow.terminal.sshUser"}
-	SetupFlowTerminalTitle                                 = Key{"setupFlow.terminal.title"}
-	SetupFlowTerminalUpdateNo                              = Key{"setupFlow.terminal.update.no"}
-	SetupFlowTerminalUpdateNoDetail                        = Key{"setupFlow.terminal.update.noDetail"}
-	SetupFlowTerminalUpdateYes                             = Key{"setupFlow.terminal.update.yes"}
-	SetupFlowTerminalUpdateYesDetail                       = Key{"setupFlow.terminal.update.yesDetail"}
-	SetupFlowTerminalVercel                                = Key{"setupFlow.terminal.vercel"}
-	SetupFlowTerminalVercelAuth                            = Key{"setupFlow.terminal.vercelAuth"}
-	SetupFlowTerminalVercelCPU                             = Key{"setupFlow.terminal.vercelCPU"}
-	SetupFlowTerminalVercelDisk                            = Key{"setupFlow.terminal.vercelDisk"}
-	SetupFlowTerminalVercelImage                           = Key{"setupFlow.terminal.vercelImage"}
-	SetupFlowTerminalVercelLinked                          = Key{"setupFlow.terminal.vercelLinked"}
-	SetupFlowTerminalVercelMemory                          = Key{"setupFlow.terminal.vercelMemory"}
-	SetupFlowTerminalVercelPersistLabel                    = Key{"setupFlow.terminal.vercelPersistLabel"}
-	SetupFlowTerminalVercelProject                         = Key{"setupFlow.terminal.vercelProject"}
-	SetupFlowTerminalVercelRuntime                         = Key{"setupFlow.terminal.vercelRuntime"}
-	SetupFlowTerminalVercelTeam                            = Key{"setupFlow.terminal.vercelTeam"}
-	SetupFlowTerminalVercelToken                           = Key{"setupFlow.terminal.vercelToken"}
-	SetupFlowToolsDetail                                   = Key{"setupFlow.tools.detail"}
-	SetupFlowToolsTitle                                    = Key{"setupFlow.tools.title"}
-	SetupFlowTtsDetail                                     = Key{"setupFlow.tts.detail"}
-	SetupFlowTtsEspeakNo                                   = Key{"setupFlow.tts.espeak.no"}
-	SetupFlowTtsEspeakNoDetail                             = Key{"setupFlow.tts.espeak.noDetail"}
-	SetupFlowTtsEspeakYes                                  = Key{"setupFlow.tts.espeak.yes"}
-	SetupFlowTtsEspeakYesDetail                            = Key{"setupFlow.tts.espeak.yesDetail"}
-	SetupFlowTtsEspeakDone                                 = Key{"setupFlow.tts.espeakDone"}
-	SetupFlowTtsEspeakFailed                               = Key{"setupFlow.tts.espeakFailed"}
-	SetupFlowTtsEspeakLabel                                = Key{"setupFlow.tts.espeakLabel"}
-	SetupFlowTtsEspeakNeeded                               = Key{"setupFlow.tts.espeakNeeded"}
-	SetupFlowTtsEspeakSkipped                              = Key{"setupFlow.tts.espeakSkipped"}
-	SetupFlowTtsGeminiHint                                 = Key{"setupFlow.tts.geminiHint"}
-	SetupFlowTtsInstallNo                                  = Key{"setupFlow.tts.install.no"}
-	SetupFlowTtsInstallNoDetail                            = Key{"setupFlow.tts.install.noDetail"}
-	SetupFlowTtsInstallYes                                 = Key{"setupFlow.tts.install.yes"}
-	SetupFlowTtsInstallYesDetail                           = Key{"setupFlow.tts.install.yesDetail"}
-	SetupFlowTtsInstallFailed                              = Key{"setupFlow.tts.installFailed"}
-	SetupFlowTtsInstallLabel                               = Key{"setupFlow.tts.installLabel"}
-	SetupFlowTtsInstallSkipped                             = Key{"setupFlow.tts.installSkipped"}
-	SetupFlowTtsInstalled                                  = Key{"setupFlow.tts.installed"}
-	SetupFlowTtsInstalling                                 = Key{"setupFlow.tts.installing"}
-	SetupFlowTtsIntro                                      = Key{"setupFlow.tts.intro"}
-	SetupFlowTtsKeep                                       = Key{"setupFlow.tts.keep"}
-	SetupFlowTtsKeepDetail                                 = Key{"setupFlow.tts.keepDetail"}
-	SetupFlowTtsKeyLabelElevenlabs                         = Key{"setupFlow.tts.keyLabel.elevenlabs"}
-	SetupFlowTtsKeyLabelGemini                             = Key{"setupFlow.tts.keyLabel.gemini"}
-	SetupFlowTtsKeyLabelMinimax                            = Key{"setupFlow.tts.keyLabel.minimax"}
-	SetupFlowTtsKeyLabelMistral                            = Key{"setupFlow.tts.keyLabel.mistral"}
-	SetupFlowTtsKeyLabelOpenai                             = Key{"setupFlow.tts.keyLabel.openai"}
-	SetupFlowTtsKittenttsNeeds                             = Key{"setupFlow.tts.kittenttsNeeds"}
-	SetupFlowTtsNeuttsNeeds                                = Key{"setupFlow.tts.neuttsNeeds"}
-	SetupFlowTtsNoKey                                      = Key{"setupFlow.tts.noKey"}
-	SetupFlowTtsProviderEdge                               = Key{"setupFlow.tts.provider.edge"}
-	SetupFlowTtsProviderElevenlabs                         = Key{"setupFlow.tts.provider.elevenlabs"}
-	SetupFlowTtsProviderGemini                             = Key{"setupFlow.tts.provider.gemini"}
-	SetupFlowTtsProviderKittentts                          = Key{"setupFlow.tts.provider.kittentts"}
-	SetupFlowTtsProviderMinimax                            = Key{"setupFlow.tts.provider.minimax"}
-	SetupFlowTtsProviderMistral                            = Key{"setupFlow.tts.provider.mistral"}
-	SetupFlowTtsProviderNeutts                             = Key{"setupFlow.tts.provider.neutts"}
-	SetupFlowTtsProviderOpenai                             = Key{"setupFlow.tts.provider.openai"}
-	SetupFlowTtsProviderXai                                = Key{"setupFlow.tts.provider.xai"}
-	SetupFlowTtsProviderLabel                              = Key{"setupFlow.tts.providerLabel"}
-	SetupFlowTtsTitle                                      = Key{"setupFlow.tts.title"}
-	SetupFlowTtsUnsupported                                = Key{"setupFlow.tts.unsupported"}
-	SetupFlowTtsVoiceAria                                  = Key{"setupFlow.tts.voice.aria"}
-	SetupFlowTtsVoiceHiumaan                               = Key{"setupFlow.tts.voice.hiumaan"}
-	SetupFlowTtsVoiceHsiaochen                             = Key{"setupFlow.tts.voice.hsiaochen"}
-	SetupFlowTtsVoiceKeep                                  = Key{"setupFlow.tts.voice.keep"}
-	SetupFlowTtsVoiceKeepDetail                            = Key{"setupFlow.tts.voice.keepDetail"}
-	SetupFlow_Tts_Voice_Other                              = Key{"setupFlow.tts.voice.other"}
-	SetupFlowTtsVoiceOtherDetail                           = Key{"setupFlow.tts.voice.otherDetail"}
-	SetupFlowTtsVoiceXiaoxiao                              = Key{"setupFlow.tts.voice.xiaoxiao"}
-	SetupFlowTtsVoiceLabel                                 = Key{"setupFlow.tts.voiceLabel"}
-	SetupFlow_Tts_VoiceOther                               = Key{"setupFlow.tts.voiceOther"}
-	SetupFlowTtsXaiAuthKey                                 = Key{"setupFlow.tts.xaiAuth.key"}
-	SetupFlowTtsXaiAuthKeyDetail                           = Key{"setupFlow.tts.xaiAuth.keyDetail"}
-	SetupFlowTtsXaiAuthOauth                               = Key{"setupFlow.tts.xaiAuth.oauth"}
-	SetupFlowTtsXaiAuthOauthDetail                         = Key{"setupFlow.tts.xaiAuth.oauthDetail"}
-	SetupFlowTtsXaiAuthSkip                                = Key{"setupFlow.tts.xaiAuth.skip"}
-	SetupFlowTtsXaiAuthSkipDetail                          = Key{"setupFlow.tts.xaiAuth.skipDetail"}
-	SetupFlowTtsXaiAuthLabel                               = Key{"setupFlow.tts.xaiAuthLabel"}
-	SetupFlowTtsXaiKeyHeld                                 = Key{"setupFlow.tts.xaiKeyHeld"}
-	SetupFlowTtsXaiKeyLabel                                = Key{"setupFlow.tts.xaiKeyLabel"}
-	SetupFlowTtsXaiLogin                                   = Key{"setupFlow.tts.xaiLogin"}
-	SetupFlowTtsXaiLoginDone                               = Key{"setupFlow.tts.xaiLoginDone"}
-	SetupFlowTtsXaiLoginFailed                             = Key{"setupFlow.tts.xaiLoginFailed"}
-	SetupFlowTtsXaiNoKey                                   = Key{"setupFlow.tts.xaiNoKey"}
-	SetupFlowTtsXaiOAuthHeld                               = Key{"setupFlow.tts.xaiOAuthHeld"}
-	SetupFlowTtsXaiSkipped                                 = Key{"setupFlow.tts.xaiSkipped"}
-	SetupFlowTtsXaiVoice                                   = Key{"setupFlow.tts.xaiVoice"}
-	SetupFlowUnknownSection                                = Key{"setupFlow.unknownSection"}
 	SlashChatCommand                                       = Key{"slash.chatCommand"}
+	SlashFormChoice                                        = Key{"slash.form.choice"}
+	SlashFormExamples                                      = Key{"slash.form.examples"}
+	SlashFormLeaveOut                                      = Key{"slash.form.leaveOut"}
+	SlashFormRun                                           = Key{"slash.form.run"}
+	SlashFormWords                                         = Key{"slash.form.words"}
 	SlashUnknownCommand                                    = Key{"slash.unknownCommand"}
 	SlashUnknownCommandNoMatch                             = Key{"slash.unknownCommandNoMatch"}
 	SlashCmdCoreAmbiguousCommand                           = Key{"slashCmd.core.ambiguousCommand"}
@@ -1685,16 +2714,10 @@ var (
 	SlashCmdCoreBatteryUsage                               = Key{"slashCmd.core.battery.usage"}
 	SlashCmdCoreBusyCompressing                            = Key{"slashCmd.core.busy.compressing"}
 	SlashCmdCoreBusyReplying                               = Key{"slashCmd.core.busy.replying"}
-	SlashCmdCoreClearCancelLabel                           = Key{"slashCmd.core.clear.cancelLabel"}
-	SlashCmdCoreClearConfirmClear                          = Key{"slashCmd.core.clear.confirmClear"}
-	SlashCmdCoreClearConfirmNew                            = Key{"slashCmd.core.clear.confirmNew"}
-	SlashCmdCoreClearDetail                                = Key{"slashCmd.core.clear.detail"}
 	SlashCmdCoreClearForgingSession                        = Key{"slashCmd.core.clear.forgingSession"}
 	SlashCmdCoreClearNewSessionStarted                     = Key{"slashCmd.core.clear.newSessionStarted"}
 	SlashCmdCoreClearPreviousKeptRunning                   = Key{"slashCmd.core.clear.previousKeptRunning"}
 	SlashCmdCoreClearSwitchSessions                        = Key{"slashCmd.core.clear.switchSessions"}
-	SlashCmdCoreClearTitleClear                            = Key{"slashCmd.core.clear.titleClear"}
-	SlashCmdCoreClearTitleNew                              = Key{"slashCmd.core.clear.titleNew"}
 	SlashCmdCoreCopyCopied                                 = Key{"slashCmd.core.copy.copied"}
 	SlashCmdCoreCopyCopiedCharsOne                         = Key{"slashCmd.core.copy.copiedCharsOne"}
 	SlashCmdCoreCopyCopiedCharsOther                       = Key{"slashCmd.core.copy.copiedCharsOther"}
@@ -1703,17 +2726,11 @@ var (
 	SlashCmdCoreCopyUsage                                  = Key{"slashCmd.core.copy.usage"}
 	SlashCmdCoreDensityState                               = Key{"slashCmd.core.density.state"}
 	SlashCmdCoreDensityUsage                               = Key{"slashCmd.core.density.usage"}
-	SlashCmdCoreDetailsCurrent                             = Key{"slashCmd.core.details.current"}
-	SlashCmdCoreDetailsReset                               = Key{"slashCmd.core.details.reset"}
-	SlashCmdCoreDetailsSection                             = Key{"slashCmd.core.details.section"}
-	SlashCmdCoreDetailsSectionUsage                        = Key{"slashCmd.core.details.sectionUsage"}
-	SlashCmdCoreDetailsUsage                               = Key{"slashCmd.core.details.usage"}
+	SlashCmdCoreDetailCurrent                              = Key{"slashCmd.core.detail.current"}
+	SlashCmdCoreDetailSet                                  = Key{"slashCmd.core.detail.set"}
+	SlashCmdCoreDetailSetSession                           = Key{"slashCmd.core.detail.setSession"}
+	SlashCmdCoreDetailUsage                                = Key{"slashCmd.core.detail.usage"}
 	SlashCmdCoreEmptyMessage                               = Key{"slashCmd.core.emptyMessage"}
-	SlashCmdCoreFocusDisabled                              = Key{"slashCmd.core.focus.disabled"}
-	SlashCmdCoreFocusEnabled                               = Key{"slashCmd.core.focus.enabled"}
-	SlashCmdCoreFocusStatusOff                             = Key{"slashCmd.core.focus.statusOff"}
-	SlashCmdCoreFocusStatusOn                              = Key{"slashCmd.core.focus.statusOn"}
-	SlashCmdCoreFocusUsage                                 = Key{"slashCmd.core.focus.usage"}
 	SlashCmdCoreFortuneUsage                               = Key{"slashCmd.core.fortune.usage"}
 	SlashCmdCoreHelpMcp                                    = Key{"slashCmd.core.help.mcp"}
 	SlashCmdCoreHelpRooms                                  = Key{"slashCmd.core.help.rooms"}
@@ -1753,6 +2770,12 @@ var (
 	SlashCmdCoreQueueUsageEdit                             = Key{"slashCmd.core.queue.usageEdit"}
 	SlashCmdCoreQueueUsageMove                             = Key{"slashCmd.core.queue.usageMove"}
 	SlashCmdCoreQueueUsageRemove                           = Key{"slashCmd.core.queue.usageRemove"}
+	SlashCmdCoreQuitDeleteDetail                           = Key{"slashCmd.core.quit.deleteDetail"}
+	SlashCmdCoreQuitDeleteFailed                           = Key{"slashCmd.core.quit.deleteFailed"}
+	SlashCmdCoreQuitDeleteNo                               = Key{"slashCmd.core.quit.deleteNo"}
+	SlashCmdCoreQuitDeleteTitle                            = Key{"slashCmd.core.quit.deleteTitle"}
+	SlashCmdCoreQuitDeleteYes                              = Key{"slashCmd.core.quit.deleteYes"}
+	SlashCmdCoreQuitUsage                                  = Key{"slashCmd.core.quit.usage"}
 	SlashCmdCoreRedrawDone                                 = Key{"slashCmd.core.redraw.done"}
 	SlashCmdCoreRetryNothing                               = Key{"slashCmd.core.retry.nothing"}
 	SlashCmdCoreRewindCancelled                            = Key{"slashCmd.core.rewind.cancelled"}
@@ -1768,11 +2791,9 @@ var (
 	SlashCmdCoreRewindUnsupported                          = Key{"slashCmd.core.rewind.unsupported"}
 	SlashCmdCoreRewindUsage                                = Key{"slashCmd.core.rewind.usage"}
 	SlashCmdCoreSaveFailed                                 = Key{"slashCmd.core.save.failed"}
-	SlashCmdCoreSaveLegacyRefused                          = Key{"slashCmd.core.save.legacyRefused"}
 	SlashCmdCoreSaveNoActiveSession                        = Key{"slashCmd.core.save.noActiveSession"}
 	SlashCmdCoreSaveNoConversation                         = Key{"slashCmd.core.save.noConversation"}
 	SlashCmdCoreSaveSaved                                  = Key{"slashCmd.core.save.saved"}
-	SlashCmdCoreSaveSavedOnHost                            = Key{"slashCmd.core.save.savedOnHost"}
 	SlashCmdCoreSkillNoMessage                             = Key{"slashCmd.core.skillNoMessage"}
 	SlashCmdCoreStatusEmpty                                = Key{"slashCmd.core.status.empty"}
 	SlashCmdCoreStatusNoActiveSession                      = Key{"slashCmd.core.status.noActiveSession"}
@@ -1789,14 +2810,12 @@ var (
 	SlashCmdCoreTitleCurrent                               = Key{"slashCmd.core.title.current"}
 	SlashCmdCoreTitleNoActiveSession                       = Key{"slashCmd.core.title.noActiveSession"}
 	SlashCmdCoreTitleNone                                  = Key{"slashCmd.core.title.none"}
-	SlashCmdCoreTitleQueuedSuffix                          = Key{"slashCmd.core.title.queuedSuffix"}
 	SlashCmdCoreTitleSet                                   = Key{"slashCmd.core.title.set"}
 	SlashCmdCoreUndoNothing                                = Key{"slashCmd.core.undo.nothing"}
 	SlashCmdCoreUndoRollbackHint                           = Key{"slashCmd.core.undo.rollbackHint"}
 	SlashCmdCoreUndoRollbackHintMore                       = Key{"slashCmd.core.undo.rollbackHintMore"}
 	SlashCmdCoreUndoUndidOne                               = Key{"slashCmd.core.undo.undidOne"}
 	SlashCmdCoreUndoUndidOther                             = Key{"slashCmd.core.undo.undidOther"}
-	SlashCmdCoreUpdateExiting                              = Key{"slashCmd.core.update.exiting"}
 	SlashCmdDebugHeapdumpDiagPath                          = Key{"slashCmd.debug.heapdump.diagPath"}
 	SlashCmdDebugHeapdumpFailed                            = Key{"slashCmd.debug.heapdump.failed"}
 	SlashCmdDebugHeapdumpHeapPath                          = Key{"slashCmd.debug.heapdump.heapPath"}
@@ -1844,6 +2863,10 @@ var (
 	SlashCmdOpsAgentsStatePaused                           = Key{"slashCmd.ops.agents.statePaused"}
 	SlashCmdOpsAgentsStatus                                = Key{"slashCmd.ops.agents.status"}
 	SlashCmdOpsBrowserChecking                             = Key{"slashCmd.ops.browser.checking"}
+	SlashCmdOpsBrowserCloseDetail                          = Key{"slashCmd.ops.browser.closeDetail"}
+	SlashCmdOpsBrowserCloseNo                              = Key{"slashCmd.ops.browser.closeNo"}
+	SlashCmdOpsBrowserCloseTitle                           = Key{"slashCmd.ops.browser.closeTitle"}
+	SlashCmdOpsBrowserCloseYes                             = Key{"slashCmd.ops.browser.closeYes"}
 	SlashCmdOpsBrowserConnected                            = Key{"slashCmd.ops.browser.connected"}
 	SlashCmdOpsBrowserConnectedLive                        = Key{"slashCmd.ops.browser.connectedLive"}
 	SlashCmdOpsBrowserDisconnected                         = Key{"slashCmd.ops.browser.disconnected"}
@@ -1867,10 +2890,8 @@ var (
 	SlashCmdOpsPluginsUpdateUpdated                        = Key{"slashCmd.ops.pluginsUpdate.updated"}
 	SlashCmdOpsReloadEnvReloadedOne                        = Key{"slashCmd.ops.reloadEnv.reloadedOne"}
 	SlashCmdOpsReloadEnvReloadedOther                      = Key{"slashCmd.ops.reloadEnv.reloadedOther"}
-	SlashCmdOpsReloadMcpComplete                           = Key{"slashCmd.ops.reloadMcp.complete"}
 	SlashCmdOpsReloadMcpConfirmRequired                    = Key{"slashCmd.ops.reloadMcp.confirmRequired"}
 	SlashCmdOpsReloadMcpReloaded                           = Key{"slashCmd.ops.reloadMcp.reloaded"}
-	SlashCmdOpsReloadMcpReloadedAlways                     = Key{"slashCmd.ops.reloadMcp.reloadedAlways"}
 	SlashCmdOpsReloadSkillsPageTitle                       = Key{"slashCmd.ops.reloadSkills.pageTitle"}
 	SlashCmdOpsReloadSkillsReloaded                        = Key{"slashCmd.ops.reloadSkills.reloaded"}
 	SlashCmdOpsReplayArchivedTitle                         = Key{"slashCmd.ops.replay.archivedTitle"}
@@ -1928,6 +2949,10 @@ var (
 	SlashCmdOpsSkillsUsageSearch                           = Key{"slashCmd.ops.skills.usageSearch"}
 	SlashCmdOpsStopStoppedOne                              = Key{"slashCmd.ops.stop.stoppedOne"}
 	SlashCmdOpsStopStoppedOther                            = Key{"slashCmd.ops.stop.stoppedOther"}
+	SlashCmdSessionApprovalsCurrent                        = Key{"slashCmd.session.approvals.current"}
+	SlashCmdSessionApprovalsCurrentYolo                    = Key{"slashCmd.session.approvals.currentYolo"}
+	SlashCmdSessionApprovalsSet                            = Key{"slashCmd.session.approvals.set"}
+	SlashCmdSessionApprovalsUsage                          = Key{"slashCmd.session.approvals.usage"}
 	SlashCmdSessionBgStarted                               = Key{"slashCmd.session.bg.started"}
 	SlashCmdSessionBgUsage                                 = Key{"slashCmd.session.bg.usage"}
 	SlashCmdSessionBranchBranched                          = Key{"slashCmd.session.branch.branched"}
@@ -1935,10 +2960,6 @@ var (
 	SlashCmdSessionBtwUsage                                = Key{"slashCmd.session.btw.usage"}
 	SlashCmdSessionBusyMode                                = Key{"slashCmd.session.busy.mode"}
 	SlashCmdSessionBusyUsage                               = Key{"slashCmd.session.busy.usage"}
-	SlashCmdSessionCompressCompressedOne                   = Key{"slashCmd.session.compress.compressedOne"}
-	SlashCmdSessionCompressCompressedOther                 = Key{"slashCmd.session.compress.compressedOther"}
-	SlashCmdSessionCompressNothing                         = Key{"slashCmd.session.compress.nothing"}
-	SlashCmdSessionCompressTokSuffix                       = Key{"slashCmd.session.compress.tokSuffix"}
 	SlashCmdSessionFastMode                                = Key{"slashCmd.session.fast.mode"}
 	SlashCmdSessionFastUsage                               = Key{"slashCmd.session.fast.usage"}
 	SlashCmdSessionHatchBaseFailed                         = Key{"slashCmd.session.hatch.baseFailed"}
@@ -1980,6 +3001,7 @@ var (
 	SlashCmdSessionModelSwitchAnyway                       = Key{"slashCmd.session.model.switchAnyway"}
 	SlashCmdSessionModelSwitched                           = Key{"slashCmd.session.model.switched"}
 	SlashCmdSessionModelSwitchedDeferred                   = Key{"slashCmd.session.model.switchedDeferred"}
+	SlashCmdSessionPauseTitle                              = Key{"slashCmd.session.pause.title"}
 	SlashCmdSessionPersonalityChanged                      = Key{"slashCmd.session.personality.changed"}
 	SlashCmdSessionPersonalityChangedCleared               = Key{"slashCmd.session.personality.changedCleared"}
 	SlashCmdSessionPersonalityDefaultValue                 = Key{"slashCmd.session.personality.defaultValue"}
@@ -2018,7 +3040,6 @@ var (
 	SlashCmdSessionPetUsageScale                           = Key{"slashCmd.session.pet.usageScale"}
 	SlashCmdSessionPetUsageSelect                          = Key{"slashCmd.session.pet.usageSelect"}
 	SlashCmdSessionReasoningCurrent                        = Key{"slashCmd.session.reasoning.current"}
-	SlashCmdSessionReasoningCurrentWithDisplay             = Key{"slashCmd.session.reasoning.currentWithDisplay"}
 	SlashCmdSessionSessionsBusyGuardAction                 = Key{"slashCmd.session.sessions.busyGuardAction"}
 	SlashCmdSessionSkinCurrent                             = Key{"slashCmd.session.skin.current"}
 	SlashCmdSessionSkinDefaultValue                        = Key{"slashCmd.session.skin.defaultValue"}
@@ -2043,8 +3064,8 @@ var (
 	SlashCmdSessionUsageRowModel                           = Key{"slashCmd.session.usage.rowModel"}
 	SlashCmdSessionUsageRowOutputTokens                    = Key{"slashCmd.session.usage.rowOutputTokens"}
 	SlashCmdSessionUsageRowTotalTokens                     = Key{"slashCmd.session.usage.rowTotalTokens"}
+	SlashCmdSessionUsageUsage                              = Key{"slashCmd.session.usage.usage"}
 	SlashCmdSessionUsageUsageTitle                         = Key{"slashCmd.session.usage.usageTitle"}
-	SlashCmdSessionVerboseCurrent                          = Key{"slashCmd.session.verbose.current"}
 	SlashCmdSessionVoiceDisabled                           = Key{"slashCmd.session.voice.disabled"}
 	SlashCmdSessionVoiceEnabled                            = Key{"slashCmd.session.voice.enabled"}
 	SlashCmdSessionVoiceEnabledWithTts                     = Key{"slashCmd.session.voice.enabledWithTts"}
@@ -2086,6 +3107,7 @@ var (
 	SlashCmdWakeUsage                                      = Key{"slashCmd.wake.usage"}
 	SlashCmdWakeWithHint                                   = Key{"slashCmd.wake.withHint"}
 	SlashHelpAgents                                        = Key{"slashHelp.agents"}
+	SlashHelpApprovals                                     = Key{"slashHelp.approvals"}
 	SlashHelpArena                                         = Key{"slashHelp.arena"}
 	SlashHelpBattery                                       = Key{"slashHelp.battery"}
 	SlashHelpBg                                            = Key{"slashHelp.bg"}
@@ -2093,16 +3115,14 @@ var (
 	SlashHelpBrowser                                       = Key{"slashHelp.browser"}
 	SlashHelpBtw                                           = Key{"slashHelp.btw"}
 	SlashHelpBusy                                          = Key{"slashHelp.busy"}
-	SlashHelpClear                                         = Key{"slashHelp.clear"}
+	SlashHelpClientLog                                     = Key{"slashHelp.client-log"}
 	SlashHelpCompress                                      = Key{"slashHelp.compress"}
-	SlashHelpConfig                                        = Key{"slashHelp.config"}
 	SlashHelpCopy                                          = Key{"slashHelp.copy"}
 	SlashHelpDensity                                       = Key{"slashHelp.density"}
-	SlashHelpDetails                                       = Key{"slashHelp.details"}
+	SlashHelpDetail                                        = Key{"slashHelp.detail"}
 	SlashHelpDiscard                                       = Key{"slashHelp.discard"}
 	SlashHelpExport                                        = Key{"slashHelp.export"}
 	SlashHelpFast                                          = Key{"slashHelp.fast"}
-	SlashHelpFocus                                         = Key{"slashHelp.focus"}
 	SlashHelpFortune                                       = Key{"slashHelp.fortune"}
 	SlashHelpHandoff                                       = Key{"slashHelp.handoff"}
 	SlashHelpHeapdump                                      = Key{"slashHelp.heapdump"}
@@ -2112,15 +3132,17 @@ var (
 	SlashHelpImport                                        = Key{"slashHelp.import"}
 	SlashHelpIndicator                                     = Key{"slashHelp.indicator"}
 	SlashHelpJourney                                       = Key{"slashHelp.journey"}
+	SlashHelpKeys                                          = Key{"slashHelp.keys"}
 	SlashHelpLanguage                                      = Key{"slashHelp.language"}
 	SlashHelpLogs                                          = Key{"slashHelp.logs"}
 	SlashHelpMem                                           = Key{"slashHelp.mem"}
 	SlashHelpModel                                         = Key{"slashHelp.model"}
 	SlashHelpMouse                                         = Key{"slashHelp.mouse"}
+	SlashHelpNew                                           = Key{"slashHelp.new"}
 	SlashHelpPalette                                       = Key{"slashHelp.palette"}
 	SlashHelpPaste                                         = Key{"slashHelp.paste"}
+	SlashHelpPause                                         = Key{"slashHelp.pause"}
 	SlashHelpPersonality                                   = Key{"slashHelp.personality"}
-	SlashHelpPlugins                                       = Key{"slashHelp.plugins"}
 	SlashHelpProcesses                                     = Key{"slashHelp.processes"}
 	SlashHelpPrompt                                        = Key{"slashHelp.prompt"}
 	SlashHelpQueue                                         = Key{"slashHelp.queue"}
@@ -2132,11 +3154,11 @@ var (
 	SlashHelpReloadSkills                                  = Key{"slashHelp.reload-skills"}
 	SlashHelpReplay                                        = Key{"slashHelp.replay"}
 	SlashHelpReplayDiff                                    = Key{"slashHelp.replay-diff"}
+	SlashHelpResume                                        = Key{"slashHelp.resume"}
 	SlashHelpRetry                                         = Key{"slashHelp.retry"}
 	SlashHelpRewind                                        = Key{"slashHelp.rewind"}
 	SlashHelpRollback                                      = Key{"slashHelp.rollback"}
 	SlashHelpSave                                          = Key{"slashHelp.save"}
-	SlashHelpSessions                                      = Key{"slashHelp.sessions"}
 	SlashHelpSkills                                        = Key{"slashHelp.skills"}
 	SlashHelpSkin                                          = Key{"slashHelp.skin"}
 	SlashHelpSnapshot                                      = Key{"slashHelp.snapshot"}
@@ -2153,7 +3175,6 @@ var (
 	SlashHelpUndo                                          = Key{"slashHelp.undo"}
 	SlashHelpUpdate                                        = Key{"slashHelp.update"}
 	SlashHelpUsage                                         = Key{"slashHelp.usage"}
-	SlashHelpVerbose                                       = Key{"slashHelp.verbose"}
 	SlashHelpVoice                                         = Key{"slashHelp.voice"}
 	SlashHelpWake                                          = Key{"slashHelp.wake"}
 	SlashHelpWidgetsReload                                 = Key{"slashHelp.widgets-reload"}
@@ -2181,7 +3202,274 @@ var (
 	StatusSubagentsCount                                   = Key{"status.subagentsCount"}
 	StatusSummoning                                        = Key{"status.summoning"}
 	StatusTokens                                           = Key{"status.tokens"}
+	StatusTurnDoneAgo                                      = Key{"status.turnDoneAgo"}
+	StatusTurnStoppedAgo                                   = Key{"status.turnStoppedAgo"}
 	StatusWaitingOnYou                                     = Key{"status.waitingOnYou"}
+	SystemAfterExitWaiting                                 = Key{"system.afterExitWaiting"}
+	SystemColFile                                          = Key{"system.col.file"}
+	SystemColLevel                                         = Key{"system.col.level"}
+	SystemColLine                                          = Key{"system.col.line"}
+	SystemColSection                                       = Key{"system.col.section"}
+	SystemColSize                                          = Key{"system.col.size"}
+	SystemColState                                         = Key{"system.col.state"}
+	SystemColTime                                          = Key{"system.col.time"}
+	SystemComputerAbout                                    = Key{"system.computer.about"}
+	SystemComputerCovers                                   = Key{"system.computer.covers"}
+	SystemComputerDoctor                                   = Key{"system.computer.doctor"}
+	SystemComputerDoctorDoes                               = Key{"system.computer.doctorDoes"}
+	SystemComputerGrant                                    = Key{"system.computer.grant"}
+	SystemComputerGrantDoes                                = Key{"system.computer.grantDoes"}
+	SystemComputerInstall                                  = Key{"system.computer.install"}
+	SystemComputerInstallConfirm                           = Key{"system.computer.installConfirm"}
+	SystemComputerInstallDoes                              = Key{"system.computer.installDoes"}
+	SystemComputerPermissions                              = Key{"system.computer.permissions"}
+	SystemComputerPermissionsDoes                          = Key{"system.computer.permissionsDoes"}
+	SystemComputerStatus                                   = Key{"system.computer.status"}
+	SystemComputerStatusDoes                               = Key{"system.computer.statusDoes"}
+	SystemComputerTitle                                    = Key{"system.computer.title"}
+	SystemHealthAbout                                      = Key{"system.health.about"}
+	SystemHealthCheck                                      = Key{"system.health.check"}
+	SystemHealthCheckDoes                                  = Key{"system.health.checkDoes"}
+	SystemHealthConfig                                     = Key{"system.health.config"}
+	SystemHealthConfigDoes                                 = Key{"system.health.configDoes"}
+	SystemHealthCovers                                     = Key{"system.health.covers"}
+	SystemHealthDeep                                       = Key{"system.health.deep"}
+	SystemHealthDeepDoes                                   = Key{"system.health.deepDoes"}
+	SystemHealthDump                                       = Key{"system.health.dump"}
+	SystemHealthDumpDoes                                   = Key{"system.health.dumpDoes"}
+	SystemHealthFix                                        = Key{"system.health.fix"}
+	SystemHealthFixConfirm                                 = Key{"system.health.fixConfirm"}
+	SystemHealthFixDoes                                    = Key{"system.health.fixDoes"}
+	SystemHealthLive                                       = Key{"system.health.live"}
+	SystemHealthLiveConfirm                                = Key{"system.health.liveConfirm"}
+	SystemHealthLiveDoes                                   = Key{"system.health.liveDoes"}
+	SystemHealthMonitoring                                 = Key{"system.health.monitoring"}
+	SystemHealthMonitoringDoes                             = Key{"system.health.monitoringDoes"}
+	SystemHealthPassed                                     = Key{"system.health.passed"}
+	SystemHealthProblems                                   = Key{"system.health.problems"}
+	SystemHealthPromptSize                                 = Key{"system.health.promptSize"}
+	SystemHealthPromptSizeDoes                             = Key{"system.health.promptSizeDoes"}
+	SystemHealthReport                                     = Key{"system.health.report"}
+	SystemHealthReportDoes                                 = Key{"system.health.reportDoes"}
+	SystemHealthShare                                      = Key{"system.health.share"}
+	SystemHealthShareConfirm                               = Key{"system.health.shareConfirm"}
+	SystemHealthShareDoes                                  = Key{"system.health.shareDoes"}
+	SystemHealthStatus                                     = Key{"system.health.status"}
+	SystemHealthStatusDoes                                 = Key{"system.health.statusDoes"}
+	SystemHealthTitle                                      = Key{"system.health.title"}
+	SystemHealthUnshare                                    = Key{"system.health.unshare"}
+	SystemHealthUnshareAsk                                 = Key{"system.health.unshareAsk"}
+	SystemHealthUnshareDoes                                = Key{"system.health.unshareDoes"}
+	SystemLogsCovers                                       = Key{"system.logs.covers"}
+	SystemLogsEmpty                                        = Key{"system.logs.empty"}
+	SystemLogsLevelAll                                     = Key{"system.logs.levelAll"}
+	SystemLogsLevelErrors                                  = Key{"system.logs.levelErrors"}
+	SystemLogsLevelWarnings                                = Key{"system.logs.levelWarnings"}
+	SystemLogsNoLines                                      = Key{"system.logs.noLines"}
+	SystemLogsShowLine                                     = Key{"system.logs.showLine"}
+	SystemLogsState                                        = Key{"system.logs.state"}
+	SystemLogsTitle                                        = Key{"system.logs.title"}
+	SystemLspAbout                                         = Key{"system.lsp.about"}
+	SystemLspCovers                                        = Key{"system.lsp.covers"}
+	SystemLspInstall                                       = Key{"system.lsp.install"}
+	SystemLspInstallAll                                    = Key{"system.lsp.installAll"}
+	SystemLspInstallAllConfirm                             = Key{"system.lsp.installAllConfirm"}
+	SystemLspInstallAllDoes                                = Key{"system.lsp.installAllDoes"}
+	SystemLspInstallDoes                                   = Key{"system.lsp.installDoes"}
+	SystemLspList                                          = Key{"system.lsp.list"}
+	SystemLspListDoes                                      = Key{"system.lsp.listDoes"}
+	SystemLspRestart                                       = Key{"system.lsp.restart"}
+	SystemLspRestartDoes                                   = Key{"system.lsp.restartDoes"}
+	SystemLspServerAsk                                     = Key{"system.lsp.serverAsk"}
+	SystemLspStatus                                        = Key{"system.lsp.status"}
+	SystemLspStatusDoes                                    = Key{"system.lsp.statusDoes"}
+	SystemLspTitle                                         = Key{"system.lsp.title"}
+	SystemLspWhich                                         = Key{"system.lsp.which"}
+	SystemLspWhichDoes                                     = Key{"system.lsp.whichDoes"}
+	SystemMigrationsAbout                                  = Key{"system.migrations.about"}
+	SystemMigrationsCodex                                  = Key{"system.migrations.codex"}
+	SystemMigrationsCodexCheck                             = Key{"system.migrations.codexCheck"}
+	SystemMigrationsCodexCheckDoes                         = Key{"system.migrations.codexCheckDoes"}
+	SystemMigrationsCodexConfirm                           = Key{"system.migrations.codexConfirm"}
+	SystemMigrationsCodexDoes                              = Key{"system.migrations.codexDoes"}
+	SystemMigrationsConfig                                 = Key{"system.migrations.config"}
+	SystemMigrationsConfigConfirm                          = Key{"system.migrations.configConfirm"}
+	SystemMigrationsConfigDoes                             = Key{"system.migrations.configDoes"}
+	SystemMigrationsCovers                                 = Key{"system.migrations.covers"}
+	SystemMigrationsRelay                                  = Key{"system.migrations.relay"}
+	SystemMigrationsRelayConfirm                           = Key{"system.migrations.relayConfirm"}
+	SystemMigrationsRelayDoes                              = Key{"system.migrations.relayDoes"}
+	SystemMigrationsTitle                                  = Key{"system.migrations.title"}
+	SystemMigrationsXai                                    = Key{"system.migrations.xai"}
+	SystemMigrationsXaiCheck                               = Key{"system.migrations.xaiCheck"}
+	SystemMigrationsXaiCheckDoes                           = Key{"system.migrations.xaiCheckDoes"}
+	SystemMigrationsXaiConfirm                             = Key{"system.migrations.xaiConfirm"}
+	SystemMigrationsXaiDoes                                = Key{"system.migrations.xaiDoes"}
+	SystemPackagesAbout                                    = Key{"system.packages.about"}
+	SystemPackagesCheck                                    = Key{"system.packages.check"}
+	SystemPackagesCheckDoes                                = Key{"system.packages.checkDoes"}
+	SystemPackagesClean                                    = Key{"system.packages.clean"}
+	SystemPackagesCleanConfirm                             = Key{"system.packages.cleanConfirm"}
+	SystemPackagesCleanDoes                                = Key{"system.packages.cleanDoes"}
+	SystemPackagesCovers                                   = Key{"system.packages.covers"}
+	SystemPackagesDoctor                                   = Key{"system.packages.doctor"}
+	SystemPackagesDoctorDoes                               = Key{"system.packages.doctorDoes"}
+	SystemPackagesEnv                                      = Key{"system.packages.env"}
+	SystemPackagesEnvDoes                                  = Key{"system.packages.envDoes"}
+	SystemPackagesGc                                       = Key{"system.packages.gc"}
+	SystemPackagesGcDoes                                   = Key{"system.packages.gcDoes"}
+	SystemPackagesInstall                                  = Key{"system.packages.install"}
+	SystemPackagesInstallDoes                              = Key{"system.packages.installDoes"}
+	SystemPackagesRepair                                   = Key{"system.packages.repair"}
+	SystemPackagesRepairDoes                               = Key{"system.packages.repairDoes"}
+	SystemPackagesStatus                                   = Key{"system.packages.status"}
+	SystemPackagesStatusDoes                               = Key{"system.packages.statusDoes"}
+	SystemPackagesTitle                                    = Key{"system.packages.title"}
+	SystemPackagesUpdate                                   = Key{"system.packages.update"}
+	SystemPackagesUpdateDoes                               = Key{"system.packages.updateDoes"}
+	SystemProxyAbout                                       = Key{"system.proxy.about"}
+	SystemProxyCovers                                      = Key{"system.proxy.covers"}
+	SystemProxyProviders                                   = Key{"system.proxy.providers"}
+	SystemProxyProvidersDoes                               = Key{"system.proxy.providersDoes"}
+	SystemProxyStart                                       = Key{"system.proxy.start"}
+	SystemProxyStartDoes                                   = Key{"system.proxy.startDoes"}
+	SystemProxyStatus                                      = Key{"system.proxy.status"}
+	SystemProxyStatusDoes                                  = Key{"system.proxy.statusDoes"}
+	SystemProxyTitle                                       = Key{"system.proxy.title"}
+	SystemReading                                          = Key{"system.reading"}
+	SystemSecurityAbout                                    = Key{"system.security.about"}
+	SystemSecurityAudit                                    = Key{"system.security.audit"}
+	SystemSecurityAuditDoes                                = Key{"system.security.auditDoes"}
+	SystemSecurityCovers                                   = Key{"system.security.covers"}
+	SystemSecurityEgressAbout                              = Key{"system.security.egressAbout"}
+	SystemSecurityEgressConfig                             = Key{"system.security.egressConfig"}
+	SystemSecurityEgressConfigDoes                         = Key{"system.security.egressConfigDoes"}
+	SystemSecurityEgressDisable                            = Key{"system.security.egressDisable"}
+	SystemSecurityEgressDisableConfirm                     = Key{"system.security.egressDisableConfirm"}
+	SystemSecurityEgressDisableDoes                        = Key{"system.security.egressDisableDoes"}
+	SystemSecurityEgressInstall                            = Key{"system.security.egressInstall"}
+	SystemSecurityEgressInstallDoes                        = Key{"system.security.egressInstallDoes"}
+	SystemSecurityEgressReload                             = Key{"system.security.egressReload"}
+	SystemSecurityEgressReloadDoes                         = Key{"system.security.egressReloadDoes"}
+	SystemSecurityEgressRestart                            = Key{"system.security.egressRestart"}
+	SystemSecurityEgressRestartDoes                        = Key{"system.security.egressRestartDoes"}
+	SystemSecurityEgressSetup                              = Key{"system.security.egressSetup"}
+	SystemSecurityEgressSetupDoes                          = Key{"system.security.egressSetupDoes"}
+	SystemSecurityEgressStart                              = Key{"system.security.egressStart"}
+	SystemSecurityEgressStartDoes                          = Key{"system.security.egressStartDoes"}
+	SystemSecurityEgressStatus                             = Key{"system.security.egressStatus"}
+	SystemSecurityEgressStatusDoes                         = Key{"system.security.egressStatusDoes"}
+	SystemSecurityEgressStop                               = Key{"system.security.egressStop"}
+	SystemSecurityEgressStopConfirm                        = Key{"system.security.egressStopConfirm"}
+	SystemSecurityEgressStopDoes                           = Key{"system.security.egressStopDoes"}
+	SystemSecurityTitle                                    = Key{"system.security.title"}
+	SystemServiceAbout                                     = Key{"system.service.about"}
+	SystemServiceCovers                                    = Key{"system.service.covers"}
+	SystemServiceInstall                                   = Key{"system.service.install"}
+	SystemServiceInstallAbout                              = Key{"system.service.installAbout"}
+	SystemServiceInstallConfirm                            = Key{"system.service.installConfirm"}
+	SystemServiceInstallDoes                               = Key{"system.service.installDoes"}
+	SystemServiceList                                      = Key{"system.service.list"}
+	SystemServiceListDoes                                  = Key{"system.service.listDoes"}
+	SystemServiceOffline                                   = Key{"system.service.offline"}
+	SystemServicePause                                     = Key{"system.service.pause"}
+	SystemServicePauseDoes                                 = Key{"system.service.pauseDoes"}
+	SystemServicePauseIntro                                = Key{"system.service.pauseIntro"}
+	SystemServicePauseReason                               = Key{"system.service.pauseReason"}
+	SystemServicePauseReasonHelp                           = Key{"system.service.pauseReasonHelp"}
+	SystemServicePaused                                    = Key{"system.service.paused"}
+	SystemServiceRestart                                   = Key{"system.service.restart"}
+	SystemServiceRestartConfirm                            = Key{"system.service.restartConfirm"}
+	SystemServiceRestartDoes                               = Key{"system.service.restartDoes"}
+	SystemServiceRestartFailed                             = Key{"system.service.restartFailed"}
+	SystemServiceRestarted                                 = Key{"system.service.restarted"}
+	SystemServiceRestarting                                = Key{"system.service.restarting"}
+	SystemServiceResume                                    = Key{"system.service.resume"}
+	SystemServiceResumeDoes                                = Key{"system.service.resumeDoes"}
+	SystemServiceRunning                                   = Key{"system.service.running"}
+	SystemServiceStatus                                    = Key{"system.service.status"}
+	SystemServiceStatusDoes                                = Key{"system.service.statusDoes"}
+	SystemServiceStop                                      = Key{"system.service.stop"}
+	SystemServiceStopConfirm                               = Key{"system.service.stopConfirm"}
+	SystemServiceStopDoes                                  = Key{"system.service.stopDoes"}
+	SystemServiceTitle                                     = Key{"system.service.title"}
+	SystemServiceUninstall                                 = Key{"system.service.uninstall"}
+	SystemServiceUninstallConfirm                          = Key{"system.service.uninstallConfirm"}
+	SystemServiceUninstallDoes                             = Key{"system.service.uninstallDoes"}
+	SystemStorageAbout                                     = Key{"system.storage.about"}
+	SystemStorageAdopt                                     = Key{"system.storage.adopt"}
+	SystemStorageAdoptDoes                                 = Key{"system.storage.adoptDoes"}
+	SystemStorageCheckpoints                               = Key{"system.storage.checkpoints"}
+	SystemStorageCheckpointsDoes                           = Key{"system.storage.checkpointsDoes"}
+	SystemStorageCleanMarkers                              = Key{"system.storage.cleanMarkers"}
+	SystemStorageCleanMarkersConfirm                       = Key{"system.storage.cleanMarkersConfirm"}
+	SystemStorageCleanMarkersDoes                          = Key{"system.storage.cleanMarkersDoes"}
+	SystemStorageClear                                     = Key{"system.storage.clear"}
+	SystemStorageClearConfirm                              = Key{"system.storage.clearConfirm"}
+	SystemStorageClearDoes                                 = Key{"system.storage.clearDoes"}
+	SystemStorageClearLegacy                               = Key{"system.storage.clearLegacy"}
+	SystemStorageClearLegacyConfirm                        = Key{"system.storage.clearLegacyConfirm"}
+	SystemStorageClearLegacyDoes                           = Key{"system.storage.clearLegacyDoes"}
+	SystemStorageCovers                                    = Key{"system.storage.covers"}
+	SystemStorageJournal                                   = Key{"system.storage.journal"}
+	SystemStorageJournalAsk                                = Key{"system.storage.journalAsk"}
+	SystemStorageJournalDoes                               = Key{"system.storage.journalDoes"}
+	SystemStorageMeasuring                                 = Key{"system.storage.measuring"}
+	SystemStorageOptimize                                  = Key{"system.storage.optimize"}
+	SystemStorageOptimizeDoes                              = Key{"system.storage.optimizeDoes"}
+	SystemStoragePartBackups                               = Key{"system.storage.partBackups"}
+	SystemStoragePartCache                                 = Key{"system.storage.partCache"}
+	SystemStoragePartCheckpoints                           = Key{"system.storage.partCheckpoints"}
+	SystemStoragePartCron                                  = Key{"system.storage.partCron"}
+	SystemStoragePartKanban                                = Key{"system.storage.partKanban"}
+	SystemStoragePartLogs                                  = Key{"system.storage.partLogs"}
+	SystemStoragePartMemory                                = Key{"system.storage.partMemory"}
+	SystemStoragePartPackages                              = Key{"system.storage.partPackages"}
+	SystemStoragePartPlugins                               = Key{"system.storage.partPlugins"}
+	SystemStoragePartProfiles                              = Key{"system.storage.partProfiles"}
+	SystemStoragePartSessionFiles                          = Key{"system.storage.partSessionFiles"}
+	SystemStoragePartSessions                              = Key{"system.storage.partSessions"}
+	SystemStoragePartSkills                                = Key{"system.storage.partSkills"}
+	SystemStorageProfilesCheck                             = Key{"system.storage.profilesCheck"}
+	SystemStorageProfilesCheckDoes                         = Key{"system.storage.profilesCheckDoes"}
+	SystemStoragePrompts                                   = Key{"system.storage.prompts"}
+	SystemStoragePromptsCheck                              = Key{"system.storage.promptsCheck"}
+	SystemStoragePromptsCheckDoes                          = Key{"system.storage.promptsCheckDoes"}
+	SystemStoragePromptsConfirm                            = Key{"system.storage.promptsConfirm"}
+	SystemStoragePromptsDoes                               = Key{"system.storage.promptsDoes"}
+	SystemStoragePrune                                     = Key{"system.storage.prune"}
+	SystemStoragePruneConfirm                              = Key{"system.storage.pruneConfirm"}
+	SystemStoragePruneDoes                                 = Key{"system.storage.pruneDoes"}
+	SystemStorageRefresh                                   = Key{"system.storage.refresh"}
+	SystemStorageRefreshDoes                               = Key{"system.storage.refreshDoes"}
+	SystemStorageRepair                                    = Key{"system.storage.repair"}
+	SystemStorageRepairDoes                                = Key{"system.storage.repairDoes"}
+	SystemStorageRetitle                                   = Key{"system.storage.retitle"}
+	SystemStorageRetitleCheck                              = Key{"system.storage.retitleCheck"}
+	SystemStorageRetitleCheckDoes                          = Key{"system.storage.retitleCheckDoes"}
+	SystemStorageRetitleConfirm                            = Key{"system.storage.retitleConfirm"}
+	SystemStorageRetitleDoes                               = Key{"system.storage.retitleDoes"}
+	SystemStorageRouting                                   = Key{"system.storage.routing"}
+	SystemStorageRoutingCheck                              = Key{"system.storage.routingCheck"}
+	SystemStorageRoutingCheckDoes                          = Key{"system.storage.routingCheckDoes"}
+	SystemStorageRoutingConfirm                            = Key{"system.storage.routingConfirm"}
+	SystemStorageRoutingDoes                               = Key{"system.storage.routingDoes"}
+	SystemStorageStats                                     = Key{"system.storage.stats"}
+	SystemStorageStatsDoes                                 = Key{"system.storage.statsDoes"}
+	SystemStorageTitle                                     = Key{"system.storage.title"}
+	SystemUnknownSection                                   = Key{"system.unknownSection"}
+	SystemUpdatesAbout                                     = Key{"system.updates.about"}
+	SystemUpdatesCheck                                     = Key{"system.updates.check"}
+	SystemUpdatesCheckDoes                                 = Key{"system.updates.checkDoes"}
+	SystemUpdatesCovers                                    = Key{"system.updates.covers"}
+	SystemUpdatesPlan                                      = Key{"system.updates.plan"}
+	SystemUpdatesPlanDoes                                  = Key{"system.updates.planDoes"}
+	SystemUpdatesQueue                                     = Key{"system.updates.queue"}
+	SystemUpdatesQueueDoes                                 = Key{"system.updates.queueDoes"}
+	SystemUpdatesQuit                                      = Key{"system.updates.quit"}
+	SystemUpdatesQuitDoes                                  = Key{"system.updates.quitDoes"}
+	SystemUpdatesReason                                    = Key{"system.updates.reason"}
+	SystemUpdatesTitle                                     = Key{"system.updates.title"}
 	ToolAnalyzing                                          = Key{"tool.analyzing"}
 	ToolDrafting                                           = Key{"tool.drafting"}
 	ToolOutputRisk                                         = Key{"tool.outputRisk"}
@@ -2196,6 +3484,8 @@ var (
 	ToolsUnknownToolset                                    = Key{"tools.unknownToolset"}
 	TranscriptDelegationMore                               = Key{"transcript.delegation.more"}
 	TranscriptDelegationMoreCommand                        = Key{"transcript.delegation.moreCommand"}
+	TranscriptToolMoreLinesOne                             = Key{"transcript.tool.moreLinesOne"}
+	TranscriptToolMoreLinesOther                           = Key{"transcript.tool.moreLinesOther"}
 	UserMessagesBackendConnectionLost                      = Key{"userMessages.backend.connectionLost"}
 	UserMessagesBackendConnectionLostActivity              = Key{"userMessages.backend.connectionLostActivity"}
 	UserMessagesBackendGaveUpActivity                      = Key{"userMessages.backend.gaveUpActivity"}
@@ -2297,6 +3587,23 @@ var (
 
 // Every key in the order of their names
 var all = []Key{
+	AfterExitColWhy,
+	AfterExitEmpty,
+	AfterExitFromClosedWindow,
+	AfterExitKeep,
+	AfterExitKeepDoes,
+	AfterExitKept,
+	AfterExitOrphanDetail,
+	AfterExitQueueFailed,
+	AfterExitQueued,
+	AfterExitQuitNow,
+	AfterExitQuitNowDoes,
+	AfterExitRemove,
+	AfterExitRemoveConfirm,
+	AfterExitRemoveDoes,
+	AfterExitRemoved,
+	AfterExitStatus,
+	AfterExitUnread,
 	CanonicalControlsCompressed,
 	CanonicalControlsCompressedStale,
 	CanonicalControlsIdentityUnavailable,
@@ -2392,6 +3699,8 @@ var all = []Key{
 	ComposerClipboardNoDesktop,
 	ComposerDetailsMode,
 	ComposerEnterMode,
+	ComposerHistorySearch,
+	ComposerHistorySearchNone,
 	ComposerImagesAttachedOne,
 	ComposerImagesAttachedOther,
 	ComposerNoClipboardImage,
@@ -2399,10 +3708,8 @@ var all = []Key{
 	ComposerNoImageAt,
 	ComposerPasteCollapseHint,
 	ComposerPasteExpandHint,
-	ComposerPlaceholdersAsk,
 	ComposerPlaceholdersConfig,
 	ComposerPlaceholdersExplain,
-	ComposerPlaceholdersHelp,
 	ComposerPlaceholdersLint,
 	ComposerPlaceholdersRefactor,
 	ComposerPlaceholdersTest,
@@ -2464,7 +3771,6 @@ var all = []Key{
 	ContentSetupActions,
 	ContentSetupExitRow,
 	ContentSetupIntro,
-	ContentSetupModelRow,
 	ContentSetupSetupRow,
 	ContentSetupTitle,
 	ContentVerbsBrowser,
@@ -2506,6 +3812,7 @@ var all = []Key{
 	ControlsLoopRunsOf,
 	ControlsLoopRunsOne,
 	ControlsLoopRunsOther,
+	ExitSummaryAlsoOpen,
 	ExitSummaryDuration,
 	ExitSummaryId,
 	ExitSummaryNoSession,
@@ -2522,8 +3829,14 @@ var all = []Key{
 	GatewayMsgGoalPaused,
 	GatewayMsgMoaAggregating,
 	GatewayMsgMoaRefs,
+	GatewayMsgOtherBuildDetail,
+	GatewayMsgOtherBuildKeep,
 	GatewayMsgOtherBuildLine,
 	GatewayMsgOtherBuildMisfit,
+	GatewayMsgOtherBuildRestart,
+	GatewayMsgOtherBuildRestartFailed,
+	GatewayMsgOtherBuildRestarting,
+	GatewayMsgOtherBuildTitle,
 	GatewayMsgProtocolNoise,
 	GatewayMsgProtocolNoiseDetected,
 	GatewayMsgStatusForgingSession,
@@ -2537,6 +3850,7 @@ var all = []Key{
 	GatewayMsgVoiceStopPhrase,
 	GatewayMsgWakeFailed,
 	GatewayMsgWakeOtherProfile,
+	HelpColKeyOrCommand,
 	HelpCommandsClear,
 	HelpCommandsCopy,
 	HelpCommandsDetails,
@@ -2547,26 +3861,45 @@ var all = []Key{
 	HelpHotkeys,
 	HelpQuickHelp,
 	HelpQuickHelpTail,
+	HelpTitle,
 	HintsApplyCompletion,
 	HintsArrows,
 	HintsContinuation,
 	HintsCopySelection,
 	HintsCtrlC,
-	HintsDiscardDraft,
+	HintsEscapeLayers,
 	HintsInterpolate,
 	HintsJumpWord,
+	HintsLabelAdd,
 	HintsLabelAnswer,
 	HintsLabelBack,
 	HintsLabelCancel,
+	HintsLabelChange,
 	HintsLabelChoose,
 	HintsLabelClose,
+	HintsLabelDelete,
 	HintsLabelDenyAndSend,
 	HintsLabelEditQueued,
+	HintsLabelInsert,
+	HintsLabelInstall,
 	HintsLabelMove,
+	HintsLabelNew,
+	HintsLabelOpen,
 	HintsLabelQuestion,
+	HintsLabelReset,
 	HintsLabelResume,
+	HintsLabelRotation,
+	HintsLabelSignInAgain,
 	HintsLabelStart,
 	HintsLabelSwitch,
+	HintsLabelUninstall,
+	HintsLabelUse,
+	HintsLegendBusy,
+	HintsLegendHistory,
+	HintsLegendIdle,
+	HintsLegendPopup,
+	HintsLegendQueued,
+	HintsLegendSearch,
 	HintsLineStartEnd,
 	HintsPaste,
 	HintsPasteExpand,
@@ -2680,41 +4013,964 @@ var all = []Key{
 	HubsAgentsPanelProcs,
 	HubsAgentsPanelProcsDone,
 	HubsAgentsPanelRunning,
+	HubsBundlesDescriptionLabel,
+	HubsBundlesEmpty,
+	HubsBundlesFormTitle,
+	HubsBundlesInstructionHelp,
+	HubsBundlesInstructionLabel,
+	HubsBundlesNameHelp,
+	HubsBundlesReloaded,
+	HubsBundlesRemoveConfirm,
+	HubsBundlesRemoved,
+	HubsBundlesSaved,
+	HubsBundlesSkillsLabel,
+	HubsChatappsAddPeer,
+	HubsChatappsAddPeerDoes,
+	HubsChatappsAddTitle,
+	HubsChatappsAddWebhook,
+	HubsChatappsAddWebhookDoes,
+	HubsChatappsAllowed,
+	HubsChatappsApproveCode,
+	HubsChatappsApproveCodeDoes,
+	HubsChatappsApproveCodeIntro,
+	HubsChatappsApproveConfirm,
+	HubsChatappsApproveHint,
+	HubsChatappsApproveLabel,
+	HubsChatappsChats,
+	HubsChatappsClearConfirm,
+	HubsChatappsColDetail,
+	HubsChatappsColName,
+	HubsChatappsCopyUrl,
+	HubsChatappsCopyUrlDoes,
+	HubsChatappsDeliverLog,
+	HubsChatappsDeliverLogMeaning,
+	HubsChatappsDeliversTo,
+	HubsChatappsDirect,
+	HubsChatappsDismissLabel,
+	HubsChatappsEdit,
+	HubsChatappsEmpty,
+	HubsChatappsEveryEvent,
+	HubsChatappsFieldAddress,
+	HubsChatappsFieldAgent,
+	HubsChatappsFieldChat,
+	HubsChatappsFieldCode,
+	HubsChatappsFieldDeliver,
+	HubsChatappsFieldDeliverOnly,
+	HubsChatappsFieldDescription,
+	HubsChatappsFieldEvents,
+	HubsChatappsFieldKey,
+	HubsChatappsFieldMessage,
+	HubsChatappsFieldName,
+	HubsChatappsFieldNote,
+	HubsChatappsFieldOther,
+	HubsChatappsFieldPlatform,
+	HubsChatappsFieldPrompt,
+	HubsChatappsFieldSkills,
+	HubsChatappsFieldSubject,
+	HubsChatappsFieldTo,
+	HubsChatappsHome,
+	HubsChatappsHomeOf,
+	HubsChatappsKeySet,
+	HubsChatappsKindAllowed,
+	HubsChatappsKindApp,
+	HubsChatappsKindPairing,
+	HubsChatappsKindPeer,
+	HubsChatappsKindWebhook,
+	HubsChatappsLoading,
+	HubsChatappsLockedOut,
+	HubsChatappsManifestWord,
+	HubsChatappsNoChats,
+	HubsChatappsNoKey,
+	HubsChatappsPeerAgentHelp,
+	HubsChatappsPeerEditDoes,
+	HubsChatappsPeerIntro,
+	HubsChatappsPeerKeyHelp,
+	HubsChatappsPeerKeyKept,
+	HubsChatappsPeerMessage,
+	HubsChatappsPeerMessageDoes,
+	HubsChatappsPeerNameHelp,
+	HubsChatappsPeerNoKey,
+	HubsChatappsPeerRemoveConfirm,
+	HubsChatappsPeerRemoveDoes,
+	HubsChatappsPendingDetail,
+	HubsChatappsRemove,
+	HubsChatappsRevoke,
+	HubsChatappsRevokeConfirm,
+	HubsChatappsRevokeDoes,
+	HubsChatappsRevokeLabel,
+	HubsChatappsSave,
+	HubsChatappsSaving,
+	HubsChatappsSend,
+	HubsChatappsSendDoes,
+	HubsChatappsSendLabel,
+	HubsChatappsSendNone,
+	HubsChatappsSendOtherHelp,
+	HubsChatappsSending,
+	HubsChatappsSent,
+	HubsChatappsServiceInstalled,
+	HubsChatappsServiceNeeded,
+	HubsChatappsServiceQuitNow,
+	HubsChatappsSetup,
+	HubsChatappsSetupDoes,
+	HubsChatappsSlackManifest,
+	HubsChatappsSlackManifestDoes,
+	HubsChatappsStateConnected,
+	HubsChatappsStateFailed,
+	HubsChatappsStateRetrying,
+	HubsChatappsStateUnknown,
+	HubsChatappsTesting,
+	HubsChatappsUrlWord,
+	HubsChatappsUserDetail,
+	HubsChatappsWaiting,
+	HubsChatappsWebhookChatHelp,
+	HubsChatappsWebhookEditDoes,
+	HubsChatappsWebhookEvents,
+	HubsChatappsWebhookEventsHelp,
+	HubsChatappsWebhookNameHelp,
+	HubsChatappsWebhookOnlyHelp,
+	HubsChatappsWebhookPrompt,
+	HubsChatappsWebhookPromptHelp,
+	HubsChatappsWebhookRemoveConfirm,
+	HubsChatappsWebhookRemoveDoes,
+	HubsChatappsWebhookSkills,
+	HubsChatappsWebhookSkillsHelp,
+	HubsChatappsWebhookTest,
+	HubsChatappsWebhookTestDoes,
+	HubsChatappsWebhooksOff,
+	HubsColAccount,
+	HubsColAction,
 	HubsColCategory,
+	HubsColChoice,
+	HubsColCommand,
 	HubsColCovers,
+	HubsColFrom,
+	HubsColGroup,
 	HubsColId,
+	HubsColKey,
+	HubsColKind,
 	HubsColLanguage,
-	HubsColLastMessage,
 	HubsColLog,
+	HubsColLogin,
 	HubsColMembers,
 	HubsColMsgs,
+	HubsColName,
 	HubsColOn,
+	HubsColPart,
 	HubsColPlugin,
 	HubsColPrompt,
+	HubsColProvider,
 	HubsColRoom,
+	HubsColScreen,
 	HubsColServer,
 	HubsColSession,
+	HubsColSetting,
 	HubsColSkill,
 	HubsColSource,
+	HubsColStartedWith,
 	HubsColStatus,
 	HubsColTools,
 	HubsColTransport,
+	HubsColTrust,
+	HubsColValue,
+	HubsColVersion,
 	HubsColWhatItAdds,
+	HubsColWhatItCovers,
+	HubsColWhatItDoes,
 	HubsColWhen,
 	HubsColWhere,
+	HubsCopied,
+	HubsCopiedTerminal,
+	HubsCronAckConfirm,
+	HubsCronAcked,
+	HubsCronActCancel,
+	HubsCronActCancelDoes,
+	HubsCronActEdit,
+	HubsCronActEditDoes,
+	HubsCronActHistory,
+	HubsCronActHistoryDoes,
+	HubsCronActNotepad,
+	HubsCronActNotepadDoes,
+	HubsCronActPause,
+	HubsCronActPauseDoes,
+	HubsCronActRemove,
+	HubsCronActRemoveDoes,
+	HubsCronActResume,
+	HubsCronActResumeDoes,
+	HubsCronActRun,
+	HubsCronActRunDoes,
+	HubsCronCancelConfirm,
+	HubsCronCancelled,
+	HubsCronColJob,
+	HubsCronColLast,
+	HubsCronColNext,
+	HubsCronColSchedule,
+	HubsCronCreated,
+	HubsCronCreating,
+	HubsCronDetailDeliver,
+	HubsCronDetailError,
+	HubsCronDetailLast,
+	HubsCronDetailModel,
+	HubsCronDetailNext,
+	HubsCronDetailPausedWhy,
+	HubsCronDetailRepeat,
+	HubsCronDetailRepeatOf,
+	HubsCronDetailScript,
+	HubsCronDetailSkills,
+	HubsCronDetailTask,
+	HubsCronDetailTimezone,
+	HubsCronDetailWorkdir,
+	HubsCronEmpty,
+	HubsCronFailed,
+	HubsCronFormCreate,
+	HubsCronFormDeliverHelp,
+	HubsCronFormEffort,
+	HubsCronFormEffortDefault,
+	HubsCronFormModelHelp,
+	HubsCronFormName,
+	HubsCronFormNameHelp,
+	HubsCronFormPaused,
+	HubsCronFormPausedHelp,
+	HubsCronFormPromptHelp,
+	HubsCronFormProvider,
+	HubsCronFormProviderHelp,
+	HubsCronFormRepeatHelp,
+	HubsCronFormSave,
+	HubsCronFormSchedule,
+	HubsCronFormScheduleHelp,
+	HubsCronFormSkillsHelp,
+	HubsCronFormTitleEdit,
+	HubsCronFormTitleNew,
+	HubsCronFormWorkdirHelp,
+	HubsCronHealthDoctor,
+	HubsCronHealthDoctorDoes,
+	HubsCronHealthNoFailures,
+	HubsCronHealthSeen,
+	HubsCronHealthStatus,
+	HubsCronHealthStatusDoes,
+	HubsCronHealthTitle,
+	HubsCronHistoryColSource,
+	HubsCronHistoryDelivery,
+	HubsCronHistoryEmpty,
+	HubsCronHistoryFinished,
+	HubsCronHistoryNoOutput,
+	HubsCronHistoryTitle,
+	HubsCronIncidentAck,
+	HubsCronLoading,
+	HubsCronNotepadDeleted,
+	HubsCronNotepadKey,
+	HubsCronNotepadSaved,
+	HubsCronNotepadSet,
+	HubsCronNotepadTitle,
+	HubsCronNotepadValue,
+	HubsCronPaused,
+	HubsCronReading,
+	HubsCronRemoveConfirm,
+	HubsCronRemoved,
+	HubsCronResultCancelled,
+	HubsCronResultClaimed,
+	HubsCronResultCompleted,
+	HubsCronResultDeliveryFailed,
+	HubsCronResultError,
+	HubsCronResultFailed,
+	HubsCronResultMissed,
+	HubsCronResultOk,
+	HubsCronResultRunning,
+	HubsCronResultUnknown,
+	HubsCronResumed,
+	HubsCronSaved,
+	HubsCronSaving,
+	HubsCronServiceNeeded,
+	HubsCronServiceWhy,
+	HubsCronStarted,
+	HubsCronStarting,
+	HubsCronStateCompleted,
+	HubsCronStateError,
+	HubsCronStatePaused,
+	HubsCronStateRunning,
+	HubsCronStateScheduled,
+	HubsGroupBanner,
+	HubsGroupShow,
+	HubsKanbanActArchive,
+	HubsKanbanActArchiveDoes,
+	HubsKanbanActAssign,
+	HubsKanbanActAssignDoes,
+	HubsKanbanActComment,
+	HubsKanbanActCommentDoes,
+	HubsKanbanActComplete,
+	HubsKanbanActCompleteDoes,
+	HubsKanbanActDelete,
+	HubsKanbanActDeleteDoes,
+	HubsKanbanActEdit,
+	HubsKanbanActEditDoes,
+	HubsKanbanActMove,
+	HubsKanbanActMoveDoes,
+	HubsKanbanActReopen,
+	HubsKanbanActReopenDoes,
+	HubsKanbanAdded,
+	HubsKanbanArchiveConfirm,
+	HubsKanbanArchivedColumn,
+	HubsKanbanArchivedOne,
+	HubsKanbanArchivedShown,
+	HubsKanbanAssignTitle,
+	HubsKanbanAssigned,
+	HubsKanbanBoardCreated,
+	HubsKanbanBoardTitle,
+	HubsKanbanColAge,
+	HubsKanbanColTask,
+	HubsKanbanColWho,
+	HubsKanbanCommented,
+	HubsKanbanCompleted,
+	HubsKanbanDeleteConfirm,
+	HubsKanbanDeleted,
+	HubsKanbanDetailChildren,
+	HubsKanbanDetailComments,
+	HubsKanbanDetailError,
+	HubsKanbanDetailModel,
+	HubsKanbanDetailParents,
+	HubsKanbanDetailResult,
+	HubsKanbanDetailRuns,
+	HubsKanbanEmpty,
+	HubsKanbanFailed,
+	HubsKanbanFormAssigneeHelp,
+	HubsKanbanFormBoardCreate,
+	HubsKanbanFormBoardName,
+	HubsKanbanFormBoardNameHelp,
+	HubsKanbanFormBoardNew,
+	HubsKanbanFormBody,
+	HubsKanbanFormBodyHelp,
+	HubsKanbanFormCreate,
+	HubsKanbanFormNobody,
+	HubsKanbanFormPriority,
+	HubsKanbanFormPriorityHelp,
+	HubsKanbanFormSave,
+	HubsKanbanFormSkills,
+	HubsKanbanFormSkillsHelp,
+	HubsKanbanFormSlug,
+	HubsKanbanFormSlugHelp,
+	HubsKanbanFormTitle,
+	HubsKanbanFormTitleHelp,
+	HubsKanbanFormTitleNew,
+	HubsKanbanFormTriage,
+	HubsKanbanFormTriageHelp,
+	HubsKanbanLoading,
+	HubsKanbanMoveArchive,
+	HubsKanbanMoveBlock,
+	HubsKanbanMoveChanges,
+	HubsKanbanMoveComplete,
+	HubsKanbanMovePromote,
+	HubsKanbanMoveReopen,
+	HubsKanbanMoveReview,
+	HubsKanbanMoveSchedule,
+	HubsKanbanMoveSpecify,
+	HubsKanbanMoveUnblock,
+	HubsKanbanMoveTitle,
+	HubsKanbanMoved,
+	HubsKanbanNewBoard,
+	HubsKanbanReason,
+	HubsKanbanReasonHelp,
+	HubsKanbanReopened,
+	HubsKanbanSaved,
+	HubsKanbanSaving,
+	HubsKanbanSwitched,
 	HubsListErrorLine,
-	HubsPluginsAllScope,
-	HubsPluginsBundledSuffix,
+	HubsLoading,
+	HubsLoginsAddEnv,
+	HubsLoginsAddEnvTitle,
+	HubsLoginsAddHow,
+	HubsLoginsAddKey,
+	HubsLoginsAddKeyTitle,
+	HubsLoginsAddProvider,
+	HubsLoginsAddSignIn,
+	HubsLoginsAddSubmit,
+	HubsLoginsAddTool,
+	HubsLoginsAddToolDetail,
+	HubsLoginsAdded,
+	HubsLoginsBrowserDidNotOpen,
+	HubsLoginsConvertConfirm,
+	HubsLoginsConverted,
+	HubsLoginsDefaultNone,
+	HubsLoginsDefaultNoneMeaning,
+	HubsLoginsDefaultRotate,
+	HubsLoginsDefaultRotateMeaning,
+	HubsLoginsDefaultSet,
+	HubsLoginsDetailAccount,
+	HubsLoginsDetailCount,
+	HubsLoginsDetailFingerprint,
+	HubsLoginsDetailFrom,
+	HubsLoginsDetailSelection,
+	HubsLoginsDetailShared,
+	HubsLoginsDetailUsage,
+	HubsLoginsEmpty,
+	HubsLoginsEnvHelp,
+	HubsLoginsEnvLabel,
+	HubsLoginsExhaustedAlways,
+	HubsLoginsExhaustedAlwaysDoes,
+	HubsLoginsExhaustedAsk,
+	HubsLoginsExhaustedAskMeaning,
+	HubsLoginsExhaustedLead,
+	HubsLoginsExhaustedNoReset,
+	HubsLoginsExhaustedResets,
+	HubsLoginsExhaustedRetried,
+	HubsLoginsExhaustedRetry,
+	HubsLoginsExhaustedRetryDoes,
+	HubsLoginsExhaustedRotate,
+	HubsLoginsExhaustedRotateMeaning,
+	HubsLoginsExhaustedRotateSession,
+	HubsLoginsExhaustedRotateSessionDoes,
+	HubsLoginsExhaustedRotating,
+	HubsLoginsExhaustedSwitch,
+	HubsLoginsExhaustedSwitchDoes,
+	HubsLoginsExhaustedSwitched,
+	HubsLoginsExhaustedTitle,
+	HubsLoginsExhaustedWait,
+	HubsLoginsExhaustedWaitDoes,
+	HubsLoginsExhaustedWaiting,
+	HubsLoginsFieldDefault,
+	HubsLoginsFieldExhausted,
+	HubsLoginsFieldStrategy,
+	HubsLoginsFollowDefault,
+	HubsLoginsHelp,
+	HubsLoginsInRotation,
+	HubsLoginsInRotationHelp,
+	HubsLoginsKeyHelp,
+	HubsLoginsKeyLabel,
+	HubsLoginsKindKey,
+	HubsLoginsKindSubscription,
+	HubsLoginsLegend,
+	HubsLoginsLinkedEdit,
+	HubsLoginsMakeDefault,
+	HubsLoginsMakeDefaultHelp,
+	HubsLoginsMissing,
+	HubsLoginsNameHint,
+	HubsLoginsNameLabel,
+	HubsLoginsNoSession,
+	HubsLoginsPinnedLater,
+	HubsLoginsPinning,
+	HubsLoginsRemoveConfirm,
+	HubsLoginsRemoveLinkedConfirm,
+	HubsLoginsRemoved,
+	HubsLoginsRenameTitle,
+	HubsLoginsRenamed,
+	HubsLoginsReplaceKeyTitle,
+	HubsLoginsRotationOff,
+	HubsLoginsRotationOn,
+	HubsLoginsSave,
+	HubsLoginsSaved,
+	HubsLoginsSaving,
+	HubsLoginsSignInBrowser,
+	HubsLoginsSignInCodeLabel,
+	HubsLoginsSignInLoopback,
+	HubsLoginsSignInOpenThis,
+	HubsLoginsSignInStarting,
+	HubsLoginsSignInStopped,
+	HubsLoginsSignInTitle,
+	HubsLoginsSignInWaiting,
+	HubsLoginsSignInWaitingLink,
+	HubsLoginsStatusDead,
+	HubsLoginsStatusLimited,
+	HubsLoginsStatusNeedsSignIn,
+	HubsLoginsStatusReady,
+	HubsLoginsStatusUnavailable,
+	HubsLoginsStrategyFillFirst,
+	HubsLoginsStrategyFillFirstMeaning,
+	HubsLoginsStrategyLeastUsed,
+	HubsLoginsStrategyLeastUsedMeaning,
+	HubsLoginsStrategyRandom,
+	HubsLoginsStrategyRandomMeaning,
+	HubsLoginsStrategyRoundRobin,
+	HubsLoginsStrategyRoundRobinMeaning,
+	HubsLoginsSummaryDefault,
+	HubsLoginsSummaryRotateOnExhausted,
+	HubsLoginsSummaryRotation,
+	HubsLoginsUntil,
+	HubsLoginsUsed,
+	HubsLoginsWhatCode,
+	HubsLoginsWhatLink,
+	HubsPickEmpty,
+	HubsPluginsAccept,
+	HubsPluginsAcceptDoes,
+	HubsPluginsActCapabilities,
+	HubsPluginsActCapabilitiesDoes,
+	HubsPluginsActDoctor,
+	HubsPluginsActDoctorDoes,
+	HubsPluginsActRemove,
+	HubsPluginsActRemoveDoes,
+	HubsPluginsActSettings,
+	HubsPluginsActSettingsDoes,
+	HubsPluginsActShow,
+	HubsPluginsActShowDoes,
+	HubsPluginsActToggle,
+	HubsPluginsActToggleDoes,
+	HubsPluginsActTrustURL,
+	HubsPluginsActTrustURLDoes,
+	HubsPluginsActUpdate,
+	HubsPluginsActUpdateDoes,
+	HubsPluginsBundledStays,
+	HubsPluginsCatalogEmpty,
+	HubsPluginsConsentTitle,
+	HubsPluginsDetailPath,
+	HubsPluginsDetailSource,
+	HubsPluginsDetailTools,
+	HubsPluginsDetailUpdate,
+	HubsPluginsDisabled,
 	HubsPluginsEmpty,
-	HubsPluginsInstallHint,
-	HubsPluginsUserScope,
-	HubsSkillsLoadingOne,
+	HubsPluginsEnabled,
+	HubsPluginsFromSource,
+	HubsPluginsInstall,
+	HubsPluginsInstallAnyway,
+	HubsPluginsInstallAnywayConfirm,
+	HubsPluginsInstallAnywayDoes,
+	HubsPluginsInstallDoes,
+	HubsPluginsInstallNext,
+	HubsPluginsInstallTitle,
+	HubsPluginsInstalled,
+	HubsPluginsInstalling,
+	HubsPluginsMissingEnv,
+	HubsPluginsNoSettings,
+	HubsPluginsNothingAsked,
+	HubsPluginsPartBundles,
+	HubsPluginsPartCatalog,
+	HubsPluginsPartHub,
+	HubsPluginsPartPlugins,
+	HubsPluginsPartSkills,
+	HubsPluginsPartSources,
+	HubsPluginsPartTrusted,
+	HubsPluginsReading,
+	HubsPluginsRefHelp,
+	HubsPluginsRefLabel,
+	HubsPluginsRemoveConfirm,
+	HubsPluginsRemoved,
+	HubsPluginsRemoving,
+	HubsPluginsScanBlocked,
+	HubsPluginsSecretSet,
+	HubsPluginsSettingsSaved,
+	HubsPluginsSettingsTitle,
+	HubsPluginsSourceHelp,
+	HubsPluginsSourceLabel,
+	HubsPluginsTrustURLConfirm,
+	HubsPluginsUpdated,
+	HubsPluginsUpdating,
+	HubsProfilesAddTitle,
+	HubsProfilesAliasAdd,
+	HubsProfilesAliasAddDoes,
+	HubsProfilesAliasAdded,
+	HubsProfilesAliasRemove,
+	HubsProfilesAliasRemoveConfirm,
+	HubsProfilesAliasRemoveDoes,
+	HubsProfilesAliasRemoved,
+	HubsProfilesAlreadyOn,
+	HubsProfilesColFor,
+	HubsProfilesColModel,
+	HubsProfilesColProfile,
+	HubsProfilesColSkills,
+	HubsProfilesCreate,
+	HubsProfilesCreateDoes,
+	HubsProfilesCreateSubmit,
+	HubsProfilesCreated,
+	HubsProfilesCreating,
+	HubsProfilesDelete,
+	HubsProfilesDeleteConfirm,
+	HubsProfilesDeleteDoes,
+	HubsProfilesDeleteMine,
+	HubsProfilesDescribe,
+	HubsProfilesDescribeAuto,
+	HubsProfilesDescribeAutoDoes,
+	HubsProfilesDescribeAutoFailed,
+	HubsProfilesDescribeDoes,
+	HubsProfilesDescribeField,
+	HubsProfilesDescribeLabel,
+	HubsProfilesDescribed,
+	HubsProfilesDescriptionAuto,
+	HubsProfilesDetailActive,
+	HubsProfilesDetailAlias,
+	HubsProfilesDetailDistribution,
+	HubsProfilesDetailMine,
+	HubsProfilesDetailMineActive,
+	HubsProfilesDetailModel,
+	HubsProfilesDetailService,
+	HubsProfilesDetailWas,
+	HubsProfilesDistInfo,
+	HubsProfilesDistInfoDoes,
+	HubsProfilesDistUpdate,
+	HubsProfilesDistUpdateConfirm,
+	HubsProfilesDistUpdateDoes,
+	HubsProfilesEmpty,
+	HubsProfilesExport,
+	HubsProfilesExportDoes,
+	HubsProfilesExportIntro,
+	HubsProfilesExportPath,
+	HubsProfilesExportPathDefault,
+	HubsProfilesExportPathHelp,
+	HubsProfilesExportSubmit,
+	HubsProfilesExported,
+	HubsProfilesExporting,
+	HubsProfilesFieldAlias,
+	HubsProfilesFieldAliasHelp,
+	HubsProfilesFieldChannels,
+	HubsProfilesFieldChannelsHelp,
+	HubsProfilesFieldDescription,
+	HubsProfilesFieldDescriptionHelp,
+	HubsProfilesFieldFrom,
+	HubsProfilesFieldFromHelp,
+	HubsProfilesFieldLogins,
+	HubsProfilesFieldModel,
+	HubsProfilesFieldModelHelp,
+	HubsProfilesFieldName,
+	HubsProfilesFieldNameHelp,
+	HubsProfilesFieldProvider,
+	HubsProfilesFieldSkills,
+	HubsProfilesFieldSkillsHelp,
+	HubsProfilesFieldStart,
+	HubsProfilesImport,
+	HubsProfilesImportArchive,
+	HubsProfilesImportDoes,
+	HubsProfilesImportNameHelp,
+	HubsProfilesImportSubmit,
+	HubsProfilesImported,
+	HubsProfilesImporting,
+	HubsProfilesInstall,
+	HubsProfilesInstallDoes,
+	HubsProfilesInstallForce,
+	HubsProfilesInstallForceHelp,
+	HubsProfilesInstallNameHelp,
+	HubsProfilesInstallSource,
+	HubsProfilesInstallSourceHelp,
+	HubsProfilesInstallSubmit,
+	HubsProfilesLegend,
+	HubsProfilesLoading,
+	HubsProfilesLoginsCopy,
+	HubsProfilesLoginsCopyMeaning,
+	HubsProfilesLoginsNone,
+	HubsProfilesLoginsNoneMeaning,
+	HubsProfilesLoginsShare,
+	HubsProfilesLoginsShareMeaning,
+	HubsProfilesQuitNow,
+	HubsProfilesRename,
+	HubsProfilesRenameDefaultField,
+	HubsProfilesRenameDoes,
+	HubsProfilesRenameField,
+	HubsProfilesRestoreUsage,
+	HubsProfilesSaving,
+	HubsProfilesShow,
+	HubsProfilesShowDoes,
+	HubsProfilesStartEverything,
+	HubsProfilesStartEverythingMeaning,
+	HubsProfilesStartFresh,
+	HubsProfilesStartFreshMeaning,
+	HubsProfilesStartSettings,
+	HubsProfilesStartSettingsMeaning,
+	HubsProfilesUse,
+	HubsProfilesUseDoes,
+	HubsProfilesUseLabel,
+	HubsRunBusy,
+	HubsRunDone,
+	HubsRunExit,
+	HubsRunFailed,
+	HubsRunNoOutput,
+	HubsRunRunning,
+	HubsSessionsArchiveOpen,
+	HubsSessionsArchived,
+	HubsSessionsArchivedShown,
+	HubsSessionsCloseConfirm,
+	HubsSessionsClosed,
+	HubsSessionsDeleted,
+	HubsSessionsDeleting,
+	HubsSessionsDetailID,
+	HubsSessionsDetailMessages,
+	HubsSessionsDetailModel,
+	HubsSessionsDetailSource,
+	HubsSessionsDetailState,
+	HubsSessionsEmpty,
+	HubsSessionsExportFile,
+	HubsSessionsExportFileHint,
+	HubsSessionsExportFormat,
+	HubsSessionsExportHTML,
+	HubsSessionsExportJSON,
+	HubsSessionsExportMd,
+	HubsSessionsExportRedact,
+	HubsSessionsExportRedactHelp,
+	HubsSessionsExportSubmit,
+	HubsSessionsExportTitle,
+	HubsSessionsExported,
+	HubsSessionsExporting,
+	HubsSessionsLegend,
+	HubsSessionsOpenInCard,
+	HubsSessionsPinned,
+	HubsSessionsPruneArchived,
+	HubsSessionsPruneArchivedHelp,
+	HubsSessionsPruneConfirm,
+	HubsSessionsPruneDays,
+	HubsSessionsPruneDaysHelp,
+	HubsSessionsPruneIntro,
+	HubsSessionsPrunePinned,
+	HubsSessionsPruneSubmit,
+	HubsSessionsPruneTitle,
+	HubsSessionsPruned,
+	HubsSessionsPruning,
+	HubsSessionsRenameLabel,
+	HubsSessionsRenameTitle,
+	HubsSessionsRenamed,
+	HubsSessionsSaving,
+	HubsSessionsStateArchived,
+	HubsSessionsStateLive,
+	HubsSessionsStateOpen,
+	HubsSessionsStatePinned,
+	HubsSessionsStateStored,
+	HubsSessionsStateWorking,
+	HubsSessionsUnarchived,
+	HubsSessionsUnpinned,
+	HubsSettingsAddSubmit,
+	HubsSettingsAdvancedShown,
+	HubsSettingsApplyLive,
+	HubsSettingsApplyNewSession,
+	HubsSettingsApplyNextTurn,
+	HubsSettingsApplyRestart,
+	HubsSettingsDetailApply,
+	HubsSettingsDetailDefault,
+	HubsSettingsDetailSessionValue,
+	HubsSettingsDetailSource,
+	HubsSettingsEmpty,
+	HubsSettingsEntries,
+	HubsSettingsEntryAdd,
+	HubsSettingsEntryAdded,
+	HubsSettingsEntryHelp,
+	HubsSettingsEntryName,
+	HubsSettingsEntryRemoveConfirm,
+	HubsSettingsEntryRemoved,
+	HubsSettingsEntrySaved,
+	HubsSettingsEntryValue,
+	HubsSettingsHelp,
+	HubsSettingsLegend,
+	HubsSettingsListHelp,
+	HubsSettingsLocked,
+	HubsSettingsMapEmpty,
+	HubsSettingsNoMatch,
+	HubsSettingsNotEditable,
+	HubsSettingsOff,
+	HubsSettingsOn,
+	HubsSettingsOpenChoices,
+	HubsSettingsPlaceCLI,
+	HubsSettingsPlaceEnv,
+	HubsSettingsPlaceSetup,
+	HubsSettingsPlaceSlash,
+	HubsSettingsPlacesTitle,
+	HubsSettingsResetConfirm,
+	HubsSettingsSave,
+	HubsSettingsSaved,
+	HubsSettingsScopeAlways,
+	HubsSettingsScopeAlwaysMeaning,
+	HubsSettingsScopeLabel,
+	HubsSettingsScopeSession,
+	HubsSettingsScopeSessionMeaning,
+	HubsSettingsSearchTitle,
+	HubsSettingsSecretHelp,
+	HubsSettingsSourceDefault,
+	HubsSettingsSourceEnv,
+	HubsSettingsSourceGlobal,
+	HubsSettingsSourceManaged,
+	HubsSettingsSourceSession,
+	HubsSettingsSourceWorkspace,
+	HubsSetupActionBusy,
+	HubsSetupActionDone,
+	HubsSetupActionFailed,
+	HubsSetupAgentDetail,
+	HubsSetupAgentTitle,
+	HubsSetupBlankApplied,
+	HubsSetupBlankApply,
+	HubsSetupBlankApplyHelp,
+	HubsSetupBlankDetail,
+	HubsSetupBlankIntro,
+	HubsSetupBlankSkills,
+	HubsSetupBlankSkillsHelp,
+	HubsSetupBlankTitle,
+	HubsSetupChatDetail,
+	HubsSetupChatFormTitle,
+	HubsSetupChatHasKeys,
+	HubsSetupChatInstall,
+	HubsSetupChatInstallHelp,
+	HubsSetupChatIntro,
+	HubsSetupChatNone,
+	HubsSetupChatPick,
+	HubsSetupChatTitle,
+	HubsSetupClose,
+	HubsSetupHelpersAuto,
+	HubsSetupHelpersAutoMeaning,
+	HubsSetupHelpersDetail,
+	HubsSetupHelpersIntro,
+	HubsSetupHelpersModelPick,
+	HubsSetupHelpersTitle,
+	HubsSetupImportBackup,
+	HubsSetupImportBackupHelp,
+	HubsSetupImportDetail,
+	HubsSetupImportOpenclaw,
+	HubsSetupImportOpenclawHelp,
+	HubsSetupImportSession,
+	HubsSetupImportSessionHelp,
+	HubsSetupImportTitle,
+	HubsSetupIntro,
+	HubsSetupKeyRemoved,
+	HubsSetupKeySaved,
+	HubsSetupKeySet,
+	HubsSetupKeyURL,
+	HubsSetupModelDetail,
+	HubsSetupModelTitle,
+	HubsSetupNoCommand,
+	HubsSetupQuickDetail,
+	HubsSetupQuickIntro,
+	HubsSetupQuickModel,
+	HubsSetupQuickNone,
+	HubsSetupQuickTitle,
+	HubsSetupSaving,
+	HubsSetupTerminalDetail,
+	HubsSetupTerminalNoDocker,
+	HubsSetupTerminalPlugin,
+	HubsSetupTerminalPluginHelp,
+	HubsSetupTerminalTest,
+	HubsSetupTerminalTestHelp,
+	HubsSetupTerminalTitle,
+	HubsSetupToolsDetail,
+	HubsSetupToolsNeedsKey,
+	HubsSetupToolsTitle,
+	HubsSetupToolsetSaved,
+	HubsSetupUnknown,
+	HubsSetupVoiceDetail,
+	HubsSetupVoiceEspeak,
+	HubsSetupVoiceInstall,
+	HubsSetupVoiceInstallHelp,
+	HubsSetupVoiceSignIn,
+	HubsSetupVoiceSignInHelp,
+	HubsSetupVoiceTitle,
+	HubsSetupVoiceUnsupported,
+	HubsShortAfterExit,
+	HubsShortChatapps,
+	HubsShortCommands,
+	HubsShortCron,
+	HubsShortFallback,
+	HubsShortHooks,
+	HubsShortHubs,
+	HubsShortKanban,
+	HubsShortLogins,
+	HubsShortMcp,
+	HubsShortMemoryProvider,
+	HubsShortMixes,
+	HubsShortPlugins,
+	HubsShortProfiles,
+	HubsShortProjects,
+	HubsShortSecrets,
+	HubsShortSessions,
+	HubsShortSettings,
+	HubsShortSystem,
+	HubsShortVault,
+	HubsSkillsActAudit,
+	HubsSkillsActAuditDoes,
+	HubsSkillsActCheck,
+	HubsSkillsActCheckDoes,
+	HubsSkillsActDiff,
+	HubsSkillsActDiffDoes,
+	HubsSkillsActExport,
+	HubsSkillsActExportDoes,
+	HubsSkillsActImport,
+	HubsSkillsActImportDoes,
+	HubsSkillsActInspect,
+	HubsSkillsActInspectDoes,
+	HubsSkillsActModified,
+	HubsSkillsActModifiedDoes,
+	HubsSkillsActOptDoes,
+	HubsSkillsActOptIn,
+	HubsSkillsActOptOut,
+	HubsSkillsActRepair,
+	HubsSkillsActRepairDoes,
+	HubsSkillsActReset,
+	HubsSkillsActResetDoes,
+	HubsSkillsActToggle,
+	HubsSkillsActToggleDoes,
+	HubsSkillsActUninstall,
+	HubsSkillsActUninstallDoes,
+	HubsSkillsActUpdate,
+	HubsSkillsActUpdateAll,
+	HubsSkillsActUpdateAllDoes,
+	HubsSkillsActUpdateDoes,
+	HubsSkillsByName,
+	HubsSkillsDetailEssential,
+	HubsSkillsDetailOrigin,
+	HubsSkillsDisabled,
+	HubsSkillsEnabled,
+	HubsSkillsEssential,
+	HubsSkillsEveryDetail,
+	HubsSkillsEveryLabel,
+	HubsSkillsEveryTitle,
+	HubsSkillsFileLabel,
+	HubsSkillsHubEmpty,
+	HubsSkillsIdentifierLabel,
+	HubsSkillsInstallTitle,
+	HubsSkillsLoadingRegistries,
+	HubsSkillsNextPage,
+	HubsSkillsNotFromHub,
+	HubsSkillsPage,
 	HubsSkillsPathLine,
+	HubsSkillsRan,
+	HubsSkillsResetConfirm,
+	HubsSkillsRunFailed,
+	HubsSkillsRunning,
+	HubsSkillsSourceBuiltin,
+	HubsSkillsSourceHub,
+	HubsSkillsSourceLocal,
+	HubsSkillsUninstallConfirm,
+	HubsSkillsUninstallTitle,
+	HubsSkillsUpdateTitle,
+	HubsSourcesAddTitle,
+	HubsSourcesEmpty,
+	HubsSourcesRemoveConfirm,
+	HubsSourcesRemoveTitle,
+	HubsSourcesRepoLabel,
+	HubsStartAddressBad,
+	HubsStartAddressHelp,
+	HubsStartAddressLabel,
+	HubsStartEndpoint,
+	HubsStartEndpointDetail,
+	HubsStartEndpointIntro,
+	HubsStartEndpointSubmit,
+	HubsStartHelp,
+	HubsStartIntro,
+	HubsStartKeyHelp,
+	HubsStartNeedsLogin,
+	HubsStartNoModels,
+	HubsStartNoProvider,
+	HubsStartPickModel,
+	HubsStartPrice,
+	HubsStartReady,
+	HubsStartSaving,
+	HubsStartSignedIn,
+	HubsTitleAfterExit,
+	HubsTitleChatapps,
+	HubsTitleCommands,
+	HubsTitleCron,
+	HubsTitleFallback,
+	HubsTitleGetStarted,
+	HubsTitleHooks,
+	HubsTitleHubs,
+	HubsTitleKanban,
 	HubsTitleLanguage,
+	HubsTitleLogins,
+	HubsTitleMcp,
+	HubsTitleMemoryProvider,
+	HubsTitleMixes,
 	HubsTitlePlugins,
+	HubsTitleProfiles,
+	HubsTitleProjects,
 	HubsTitleRewind,
+	HubsTitleSecrets,
 	HubsTitleSessions,
-	HubsTitleSkills,
+	HubsTitleSettings,
+	HubsTitleSetup,
+	HubsTitleSystem,
+	HubsTitleVault,
+	HubsTrustedAdd,
+	HubsTrustedEmpty,
+	HubsTrustedHelp,
+	HubsTrustedPathLabel,
+	HubsTrustedRemoveConfirm,
+	HubsTrustedRemoveTitle,
 	JourneyCloseHint,
 	JourneyConfirmDelete,
 	JourneyEmpty,
@@ -2832,60 +5088,22 @@ var all = []Key{
 	KeysCompleteNextLabel,
 	KeysCompletePrevDoc,
 	KeysCompletePrevLabel,
+	KeysCompleteStartDoc,
+	KeysCompleteStartLabel,
 	KeysComposerAttachmentsClearDoc,
 	KeysComposerAttachmentsClearLabel,
-	KeysComposerCopyDoc,
-	KeysComposerCopyLabel,
-	KeysComposerDeleteBackDoc,
-	KeysComposerDeleteBackLabel,
-	KeysComposerDeleteForwardDoc,
-	KeysComposerDeleteForwardLabel,
-	KeysComposerDeleteLineAfterDoc,
-	KeysComposerDeleteLineAfterLabel,
-	KeysComposerDeleteLineBeforeDoc,
-	KeysComposerDeleteLineBeforeLabel,
-	KeysComposerDeleteWordBackDoc,
-	KeysComposerDeleteWordBackLabel,
-	KeysComposerDeleteWordForwardDoc,
-	KeysComposerDeleteWordForwardLabel,
 	KeysComposerDownDoc,
 	KeysComposerDownLabel,
-	KeysComposerLeftDoc,
-	KeysComposerLeftLabel,
-	KeysComposerLineEndDoc,
-	KeysComposerLineEndLabel,
-	KeysComposerLineStartDoc,
-	KeysComposerLineStartLabel,
-	KeysComposerPasteDoc,
-	KeysComposerPasteLabel,
-	KeysComposerRedoDoc,
-	KeysComposerRedoLabel,
-	KeysComposerRightDoc,
-	KeysComposerRightLabel,
-	KeysComposerSelectAllDoc,
-	KeysComposerSelectAllLabel,
-	KeysComposerSelectDownDoc,
-	KeysComposerSelectDownLabel,
-	KeysComposerSelectLeftDoc,
-	KeysComposerSelectLeftLabel,
-	KeysComposerSelectRightDoc,
-	KeysComposerSelectRightLabel,
-	KeysComposerSelectUpDoc,
-	KeysComposerSelectUpLabel,
-	KeysComposerSelectWordLeftDoc,
-	KeysComposerSelectWordLeftLabel,
-	KeysComposerSelectWordRightDoc,
-	KeysComposerSelectWordRightLabel,
+	KeysComposerHistoryNextDoc,
+	KeysComposerHistoryNextLabel,
+	KeysComposerHistoryPrevDoc,
+	KeysComposerHistoryPrevLabel,
+	KeysComposerHistorySearchDoc,
+	KeysComposerHistorySearchLabel,
 	KeysComposerSendDoc,
 	KeysComposerSendLabel,
-	KeysComposerUndoDoc,
-	KeysComposerUndoLabel,
 	KeysComposerUpDoc,
 	KeysComposerUpLabel,
-	KeysComposerWordLeftDoc,
-	KeysComposerWordLeftLabel,
-	KeysComposerWordRightDoc,
-	KeysComposerWordRightLabel,
 	KeysConfirmNoDoc,
 	KeysConfirmNoLabel,
 	KeysConfirmYesDoc,
@@ -2898,14 +5116,48 @@ var all = []Key{
 	KeysEditApplyLabel,
 	KeysEditCancelDoc,
 	KeysEditCancelLabel,
-	KeysEditClearDoc,
-	KeysEditClearLabel,
-	KeysEditDeleteBackDoc,
-	KeysEditDeleteBackLabel,
-	KeysEditEndDoc,
-	KeysEditEndLabel,
 	KeysFilterToggleDoc,
 	KeysFilterToggleLabel,
+	KeysFormCancelDoc,
+	KeysFormCancelLabel,
+	KeysFormChoiceNextDoc,
+	KeysFormChoiceNextLabel,
+	KeysFormChoicePrevDoc,
+	KeysFormChoicePrevLabel,
+	KeysFormEnterDoc,
+	KeysFormEnterLabel,
+	KeysFormNextDoc,
+	KeysFormNextLabel,
+	KeysFormPrevDoc,
+	KeysFormPrevLabel,
+	KeysFormSubmitDoc,
+	KeysFormSubmitLabel,
+	KeysFormToggleDoc,
+	KeysFormToggleLabel,
+	KeysHubAddDoc,
+	KeysHubAddLabel,
+	KeysHubBackDoc,
+	KeysHubBackLabel,
+	KeysHubDefaultDoc,
+	KeysHubDefaultLabel,
+	KeysHubEditDoc,
+	KeysHubEditLabel,
+	KeysHubHelpDoc,
+	KeysHubHelpLabel,
+	KeysHubPickDoc,
+	KeysHubPickLabel,
+	KeysHubRefreshDoc,
+	KeysHubRefreshLabel,
+	KeysHubRemoveDoc,
+	KeysHubRemoveLabel,
+	KeysHubRenameDoc,
+	KeysHubRenameLabel,
+	KeysHubRunDoc,
+	KeysHubRunLabel,
+	KeysHubToggleDoc,
+	KeysHubToggleLabel,
+	KeysHubUseDoc,
+	KeysHubUseLabel,
 	KeysInterruptDoc,
 	KeysInterruptLabel,
 	KeysLayoutDwindleDoc,
@@ -2922,6 +5174,116 @@ var all = []Key{
 	KeysLayoutSplitLabel,
 	KeysLayoutToggleDoc,
 	KeysLayoutToggleLabel,
+	KeysLeaderCancelDoc,
+	KeysLeaderCancelLabel,
+	KeysLeaderDoc,
+	KeysLeaderLabel,
+	KeysLeaderLayoutMainFewerDoc,
+	KeysLeaderLayoutMainFewerLabel,
+	KeysLeaderLayoutMainMoreDoc,
+	KeysLeaderLayoutMainMoreLabel,
+	KeysLeaderLayoutResetDoc,
+	KeysLeaderLayoutResetLabel,
+	KeysLeaderLayoutSplitDoc,
+	KeysLeaderLayoutSplitLabel,
+	KeysLeaderLayoutToggleDoc,
+	KeysLeaderLayoutToggleLabel,
+	KeysLeaderLiteralDoc,
+	KeysLeaderLiteralLabel,
+	KeysLeaderModelSwitchDoc,
+	KeysLeaderModelSwitchLabel,
+	KeysLeaderOpenSessionsDoc,
+	KeysLeaderOpenSessionsLabel,
+	KeysLeaderPaletteDoc,
+	KeysLeaderPaletteLabel,
+	KeysLeaderSessionBesideDoc,
+	KeysLeaderSessionBesideLabel,
+	KeysLeaderTabsCycleBackDoc,
+	KeysLeaderTabsCycleBackLabel,
+	KeysLeaderTabsCycleDoc,
+	KeysLeaderTabsCycleLabel,
+	KeysLeaderTabsJoinDoc,
+	KeysLeaderTabsJoinLabel,
+	KeysLeaderTabsSplitDoc,
+	KeysLeaderTabsSplitLabel,
+	KeysLeaderTerminalNewDoc,
+	KeysLeaderTerminalNewLabel,
+	KeysLeaderTerminalTabDoc,
+	KeysLeaderTerminalTabLabel,
+	KeysLeaderTuiAgentsDoc,
+	KeysLeaderTuiAgentsLabel,
+	KeysLeaderTuiEditorDoc,
+	KeysLeaderTuiEditorLabel,
+	KeysLeaderTuiHelpDoc,
+	KeysLeaderTuiHelpLabel,
+	KeysLeaderTuiPasteExpandDoc,
+	KeysLeaderTuiPasteExpandLabel,
+	KeysLeaderTuiPasteImageDoc,
+	KeysLeaderTuiPasteImageLabel,
+	KeysLeaderTuiQueueDeleteDoc,
+	KeysLeaderTuiQueueDeleteLabel,
+	KeysLeaderTuiRoomAttachDoc,
+	KeysLeaderTuiRoomAttachLabel,
+	KeysLeaderTuiRoomFilesDoc,
+	KeysLeaderTuiRoomFilesLabel,
+	KeysLeaderTuiRoomMenuDoc,
+	KeysLeaderTuiRoomMenuLabel,
+	KeysLeaderTuiRoomPendingDoc,
+	KeysLeaderTuiRoomPendingLabel,
+	KeysLeaderTuiRoomStopDoc,
+	KeysLeaderTuiRoomStopLabel,
+	KeysLeaderTuiVoiceDoc,
+	KeysLeaderTuiVoiceLabel,
+	KeysLeaderViewFindDoc,
+	KeysLeaderViewFindLabel,
+	KeysLeaderViewStartDoc,
+	KeysLeaderViewStartLabel,
+	KeysLeaderWindowAttentionDoc,
+	KeysLeaderWindowAttentionLabel,
+	KeysLeaderWindowCloseDoc,
+	KeysLeaderWindowCloseLabel,
+	KeysLeaderWindowCycleBackDoc,
+	KeysLeaderWindowCycleBackLabel,
+	KeysLeaderWindowCycleDoc,
+	KeysLeaderWindowCycleLabel,
+	KeysLeaderWindowFloatDoc,
+	KeysLeaderWindowFloatLabel,
+	KeysLeaderWindowFocusDownDoc,
+	KeysLeaderWindowFocusDownLabel,
+	KeysLeaderWindowFocusLabel,
+	KeysLeaderWindowFocusLeftDoc,
+	KeysLeaderWindowFocusLeftLabel,
+	KeysLeaderWindowFocusRightDoc,
+	KeysLeaderWindowFocusRightLabel,
+	KeysLeaderWindowFocusUpDoc,
+	KeysLeaderWindowFocusUpLabel,
+	KeysLeaderWindowGrowDoc,
+	KeysLeaderWindowGrowLabel,
+	KeysLeaderWindowMasterDoc,
+	KeysLeaderWindowMasterLabel,
+	KeysLeaderWindowMoveDownDoc,
+	KeysLeaderWindowMoveDownLabel,
+	KeysLeaderWindowMoveLabel,
+	KeysLeaderWindowMoveLeftDoc,
+	KeysLeaderWindowMoveLeftLabel,
+	KeysLeaderWindowMoveRightDoc,
+	KeysLeaderWindowMoveRightLabel,
+	KeysLeaderWindowMoveUpDoc,
+	KeysLeaderWindowMoveUpLabel,
+	KeysLeaderWindowShrinkDoc,
+	KeysLeaderWindowShrinkLabel,
+	KeysLeaderWindowZoomDoc,
+	KeysLeaderWindowZoomLabel,
+	KeysLeaderWorkspaceCloseDoc,
+	KeysLeaderWorkspaceCloseLabel,
+	KeysLeaderWorkspaceNDoc,
+	KeysLeaderWorkspaceNLabel,
+	KeysLeaderWorkspaceNewDoc,
+	KeysLeaderWorkspaceNewLabel,
+	KeysLeaderWorkspaceNextDoc,
+	KeysLeaderWorkspaceNextLabel,
+	KeysLeaderWorkspacePrevDoc,
+	KeysLeaderWorkspacePrevLabel,
 	KeysListBottomDoc,
 	KeysListBottomLabel,
 	KeysListDownDoc,
@@ -2938,42 +5300,24 @@ var all = []Key{
 	KeysModelSwitchLabel,
 	KeysOpenAgentsDoc,
 	KeysOpenAgentsLabel,
-	KeysOpenDoc,
-	KeysOpenLabel,
 	KeysOpenPluginsDoc,
 	KeysOpenPluginsLabel,
 	KeysOpenSessionsDoc,
 	KeysOpenSessionsLabel,
 	KeysOpenSkillsDoc,
 	KeysOpenSkillsLabel,
-	KeysPaletteClearDoc,
-	KeysPaletteClearLabel,
 	KeysPaletteCloseDoc,
 	KeysPaletteCloseLabel,
-	KeysPaletteDeleteBackDoc,
-	KeysPaletteDeleteBackLabel,
-	KeysPaletteDeleteForwardDoc,
-	KeysPaletteDeleteForwardLabel,
-	KeysPaletteDeleteWordDoc,
-	KeysPaletteDeleteWordLabel,
 	KeysPaletteDoc,
 	KeysPaletteDownDoc,
 	KeysPaletteDownLabel,
-	KeysPaletteEndDoc,
-	KeysPaletteEndLabel,
-	KeysPaletteHomeDoc,
-	KeysPaletteHomeLabel,
 	KeysPaletteLabel,
-	KeysPaletteLeftDoc,
-	KeysPaletteLeftLabel,
 	KeysPalettePageDownDoc,
 	KeysPalettePageDownLabel,
 	KeysPalettePageUpDoc,
 	KeysPalettePageUpLabel,
 	KeysPalettePickDoc,
 	KeysPalettePickLabel,
-	KeysPaletteRightDoc,
-	KeysPaletteRightLabel,
 	KeysPaletteUpDoc,
 	KeysPaletteUpLabel,
 	KeysPanelCloseDoc,
@@ -2984,14 +5328,8 @@ var all = []Key{
 	KeysRunCancelLabel,
 	KeysSearchAcceptDoc,
 	KeysSearchAcceptLabel,
-	KeysSearchClearDoc,
-	KeysSearchClearLabel,
 	KeysSearchCloseDoc,
 	KeysSearchCloseLabel,
-	KeysSearchDeleteBackDoc,
-	KeysSearchDeleteBackLabel,
-	KeysSearchDeleteWordDoc,
-	KeysSearchDeleteWordLabel,
 	KeysSearchNextDoc,
 	KeysSearchNextLabel,
 	KeysSearchPrevDoc,
@@ -3058,78 +5396,126 @@ var all = []Key{
 	KeysTerminalSelectAllLabel,
 	KeysTerminalTabDoc,
 	KeysTerminalTabLabel,
-	KeysTranscriptBottomDoc,
-	KeysTranscriptBottomLabel,
-	KeysTranscriptDownDoc,
-	KeysTranscriptDownLabel,
-	KeysTranscriptPageDownDoc,
-	KeysTranscriptPageDownLabel,
-	KeysTranscriptPageUpDoc,
-	KeysTranscriptPageUpLabel,
-	KeysTranscriptTopDoc,
-	KeysTranscriptTopLabel,
-	KeysTranscriptUpDoc,
-	KeysTranscriptUpLabel,
+	KeysTextCopyDoc,
+	KeysTextCopyLabel,
+	KeysTextDeleteBackDoc,
+	KeysTextDeleteBackLabel,
+	KeysTextDeleteForwardDoc,
+	KeysTextDeleteForwardLabel,
+	KeysTextDeleteLineAfterDoc,
+	KeysTextDeleteLineAfterLabel,
+	KeysTextDeleteLineBeforeDoc,
+	KeysTextDeleteLineBeforeLabel,
+	KeysTextDeleteWordBackDoc,
+	KeysTextDeleteWordBackLabel,
+	KeysTextDeleteWordForwardDoc,
+	KeysTextDeleteWordForwardLabel,
+	KeysTextLeftDoc,
+	KeysTextLeftLabel,
+	KeysTextLineEndDoc,
+	KeysTextLineEndLabel,
+	KeysTextLineStartDoc,
+	KeysTextLineStartLabel,
+	KeysTextNewlineDoc,
+	KeysTextNewlineLabel,
+	KeysTextPasteDoc,
+	KeysTextPasteLabel,
+	KeysTextRedoDoc,
+	KeysTextRedoLabel,
+	KeysTextRightDoc,
+	KeysTextRightLabel,
+	KeysTextSelectAllDoc,
+	KeysTextSelectAllLabel,
+	KeysTextSelectDownDoc,
+	KeysTextSelectDownLabel,
+	KeysTextSelectLeftDoc,
+	KeysTextSelectLeftLabel,
+	KeysTextSelectRightDoc,
+	KeysTextSelectRightLabel,
+	KeysTextSelectUpDoc,
+	KeysTextSelectUpLabel,
+	KeysTextSelectWordLeftDoc,
+	KeysTextSelectWordLeftLabel,
+	KeysTextSelectWordRightDoc,
+	KeysTextSelectWordRightLabel,
+	KeysTextUndoDoc,
+	KeysTextUndoLabel,
+	KeysTextWordLeftDoc,
+	KeysTextWordLeftLabel,
+	KeysTextWordRightDoc,
+	KeysTextWordRightLabel,
+	KeysTuiAfterexitQuitDoc,
+	KeysTuiAfterexitQuitLabel,
 	KeysTuiAgentsDoc,
 	KeysTuiAgentsDockDoc,
 	KeysTuiAgentsDockLabel,
 	KeysTuiAgentsLabel,
 	KeysTuiApprovalPageDoc,
 	KeysTuiApprovalPageLabel,
+	KeysTuiChatappsSendDoc,
+	KeysTuiChatappsSendLabel,
+	KeysTuiCronHealthDoc,
+	KeysTuiCronHealthLabel,
+	KeysTuiCronHistoryDoc,
+	KeysTuiCronHistoryLabel,
+	KeysTuiCronNotepadDeleteDoc,
+	KeysTuiCronNotepadDeleteLabel,
+	KeysTuiCronNotepadSetDoc,
+	KeysTuiCronNotepadSetLabel,
+	KeysTuiCronRunDoc,
+	KeysTuiCronRunLabel,
+	KeysTuiCronServiceDoc,
+	KeysTuiCronServiceLabel,
 	KeysTuiCutDoc,
 	KeysTuiCutLabel,
 	KeysTuiEditorDoc,
 	KeysTuiEditorLabel,
 	KeysTuiExitDoc,
 	KeysTuiExitLabel,
+	KeysTuiHelpDoc,
+	KeysTuiHelpLabel,
 	KeysTuiJourneyBackDoc,
 	KeysTuiJourneyBackLabel,
+	KeysTuiKanbanArchivedDoc,
+	KeysTuiKanbanArchivedLabel,
+	KeysTuiKanbanAssignDoc,
+	KeysTuiKanbanAssignLabel,
+	KeysTuiKanbanBoardDoc,
+	KeysTuiKanbanBoardLabel,
+	KeysTuiKanbanCommentDoc,
+	KeysTuiKanbanCommentLabel,
+	KeysTuiKanbanMoveDoc,
+	KeysTuiKanbanMoveLabel,
 	KeysTuiLanguageUseDoc,
 	KeysTuiLanguageUseLabel,
-	KeysTuiMcpAddDoc,
-	KeysTuiMcpAddLabel,
-	KeysTuiMcpAuthOpenDoc,
-	KeysTuiMcpAuthOpenLabel,
-	KeysTuiMcpAuthStopDoc,
-	KeysTuiMcpAuthStopLabel,
-	KeysTuiMcpAuthorizeDoc,
-	KeysTuiMcpAuthorizeLabel,
-	KeysTuiMcpRemoveDoc,
-	KeysTuiMcpRemoveLabel,
+	KeysTuiLoginsConvertDoc,
+	KeysTuiLoginsConvertLabel,
+	KeysTuiMcpSigninDoc,
+	KeysTuiMcpSigninLabel,
 	KeysTuiMcpTestDoc,
 	KeysTuiMcpTestLabel,
-	KeysTuiMcpToggleDoc,
-	KeysTuiMcpToggleLabel,
 	KeysTuiModelDoc,
 	KeysTuiModelLabel,
 	KeysTuiModelsDisconnectDoc,
 	KeysTuiModelsDisconnectLabel,
 	KeysTuiModelsScopeDoc,
 	KeysTuiModelsScopeLabel,
-	KeysTuiNewlineDoc,
-	KeysTuiNewlineLabel,
 	KeysTuiPasteExpandDoc,
 	KeysTuiPasteExpandLabel,
 	KeysTuiPasteImageDoc,
 	KeysTuiPasteImageLabel,
-	KeysTuiPluginsScopeDoc,
-	KeysTuiPluginsScopeLabel,
-	KeysTuiPluginsToggleDoc,
-	KeysTuiPluginsToggleLabel,
+	KeysTuiPluginsNextDoc,
+	KeysTuiPluginsNextLabel,
+	KeysTuiPluginsPrevDoc,
+	KeysTuiPluginsPrevLabel,
+	KeysTuiPluginsUpdateDoc,
+	KeysTuiPluginsUpdateLabel,
 	KeysTuiProcessesKillDoc,
 	KeysTuiProcessesKillLabel,
 	KeysTuiProcessesReadDoc,
 	KeysTuiProcessesReadLabel,
 	KeysTuiPromptCancelDoc,
 	KeysTuiPromptCancelLabel,
-	KeysTuiPromptDeleteAfterDoc,
-	KeysTuiPromptDeleteAfterLabel,
-	KeysTuiPromptDeleteWordBackDoc,
-	KeysTuiPromptDeleteWordBackLabel,
-	KeysTuiPromptDeleteWordForwardDoc,
-	KeysTuiPromptDeleteWordForwardLabel,
-	KeysTuiPromptNewlineDoc,
-	KeysTuiPromptNewlineLabel,
 	KeysTuiPromptNextDoc,
 	KeysTuiPromptNextLabel,
 	KeysTuiPromptPrevDoc,
@@ -3138,10 +5524,6 @@ var all = []Key{
 	KeysTuiPromptScrollDownLabel,
 	KeysTuiPromptScrollUpDoc,
 	KeysTuiPromptScrollUpLabel,
-	KeysTuiPromptWordLeftDoc,
-	KeysTuiPromptWordLeftLabel,
-	KeysTuiPromptWordRightDoc,
-	KeysTuiPromptWordRightLabel,
 	KeysTuiQueueDeleteDoc,
 	KeysTuiQueueDeleteLabel,
 	KeysTuiQueueDropDoc,
@@ -3180,34 +5562,38 @@ var all = []Key{
 	KeysTuiRoomsRenameLabel,
 	KeysTuiRoomsStopDoc,
 	KeysTuiRoomsStopLabel,
+	KeysTuiRuncommandLineDoc,
+	KeysTuiRuncommandLineLabel,
 	KeysTuiScrollLineDownDoc,
 	KeysTuiScrollLineDownLabel,
 	KeysTuiScrollLineUpDoc,
 	KeysTuiScrollLineUpLabel,
-	KeysTuiSessionsCloseDoc,
-	KeysTuiSessionsCloseLabel,
-	KeysTuiSessionsDeleteDoc,
-	KeysTuiSessionsDeleteLabel,
+	KeysTuiSessionsArchiveDoc,
+	KeysTuiSessionsArchiveLabel,
+	KeysTuiSessionsArchivedDoc,
+	KeysTuiSessionsArchivedLabel,
+	KeysTuiSessionsBesideDoc,
+	KeysTuiSessionsBesideLabel,
 	KeysTuiSessionsDoc,
-	KeysTuiSessionsDraftDownDoc,
-	KeysTuiSessionsDraftDownLabel,
-	KeysTuiSessionsDraftModelDoc,
-	KeysTuiSessionsDraftModelLabel,
-	KeysTuiSessionsDraftUpDoc,
-	KeysTuiSessionsDraftUpLabel,
+	KeysTuiSessionsExportDoc,
+	KeysTuiSessionsExportLabel,
 	KeysTuiSessionsLabel,
-	KeysTuiSessionsNewDoc,
-	KeysTuiSessionsNewLabel,
-	KeysTuiSessionsOpenDoc,
-	KeysTuiSessionsOpenLabel,
-	KeysTuiSessionsRefreshDoc,
-	KeysTuiSessionsRefreshLabel,
-	KeysTuiSkillsInspectDoc,
-	KeysTuiSkillsInspectLabel,
-	KeysTuiSkillsInstallDoc,
-	KeysTuiSkillsInstallLabel,
-	KeysTuiSkillsReinspectDoc,
-	KeysTuiSkillsReinspectLabel,
+	KeysTuiSessionsPinDoc,
+	KeysTuiSessionsPinLabel,
+	KeysTuiSessionsPruneDoc,
+	KeysTuiSessionsPruneLabel,
+	KeysTuiSessionsSpaceDoc,
+	KeysTuiSessionsSpaceLabel,
+	KeysTuiSettingsAdvancedDoc,
+	KeysTuiSettingsAdvancedLabel,
+	KeysTuiSettingsSearchDoc,
+	KeysTuiSettingsSearchLabel,
+	KeysTuiSigninCodeDoc,
+	KeysTuiSigninCodeLabel,
+	KeysTuiSigninCopyDoc,
+	KeysTuiSigninCopyLabel,
+	KeysTuiSigninOpenDoc,
+	KeysTuiSigninOpenLabel,
 	KeysTuiSpawntreeBackDoc,
 	KeysTuiSpawntreeBackLabel,
 	KeysTuiSpawntreesLoadDoc,
@@ -3226,10 +5612,50 @@ var all = []Key{
 	KeysTuiStashUpLabel,
 	KeysTuiSuspendDoc,
 	KeysTuiSuspendLabel,
+	KeysTuiSystemLevelDoc,
+	KeysTuiSystemLevelLabel,
 	KeysTuiVoiceDoc,
 	KeysTuiVoiceLabel,
 	KeysTuiYoloDoc,
 	KeysTuiYoloLabel,
+	KeysViewBottomDoc,
+	KeysViewBottomLabel,
+	KeysViewCopyDoc,
+	KeysViewCopyLabel,
+	KeysViewDownDoc,
+	KeysViewDownLabel,
+	KeysViewHalfDownDoc,
+	KeysViewHalfDownLabel,
+	KeysViewHalfUpDoc,
+	KeysViewHalfUpLabel,
+	KeysViewLeaveDoc,
+	KeysViewLeaveLabel,
+	KeysViewMatchNextDoc,
+	KeysViewMatchNextLabel,
+	KeysViewMatchPrevDoc,
+	KeysViewMatchPrevLabel,
+	KeysViewOpenDoc,
+	KeysViewOpenLabel,
+	KeysViewPageDownDoc,
+	KeysViewPageDownLabel,
+	KeysViewPageUpDoc,
+	KeysViewPageUpLabel,
+	KeysViewPromptNextDoc,
+	KeysViewPromptNextLabel,
+	KeysViewPromptPrevDoc,
+	KeysViewPromptPrevLabel,
+	KeysViewSearchBackDoc,
+	KeysViewSearchBackLabel,
+	KeysViewSearchDoc,
+	KeysViewSearchLabel,
+	KeysViewSelectDoc,
+	KeysViewSelectLabel,
+	KeysViewTopDoc,
+	KeysViewTopLabel,
+	KeysViewUpDoc,
+	KeysViewUpLabel,
+	KeysWindowAttentionDoc,
+	KeysWindowAttentionLabel,
 	KeysWindowCloseDoc,
 	KeysWindowCloseLabel,
 	KeysWindowCycleBackDoc,
@@ -3272,21 +5698,62 @@ var all = []Key{
 	KeysWorkspaceNextLabel,
 	KeysWorkspacePrevDoc,
 	KeysWorkspacePrevLabel,
+	KeysPanelApplied,
+	KeysPanelAppliedErrors,
+	KeysPanelFileError,
+	KeysPanelNeedsCmd,
+	KeysPanelNeedsKitty,
+	KeysPanelNeedsOption,
+	KeysPanelNoFile,
+	KeysPanelNoFileYet,
+	KeysPanelNoMatch,
+	KeysPanelNote,
+	KeysPanelOptionOff,
+	KeysPanelOptionOn,
+	KeysPanelOptionUsage,
+	KeysPanelReset,
+	KeysPanelTerminalPasses,
+	KeysPanelTitle,
+	KeysPanelUnbound,
+	KitComposerHistoryAt,
+	KitComposerHistorySearchMine,
+	KitComposerPlaceholder,
+	KitFormLess,
+	KitFormMore,
+	KitFormNo,
+	KitFormNumber,
+	KitFormRequired,
+	KitFormSend,
+	KitFormYes,
 	KitHintBack,
 	KitHintCancel,
 	KitHintConfirm,
 	KitHintMatches,
 	KitHintMove,
 	KitHintNextTab,
+	KitHintPick,
 	KitHintScroll,
 	KitHintScrollDetail,
+	KitHubHelp,
+	KitHubKeys,
+	KitReaderAt,
+	KitReaderMatches,
+	KitReaderMode,
+	KitReaderNoPrompt,
+	KitReaderSelecting,
+	KitTerminalEnterCloses,
+	KitTerminalEnterRestarts,
 	KitWmCommandPlaceholder,
 	KitWmCopiedLine,
 	KitWmCopiedLines,
+	KitWmFocusMoved,
 	KitWmMoreAbove,
 	KitWmMoreBelow,
 	KitWmNoMatch,
 	KitWmNothingOpen,
+	KitWmSheetArming,
+	KitWmSheetOf,
+	KitWmSheetWaiting,
 	KitWmTabsTitle,
 	LibTextAgentRowsAgent,
 	LibTextAgentRowsStarting,
@@ -3350,15 +5817,39 @@ var all = []Key{
 	LibTextTextPasteLinesChip,
 	LibTextTextResultLabel,
 	LibTextTextShowingLiveTail,
-	McpAddNone,
+	McpActKey,
+	McpActKeyDoes,
+	McpActRemove,
+	McpActRemoveDoes,
+	McpActSignIn,
+	McpActSignInDoes,
+	McpActTest,
+	McpActTestDoes,
+	McpActToggle,
+	McpActToggleDoes,
+	McpActTools,
+	McpActToolsDoes,
 	McpAddPick,
-	McpAddValue,
+	McpAddCustom,
+	McpAddCustomDetail,
+	McpAdding,
+	McpArgsHelp,
+	McpArgsLabel,
 	McpAuthStarting,
 	McpAuthTitle,
 	McpAuthWaiting,
+	McpCustomTitle,
+	McpDetailCommand,
+	McpDetailEnv,
+	McpDetailPlugin,
+	McpDetailSignedIn,
+	McpDetailSignedOut,
+	McpDetailURL,
 	McpEmpty,
-	McpErrorLine,
-	McpLoading,
+	McpEnvBad,
+	McpEnvHelp,
+	McpEnvLabel,
+	McpFromPlugin,
 	McpNoticeAdded,
 	McpNoticeAuthFailed,
 	McpNoticeAuthStopped,
@@ -3377,7 +5868,23 @@ var all = []Key{
 	McpStatusDisabled,
 	McpStatusFailed,
 	McpStatusLazy,
+	McpTargetHelp,
+	McpTargetLabel,
+	McpTesting,
 	McpTitle,
+	McpTokenHelp,
+	McpTokenLabel,
+	McpToolsEmpty,
+	McpToolsHelp,
+	McpToolsLabel,
+	McpToolsSaved,
+	McpToolsTitle,
+	McpTransportHTTP,
+	McpTransportHTTPMeaning,
+	McpTransportStdio,
+	McpTransportStdioMeaning,
+	McpValueHelp,
+	McpValuesTitle,
 	PagerLinesOne,
 	PagerLinesOther,
 	PagerRange,
@@ -3390,12 +5897,16 @@ var all = []Key{
 	PaletteLayoutToggleTitle,
 	PaletteModelSwitchTitle,
 	PaletteOpenAgentsTitle,
+	PaletteOpenLoginsTitle,
 	PaletteOpenPluginsTitle,
 	PaletteOpenRoomsTitle,
 	PaletteOpenSessionsTitle,
+	PaletteOpenSettingsTitle,
 	PaletteOpenSkillsTitle,
 	PaletteQuitTitle,
 	PaletteRunCancelTitle,
+	PaletteRunCommandTitle,
+	PaletteSessionBesideTitle,
 	PaletteSessionCompactTitle,
 	PaletteSessionNewTitle,
 	PaletteTabsCycleBackTitle,
@@ -3404,6 +5915,8 @@ var all = []Key{
 	PaletteTabsSplitTitle,
 	PaletteTerminalNewTitle,
 	PaletteTerminalTabTitle,
+	PaletteTuiHelpTitle,
+	PaletteWindowAttentionTitle,
 	PaletteWindowCloseTitle,
 	PaletteWindowCycleBackTitle,
 	PaletteWindowCycleTitle,
@@ -3420,7 +5933,9 @@ var all = []Key{
 	PaletteWindowMoveUpTitle,
 	PaletteWindowShrinkTitle,
 	PaletteWindowZoomTitle,
+	PaletteWorkspaceCloseTitle,
 	PaletteWorkspaceNTitle,
+	PaletteWorkspaceNewTitle,
 	PaletteWorkspaceNextTitle,
 	PaletteWorkspacePrevTitle,
 	PdfAttached,
@@ -3434,31 +5949,24 @@ var all = []Key{
 	PickersCommonInvalidResponse,
 	PickersCommonMoreAbove,
 	PickersCommonMoreBelow,
-	PickersModelDisconnectDisconnecting,
-	PickersModelDisconnectReauthLater,
-	PickersModelDisconnectRemovesCredentials,
-	PickersModelDisconnectTitle,
+	PickersModelAddLogin,
+	PickersModelAddLoginDetail,
+	PickersModelAddLoginFor,
 	PickersModelEffortPrompt,
 	PickersModelEffortSubtitle,
-	PickersModelFailedToSaveKey,
-	PickersModelKeyNote,
-	PickersModelKeySaving,
-	PickersModelKeyTitle,
 	PickersModelLoading,
 	PickersModelModelStageNoneListed,
 	PickersModelNoProviders,
-	PickersModelPasteKeyToActivate,
 	PickersModelPersistLabel,
 	PickersModelPersistOnlySuffix,
 	PickersModelPersistScopeGlobal,
 	PickersModelPersistScopeSession,
 	PickersModelPrompt,
-	PickersModelProviderNeedsSetup,
-	PickersModelProviderNoKey,
 	PickersModelProviderWarning,
 	PickersModelReasoningKeepCurrent,
 	PickersModelReasoningNone,
-	PickersModelRunModelToConfigure,
+	PickersModelVia,
+	PickersModelViaRotation,
 	PickersPetAdopting,
 	PickersPetLoading,
 	PickersPetNoneAvailable,
@@ -3466,20 +5974,9 @@ var all = []Key{
 	PickersPetPetCountOne,
 	PickersPetPetCountOther,
 	PickersPetTitle,
-	PickersSessionCurrentOrDefault,
 	PickersSessionDeleteConfirm,
-	PickersSessionDraftModel,
-	PickersSessionErrorsAlreadyClosed,
 	PickersSessionErrorsCouldNotLoadResumable,
-	PickersSessionErrorsNotAttached,
 	PickersSessionRowClosing,
-	PickersSessionRowNew,
-	PickersSessionRowStartNew,
-	PickersSessionStatusIdle,
-	PickersSessionStatusStarting,
-	PickersSessionStatusWaiting,
-	PickersSessionStatusWorking,
-	PickersSessionStaysInView,
 	ProcessesAlreadyExited,
 	ProcessesBackgroundProcess,
 	ProcessesColumnCommand,
@@ -3633,6 +6130,23 @@ var all = []Key{
 	RoomsWhereFrom,
 	RoomsWhereHere,
 	RpcRequestFailed,
+	RunCommandAfterExit,
+	RunCommandArguments,
+	RunCommandDefault,
+	RunCommandEmpty,
+	RunCommandExclusive,
+	RunCommandFailed,
+	RunCommandLine,
+	RunCommandLoading,
+	RunCommandNoOutput,
+	RunCommandOtherCommand,
+	RunCommandQueue,
+	RunCommandRun,
+	RunCommandRunsAfterExit,
+	RunCommandSeveral,
+	RunCommandSeveralWords,
+	RunCommandUnclosed,
+	RunCommandValueOf,
 	ScreenControl,
 	ScreenHeldByAgent,
 	ScreenHeldByPerson,
@@ -3700,9 +6214,11 @@ var all = []Key{
 	SessionInputFailedToOpenEditorWith,
 	SessionInputLoginNotSaved,
 	SessionInputSecretCancelled,
+	SessionInputSetupFirst,
 	SessionInputSudoCancelled,
 	SessionInputVaultStaysLocked,
 	SessionInputVoiceError,
+	SessionInputVoiceKeyTaken,
 	SessionInputVoiceModeOff,
 	SessionInputVoiceStillTranscribing,
 	SessionInputYoloNeedsSession,
@@ -3714,6 +6230,7 @@ var all = []Key{
 	SessionLifecycleFailedToSetTitle,
 	SessionLifecycleInterruptBeforeSwitch,
 	SessionLifecycleNewLiveSessionStarted,
+	SessionLifecycleQuestionElsewhere,
 	SessionLifecycleReclaimed,
 	SessionLifecycleSessionTitleSet,
 	SessionLifecycleSwitchSessions,
@@ -3732,6 +6249,7 @@ var all = []Key{
 	SessionMainWidgetFailedToLoad,
 	SessionMainWidgetLive,
 	SessionMainWidgetRemoved,
+	SessionNoticesDraftStashed,
 	SessionNoticesNotReady,
 	SessionNoticesPressAgainToExit,
 	SessionNoticesProjectSkillsLoaded,
@@ -3762,214 +6280,15 @@ var all = []Key{
 	SessionStatusVerificationCode,
 	SessionStatusWaitingForInput,
 	SessionTurnInterrupted,
-	SetupFlowAgentDetail,
-	SetupFlowAgentIntro,
-	SetupFlowAgentMaxTurns,
-	SetupFlowAgentMaxTurnsRange,
-	SetupFlowAgentProgressAll,
-	SetupFlowAgentProgressKeep,
-	SetupFlowAgentProgressKeepDetail,
-	SetupFlowAgentProgressLog,
-	SetupFlowAgentProgressNew,
-	SetupFlowAgentProgressOff,
-	SetupFlowAgentProgressVerbose,
-	SetupFlowAgentProgressLabel,
-	SetupFlowAgentThreshold,
-	SetupFlowAgentThresholdRange,
-	SetupFlowAgentTitle,
-	SetupFlowAuxDetail,
-	SetupFlowAuxTitle,
-	SetupFlowBlankDetail,
-	SetupFlowBlankTitle,
-	SetupFlowFlowChecklistHint,
-	SetupFlowFlowDone,
-	SetupFlowFlowFailed,
-	SetupFlowFlowKeepWaiting,
-	SetupFlowFlowRunning,
-	SetupFlowFlowSave,
-	SetupFlowFlowStarting,
-	SetupFlowFlowStop,
-	SetupFlowFlowStopped,
-	SetupFlowFlowStopping,
-	SetupFlowFlowTokens,
-	SetupFlowFlowTokensK,
-	SetupFlowFlowWaitTitle,
-	SetupFlowFlowWorking,
-	SetupFlowGatewayDetail,
-	SetupFlowGatewayTitle,
 	SetupFlowHelpLine,
-	SetupFlowImportDetail,
-	SetupFlowImportTitle,
-	SetupFlowModelDetail,
-	SetupFlowModelSaved,
-	SetupFlowModelSavedLive,
-	SetupFlowModelTitle,
-	SetupFlowPlaceholder,
 	SetupFlowQuickCoreDetail,
 	SetupFlowQuickDetail,
-	SetupFlowQuickTitle,
-	SetupFlowSectionCommandFailed,
-	SetupFlowSectionEnvValue,
-	SetupFlowSectionKeep,
-	SetupFlowSectionKeeps,
-	SetupFlowSectionLoading,
-	SetupFlowSectionMissing,
-	SetupFlowSectionNotNumber,
-	SetupFlowSectionNotWhole,
-	SetupFlowSectionRemoved,
-	SetupFlowSectionSaved,
-	SetupFlowSectionSaving,
-	SetupFlowSectionSecretHeld,
-	SetupFlowSectionSecretSaved,
-	SetupFlowSectionUnchanged,
-	SetupFlowSectionValue,
-	SetupFlowTerminalBackendDaytona,
-	SetupFlowTerminalBackendDaytonaDetail,
-	SetupFlowTerminalBackendDocker,
-	SetupFlowTerminalBackendDockerDetail,
-	SetupFlowTerminalBackendLocal,
-	SetupFlowTerminalBackendLocalDetail,
-	SetupFlowTerminalBackendModal,
-	SetupFlowTerminalBackendModalDetail,
-	SetupFlowTerminalBackendSsh,
-	SetupFlowTerminalBackendSshDetail,
-	SetupFlowTerminalBackendVercelSandbox,
-	SetupFlowTerminalBackendVercelSandboxDetail,
-	SetupFlowTerminalBackendLabel,
-	SetupFlowTerminalDaytona,
-	SetupFlowTerminalDaytonaConfigured,
-	SetupFlowTerminalDaytonaHeld,
-	SetupFlowTerminalDaytonaKey,
-	SetupFlowTerminalDaytonaUpdateLabel,
-	SetupFlowTerminalDaytonaUpdated,
-	SetupFlowTerminalDetail,
-	SetupFlowTerminalDockerFound,
-	SetupFlowTerminalDockerMissing,
-	SetupFlowTerminalEgressNo,
-	SetupFlowTerminalEgressNoDetail,
-	SetupFlowTerminalEgressYes,
-	SetupFlowTerminalEgressYesDetail,
-	SetupFlowTerminalEgressIntro,
-	SetupFlowTerminalEgressLabel,
-	SetupFlowTerminalEgressOff,
-	SetupFlowTerminalEgressOn,
-	SetupFlowTerminalIntro,
-	SetupFlowTerminalKeep,
-	SetupFlowTerminalKeepDetail,
-	SetupFlowTerminalKept,
-	SetupFlowTerminalLocal,
-	SetupFlowTerminalModal,
-	SetupFlowTerminalModalDirect,
-	SetupFlowTerminalModalHeld,
-	SetupFlowTerminalModalTokenID,
-	SetupFlowTerminalModalTokenSecret,
-	SetupFlowTerminalModalUpdateLabel,
-	SetupFlowTerminalPersistNo,
-	SetupFlowTerminalPersistNoDetail,
-	SetupFlowTerminalPersistYes,
-	SetupFlowTerminalPersistYesDetail,
-	SetupFlowTerminalPluginSetup,
-	SetupFlowTerminalSsh,
-	SetupFlowTerminalSshHost,
-	SetupFlowTerminalSshKey,
-	SetupFlowTerminalSshPort,
-	SetupFlowTerminalSshTestNo,
-	SetupFlowTerminalSshTestNoDetail,
-	SetupFlowTerminalSshTestYes,
-	SetupFlowTerminalSshTestYesDetail,
-	SetupFlowTerminalSshTestLabel,
-	SetupFlowTerminalSshTesting,
-	SetupFlowTerminalSshUser,
-	SetupFlowTerminalTitle,
-	SetupFlowTerminalUpdateNo,
-	SetupFlowTerminalUpdateNoDetail,
-	SetupFlowTerminalUpdateYes,
-	SetupFlowTerminalUpdateYesDetail,
-	SetupFlowTerminalVercel,
-	SetupFlowTerminalVercelAuth,
-	SetupFlowTerminalVercelCPU,
-	SetupFlowTerminalVercelDisk,
-	SetupFlowTerminalVercelImage,
-	SetupFlowTerminalVercelLinked,
-	SetupFlowTerminalVercelMemory,
-	SetupFlowTerminalVercelPersistLabel,
-	SetupFlowTerminalVercelProject,
-	SetupFlowTerminalVercelRuntime,
-	SetupFlowTerminalVercelTeam,
-	SetupFlowTerminalVercelToken,
-	SetupFlowToolsDetail,
-	SetupFlowToolsTitle,
-	SetupFlowTtsDetail,
-	SetupFlowTtsEspeakNo,
-	SetupFlowTtsEspeakNoDetail,
-	SetupFlowTtsEspeakYes,
-	SetupFlowTtsEspeakYesDetail,
-	SetupFlowTtsEspeakDone,
-	SetupFlowTtsEspeakFailed,
-	SetupFlowTtsEspeakLabel,
-	SetupFlowTtsEspeakNeeded,
-	SetupFlowTtsEspeakSkipped,
-	SetupFlowTtsGeminiHint,
-	SetupFlowTtsInstallNo,
-	SetupFlowTtsInstallNoDetail,
-	SetupFlowTtsInstallYes,
-	SetupFlowTtsInstallYesDetail,
-	SetupFlowTtsInstallFailed,
-	SetupFlowTtsInstallLabel,
-	SetupFlowTtsInstallSkipped,
-	SetupFlowTtsInstalled,
-	SetupFlowTtsInstalling,
-	SetupFlowTtsIntro,
-	SetupFlowTtsKeep,
-	SetupFlowTtsKeepDetail,
-	SetupFlowTtsKeyLabelElevenlabs,
-	SetupFlowTtsKeyLabelGemini,
-	SetupFlowTtsKeyLabelMinimax,
-	SetupFlowTtsKeyLabelMistral,
-	SetupFlowTtsKeyLabelOpenai,
-	SetupFlowTtsKittenttsNeeds,
-	SetupFlowTtsNeuttsNeeds,
-	SetupFlowTtsNoKey,
-	SetupFlowTtsProviderEdge,
-	SetupFlowTtsProviderElevenlabs,
-	SetupFlowTtsProviderGemini,
-	SetupFlowTtsProviderKittentts,
-	SetupFlowTtsProviderMinimax,
-	SetupFlowTtsProviderMistral,
-	SetupFlowTtsProviderNeutts,
-	SetupFlowTtsProviderOpenai,
-	SetupFlowTtsProviderXai,
-	SetupFlowTtsProviderLabel,
-	SetupFlowTtsTitle,
-	SetupFlowTtsUnsupported,
-	SetupFlowTtsVoiceAria,
-	SetupFlowTtsVoiceHiumaan,
-	SetupFlowTtsVoiceHsiaochen,
-	SetupFlowTtsVoiceKeep,
-	SetupFlowTtsVoiceKeepDetail,
-	SetupFlow_Tts_Voice_Other,
-	SetupFlowTtsVoiceOtherDetail,
-	SetupFlowTtsVoiceXiaoxiao,
-	SetupFlowTtsVoiceLabel,
-	SetupFlow_Tts_VoiceOther,
-	SetupFlowTtsXaiAuthKey,
-	SetupFlowTtsXaiAuthKeyDetail,
-	SetupFlowTtsXaiAuthOauth,
-	SetupFlowTtsXaiAuthOauthDetail,
-	SetupFlowTtsXaiAuthSkip,
-	SetupFlowTtsXaiAuthSkipDetail,
-	SetupFlowTtsXaiAuthLabel,
-	SetupFlowTtsXaiKeyHeld,
-	SetupFlowTtsXaiKeyLabel,
-	SetupFlowTtsXaiLogin,
-	SetupFlowTtsXaiLoginDone,
-	SetupFlowTtsXaiLoginFailed,
-	SetupFlowTtsXaiNoKey,
-	SetupFlowTtsXaiOAuthHeld,
-	SetupFlowTtsXaiSkipped,
-	SetupFlowTtsXaiVoice,
-	SetupFlowUnknownSection,
 	SlashChatCommand,
+	SlashFormChoice,
+	SlashFormExamples,
+	SlashFormLeaveOut,
+	SlashFormRun,
+	SlashFormWords,
 	SlashUnknownCommand,
 	SlashUnknownCommandNoMatch,
 	SlashCmdCoreAmbiguousCommand,
@@ -3979,16 +6298,10 @@ var all = []Key{
 	SlashCmdCoreBatteryUsage,
 	SlashCmdCoreBusyCompressing,
 	SlashCmdCoreBusyReplying,
-	SlashCmdCoreClearCancelLabel,
-	SlashCmdCoreClearConfirmClear,
-	SlashCmdCoreClearConfirmNew,
-	SlashCmdCoreClearDetail,
 	SlashCmdCoreClearForgingSession,
 	SlashCmdCoreClearNewSessionStarted,
 	SlashCmdCoreClearPreviousKeptRunning,
 	SlashCmdCoreClearSwitchSessions,
-	SlashCmdCoreClearTitleClear,
-	SlashCmdCoreClearTitleNew,
 	SlashCmdCoreCopyCopied,
 	SlashCmdCoreCopyCopiedCharsOne,
 	SlashCmdCoreCopyCopiedCharsOther,
@@ -3997,17 +6310,11 @@ var all = []Key{
 	SlashCmdCoreCopyUsage,
 	SlashCmdCoreDensityState,
 	SlashCmdCoreDensityUsage,
-	SlashCmdCoreDetailsCurrent,
-	SlashCmdCoreDetailsReset,
-	SlashCmdCoreDetailsSection,
-	SlashCmdCoreDetailsSectionUsage,
-	SlashCmdCoreDetailsUsage,
+	SlashCmdCoreDetailCurrent,
+	SlashCmdCoreDetailSet,
+	SlashCmdCoreDetailSetSession,
+	SlashCmdCoreDetailUsage,
 	SlashCmdCoreEmptyMessage,
-	SlashCmdCoreFocusDisabled,
-	SlashCmdCoreFocusEnabled,
-	SlashCmdCoreFocusStatusOff,
-	SlashCmdCoreFocusStatusOn,
-	SlashCmdCoreFocusUsage,
 	SlashCmdCoreFortuneUsage,
 	SlashCmdCoreHelpMcp,
 	SlashCmdCoreHelpRooms,
@@ -4047,6 +6354,12 @@ var all = []Key{
 	SlashCmdCoreQueueUsageEdit,
 	SlashCmdCoreQueueUsageMove,
 	SlashCmdCoreQueueUsageRemove,
+	SlashCmdCoreQuitDeleteDetail,
+	SlashCmdCoreQuitDeleteFailed,
+	SlashCmdCoreQuitDeleteNo,
+	SlashCmdCoreQuitDeleteTitle,
+	SlashCmdCoreQuitDeleteYes,
+	SlashCmdCoreQuitUsage,
 	SlashCmdCoreRedrawDone,
 	SlashCmdCoreRetryNothing,
 	SlashCmdCoreRewindCancelled,
@@ -4062,11 +6375,9 @@ var all = []Key{
 	SlashCmdCoreRewindUnsupported,
 	SlashCmdCoreRewindUsage,
 	SlashCmdCoreSaveFailed,
-	SlashCmdCoreSaveLegacyRefused,
 	SlashCmdCoreSaveNoActiveSession,
 	SlashCmdCoreSaveNoConversation,
 	SlashCmdCoreSaveSaved,
-	SlashCmdCoreSaveSavedOnHost,
 	SlashCmdCoreSkillNoMessage,
 	SlashCmdCoreStatusEmpty,
 	SlashCmdCoreStatusNoActiveSession,
@@ -4083,14 +6394,12 @@ var all = []Key{
 	SlashCmdCoreTitleCurrent,
 	SlashCmdCoreTitleNoActiveSession,
 	SlashCmdCoreTitleNone,
-	SlashCmdCoreTitleQueuedSuffix,
 	SlashCmdCoreTitleSet,
 	SlashCmdCoreUndoNothing,
 	SlashCmdCoreUndoRollbackHint,
 	SlashCmdCoreUndoRollbackHintMore,
 	SlashCmdCoreUndoUndidOne,
 	SlashCmdCoreUndoUndidOther,
-	SlashCmdCoreUpdateExiting,
 	SlashCmdDebugHeapdumpDiagPath,
 	SlashCmdDebugHeapdumpFailed,
 	SlashCmdDebugHeapdumpHeapPath,
@@ -4138,6 +6447,10 @@ var all = []Key{
 	SlashCmdOpsAgentsStatePaused,
 	SlashCmdOpsAgentsStatus,
 	SlashCmdOpsBrowserChecking,
+	SlashCmdOpsBrowserCloseDetail,
+	SlashCmdOpsBrowserCloseNo,
+	SlashCmdOpsBrowserCloseTitle,
+	SlashCmdOpsBrowserCloseYes,
 	SlashCmdOpsBrowserConnected,
 	SlashCmdOpsBrowserConnectedLive,
 	SlashCmdOpsBrowserDisconnected,
@@ -4161,10 +6474,8 @@ var all = []Key{
 	SlashCmdOpsPluginsUpdateUpdated,
 	SlashCmdOpsReloadEnvReloadedOne,
 	SlashCmdOpsReloadEnvReloadedOther,
-	SlashCmdOpsReloadMcpComplete,
 	SlashCmdOpsReloadMcpConfirmRequired,
 	SlashCmdOpsReloadMcpReloaded,
-	SlashCmdOpsReloadMcpReloadedAlways,
 	SlashCmdOpsReloadSkillsPageTitle,
 	SlashCmdOpsReloadSkillsReloaded,
 	SlashCmdOpsReplayArchivedTitle,
@@ -4222,6 +6533,10 @@ var all = []Key{
 	SlashCmdOpsSkillsUsageSearch,
 	SlashCmdOpsStopStoppedOne,
 	SlashCmdOpsStopStoppedOther,
+	SlashCmdSessionApprovalsCurrent,
+	SlashCmdSessionApprovalsCurrentYolo,
+	SlashCmdSessionApprovalsSet,
+	SlashCmdSessionApprovalsUsage,
 	SlashCmdSessionBgStarted,
 	SlashCmdSessionBgUsage,
 	SlashCmdSessionBranchBranched,
@@ -4229,10 +6544,6 @@ var all = []Key{
 	SlashCmdSessionBtwUsage,
 	SlashCmdSessionBusyMode,
 	SlashCmdSessionBusyUsage,
-	SlashCmdSessionCompressCompressedOne,
-	SlashCmdSessionCompressCompressedOther,
-	SlashCmdSessionCompressNothing,
-	SlashCmdSessionCompressTokSuffix,
 	SlashCmdSessionFastMode,
 	SlashCmdSessionFastUsage,
 	SlashCmdSessionHatchBaseFailed,
@@ -4274,6 +6585,7 @@ var all = []Key{
 	SlashCmdSessionModelSwitchAnyway,
 	SlashCmdSessionModelSwitched,
 	SlashCmdSessionModelSwitchedDeferred,
+	SlashCmdSessionPauseTitle,
 	SlashCmdSessionPersonalityChanged,
 	SlashCmdSessionPersonalityChangedCleared,
 	SlashCmdSessionPersonalityDefaultValue,
@@ -4312,7 +6624,6 @@ var all = []Key{
 	SlashCmdSessionPetUsageScale,
 	SlashCmdSessionPetUsageSelect,
 	SlashCmdSessionReasoningCurrent,
-	SlashCmdSessionReasoningCurrentWithDisplay,
 	SlashCmdSessionSessionsBusyGuardAction,
 	SlashCmdSessionSkinCurrent,
 	SlashCmdSessionSkinDefaultValue,
@@ -4337,8 +6648,8 @@ var all = []Key{
 	SlashCmdSessionUsageRowModel,
 	SlashCmdSessionUsageRowOutputTokens,
 	SlashCmdSessionUsageRowTotalTokens,
+	SlashCmdSessionUsageUsage,
 	SlashCmdSessionUsageUsageTitle,
-	SlashCmdSessionVerboseCurrent,
 	SlashCmdSessionVoiceDisabled,
 	SlashCmdSessionVoiceEnabled,
 	SlashCmdSessionVoiceEnabledWithTts,
@@ -4380,6 +6691,7 @@ var all = []Key{
 	SlashCmdWakeUsage,
 	SlashCmdWakeWithHint,
 	SlashHelpAgents,
+	SlashHelpApprovals,
 	SlashHelpArena,
 	SlashHelpBattery,
 	SlashHelpBg,
@@ -4387,16 +6699,14 @@ var all = []Key{
 	SlashHelpBrowser,
 	SlashHelpBtw,
 	SlashHelpBusy,
-	SlashHelpClear,
+	SlashHelpClientLog,
 	SlashHelpCompress,
-	SlashHelpConfig,
 	SlashHelpCopy,
 	SlashHelpDensity,
-	SlashHelpDetails,
+	SlashHelpDetail,
 	SlashHelpDiscard,
 	SlashHelpExport,
 	SlashHelpFast,
-	SlashHelpFocus,
 	SlashHelpFortune,
 	SlashHelpHandoff,
 	SlashHelpHeapdump,
@@ -4406,15 +6716,17 @@ var all = []Key{
 	SlashHelpImport,
 	SlashHelpIndicator,
 	SlashHelpJourney,
+	SlashHelpKeys,
 	SlashHelpLanguage,
 	SlashHelpLogs,
 	SlashHelpMem,
 	SlashHelpModel,
 	SlashHelpMouse,
+	SlashHelpNew,
 	SlashHelpPalette,
 	SlashHelpPaste,
+	SlashHelpPause,
 	SlashHelpPersonality,
-	SlashHelpPlugins,
 	SlashHelpProcesses,
 	SlashHelpPrompt,
 	SlashHelpQueue,
@@ -4426,11 +6738,11 @@ var all = []Key{
 	SlashHelpReloadSkills,
 	SlashHelpReplay,
 	SlashHelpReplayDiff,
+	SlashHelpResume,
 	SlashHelpRetry,
 	SlashHelpRewind,
 	SlashHelpRollback,
 	SlashHelpSave,
-	SlashHelpSessions,
 	SlashHelpSkills,
 	SlashHelpSkin,
 	SlashHelpSnapshot,
@@ -4447,7 +6759,6 @@ var all = []Key{
 	SlashHelpUndo,
 	SlashHelpUpdate,
 	SlashHelpUsage,
-	SlashHelpVerbose,
 	SlashHelpVoice,
 	SlashHelpWake,
 	SlashHelpWidgetsReload,
@@ -4475,7 +6786,274 @@ var all = []Key{
 	StatusSubagentsCount,
 	StatusSummoning,
 	StatusTokens,
+	StatusTurnDoneAgo,
+	StatusTurnStoppedAgo,
 	StatusWaitingOnYou,
+	SystemAfterExitWaiting,
+	SystemColFile,
+	SystemColLevel,
+	SystemColLine,
+	SystemColSection,
+	SystemColSize,
+	SystemColState,
+	SystemColTime,
+	SystemComputerAbout,
+	SystemComputerCovers,
+	SystemComputerDoctor,
+	SystemComputerDoctorDoes,
+	SystemComputerGrant,
+	SystemComputerGrantDoes,
+	SystemComputerInstall,
+	SystemComputerInstallConfirm,
+	SystemComputerInstallDoes,
+	SystemComputerPermissions,
+	SystemComputerPermissionsDoes,
+	SystemComputerStatus,
+	SystemComputerStatusDoes,
+	SystemComputerTitle,
+	SystemHealthAbout,
+	SystemHealthCheck,
+	SystemHealthCheckDoes,
+	SystemHealthConfig,
+	SystemHealthConfigDoes,
+	SystemHealthCovers,
+	SystemHealthDeep,
+	SystemHealthDeepDoes,
+	SystemHealthDump,
+	SystemHealthDumpDoes,
+	SystemHealthFix,
+	SystemHealthFixConfirm,
+	SystemHealthFixDoes,
+	SystemHealthLive,
+	SystemHealthLiveConfirm,
+	SystemHealthLiveDoes,
+	SystemHealthMonitoring,
+	SystemHealthMonitoringDoes,
+	SystemHealthPassed,
+	SystemHealthProblems,
+	SystemHealthPromptSize,
+	SystemHealthPromptSizeDoes,
+	SystemHealthReport,
+	SystemHealthReportDoes,
+	SystemHealthShare,
+	SystemHealthShareConfirm,
+	SystemHealthShareDoes,
+	SystemHealthStatus,
+	SystemHealthStatusDoes,
+	SystemHealthTitle,
+	SystemHealthUnshare,
+	SystemHealthUnshareAsk,
+	SystemHealthUnshareDoes,
+	SystemLogsCovers,
+	SystemLogsEmpty,
+	SystemLogsLevelAll,
+	SystemLogsLevelErrors,
+	SystemLogsLevelWarnings,
+	SystemLogsNoLines,
+	SystemLogsShowLine,
+	SystemLogsState,
+	SystemLogsTitle,
+	SystemLspAbout,
+	SystemLspCovers,
+	SystemLspInstall,
+	SystemLspInstallAll,
+	SystemLspInstallAllConfirm,
+	SystemLspInstallAllDoes,
+	SystemLspInstallDoes,
+	SystemLspList,
+	SystemLspListDoes,
+	SystemLspRestart,
+	SystemLspRestartDoes,
+	SystemLspServerAsk,
+	SystemLspStatus,
+	SystemLspStatusDoes,
+	SystemLspTitle,
+	SystemLspWhich,
+	SystemLspWhichDoes,
+	SystemMigrationsAbout,
+	SystemMigrationsCodex,
+	SystemMigrationsCodexCheck,
+	SystemMigrationsCodexCheckDoes,
+	SystemMigrationsCodexConfirm,
+	SystemMigrationsCodexDoes,
+	SystemMigrationsConfig,
+	SystemMigrationsConfigConfirm,
+	SystemMigrationsConfigDoes,
+	SystemMigrationsCovers,
+	SystemMigrationsRelay,
+	SystemMigrationsRelayConfirm,
+	SystemMigrationsRelayDoes,
+	SystemMigrationsTitle,
+	SystemMigrationsXai,
+	SystemMigrationsXaiCheck,
+	SystemMigrationsXaiCheckDoes,
+	SystemMigrationsXaiConfirm,
+	SystemMigrationsXaiDoes,
+	SystemPackagesAbout,
+	SystemPackagesCheck,
+	SystemPackagesCheckDoes,
+	SystemPackagesClean,
+	SystemPackagesCleanConfirm,
+	SystemPackagesCleanDoes,
+	SystemPackagesCovers,
+	SystemPackagesDoctor,
+	SystemPackagesDoctorDoes,
+	SystemPackagesEnv,
+	SystemPackagesEnvDoes,
+	SystemPackagesGc,
+	SystemPackagesGcDoes,
+	SystemPackagesInstall,
+	SystemPackagesInstallDoes,
+	SystemPackagesRepair,
+	SystemPackagesRepairDoes,
+	SystemPackagesStatus,
+	SystemPackagesStatusDoes,
+	SystemPackagesTitle,
+	SystemPackagesUpdate,
+	SystemPackagesUpdateDoes,
+	SystemProxyAbout,
+	SystemProxyCovers,
+	SystemProxyProviders,
+	SystemProxyProvidersDoes,
+	SystemProxyStart,
+	SystemProxyStartDoes,
+	SystemProxyStatus,
+	SystemProxyStatusDoes,
+	SystemProxyTitle,
+	SystemReading,
+	SystemSecurityAbout,
+	SystemSecurityAudit,
+	SystemSecurityAuditDoes,
+	SystemSecurityCovers,
+	SystemSecurityEgressAbout,
+	SystemSecurityEgressConfig,
+	SystemSecurityEgressConfigDoes,
+	SystemSecurityEgressDisable,
+	SystemSecurityEgressDisableConfirm,
+	SystemSecurityEgressDisableDoes,
+	SystemSecurityEgressInstall,
+	SystemSecurityEgressInstallDoes,
+	SystemSecurityEgressReload,
+	SystemSecurityEgressReloadDoes,
+	SystemSecurityEgressRestart,
+	SystemSecurityEgressRestartDoes,
+	SystemSecurityEgressSetup,
+	SystemSecurityEgressSetupDoes,
+	SystemSecurityEgressStart,
+	SystemSecurityEgressStartDoes,
+	SystemSecurityEgressStatus,
+	SystemSecurityEgressStatusDoes,
+	SystemSecurityEgressStop,
+	SystemSecurityEgressStopConfirm,
+	SystemSecurityEgressStopDoes,
+	SystemSecurityTitle,
+	SystemServiceAbout,
+	SystemServiceCovers,
+	SystemServiceInstall,
+	SystemServiceInstallAbout,
+	SystemServiceInstallConfirm,
+	SystemServiceInstallDoes,
+	SystemServiceList,
+	SystemServiceListDoes,
+	SystemServiceOffline,
+	SystemServicePause,
+	SystemServicePauseDoes,
+	SystemServicePauseIntro,
+	SystemServicePauseReason,
+	SystemServicePauseReasonHelp,
+	SystemServicePaused,
+	SystemServiceRestart,
+	SystemServiceRestartConfirm,
+	SystemServiceRestartDoes,
+	SystemServiceRestartFailed,
+	SystemServiceRestarted,
+	SystemServiceRestarting,
+	SystemServiceResume,
+	SystemServiceResumeDoes,
+	SystemServiceRunning,
+	SystemServiceStatus,
+	SystemServiceStatusDoes,
+	SystemServiceStop,
+	SystemServiceStopConfirm,
+	SystemServiceStopDoes,
+	SystemServiceTitle,
+	SystemServiceUninstall,
+	SystemServiceUninstallConfirm,
+	SystemServiceUninstallDoes,
+	SystemStorageAbout,
+	SystemStorageAdopt,
+	SystemStorageAdoptDoes,
+	SystemStorageCheckpoints,
+	SystemStorageCheckpointsDoes,
+	SystemStorageCleanMarkers,
+	SystemStorageCleanMarkersConfirm,
+	SystemStorageCleanMarkersDoes,
+	SystemStorageClear,
+	SystemStorageClearConfirm,
+	SystemStorageClearDoes,
+	SystemStorageClearLegacy,
+	SystemStorageClearLegacyConfirm,
+	SystemStorageClearLegacyDoes,
+	SystemStorageCovers,
+	SystemStorageJournal,
+	SystemStorageJournalAsk,
+	SystemStorageJournalDoes,
+	SystemStorageMeasuring,
+	SystemStorageOptimize,
+	SystemStorageOptimizeDoes,
+	SystemStoragePartBackups,
+	SystemStoragePartCache,
+	SystemStoragePartCheckpoints,
+	SystemStoragePartCron,
+	SystemStoragePartKanban,
+	SystemStoragePartLogs,
+	SystemStoragePartMemory,
+	SystemStoragePartPackages,
+	SystemStoragePartPlugins,
+	SystemStoragePartProfiles,
+	SystemStoragePartSessionFiles,
+	SystemStoragePartSessions,
+	SystemStoragePartSkills,
+	SystemStorageProfilesCheck,
+	SystemStorageProfilesCheckDoes,
+	SystemStoragePrompts,
+	SystemStoragePromptsCheck,
+	SystemStoragePromptsCheckDoes,
+	SystemStoragePromptsConfirm,
+	SystemStoragePromptsDoes,
+	SystemStoragePrune,
+	SystemStoragePruneConfirm,
+	SystemStoragePruneDoes,
+	SystemStorageRefresh,
+	SystemStorageRefreshDoes,
+	SystemStorageRepair,
+	SystemStorageRepairDoes,
+	SystemStorageRetitle,
+	SystemStorageRetitleCheck,
+	SystemStorageRetitleCheckDoes,
+	SystemStorageRetitleConfirm,
+	SystemStorageRetitleDoes,
+	SystemStorageRouting,
+	SystemStorageRoutingCheck,
+	SystemStorageRoutingCheckDoes,
+	SystemStorageRoutingConfirm,
+	SystemStorageRoutingDoes,
+	SystemStorageStats,
+	SystemStorageStatsDoes,
+	SystemStorageTitle,
+	SystemUnknownSection,
+	SystemUpdatesAbout,
+	SystemUpdatesCheck,
+	SystemUpdatesCheckDoes,
+	SystemUpdatesCovers,
+	SystemUpdatesPlan,
+	SystemUpdatesPlanDoes,
+	SystemUpdatesQueue,
+	SystemUpdatesQueueDoes,
+	SystemUpdatesQuit,
+	SystemUpdatesQuitDoes,
+	SystemUpdatesReason,
+	SystemUpdatesTitle,
 	ToolAnalyzing,
 	ToolDrafting,
 	ToolOutputRisk,
@@ -4490,6 +7068,8 @@ var all = []Key{
 	ToolsUnknownToolset,
 	TranscriptDelegationMore,
 	TranscriptDelegationMoreCommand,
+	TranscriptToolMoreLinesOne,
+	TranscriptToolMoreLinesOther,
 	UserMessagesBackendConnectionLost,
 	UserMessagesBackendConnectionLostActivity,
 	UserMessagesBackendGaveUpActivity,

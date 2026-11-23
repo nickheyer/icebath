@@ -20,91 +20,42 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Image cache writer of inbound photos and stickers
 var cacheImageFromBytesAsync = gateway.CacheImageFromBytesAsync
 
-// Boolean gate of the scoped env, then the extra key and its fallbacks, then the default
-func (a *TelegramAdapter) extraBool(ctx context.Context, key, envName, def string, fallbackKeys ...string) bool {
-	configured, err := gateway.ExtraOrSecret(ctx, a.Config.Extra, key, envName, nil, true)
-	if err != nil {
-		configured = nil
-	}
-	for _, alt := range fallbackKeys {
-		if configured == nil {
-			configured = a.Config.Extra[alt]
-		}
-	}
-	if configured == nil {
-		configured = def
-	}
-	if b, ok := configured.(bool); ok {
-		return b
-	}
-	switch pystr.Lower(pystr.Strip(pyrepr.Str(configured))) {
-	case "true", "1", "yes", "on":
-		return true
-	}
-	return false
-}
-
-// Comma or list allowlist of the scoped env, then the extra key, else empty
-func (a *TelegramAdapter) extraStrSet(ctx context.Context, key, envName string) map[string]bool {
-	raw, err := gateway.ExtraOrSecret(ctx, a.Config.Extra, key, envName, "", false)
-	if err != nil {
-		raw = ""
-	}
-	raw = gateway.DecodeJSONListLiteral(raw)
-	out := map[string]bool{}
-	if list, ok := raw.([]any); ok {
-		for _, part := range list {
-			if s := pystr.Strip(pyrepr.Str(part)); s != "" {
-				out[s] = true
-			}
-		}
-		return out
-	}
-	for _, part := range strings.Split(pyrepr.Str(raw), ",") {
-		if s := pystr.Strip(part); s != "" {
-			out[s] = true
-		}
-	}
-	return out
-}
-
 func (a *TelegramAdapter) requireMention(ctx context.Context) bool {
-	return a.extraBool(ctx, "require_mention", "TELEGRAM_REQUIRE_MENTION", "false")
+	return settings.TelegramRequireMention.Get(gateway.SettingsContext(ctx))
 }
 
 func (a *TelegramAdapter) observeUnmentionedGroupMessages(ctx context.Context) bool {
-	return a.extraBool(ctx, "observe_unmentioned_group_messages", "TELEGRAM_OBSERVE_UNMENTIONED_GROUP_MESSAGES", "false",
-		"ingest_unmentioned_group_messages")
+	return settings.TelegramObserveUnmentionedGroupMessages.Get(gateway.SettingsContext(ctx))
 }
 
 func (a *TelegramAdapter) guestMode(ctx context.Context) bool {
-	return a.extraBool(ctx, "guest_mode", "TELEGRAM_GUEST_MODE", "false")
+	return settings.TelegramGuestMode.Get(gateway.SettingsContext(ctx))
 }
 
 func (a *TelegramAdapter) exclusiveBotMentions(ctx context.Context) bool {
-	return a.extraBool(ctx, "exclusive_bot_mentions", "TELEGRAM_EXCLUSIVE_BOT_MENTIONS", "true")
+	return settings.TelegramExclusiveBotMentions.Get(gateway.SettingsContext(ctx))
 }
 
 func (a *TelegramAdapter) botsRequireMention(ctx context.Context) bool {
-	return a.extraBool(ctx, "bots_require_mention", "TELEGRAM_BOTS_REQUIRE_MENTION", "false")
+	return settings.TelegramBotsRequireMention.Get(gateway.SettingsContext(ctx))
 }
 
 func (a *TelegramAdapter) freeResponseChats(ctx context.Context) map[string]bool {
-	return a.extraStrSet(ctx, "free_response_chats", "TELEGRAM_FREE_RESPONSE_CHATS")
+	return gateway.SettingSet(ctx, settings.TelegramFreeResponseChats)
 }
 
 func (a *TelegramAdapter) freeResponseTopics(ctx context.Context) map[string]bool {
-	return a.extraStrSet(ctx, "free_response_topics", "TELEGRAM_FREE_RESPONSE_TOPICS")
+	return gateway.SettingSet(ctx, settings.TelegramFreeResponseTopics)
 }
 
 // Whether the message's chat and topic pair is a free response topic
@@ -121,11 +72,11 @@ func (a *TelegramAdapter) isFreeResponseTopic(ctx context.Context, m *models.Mes
 }
 
 func (a *TelegramAdapter) allowedChats(ctx context.Context) map[string]bool {
-	return a.extraStrSet(ctx, "allowed_chats", "TELEGRAM_ALLOWED_CHATS")
+	return gateway.SettingSet(ctx, settings.TelegramAllowedChats)
 }
 
 func (a *TelegramAdapter) groupAllowedChats(ctx context.Context) map[string]bool {
-	return a.extraStrSet(ctx, "group_allowed_chats", "TELEGRAM_GROUP_ALLOWED_CHATS")
+	return gateway.SettingSet(ctx, settings.TelegramGroupAllowedChats)
 }
 
 // Chats where observed context may use a shared source, the group allowlist narrowed by allowed_chats
@@ -148,33 +99,16 @@ func (a *TelegramAdapter) observeAllowedChats(ctx context.Context) map[string]bo
 }
 
 func (a *TelegramAdapter) allowedTopics(ctx context.Context) map[string]bool {
-	return a.extraStrSet(ctx, "allowed_topics", "TELEGRAM_ALLOWED_TOPICS")
+	return gateway.SettingSet(ctx, settings.TelegramAllowedTopics)
 }
 
-// Thread ids to skip from the scoped env or the extra list
+// Forum topic ids the profile never reads
 func (a *TelegramAdapter) ignoredThreads(ctx context.Context) map[int64]bool {
-	raw, err := gateway.ExtraOrSecret(ctx, a.Config.Extra, "ignored_threads", "TELEGRAM_IGNORED_THREADS", "", false)
-	if err != nil {
-		raw = ""
-	}
-	raw = gateway.DecodeJSONListLiteral(raw)
-	var values []any
-	if list, ok := raw.([]any); ok {
-		values = list
-	} else {
-		for _, part := range strings.Split(pyrepr.Str(raw), ",") {
-			values = append(values, part)
-		}
-	}
 	out := map[int64]bool{}
-	for _, value := range values {
-		text := pystr.Strip(pyrepr.Str(value))
-		if text == "" {
-			continue
-		}
+	for _, text := range gateway.SettingList(ctx, settings.TelegramIgnoredThreads) {
 		n, convErr := strconv.ParseInt(text, 10, 64)
 		if convErr != nil {
-			pkgLog().Warn(fmt.Sprintf("[%s] Ignoring invalid Telegram thread id: %s", a.Name(), pyrepr.Repr(value)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Ignoring invalid Telegram thread id: %s", a.Name(), pyrepr.Repr(text)))
 			continue
 		}
 		out[n] = true
@@ -182,33 +116,10 @@ func (a *TelegramAdapter) ignoredThreads(ctx context.Context) map[int64]bool {
 	return out
 }
 
-// Wake word patterns of the scoped env, else the profile extra
+// Mention word patterns of the profile, nil when it names none
 func (a *TelegramAdapter) compileMentionPatterns(ctx context.Context) []*regexp2.Regexp {
-	envRaw := pystr.Strip(gateway.PlatformGateEnv(ctx, "TELEGRAM_MENTION_PATTERNS", ""))
-	var patterns any
-	if envRaw != "" {
-		if parsed, err := pyjson.Loads(envRaw); err == nil {
-			patterns = parsed
-		} else {
-			var parts []any
-			for _, line := range pystr.Splitlines(envRaw, false) {
-				if s := pystr.Strip(line); s != "" {
-					parts = append(parts, s)
-				}
-			}
-			if len(parts) == 0 {
-				for _, part := range strings.Split(envRaw, ",") {
-					if s := pystr.Strip(part); s != "" {
-						parts = append(parts, s)
-					}
-				}
-			}
-			patterns = parts
-		}
-	} else {
-		patterns = a.Config.Extra["mention_patterns"]
-	}
-	if patterns == nil {
+	patterns := settings.TelegramMentionPatterns.Get(gateway.SettingsContext(ctx))
+	if len(patterns) == 0 {
 		return nil
 	}
 	label := "telegram"

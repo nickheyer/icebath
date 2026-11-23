@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -190,9 +191,7 @@ func (r *GatewayRunner) steerTextWithOrigin(ctx context.Context, text string, ev
 	if err != nil {
 		return "", err
 	}
-	privacy, _ := pyrepr.Or(gateway.LoadGatewayConfigMap(scoped, "")["privacy"], map[string]any{}).(map[string]any)
-	redactPII := pyrepr.Truthy(privacy["redact_pii"])
-	if gateway.ShouldRedactPII(ctx, source.Platform, redactPII) {
+	if gateway.ShouldRedactPII(ctx, source.Platform, settings.RedactPII.Get(scoped)) {
 		for _, key := range origin.Keys {
 			if key == "platform" || key == "chat_type" {
 				continue

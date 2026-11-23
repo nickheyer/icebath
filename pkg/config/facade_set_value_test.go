@@ -7,34 +7,6 @@ import (
 	"testing"
 )
 
-func TestValidateConfigKeyKnownAndSuggested(t *testing.T) {
-	src := testCommandSources()
-	src.RuntimeKeyOwners = RuntimeKeyOwners{
-		IsPresetFieldPath:   func([]string) bool { return false },
-		SelectionConfigKeys: func() map[string]bool { return nil },
-		ActiveManifests:     func() []PluginConfigKeys { return nil },
-	}
-	for _, key := range []string{"agent.max_turns", "discord.gateway_restart_notification", "mcp_servers.foo.command",
-		"providers.openrouter.api_key", "gateway.platforms.my_platform.extra.token", "platform_toolsets.cli"} {
-		if known, _ := ValidateConfigKey(key, src); !known {
-			t.Fatalf("%s validated as unknown", key)
-		}
-	}
-	for key, want := range map[string]string{
-		"gateway.discord.gateway_restart_notification": "discord.gateway_restart_notification",
-		"disco":                "discord",
-		"agent.max_turn":       "agent.max_turns",
-		"platform_toolset.cli": "platform_toolsets.cli",
-	} {
-		if known, suggestion := ValidateConfigKey(key, src); known || !strings.Contains(suggestion, want) {
-			t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
-		}
-	}
-	if known, _ := ValidateConfigKey("agent._max_turns", src); known {
-		t.Fatal("a sub key typo under a known section passed")
-	}
-}
-
 func TestSplitKeyPathEscapedDot(t *testing.T) {
 	for key, want := range map[string][]string{
 		`providers.qwen3\.5-397b.api_key`: {"providers", "qwen3.5-397b", "api_key"},
@@ -70,42 +42,6 @@ func TestSecretRedactionInDisplay(t *testing.T) {
 		benign := map[string]any{"token_count": 1234, "secret_santa": "alice", "max_turns": 90}
 		if got := RedactConfigValue(benign); !reflect.DeepEqual(got, benign) {
 			t.Fatalf("benign %v", got)
-		}
-	})
-}
-
-func TestValidateConfigKey(t *testing.T) {
-	src := pathCommandSources()
-	t.Run("test_known_keys_pass", func(t *testing.T) {
-		for _, key := range []string{"agent.max_turns", "discord.gateway_restart_notification", "mcp_servers.foo.command",
-			"providers.openrouter.api_key", "gateway.platforms.my_platform.extra.token", "platform_toolsets.cli"} {
-			if known, _ := ValidateConfigKey(key, src); !known {
-				t.Fatalf("Expected %s to validate as known", PyRepr(key))
-			}
-		}
-	})
-	t.Run("test_unknown_keys_with_suggestion", func(t *testing.T) {
-		for key, want := range map[string]string{"gateway.discord.gateway_restart_notification": "discord.gateway_restart_notification",
-			"disco": "discord", "agent.max_turn": "agent.max_turns", "platform_toolset.cli": "platform_toolsets.cli"} {
-			known, suggestion := ValidateConfigKey(key, src)
-			if known || !strings.Contains(suggestion, want) {
-				t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
-			}
-		}
-	})
-	t.Run("test_underscore_only_first_segment_escapes", func(t *testing.T) {
-		if known, _ := ValidateConfigKey("agent._max_turns", src); known {
-			t.Fatal("Sub-key typo under a known top-level key must still be flagged")
-		}
-	})
-}
-
-func TestGatewayPlatformsPrefixRedirect(t *testing.T) {
-	t.Run("test_nested_display_setting_still_reaches_display_platforms", func(t *testing.T) {
-		src := pathCommandSources()
-		src.DisplayOverrideableKeys = DisplayOverrideableKeys()
-		if key, _ := redirectPlatformDisplayKey("gateway.platforms.telegram.streaming", src); key != "display.platforms.telegram.streaming" {
-			t.Fatalf("key %s", key)
 		}
 	})
 }

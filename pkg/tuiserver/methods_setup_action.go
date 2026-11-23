@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -143,11 +144,14 @@ func (j *setupJob) run(ctx context.Context, h string, action func(ctx context.Co
 
 // Starts a named setup side effect in the background and returns the job that follows it
 func setupActionStart(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
+	p, err := tuigateway.SetupActionStart.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4001, err.Error(), nil), nil
+	}
 	h := home.Dir(ctx)
-	name := strOr(params["action"])
-	action, known := setupActionFor(name, params["params"])
+	action, known := setupActionFor(string(p.Action), p.Params)
 	if !known {
-		return rpcErr(rid, 4001, "unknown setup action "+name, nil), nil
+		return rpcErr(rid, 4001, "unknown setup action "+string(p.Action), nil), nil
 	}
 	if config.IsManaged(ctx, h) {
 		return rpcErr(rid, 4006, "managed install — the configuration is read-only", nil), nil
@@ -163,7 +167,7 @@ func setupActionStart(ctx context.Context, rid any, params map[string]any) (map[
 	return ok(rid, map[string]any{"job": id}), nil
 }
 
-// Cancels and forgets the setup actions, setup flows and hosted flows a departing transport started
+// Cancels and forgets the setup actions a departing transport started
 func releaseSetupForTransport(transport tuihost.Transport) {
 	if transport == nil {
 		return
@@ -176,42 +180,28 @@ func releaseSetupForTransport(transport tuihost.Transport) {
 		}
 	}
 	setupJobsMu.Unlock()
-	flowJobsMu.Lock()
-	for id, job := range flowJobs {
-		if job.owner == transport {
-			job.cancel()
-			delete(flowJobs, id)
-			if flowActive == job {
-				flowActive = nil
-			}
-		}
-	}
-	flowJobsMu.Unlock()
-	setupFlowsMu.Lock()
-	for id, session := range setupFlowRuns {
-		if session.owner == transport {
-			session.cancel()
-			delete(setupFlowRuns, id)
-		}
-	}
-	setupFlowsMu.Unlock()
 }
 
 // Waits a short while for new output of a job and returns it, forgetting the job once its end is delivered
 func setupActionPoll(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	id := strOr(params["job"])
+	p, err := tuigateway.SetupActionPoll.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4001, err.Error(), nil), nil
+	}
+	id := p.Job
 	setupJobsMu.Lock()
 	job, known := setupJobs[id]
 	setupJobsMu.Unlock()
-	after, fits := sectionWriteValue("whole", params["after"])
-	if !known || !fits {
+	if !known || p.After < 0 {
 		return rpcErr(rid, 4001, "unknown setup job "+id, nil), nil
 	}
-	_, shown := params["live"].(string)
-	seen := strOr(params["live"])
+	shown, seen := p.Live != nil, ""
+	if shown {
+		seen = *p.Live
+	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		lines, live, done, outcome := job.since(after.(int))
+		lines, live, done, outcome := job.since(int(p.After))
 		if len(lines) > 0 || done || shown && live != seen || time.Now().After(deadline) || ctx.Err() != nil {
 			if done {
 				setupJobsMu.Lock()

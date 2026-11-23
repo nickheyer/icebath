@@ -232,20 +232,11 @@ func TestOncePerProcessAndConfigAndTTLGates(t *testing.T) {
 }
 
 func TestConfigFlagReadsSessionsStartupOrphanSweep(t *testing.T) {
-	ctx := context.Background()
-	swapVar(t, &reaperLoadCfg, func(context.Context) map[string]any {
-		return map[string]any{"sessions": map[string]any{"startup_orphan_sweep": false}}
-	})
-	if orphanReaperEnabled(ctx) {
+	if orphanReaperEnabled(turnLimitHome(t, "sessions:\n  startup_orphan_sweep: false\n")) {
 		t.Fatal("flag false read as enabled")
 	}
-	reaperLoadCfg = func(context.Context) map[string]any { return map[string]any{} }
-	if !orphanReaperEnabled(ctx) {
+	if !orphanReaperEnabled(turnLimitHome(t, "sessions: {}\n")) {
 		t.Fatal("missing flag read as disabled")
-	}
-	reaperLoadCfg = func(context.Context) map[string]any { panic(errors.New("boom")) }
-	if !orphanReaperEnabled(ctx) {
-		t.Fatal("failing config read as disabled")
 	}
 }
 

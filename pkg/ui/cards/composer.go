@@ -1,11 +1,13 @@
 package cards
 
 import (
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"charm.land/bubbles/v2/key"
@@ -15,6 +17,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/clip"
+	"github.com/nickheyer/icebath/pkg/ui/field"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -22,9 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
-
-// Lines of history the composer remembers
-const historyLimit = 200
 
 // Rows the input grows to before it scrolls
 const maxInputRows = 6
@@ -50,13 +50,43 @@ type completion struct {
 	texts   []string
 	idx     int
 	replace int
+	// Whether the highlight was moved, the only case besides a command name in which enter takes the suggestion instead of sending
+	moved bool
+	// Whether every row only informs, such as a row saying completion is unavailable, the keys passing through to the prompt
+	info bool
 }
 
-// Candidate an app completion source offers, its text put in from the replace offset
+// Candidate an app completion source offers, its text put in from the replace offset; one without text only informs
 type Offer struct {
 	Text    string
 	Display string
 	Meta    string
+}
+
+// Pasted text or an attached file a label in the prompt stands for, kept with the prompt in the history and the drafts
+type Chip struct {
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	Text  string `json:"text,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Mime  string `json:"mime,omitempty"`
+}
+
+// Prompt as it was sent or left as a draft, with the chips of its labels, the session it was typed in, the folder and when
+type Entry struct {
+	Text    string `json:"text"`
+	Chips   []Chip `json:"chips,omitempty"`
+	Session string `json:"sid,omitempty"`
+	Cwd     string `json:"cwd,omitempty"`
+	At      int64  `json:"ts,omitempty"`
+}
+
+// Prompts every composer recalls, one store shared by all of them and read at each recall
+type History interface {
+	// Entries oldest first
+	Entries() []Entry
+	// Records a sent prompt, an older entry with the same text giving way to it
+	Add(Entry)
 }
 
 // Clickable send button on the first input row, in composer coordinates
@@ -73,19 +103,23 @@ type composerSnap struct {
 	cursor int
 }
 
-// Multi line prompt with history, the app's completion candidates, attachments and a draft kept per session
+// Multi line prompt with a history ring over the shared store, the app's completion candidates, attachments and a draft kept per session
 type Composer struct {
-	ta          textarea.Model
-	focused     bool
-	history     []string
-	cursor      int
-	draft       string
+	ta      textarea.Model
+	focused bool
+	// Entries of the store as they read when recall left the draft, the ring the cursor walks until the next send or the return to the draft
+	ring   []Entry
+	cursor int
+	draft  string
+	// What was typed into recalled entries, kept while moving through the ring and dropped at the next send
+	edits map[int]string
+	// Reverse search through the history while it runs
+	search      *historySearch
 	comp        *completion
 	quiet       string
 	attachments []attachment
 	dir         string
 	draftPath   string
-	historyPath string
 	last        string
 	baseDir     func() string
 	theme       theme.Theme
@@ -97,15 +131,23 @@ type Composer struct {
 	shown      int
 	width      int
 	undo, redo []composerSnap
-	SessionID  string
+	// Number that changes whenever the draft is replaced as a whole rather than edited in place
+	revision int
+	// Rows the prompt keeps while it holds less
+	minRows   int
+	SessionID string
+	// Store of the prompts the history ring recalls, nil keeping nothing
+	History History
+	// Chips the labels of a prompt stand for, kept with it in the history and its draft
+	Chips func(text string) []Chip
+	// Called with an entry put into the prompt from the history or a kept draft, so the app takes its chips back
+	OnRecall func(Entry)
 	// Reports whether nothing typed may reach disk, the draft and history kept in memory alone
 	Volatile func() bool
 	// Hands every sent line to the app as typed, commands and shell lines included
 	Literal bool
 	// Text an empty prompt shows in place of the command and palette legend
 	Hint string
-	// Called with each line the history takes, for an app keeping its own history file
-	OnRemember func(text string)
 	// Puts the highlighted offer in from its replace offset when the popup is accepted
 	Apply func(text string, replace int) tea.Cmd
 	// Called before the prompt is read for sending, for an app that rewrites its draft first
@@ -120,10 +162,10 @@ type Composer struct {
 
 // File the draft of a session is kept in under dir
 func DraftPath(dir, sessionID string) string {
-	return filepath.Join(dir, "drafts", sessionID+".txt")
+	return filepath.Join(dir, "drafts", sessionID+".json")
 }
 
-// Builds a composer on the keymap keeping history and bound drafts under dir, completing paths against base
+// Builds a composer on the keymap keeping the drafts of the sessions it binds under dir, none when empty, completing paths against base
 func NewComposer(t theme.Theme, km *keys.Map, dir string, base func() string) *Composer {
 	ta := textarea.New()
 	ta.Prompt = t.Glyphs.Prompt + " "
@@ -135,55 +177,67 @@ func NewComposer(t theme.Theme, km *keys.Map, dir string, base func() string) *C
 	ta.MaxHeight = maxInputRows
 	ta.SetHeight(minInputRows)
 	ta.SetVirtualCursor(false)
-	c := &Composer{ta: ta, baseDir: base, keys: km, dir: dir}
+	c := &Composer{ta: ta, baseDir: base, keys: km, dir: dir, minRows: minInputRows}
 	c.Rebind()
 	c.SetTheme(t)
-	if dir != "" {
-		c.historyPath = filepath.Join(dir, "history.txt")
-		if data, err := os.ReadFile(c.historyPath); err == nil {
-			for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n\x1e\n") {
-				if line != "" {
-					c.history = append(c.history, line)
-				}
-			}
-		}
-	}
-	c.cursor = len(c.history)
 	c.last = c.ta.Value()
 	return c
 }
 
-// Binds the prompt to a session, text already typed moving to it and otherwise its kept draft coming back
-func (c *Composer) Bind(sessionID string) {
+// Directory the drafts of the bound sessions are kept under, empty keeping them in memory
+func (c *Composer) SetDraftDir(dir string) { c.dir = dir }
+
+// Binds the prompt to a session: text typed before any session was bound moves to it, a prompt bound to another session keeps its draft there and
+// takes the draft of the new one
+func (c *Composer) Bind(sessionID string) tea.Cmd {
+	prev := c.SessionID
 	c.SessionID = sessionID
-	if c.dir == "" {
-		return
+	if c.dir == "" || sessionID == prev {
+		return nil
 	}
 	old := c.draftPath
-	c.draftPath = DraftPath(c.dir, sessionID)
-	if old == c.draftPath {
-		return
+	c.draftPath = ""
+	if sessionID != "" {
+		c.draftPath = DraftPath(c.dir, sessionID)
 	}
-	if c.ta.Value() != "" {
-		if old != "" {
-			os.Remove(old)
-		}
+	if (prev == "" || old == "") && strings.TrimSpace(c.ta.Value()) != "" {
 		c.last = ""
-		c.persist()
-		return
+		return c.persist()
+	}
+	c.leaveRing()
+	c.forget()
+	c.revision++
+	c.comp, c.search = nil, nil
+	entry, ok := c.readDraft()
+	c.ta.SetValue(entry.Text)
+	c.ta.MoveToEnd()
+	c.last = c.ta.Value()
+	if ok && c.OnRecall != nil {
+		c.OnRecall(entry)
+	}
+	return nil
+}
+
+// Draft of the bound session as kept on disk, false when there is none
+func (c *Composer) readDraft() (Entry, bool) {
+	if c.draftPath == "" {
+		return Entry{}, false
 	}
 	data, err := os.ReadFile(c.draftPath)
 	if err != nil {
-		return
+		return Entry{}, false
 	}
-	c.ta.SetValue(string(data))
-	c.last = c.ta.Value()
+	var e Entry
+	if json.Unmarshal(data, &e) != nil {
+		return Entry{}, false
+	}
+	return e, true
 }
 
 // Rebuilds the editing bindings of the input from the keymap, every other key only typing text
 func (c *Composer) Rebind() { c.ta.KeyMap = editingKeys(c.keys) }
 
-// Text editing bindings every multi line input takes from the composer actions of the keymap
+// Text editing bindings of the multi line input, taken from the text context of the keymap every field shares, and the row moves of the prompt
 func editingKeys(km *keys.Map) textarea.KeyMap {
 	bind := func(id string) key.Binding {
 		var spelled []string
@@ -196,36 +250,45 @@ func editingKeys(km *keys.Map) textarea.KeyMap {
 		return key.NewBinding(key.WithKeys(spelled...))
 	}
 	return textarea.KeyMap{
-		CharacterBackward:       bind("composer.left"),
-		CharacterForward:        bind("composer.right"),
-		WordBackward:            bind("composer.word.left"),
-		WordForward:             bind("composer.word.right"),
+		CharacterBackward:       bind("text.left"),
+		CharacterForward:        bind("text.right"),
+		WordBackward:            bind("text.word.left"),
+		WordForward:             bind("text.word.right"),
 		LinePrevious:            bind("composer.up"),
 		LineNext:                bind("composer.down"),
-		LineStart:               bind("composer.line.start"),
-		LineEnd:                 bind("composer.line.end"),
-		DeleteCharacterBackward: bind("composer.delete.back"),
-		DeleteCharacterForward:  bind("composer.delete.forward"),
-		DeleteWordBackward:      bind("composer.delete.word.back"),
-		DeleteWordForward:       bind("composer.delete.word.forward"),
-		DeleteBeforeCursor:      bind("composer.delete.line.before"),
-		DeleteAfterCursor:       bind("composer.delete.line.after"),
-		SelectAll:               bind("composer.select.all"),
-		SelectCharacterBackward: bind("composer.select.left"),
-		SelectCharacterForward:  bind("composer.select.right"),
-		SelectWordBackward:      bind("composer.select.word.left"),
-		SelectWordForward:       bind("composer.select.word.right"),
-		SelectLineUp:            bind("composer.select.up"),
-		SelectLineDown:          bind("composer.select.down"),
-		CopySelection:           bind("composer.copy"),
-		Paste:                   bind("composer.paste"),
+		LineStart:               bind("text.line.start"),
+		LineEnd:                 bind("text.line.end"),
+		DeleteCharacterBackward: bind("text.delete.back"),
+		DeleteCharacterForward:  bind("text.delete.forward"),
+		DeleteWordBackward:      bind("text.delete.word.back"),
+		DeleteWordForward:       bind("text.delete.word.forward"),
+		DeleteBeforeCursor:      bind("text.delete.line.before"),
+		DeleteAfterCursor:       bind("text.delete.line.after"),
+		SelectAll:               bind("text.select.all"),
+		SelectCharacterBackward: bind("text.select.left"),
+		SelectCharacterForward:  bind("text.select.right"),
+		SelectWordBackward:      bind("text.select.word.left"),
+		SelectWordForward:       bind("text.select.word.right"),
+		SelectLineUp:            bind("text.select.up"),
+		SelectLineDown:          bind("text.select.down"),
+		CopySelection:           bind("text.copy"),
+		Paste:                   bind("text.paste"),
 	}
 }
 
-// Paints the input with the theme
+// Paints the input with the theme, the prompt mark on the first row only so a long prompt never reads as several
 func (c *Composer) SetTheme(t theme.Theme) {
 	c.ta.SetStyles(editorStyles(t))
 	c.theme = t
+	mark := t.Glyphs.Prompt + " "
+	c.ta.Prompt = mark
+	width := ansi.StringWidth(mark)
+	c.ta.SetPromptFunc(width, func(info textarea.PromptInfo) string {
+		if info.LineNumber == 0 {
+			return mark
+		}
+		return strings.Repeat(" ", width)
+	})
 }
 
 // Styles of a multi line input in the theme, the cursor line left plain
@@ -252,22 +315,28 @@ func (c *Composer) SetBusy(on bool) { c.busy = on }
 // Text typed so far
 func (c *Composer) Value() string { return c.ta.Value() }
 
-// Replaces the text with the cursor at its end, the completion popup closed until the app offers again and a recalled history line left behind
+// Number that changes whenever the draft is replaced as a whole, by a send, a recall, a search, a session switch or the app setting it, so work
+// started for an older draft can tell it is stale
+func (c *Composer) Revision() int { return c.revision }
+
+// Replaces the text with the cursor at its end, the completion popup closed until the app offers again and a recalled entry left for the draft slot
 func (c *Composer) SetValue(text string) tea.Cmd {
+	c.revision++
 	c.forget()
 	c.ta.SetValue(text)
 	c.ta.MoveToEnd()
 	c.comp = nil
-	c.cursor = len(c.history)
+	c.leaveRing()
 	return c.persist()
 }
 
 // Replaces the text with the cursor at a rune offset of it, otherwise as SetValue does
 func (c *Composer) SetValueAt(text string, offset int) tea.Cmd {
+	c.revision++
 	c.forget()
 	c.restore(composerSnap{value: text, cursor: offset})
 	c.comp = nil
-	c.cursor = len(c.history)
+	c.leaveRing()
 	return c.persist()
 }
 
@@ -276,6 +345,7 @@ func (c *Composer) Insert(text string) tea.Cmd {
 	before := c.snap()
 	c.ta.InsertString(text)
 	c.tracked(before)
+	c.follow()
 	return c.persist()
 }
 
@@ -371,31 +441,49 @@ func (c *Composer) SelectAll() { c.ta.SelectAll() }
 // Place of the cursor in the prompt, counted in runes from its start
 func (c *Composer) Offset() int { return c.snap().cursor }
 
-// Reports whether an up key leaves the prompt, it being empty or the cursor on its first line with nothing selected
+// Reports whether an up key leaves the prompt, it being empty or the cursor on its first screen row with nothing selected
 func (c *Composer) AtTop() bool {
-	return c.ta.Value() == "" || (!c.ta.HasSelection() && c.ta.Line() == 0)
+	return c.ta.Value() == "" || (!c.ta.HasSelection() && c.ta.Line() == 0 && c.ta.LineInfo().RowOffset == 0)
 }
 
-// Reports whether a down key leaves the prompt, it being empty, a history line being recalled or the cursor on its last line with nothing selected
+// Reports whether a down key leaves the prompt, it being empty or the cursor on its last screen row with nothing selected
 func (c *Composer) AtBottom() bool {
-	return c.ta.Value() == "" || c.cursor < len(c.history) || (!c.ta.HasSelection() && c.ta.Line() == c.ta.LineCount()-1)
+	info := c.ta.LineInfo()
+	return c.ta.Value() == "" || (!c.ta.HasSelection() && c.ta.Line() == c.ta.LineCount()-1 && info.RowOffset >= info.Height-1)
 }
 
-// Replaces the remembered lines, oldest first, for an app that keeps the history file itself
-func (c *Composer) Seed(lines []string) {
-	if len(lines) > historyLimit {
-		lines = lines[len(lines)-historyLimit:]
+// Drops the selection, the text left as it is
+func (c *Composer) ClearSelection() { c.ta.ClearSelection() }
+
+// Leaves a recalled history entry for the unsent draft, what was typed into the entry kept for when it comes back
+func (c *Composer) BackToDraft() {
+	if c.recalling() {
+		c.recall(len(c.ring) - c.cursor)
 	}
-	c.history = append([]string(nil), lines...)
-	c.cursor = len(c.history)
-	c.historyPath = ""
 }
 
-// Position in the remembered lines while recalling, false at the unsent draft
-func (c *Composer) Recalling() (int, bool) { return c.cursor, c.cursor < len(c.history) }
+// Whether the prompt shows a history entry rather than the draft
+func (c *Composer) recalling() bool { return c.ring != nil && c.cursor < len(c.ring) }
 
-// Lines the composer remembers, oldest first
-func (c *Composer) History() []string { return append([]string(nil), c.history...) }
+// Position in the history while recalling, false at the unsent draft
+func (c *Composer) Recalling() (int, bool) { return c.cursor, c.recalling() }
+
+// Texts the prompt keeps out of view while it shows another slot, the draft and the edited history entries, whose chips must stay
+func (c *Composer) Kept() []string {
+	if c.ring == nil {
+		return nil
+	}
+	out := []string{c.draft}
+	for _, e := range c.edits {
+		out = append(out, e)
+	}
+	return out
+}
+
+// Forgets the ring and its edits, the prompt in view becoming the draft
+func (c *Composer) leaveRing() {
+	c.ring, c.edits, c.draft, c.cursor = nil, nil, "", 0
+}
 
 // Files attached to the next message
 func (c *Composer) Attachments() []string {
@@ -414,6 +502,12 @@ func (c *Composer) live() *completion {
 	return c.comp
 }
 
+// Whether the prompt is a slash command name still being typed, where enter takes the highlighted command
+func (c *Composer) namingCommand() bool {
+	v := c.ta.Value()
+	return strings.HasPrefix(v, "/") && !strings.ContainsAny(v, " \n")
+}
+
 // Candidates shown in the popup, nil when it is closed
 func (c *Composer) Completions() []string {
 	if c.live() == nil {
@@ -422,11 +516,14 @@ func (c *Composer) Completions() []string {
 	return append([]string(nil), c.comp.items...)
 }
 
-// Reports whether the completion popup is open for the text typed now
-func (c *Composer) Completing() bool { return c.live() != nil }
+// Reports whether the completion popup takes keys for the text typed now, a popup that only informs taking none
+func (c *Composer) Completing() bool {
+	comp := c.live()
+	return comp != nil && !comp.info
+}
 
 // Shows the candidates the app found for a prompt text, the first one highlighted, none closing the popup. An answer for a text no longer
-// typed is dropped and the shown list kept until the answer for the current text replaces it, so the popup does not blink on every key
+// typed is dropped; the list on screen follows the typing on its own until the answer for the current text replaces it
 func (c *Composer) Offer(value string, offers []Offer, replace int) {
 	if value != c.ta.Value() {
 		return
@@ -436,7 +533,7 @@ func (c *Composer) Offer(value string, offers []Offer, replace int) {
 		return
 	}
 	c.quiet = ""
-	comp := &completion{value: value, replace: replace}
+	comp := &completion{value: value, replace: replace, info: true}
 	for _, o := range offers {
 		label := o.Display
 		if label == "" {
@@ -445,14 +542,70 @@ func (c *Composer) Offer(value string, offers []Offer, replace int) {
 		comp.items = append(comp.items, label)
 		comp.descs = append(comp.descs, o.Meta)
 		comp.texts = append(comp.texts, o.Text)
+		comp.info = comp.info && o.Text == ""
 	}
 	c.comp = comp
 }
 
-// Rows the composer wants, two at least, growing with the wrapped text only. The completion popup floats over the rows above the composer
+// Keeps the popup true to the text typed now: typing on past the text it answered narrows its rows to those the new word still matches, any
+// other change closes it until the app offers again, so a row for older text is never drawn
+func (c *Composer) follow() {
+	comp := c.comp
+	value := c.ta.Value()
+	if comp == nil || comp.value == value {
+		return
+	}
+	if comp.info || !strings.HasPrefix(value, comp.value) || comp.replace > utf8.RuneCountInString(value) {
+		c.comp = nil
+		return
+	}
+	word := strings.ToLower(strings.TrimPrefix(string([]rune(value)[comp.replace:]), "/"))
+	kept := &completion{value: value, replace: comp.replace}
+	for i, text := range comp.texts {
+		if !subsequence(word, strings.ToLower(strings.TrimPrefix(text, "/"))) && !subsequence(word, strings.ToLower(ansi.Strip(comp.items[i]))) {
+			continue
+		}
+		kept.items = append(kept.items, comp.items[i])
+		kept.descs = append(kept.descs, comp.descs[i])
+		kept.texts = append(kept.texts, text)
+	}
+	if len(kept.items) == 0 {
+		c.comp = nil
+		return
+	}
+	c.comp = kept
+}
+
+// Whether every rune of the word appears in the text in order
+func subsequence(word, text string) bool {
+	runes := []rune(text)
+	i := 0
+	for _, r := range word {
+		for i < len(runes) && runes[i] != r {
+			i++
+		}
+		if i == len(runes) {
+			return false
+		}
+		i++
+	}
+	return true
+}
+
+// Sets the rows the prompt keeps while it holds less, one on a small terminal where every row counts
+func (c *Composer) SetMinRows(n int) {
+	n = min(max(n, 1), maxInputRows)
+	if c.minRows == n {
+		return
+	}
+	c.minRows = n
+	c.ta.MinHeight = n
+}
+
+// Rows the composer wants, two at least unless set lower, growing with the wrapped text only. The completion popup floats over the rows above the composer
 // (see Popup) so opening, narrowing or closing it never moves the layout
 func (c *Composer) Height() int {
-	return max(c.ta.Height(), minInputRows)
+	return max(c.ta.Height(), c.minRows)
 }
 
 // Reports whether the input is empty with nothing attached
@@ -475,12 +628,21 @@ func (c *Composer) SetFocus(on bool) tea.Cmd {
 func (c *Composer) Update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.PasteMsg:
+		if c.search != nil {
+			c.searchTyped(msg)
+			return nil
+		}
 		before := c.snap()
 		var cmd tea.Cmd
 		c.ta, cmd = c.ta.Update(msg)
 		c.tracked(before)
+		c.follow()
 		return tea.Batch(cmd, c.persist())
 	case tea.KeyPressMsg:
+		if c.search != nil {
+			c.searchTyped(msg)
+			return nil
+		}
 		if msg.Text == "" {
 			return nil
 		}
@@ -488,6 +650,7 @@ func (c *Composer) Update(msg tea.Msg) tea.Cmd {
 		var cmd tea.Cmd
 		c.ta, cmd = c.ta.Update(msg)
 		c.tracked(before)
+		c.follow()
 		return tea.Batch(cmd, c.persist())
 	}
 	return nil
@@ -495,14 +658,26 @@ func (c *Composer) Update(msg tea.Msg) tea.Cmd {
 
 // Carries out a keymap action of the prompt or its completion popup
 func (c *Composer) Action(id string) tea.Cmd {
-	if c.live() != nil {
+	if c.search != nil {
+		if cmd, used := c.SearchKey(id); used {
+			return cmd
+		}
+	}
+	if c.live() != nil && !c.comp.info {
 		switch id {
 		case "complete.next":
 			c.comp.idx = (c.comp.idx + 1) % len(c.comp.items)
+			c.comp.moved = true
 			return nil
 		case "complete.prev":
 			c.comp.idx = (c.comp.idx - 1 + len(c.comp.items)) % len(c.comp.items)
+			c.comp.moved = true
 			return nil
+		case "composer.send":
+			if c.Apply != nil && (c.comp.moved || c.namingCommand()) {
+				return c.Apply(c.comp.texts[c.comp.idx], c.comp.replace)
+			}
+			c.comp = nil
 		case "complete.accept":
 			if c.Apply == nil {
 				return nil
@@ -515,6 +690,15 @@ func (c *Composer) Action(id string) tea.Cmd {
 		}
 	}
 	switch id {
+	case "composer.history.prev":
+		c.recall(-1)
+		return nil
+	case "composer.history.next":
+		c.recall(1)
+		return nil
+	case "composer.history.search":
+		c.startSearch()
+		return nil
 	case "composer.send":
 		if c.escaped() {
 			before := c.snap()
@@ -523,13 +707,16 @@ func (c *Composer) Action(id string) tea.Cmd {
 			return c.persist()
 		}
 		return c.submit()
-	case "composer.undo", "composer.redo":
-		if id == "composer.undo" {
+	case "text.undo", "text.redo":
+		if id == "text.undo" {
 			c.swap(&c.undo, &c.redo)
 		} else {
 			c.swap(&c.redo, &c.undo)
 		}
+		c.follow()
 		return c.persist()
+	case "text.newline":
+		return c.Insert("\n")
 	case "composer.up":
 		if c.AtTop() {
 			c.recall(-1)
@@ -543,13 +730,13 @@ func (c *Composer) Action(id string) tea.Cmd {
 	case "composer.attachments.clear":
 		c.attachments = nil
 		return wm.Notify(lang.T(txt.ComposerAttachmentsCleared), wm.Info)
-	case "composer.copy":
+	case "text.copy":
 		if c.ta.HasSelection() {
 			return clip.Copy(c.ta.SelectedText())
 		}
 		return nil
 	}
-	if !strings.HasPrefix(id, "composer.") {
+	if !strings.HasPrefix(id, "text.") && id != "composer.up" && id != "composer.down" {
 		return nil
 	}
 	press := keys.Press(c.keys.First(id))
@@ -565,6 +752,7 @@ func (c *Composer) Action(id string) tea.Cmd {
 	}
 	c.settle(id)
 	c.tracked(before)
+	c.follow()
 	return tea.Batch(append(cmds, c.persist())...)
 }
 
@@ -595,19 +783,19 @@ func (c *Composer) graphemeSteps(id string) int {
 	line, col := c.cursorLine()
 	stops := graphemeStops(line)
 	switch id {
-	case "composer.delete.back", "composer.delete.forward":
+	case "text.delete.back", "text.delete.forward":
 		if c.ta.HasSelection() {
 			return 1
 		}
 	}
 	switch id {
-	case "composer.left", "composer.select.left", "composer.delete.back":
+	case "text.left", "text.select.left", "text.delete.back":
 		for i := len(stops) - 1; i >= 0 && col > 0; i-- {
 			if stops[i] < col {
 				return col - stops[i]
 			}
 		}
-	case "composer.right", "composer.select.right", "composer.delete.forward":
+	case "text.right", "text.select.right", "text.delete.forward":
 		for _, stop := range stops {
 			if stop > col {
 				return stop - col
@@ -620,7 +808,7 @@ func (c *Composer) graphemeSteps(id string) int {
 // Brings a cursor a line move left inside a grapheme back to the start of that grapheme, a selection being extended following it
 func (c *Composer) settle(id string) {
 	switch id {
-	case "composer.up", "composer.down", "composer.select.up", "composer.select.down":
+	case "composer.up", "composer.down", "text.select.up", "text.select.down":
 	default:
 		return
 	}
@@ -633,8 +821,8 @@ func (c *Composer) settle(id string) {
 	}
 	switch {
 	case start == col:
-	case strings.HasPrefix(id, "composer.select."):
-		back := keys.Press(c.keys.First("composer.select.left"))
+	case strings.HasPrefix(id, "text.select."):
+		back := keys.Press(c.keys.First("text.select.left"))
 		for ; back.Code != 0 && col > start; col-- {
 			c.ta, _ = c.ta.Update(back)
 		}
@@ -674,13 +862,10 @@ func (c *Composer) restore(s composerSnap) {
 	c.ta.SetCursorColumn(col)
 }
 
-// Records the prompt before a changing edit on the undo trail and drops the redo trail, an edited history line becoming the draft
+// Records the prompt before a changing edit on the undo trail and drops the redo trail; an edited history entry stays the one in view
 func (c *Composer) tracked(before composerSnap) {
 	if c.ta.Value() == before.value {
 		return
-	}
-	if c.cursor < len(c.history) && c.ta.Value() != c.history[c.cursor] {
-		c.cursor = len(c.history)
 	}
 	c.undo = append(c.undo, before)
 	if len(c.undo) > undoLimit {
@@ -727,9 +912,21 @@ func (c *Composer) breakLine() {
 // Reports whether the bound session keeps nothing typed on disk
 func (c *Composer) ghost() bool { return c.Volatile != nil && c.Volatile() }
 
-// Writes the draft of the bound session to disk when the text changed
+// Entry of a prompt text with the chips its labels stand for, the session and the folder it is typed in
+func (c *Composer) entry(text string) Entry {
+	e := Entry{Text: text, Session: c.SessionID, Cwd: c.base(), At: time.Now().UnixMilli()}
+	if c.Chips != nil {
+		e.Chips = c.Chips(text)
+	}
+	return e
+}
+
+// Writes the draft of the bound session to disk when the text changed, the draft slot only, a recalled entry in view leaving it as it was
 func (c *Composer) persist() tea.Cmd {
 	v := c.ta.Value()
+	if c.recalling() {
+		v = c.draft
+	}
 	if v == c.last {
 		return nil
 	}
@@ -737,65 +934,95 @@ func (c *Composer) persist() tea.Cmd {
 	if c.draftPath == "" || c.ghost() {
 		return nil
 	}
-	if v == "" {
+	if strings.TrimSpace(v) == "" {
 		os.Remove(c.draftPath)
 		return nil
 	}
-	os.MkdirAll(filepath.Dir(c.draftPath), 0o755)
-	os.WriteFile(c.draftPath, []byte(v), 0o600)
+	data, err := json.Marshal(c.entry(v))
+	if err != nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(c.draftPath), 0o755); err != nil {
+		return wm.Notify(err.Error(), wm.Warn)
+	}
+	if err := os.WriteFile(c.draftPath, data, 0o600); err != nil {
+		return wm.Notify(err.Error(), wm.Warn)
+	}
 	return nil
 }
 
-// Adds a sent prompt to the history and writes it out, keeping nothing while the session is ghost
+// Adds a sent prompt to the shared history, keeping nothing while the session is ghost
 func (c *Composer) remember(text string) {
-	c.cursor = len(c.history)
-	if c.ghost() {
+	if c.ghost() || c.History == nil {
 		return
 	}
-	if n := len(c.history); n > 0 && c.history[n-1] == text {
-		return
-	}
-	c.history = append(c.history, text)
-	if c.OnRemember != nil {
-		c.OnRemember(text)
-	}
-	if len(c.history) > historyLimit {
-		c.history = c.history[len(c.history)-historyLimit:]
-	}
-	c.cursor = len(c.history)
-	if c.historyPath != "" {
-		os.MkdirAll(filepath.Dir(c.historyPath), 0o755)
-		os.WriteFile(c.historyPath, []byte(strings.Join(c.history, "\n\x1e\n")+"\n"), 0o600)
-	}
+	c.History.Add(c.entry(text))
 }
 
-// Adds a draft the person discarded to the history, so recalling brings it back
-func (c *Composer) Remember(text string) {
-	if text = strings.TrimSpace(text); text != "" {
-		c.remember(text)
-	}
-}
-
-// Moves through history by d, keeping the unsent draft at the newest end
+// Moves through the history ring by d, clamped at both ends with the unsent draft past the newest, an older entry opening at its end and a newer at
+// its start; the ring is read from the store when recall leaves the draft
 func (c *Composer) recall(d int) {
-	if len(c.history) == 0 {
-		return
+	if c.ring != nil && !c.recalling() && len(c.edits) == 0 {
+		c.ring = nil
 	}
-	if c.cursor == len(c.history) {
+	if c.ring == nil {
+		if d > 0 || c.History == nil {
+			return
+		}
 		c.draft = c.ta.Value()
+		c.ring = c.History.Entries()
+		c.cursor = len(c.ring)
+		if len(c.ring) == 0 {
+			c.ring = nil
+			return
+		}
 	}
-	next := min(max(c.cursor+d, 0), len(c.history))
+	c.keepSlot()
+	next := min(max(c.cursor+d, 0), len(c.ring))
 	if next == c.cursor {
 		return
 	}
 	c.cursor = next
 	c.forget()
-	if next == len(c.history) {
-		c.ta.SetValue(c.draft)
+	c.revision++
+	c.ta.SetValue(c.slotText(next))
+	c.comp, c.quiet = nil, c.ta.Value()
+	if d > 0 && next < len(c.ring) {
+		c.ta.MoveToBegin()
 	} else {
-		c.ta.SetValue(c.history[next])
+		c.ta.MoveToEnd()
 	}
-	c.ta.MoveToEnd()
+	if next < len(c.ring) && c.OnRecall != nil {
+		c.OnRecall(c.ring[next])
+	}
+}
+
+// Keeps the text in view in the slot it came from, the draft or an edited history entry
+func (c *Composer) keepSlot() {
+	v := c.ta.Value()
+	if c.cursor >= len(c.ring) {
+		c.draft = v
+		return
+	}
+	if v == c.ring[c.cursor].Text {
+		delete(c.edits, c.cursor)
+		return
+	}
+	if c.edits == nil {
+		c.edits = map[int]string{}
+	}
+	c.edits[c.cursor] = v
+}
+
+// Text of a ring slot as last left, the draft past the newest
+func (c *Composer) slotText(i int) string {
+	if i >= len(c.ring) {
+		return c.draft
+	}
+	if e, ok := c.edits[i]; ok {
+		return e
+	}
+	return c.ring[i].Text
 }
 
 // Parses the text into a message or a command and resets the input
@@ -808,7 +1035,9 @@ func (c *Composer) submit() tea.Cmd {
 		return nil
 	}
 	c.remember(text)
+	c.leaveRing()
 	c.forget()
+	c.revision++
 	c.ta.Reset()
 	c.comp = nil
 	c.quiet = ""
@@ -938,13 +1167,9 @@ func (c *Composer) placeholder(w int) string {
 	if c.focused {
 		prompt = t.Accent
 	}
-	if c.Hint != "" {
-		line := lipgloss.NewStyle().Foreground(prompt).Render(c.ta.Prompt) + lipgloss.NewStyle().Foreground(t.TextDim).Render(c.Hint)
-		return render.Fit(line, w, t)
-	}
-	hint := lipgloss.NewStyle().Foreground(t.TextDim).Render(`type `) + "/" + lipgloss.NewStyle().Foreground(t.TextDim).Render(` for commands`)
-	if chord := c.keys.Display("palette"); chord != "" {
-		hint += lipgloss.NewStyle().Foreground(t.TextDim).Render(` or `) + chord + lipgloss.NewStyle().Foreground(t.TextDim).Render(` for palette`)
+	hint := c.Hint
+	if hint == "" {
+		hint = lang.T(txt.KitComposerPlaceholder, c.keys.Chord("palette"))
 	}
 	line := lipgloss.NewStyle().Foreground(prompt).Render(c.ta.Prompt) + lipgloss.NewStyle().Foreground(t.TextDim).Render(hint)
 	return render.Fit(line, w, t)
@@ -987,6 +1212,9 @@ func (c *Composer) View(w, h int) string {
 	if c.ta.Value() == "" && len(input) > 0 {
 		input[0] = c.placeholder(iw)
 	}
+	if c.search != nil && len(input) > 0 {
+		input = append([]string{c.searchLine(iw)}, input...)[:len(input)]
+	}
 	for i := range input {
 		input[i] = render.Fit(input[i], iw, c.theme)
 	}
@@ -1013,10 +1241,9 @@ func (c *Composer) Click(x, y int) (tea.Cmd, bool) {
 	return c.submit(), true
 }
 
-// Completion rows the owner paints over the rows right above the composer, the list last offered kept while the answer for newer text is
-// awaited, nil when closed or unfocused
+// Completion rows the owner paints over the rows right above the composer, only those for the text typed now, nil when closed or unfocused
 func (c *Composer) Popup(w int) []string {
-	comp := c.comp
+	comp := c.live()
 	if comp == nil || !c.focused || len(comp.items) == 0 {
 		return nil
 	}
@@ -1036,7 +1263,7 @@ func (c *Composer) Popup(w int) []string {
 			name, desc = " "+render.Fit(ansi.Strip(comp.items[i]), 14, t)+" ", ansi.Strip(comp.descs[i])
 		}
 		line := render.Fit(name+desc, w, t)
-		if i == comp.idx {
+		if i == comp.idx && !comp.info {
 			rows = append(rows, lit.Render(line))
 			continue
 		}
@@ -1056,10 +1283,14 @@ func OverlayPopup(above []string, popup []string) []string {
 	return above
 }
 
-// Cursor inside the input area
+// Cursor inside the input area, on the search line while a search runs
 func (c *Composer) Cursor() *tea.Cursor {
 	if !c.focused {
 		return nil
+	}
+	if c.search != nil {
+		_, caret := c.search.query.Line(max(c.width-c.searchLabelWidth(), 1))
+		return tea.NewCursor(c.searchLabelWidth()+caret, 0)
 	}
 	cur := c.ta.Cursor()
 	if cur == nil {
@@ -1079,8 +1310,8 @@ func (c *Composer) Status() string {
 		}
 		parts = append(parts, itoa(n)+" attached "+render.Bytes(int64(size)))
 	}
-	if c.cursor < len(c.history) {
-		parts = append(parts, "history "+itoa(c.cursor+1)+"/"+itoa(len(c.history)))
+	if c.recalling() {
+		parts = append(parts, lang.T(txt.KitComposerHistoryAt, c.cursor+1, len(c.ring)))
 	}
 	return strings.Join(parts, " "+c.theme.Glyphs.Sep+" ")
 }
@@ -1094,4 +1325,147 @@ func (c *Composer) escaped() bool {
 	runes := []rune(lines[row])
 	col := min(c.ta.Column(), len(runes))
 	return col > 0 && runes[col-1] == '\\'
+}
+
+// Reverse search through the history, readline style, with the prompt it started from kept to put back on cancel
+type historySearch struct {
+	query *field.Field
+	// Ring index of the match in view, len(ring) while nothing matches
+	at          int
+	saved       string
+	savedCursor int
+	// Whether only the prompts of the bound session are searched
+	mine bool
+}
+
+// Starts a reverse search from the prompt as it stands, over every session's prompts
+func (c *Composer) startSearch() {
+	if c.ring == nil {
+		if c.History == nil {
+			return
+		}
+		c.draft = c.ta.Value()
+		c.ring = c.History.Entries()
+		c.cursor = len(c.ring)
+	}
+	c.keepSlot()
+	snap := c.snap()
+	c.search = &historySearch{query: field.New(""), at: len(c.ring), saved: snap.value, savedCursor: snap.cursor}
+	c.comp = nil
+}
+
+// Whether a reverse search runs
+func (c *Composer) Searching() bool { return c.search != nil }
+
+// Whether ring entry i matches the search, its text holding the query and its session the bound one while the search keeps to it
+func (c *Composer) matches(i int) bool {
+	s := c.search
+	if i < 0 || i >= len(c.ring) {
+		return false
+	}
+	e := c.ring[i]
+	if s.mine && e.Session != c.SessionID {
+		return false
+	}
+	return strings.Contains(strings.ToLower(e.Text), strings.ToLower(s.query.Value()))
+}
+
+// Puts the newest match at or before index i in view, keeping the one in view when nothing older matches
+func (c *Composer) searchFrom(i int) {
+	for ; i >= 0; i-- {
+		if c.matches(i) {
+			c.search.at = i
+			c.revision++
+			c.ta.SetValue(c.slotText(i))
+			c.ta.MoveToEnd()
+			return
+		}
+	}
+}
+
+// Takes typed or pasted text into the query, the search narrowing from the match in view and else from the newest entry
+func (c *Composer) searchTyped(msg tea.Msg) {
+	if !c.search.query.Take(msg) {
+		return
+	}
+	c.searchFrom(min(c.search.at, len(c.ring)-1))
+	if !c.matches(c.search.at) {
+		c.searchFrom(len(c.ring) - 1)
+	}
+}
+
+// Takes an action while a search runs: the search key steps older, the completion key narrows it to the bound session or widens it again, editing
+// keys change the query, escape puts the prompt back, enter and any other key keep the match for editing; reports whether the action was used up and
+// the command it needs
+func (c *Composer) SearchKey(id string) (tea.Cmd, bool) {
+	s := c.search
+	if s == nil {
+		return nil, false
+	}
+	switch {
+	case id == "composer.history.search":
+		c.searchFrom(s.at - 1)
+	case id == "complete.start":
+		s.mine = !s.mine
+		c.searchFrom(len(c.ring) - 1)
+	case strings.HasPrefix(id, "text."):
+		before := s.query.Value()
+		cmd, used := s.query.Action(id)
+		if s.query.Value() != before {
+			c.searchFrom(len(c.ring) - 1)
+		}
+		if used {
+			return cmd, true
+		}
+		c.keepMatch()
+		return nil, false
+	case id == "session.stop":
+		c.search = nil
+		c.forget()
+		c.revision++
+		c.restore(composerSnap{value: s.saved, cursor: s.savedCursor})
+		c.comp, c.quiet = nil, s.saved
+	default:
+		c.keepMatch()
+		return nil, id == "composer.send"
+	}
+	return nil, true
+}
+
+// Ends the search with the match in view as the slot being edited, the draft past the newest entry when nothing matched
+func (c *Composer) keepMatch() {
+	s := c.search
+	c.search = nil
+	if s.at < len(c.ring) {
+		c.cursor = s.at
+		if c.OnRecall != nil {
+			c.OnRecall(c.ring[s.at])
+		}
+	}
+	c.comp, c.quiet = nil, c.ta.Value()
+}
+
+// Columns the label of the search line takes
+func (c *Composer) searchLabelWidth() int {
+	return ansi.StringWidth(c.searchLabel()) + 1
+}
+
+// Label of the search line, its scope and whether the entry in view matches the query
+func (c *Composer) searchLabel() string {
+	s := c.search
+	key := txt.ComposerHistorySearch
+	if s.mine {
+		key = txt.KitComposerHistorySearchMine
+	}
+	if s.query.Value() != "" && !c.matches(s.at) {
+		key = txt.ComposerHistorySearchNone
+	}
+	return lang.T(key)
+}
+
+// Line the composer shows while a search runs, the label and the query
+func (c *Composer) searchLine(w int) string {
+	label := c.searchLabel()
+	query, _ := c.search.query.Line(max(w-c.searchLabelWidth(), 1))
+	return render.Fit(lipgloss.NewStyle().Foreground(c.theme.Accent).Render(label+" ")+query, w, c.theme)
 }

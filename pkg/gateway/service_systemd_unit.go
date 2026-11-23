@@ -60,6 +60,9 @@ func readUnitText(p string) (string, bool, error) {
 	return strings.TrimPrefix(string(raw), "\ufeff"), true, nil
 }
 
+// Status systemd gives a unit whose binary cannot be executed, a missing binary that no restart brings back
+const systemdExecFailedStatus = 203
+
 // Interpreter the unit runs, the install binary of the project root or else this executable
 func getServicePythonPath() string {
 	if binary := pm.ResolveInstallBinary(serviceDefProjectRoot()); binary != "" {
@@ -286,7 +289,7 @@ func GenerateSystemdUnit(ctx context.Context, system bool, runAsUser string) (st
 		envLines + `Environment="PATH=` + strings.Join(pathEntries, ":") + "\"\n\n" +
 		`Environment="ICEBATH_HOME=` + icebathHome + "\"\n" + `Environment="ICEBATH_SUPERVISED_CHILD=1"` + "\n" +
 		"Restart=always\nRestartSec=5\n" +
-		fmt.Sprintf("RestartForceExitStatus=%d\nSuccessExitStatus=%d\nRestartPreventExitStatus=%d\n", GatewayServiceRestartExitCode, GatewayServiceRestartExitCode, GatewayFatalConfigExitCode) +
+		fmt.Sprintf("RestartForceExitStatus=%d\nSuccessExitStatus=%d\nRestartPreventExitStatus=%d %d\n", GatewayServiceRestartExitCode, GatewayServiceRestartExitCode, GatewayFatalConfigExitCode, systemdExecFailedStatus) +
 		"KillMode=mixed\nKillSignal=SIGTERM\nExecReload=/bin/kill -USR1 $MAINPID\n" +
 		"ExecStop=-" + systemdCommand(stopMark) + "\nExecStopPost=-" + systemdCommand(cleanup) + "\n" +
 		"TimeoutStopSec=" + restartTimeout.String() + "\nStandardOutput=journal\nStandardError=journal\n\n[Install]\nWantedBy=" + wantedBy + "\n", nil

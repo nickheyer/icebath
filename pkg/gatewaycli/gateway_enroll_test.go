@@ -65,24 +65,6 @@ func TestSilentForDefaultProfileEvenWithMultiplexOn(t *testing.T) {
 	}
 }
 
-func TestEnvOverrideForcesMultiplexOnWithoutConfigFlag(t *testing.T) {
-	root := enrollTopology(t)
-	writeEnrollConfig(t, root, "{}\n")
-	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "true")
-	if fired, _ := runEnrollWarning(filepath.Join(root, "profiles", "alice")); !fired {
-		t.Fatal("warning did not fire")
-	}
-}
-
-func TestTheEnvOverrideIsRetiredToo(t *testing.T) {
-	root := enrollTopology(t)
-	writeEnrollConfig(t, root, "gateway:\n  multiplex_profiles: true\n")
-	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "false")
-	if fired, _ := runEnrollWarning(filepath.Join(root, "profiles", "alice")); !fired {
-		t.Fatal("warning did not fire")
-	}
-}
-
 func TestSilentForUnrelatedDirNamedProfiles(t *testing.T) {
 	root := enrollTopology(t)
 	writeEnrollConfig(t, root, "gateway:\n  multiplex_profiles: true\n")

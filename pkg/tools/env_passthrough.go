@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Session scoped allowlist of env vars sandboxed children may receive
@@ -232,14 +233,8 @@ func loadConfigPassthrough(env *Env) map[string]bool {
 	}
 	result := map[string]bool{}
 	var items []string
-	if terminal := cfgTree(env).Map("terminal"); terminal != nil {
-		if list, ok := terminal["env_passthrough"].([]any); ok {
-			for _, i := range list {
-				if s, ok := i.(string); ok {
-					items = append(items, strings.TrimSpace(s))
-				}
-			}
-		}
+	for _, s := range settings.TerminalEnvPassthrough.Strings(envHomeCtx(context.Background(), env)) {
+		items = append(items, strings.TrimSpace(s))
 	}
 	for _, name := range passthroughAccepted(env, items,
 		"env passthrough: refusing to register icebath provider credential from config.yaml (blocked by the provider env blocklist). "+
@@ -281,10 +276,8 @@ func AllPassthrough(env *Env) map[string]bool {
 
 var globalEnvExact = map[string]bool{
 	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true,
-	"ICEBATH_MAX_ITERATIONS": true, "ICEBATH_API_TIMEOUT": true,
-	"ICEBATH_REDACT_SECRETS": true,
-	"_ICEBATH_GATEWAY":       true,
-	"PATH":                   true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
+	"_ICEBATH_GATEWAY": true,
+	"PATH":             true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
 	"VIRTUAL_ENV": true, "PYTHONPATH": true, "SSL_CERT_FILE": true,
 }
 

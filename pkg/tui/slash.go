@@ -1,14 +1,10 @@
 package tui
 
 import (
-	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 	"slices"
 	"sort"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -18,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
-	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
 // Attachments and token expansion a typed command carries into the prompt it sends
@@ -27,14 +22,13 @@ type slashSubmission struct {
 	expand      func(string) string
 }
 
-// One run of a slash command, fenced to the session and command flight it started in
+// One run of a slash command, fenced to the session it started in
 type slashRun struct {
 	a           *app
 	name        string
 	arg         string
 	cmd         string
 	sid         string
-	flight      int
 	destination submissionDestination
 	typed       bool
 	observed    bool
@@ -43,9 +37,8 @@ type slashRun struct {
 
 // Command the terminal UI answers itself
 type slashCommand struct {
-	name    string
-	aliases []string
-	help    string
+	name string
+	help string
 	// Help line worded at the moment it is shown, for a line built from parts or kept under a catalog key of its own
 	helpFn func() string
 	usage  string
@@ -67,9 +60,9 @@ func (c slashCommand) helpText() string {
 // Help line that reads a catalog key each time it is shown, so it follows a language switch
 func helpOf(key txt.Key) func() string { return func() string { return tr(key) } }
 
-// Whether a newer command or another session replaced this run
+// Whether the session the command ran for left the view; a later command never drops this one's answer
 func (r *slashRun) stale() bool {
-	return r.flight != r.a.slashFlight || !r.a.store.isCurrentDestination(r.destination)
+	return !r.a.store.isCurrentDestination(r.destination)
 }
 
 // Gateway request of a command, its answer dropped once the run went stale and its failure printed
@@ -103,29 +96,23 @@ func (r *slashRun) fail(err error) {
 	r.a.sys(errorLine(refusalDetail(err)))
 }
 
-// Tells a canonical gateway once that a typed command ran, a gateway refusing the verb never asked again
+// Tells the background service once that a typed command ran
 func (r *slashRun) ran() tea.Cmd {
-	if !r.typed || r.observed || r.sid == "" || !r.a.gw.canonical() || r.a.observeUnsupported {
+	if !r.typed || r.observed || r.sid == "" {
 		return nil
 	}
 	r.observed = true
-	return call(r.a.gw, tuigateway.CommandObserve, tuigateway.CommandObserveParams{Arg: r.arg, Name: r.name, SessionID: r.sid}, func(_ *tuigateway.CommandObserveResult, err error) tea.Cmd {
-		var refusal *rpcError
-		if err != nil && ((errors.As(err, &refusal) && refusal.HasCode && refusal.Code == jsonRPCMethodNotFound) || strings.Contains(rpcErrorMessage(err), "unknown_method")) {
-			r.a.observeUnsupported = true
-		}
-		return nil
-	})
+	return fire(r.a.gw, tuigateway.CommandObserve, tuigateway.CommandObserveParams{Arg: r.arg, Name: r.name, SessionID: r.sid})
 }
 
 func (r *slashRun) sys(text string) { r.a.sys(text) }
 
-// Local command of a name or alias
+// Local command of a name
 func (a *app) findSlashCommand(name string) *slashCommand {
 	name = strings.ToLower(name)
 	for i := range a.localCommands {
 		c := &a.localCommands[i]
-		if c.name == name || slices.Contains(c.aliases, name) {
+		if c.name == name {
 			return c
 		}
 	}
@@ -153,14 +140,13 @@ func (a *app) showOutput(text, name string) tea.Cmd {
 
 // Runs a slash command, a local one here, a widget, a catalog alias, or the gateway's own command
 func (a *app) slash(cmd string, submission *slashSubmission, typed bool) tea.Cmd {
-	a.slashFlight++
 	destination, err := a.store.captureDestination()
 	if err != nil {
 		a.uncaught(err)
 		return nil
 	}
 	name, arg := parseSlashCommand(cmd)
-	run := &slashRun{a: a, name: name, arg: arg, cmd: cmd, sid: a.store.ui.Sid, flight: a.slashFlight, destination: destination, typed: typed, submission: submission}
+	run := &slashRun{a: a, name: name, arg: arg, cmd: cmd, sid: a.store.ui.Sid, destination: destination, typed: typed, submission: submission}
 	argTail := ""
 	if arg != "" {
 		argTail = " " + arg
@@ -263,9 +249,7 @@ func (a *app) handleDispatch(run *slashRun, d tuigateway.CommandDispatchResult, 
 	sendDispatch := func(display, message string) tea.Cmd {
 		shown := trimJS(display)
 		if run.submission != nil {
-			a.expandWith = run.submission.expand
-			defer func() { a.expandWith = nil }()
-			return a.send(message, true, shown, submitOpts{Attachments: run.submission.attachments})
+			return a.send(message, true, shown, submitOpts{Attachments: run.submission.attachments, Expand: run.submission.expand})
 		}
 		return a.sendExpanded(message, true, shown, submitOpts{})
 	}
@@ -310,39 +294,25 @@ func (a *app) handleDispatch(run *slashRun, d tuigateway.CommandDispatchResult, 
 	return nil
 }
 
-// Local commands as palette entries, so every one is reachable without typing its name
-func (a *app) slashPaletteCommands() []wm.Command {
-	var out []wm.Command
-	for _, c := range a.localCommands {
-		if c.usage != "" && !strings.HasPrefix(c.usage, "[") {
-			continue
-		}
-		name := c.name
-		out = append(out, wm.Command{ID: "slash." + name, Title: "/" + name + "  " + c.help, Text: func() string { return "/" + name + "  " + c.helpText() }, When: func() bool { return !a.dialogs.waiting() },
-			Run: func() tea.Cmd { return a.slash("/"+name, nil, false) }})
-	}
-	return out
-}
-
 // Actions whose key help row is one catalog text, the chords of a group joined in one row
 var hotkeyGroups = []struct {
 	ids []string
 	key txt.Key
 }{
 	{[]string{"interrupt"}, txt.HintsCtrlC},
-	{[]string{"composer.paste"}, txt.HintsPaste},
+	{[]string{"text.paste"}, txt.HintsPaste},
 	{[]string{"complete.accept"}, txt.HintsApplyCompletion},
 	{[]string{"composer.up", "composer.down"}, txt.HintsArrows},
-	{[]string{"composer.undo", "composer.redo"}, txt.HintsUndoRedo},
+	{[]string{"text.undo", "text.redo"}, txt.HintsUndoRedo},
 	{[]string{"tui.suspend"}, txt.HintsSuspend},
-	{[]string{"composer.word.left", "composer.word.right"}, txt.HintsJumpWord},
-	{[]string{"composer.line.start", "composer.line.end"}, txt.HintsLineStartEnd},
-	{[]string{"composer.copy"}, txt.HintsCopySelection},
+	{[]string{"text.word.left", "text.word.right"}, txt.HintsJumpWord},
+	{[]string{"text.line.start", "text.line.end"}, txt.HintsLineStartEnd},
+	{[]string{"text.copy"}, txt.HintsCopySelection},
 	{[]string{"tui.paste.expand"}, txt.HintsPasteExpand},
 }
 
 // Actions the key help opens with, the keys people reach for first and the ones the quick help card shows
-var hotkeyLead = []string{"interrupt", "tui.exit", "tui.editor", "tui.redraw", "composer.paste", "session.stop", "complete.accept", "composer.up"}
+var hotkeyLead = []string{"interrupt", "tui.exit", "tui.editor", "tui.redraw", "text.paste", "session.stop", "complete.accept", "composer.up"}
 
 // Chords each key of the session window answers, spelled for a legend: a chord a key of an earlier context takes in every state is left out of
 // the later keys it hides, while a key that acts only in some state, such as dropping a queued input, hides nothing
@@ -374,7 +344,8 @@ func (a *app) sessionChords() map[string][]string {
 // Hotkeys of the session as the keymap binds them now, the most used first
 func (a *app) hotkeyRows() [][2]string {
 	chords := a.sessionChords()
-	spelled := func(id string) string { return strings.Join(chords[id], " ") }
+	// The first few chords of the action, a comma between them
+	spelled := func(id string, most int) string { return strings.Join(chords[id][:min(len(chords[id]), most)], ", ") }
 	group := func(id string) int {
 		return slices.IndexFunc(hotkeyGroups, func(g struct {
 			ids []string
@@ -394,7 +365,7 @@ func (a *app) hotkeyRows() [][2]string {
 			var parts []string
 			for _, member := range hotkeyGroups[g].ids {
 				listed[member] = true
-				if chord := spelled(member); chord != "" {
+				if chord := spelled(member, 1); chord != "" {
 					parts = append(parts, chord)
 				}
 			}
@@ -403,15 +374,16 @@ func (a *app) hotkeyRows() [][2]string {
 			}
 			return
 		}
-		if action, known := a.keys.Action(id); known && spelled(id) != "" && action.Doc != "" {
-			rows = append(rows, [2]string{spelled(id), action.DocText()})
+		if action, known := a.keys.Action(id); known && spelled(id, 2) != "" && action.Doc != "" {
+			rows = append(rows, [2]string{spelled(id, 2), action.DocText()})
 		}
 	}
 	for _, id := range hotkeyLead {
 		if id != "session.stop" {
 			add(id)
-		} else if chord := spelled(id); chord != "" {
-			rows = append(rows, [2]string{chord + " " + chord, tr(txt.HintsDiscardDraft)}, [2]string{chord + " " + chord, tr(txt.HintsRewindPicker)})
+		} else if chord := spelled(id, 1); chord != "" {
+			listed[id] = true
+			rows = append(rows, [2]string{chord, tr(txt.HintsEscapeLayers)}, [2]string{chord + " " + chord, tr(txt.HintsRewindPicker)})
 		}
 	}
 	commands := map[string]bool{"palette": true, "quit": true}
@@ -443,13 +415,9 @@ func flagFromArg(arg string, current bool) (bool, bool) {
 	return false, false
 }
 
-// Saves a display preference, session scoped for the focus view on the canonical wire
+// Saves a display preference
 func (r *slashRun) saveDisplayPref(key, value string) tea.Cmd {
-	params := tuigateway.ConfigSetParams{Key: key, Value: tuigateway.TextValue(value)}
-	if key == "focus" && r.a.gw.canonical() && r.sid != "" {
-		params.SessionID = r.sid
-	}
-	return fire(r.a.gw, tuigateway.ConfigSet, params)
+	return fire(r.a.gw, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: key, Value: tuigateway.TextValue(value)})
 }
 
 // Asks before a destructive step unless confirmations are off
@@ -463,49 +431,37 @@ func (a *app) confirmDestructive(title, detail, yes, no string, commit func() te
 
 var mouseModeAliases = map[string]string{"all": "all", "any": "all", "button": "buttons", "buttons": "buttons", "click": "buttons", "full": "all", "off": "off", "on": "all", "scroll": "wheel", "wheel": "wheel"}
 
-// Core commands, help, exit, the session reset and the display switches
+// Core commands, help, exit, the session reset and the display switches, then the screens of things to manage
 func (a *app) coreCommands() []slashCommand {
-	return []slashCommand{
-		{name: "help", help: "list commands + hotkeys", run: func(r *slashRun) tea.Cmd {
-			var sections []panelSection
-			if a.catalog != nil {
-				for _, cat := range a.catalog.Categories {
-					title := cat.Name
-					sections = append(sections, panelSection{Rows: cat.Pairs, Title: &title})
-				}
-				if a.catalog.SkillCount > 0 {
-					text := tr(txt.SlashCmdCoreHelpSkillCommandsAvailable, a.catalog.SkillCount)
-					sections = append(sections, panelSection{Text: &text})
-				}
-			}
-			var local [][2]string
-			for _, c := range a.localCommands {
-				label := "/" + c.name
-				if c.usage != "" {
-					label += " " + c.usage
-				}
-				local = append(local, [2]string{label, c.helpText()})
-			}
-			for _, w := range a.widgets.list() {
-				local = append(local, [2]string{"/" + w.ID, w.Help})
-			}
-			tui, hot := tr(txt.SlashCmdCoreHelpTuiSection), tr(txt.HelpHotkeys)
-			sections = append(sections, panelSection{Rows: local, Title: &tui}, panelSection{Rows: a.hotkeyRows(), Title: &hot})
-			header := a.store.ui.Theme.Brand.HelpHeader
-			if header == "" {
-				header = "Commands"
-			}
-			a.panel(header, sections)
-			return r.ran()
+	return append([]slashCommand{
+		{name: "help", help: "list every key and command", run: func(r *slashRun) tea.Cmd {
+			return tea.Batch(r.ran(), a.openHelp())
 		}},
-		{name: "quit", aliases: []string{"exit"}, help: "exit icebath", run: func(r *slashRun) tea.Cmd {
-			return a.die(0)
-		}},
-		{name: "update", help: "update icebath to the latest version, leaving the terminal UI", run: func(r *slashRun) tea.Cmd {
-			r.sys(tr(txt.SlashCmdCoreUpdateExiting))
-			return tea.Tick(100*time.Millisecond, func(time.Time) tea.Msg { return dieMsg{code: exitForUpdate} })
-		}},
-		{name: "mouse", aliases: []string{"scroll"}, help: "set mouse tracking", usage: "[on|off|toggle|wheel|buttons|all]",
+		{name: "quit", help: "exit icebath, --delete also deletes this session", usage: "[--delete]",
+			suggest: func(string) []string { return []string{"--delete"} }, run: func(r *slashRun) tea.Cmd {
+				switch arg := strings.ToLower(trimJS(r.arg)); {
+				case arg == "":
+					return a.die(0)
+				case arg != "--delete":
+					r.sys(tr(txt.SlashCmdCoreQuitUsage))
+					return nil
+				case r.sid == "":
+					return a.die(0)
+				}
+				sid := r.sid
+				return a.confirmDestructive(tr(txt.SlashCmdCoreQuitDeleteTitle), tr(txt.SlashCmdCoreQuitDeleteDetail), tr(txt.SlashCmdCoreQuitDeleteYes), tr(txt.SlashCmdCoreQuitDeleteNo), func() tea.Cmd {
+					return a.deleteStoredSession(sid, func(err error) tea.Cmd {
+						if err != nil {
+							a.sys(errorLine(tr(txt.SlashCmdCoreQuitDeleteFailed, rpcErrorMessage(err))))
+							return nil
+						}
+						return a.die(0)
+					})
+				})
+			}},
+		{name: "update", help: "update icebath after you quit, or check for one now", usage: "[check]",
+			suggest: func(string) []string { return []string{"check"} }, run: func(r *slashRun) tea.Cmd { return a.updateSlash(r) }},
+		{name: "mouse", help: "set mouse tracking", usage: "[on|off|toggle|wheel|buttons|all]",
 			suggest: func(string) []string { return []string{"on", "off", "toggle", "wheel", "buttons", "all"} },
 			run: func(r *slashRun) tea.Cmd {
 				current := a.store.ui.MouseTracking
@@ -525,18 +481,11 @@ func (a *app) coreCommands() []slashCommand {
 				r.sys(tr(txt.SlashCmdCoreMouseTracking, next))
 				return r.saveDisplayPref("mouse", next)
 			}},
-		{name: "clear", aliases: []string{"new"}, help: "start a new session", usage: "[title]", run: func(r *slashRun) tea.Cmd {
-			isNew := strings.HasPrefix(r.cmd, "/new")
-			if isNew && a.store.ui.Busy {
+		{name: "new", help: "start a new session in this window, the one running keeps running", usage: "[title]", run: func(r *slashRun) tea.Cmd {
+			if a.store.ui.Busy {
 				return tea.Batch(r.ran(), a.life.newLiveSession(tr(txt.SlashCmdCoreClearPreviousKeptRunning), trimJS(r.arg), nil))
 			}
-			if a.life.guardBusySessionSwitch(tr(txt.SlashCmdCoreClearSwitchSessions)) {
-				return nil
-			}
 			a.store.ui.Status = tr(txt.SlashCmdCoreClearForgingSession)
-			if !isNew {
-				return tea.Batch(r.ran(), a.life.clearSession(nil))
-			}
 			return tea.Batch(r.ran(), a.life.newSession(tr(txt.SlashCmdCoreClearNewSessionStarted), trimJS(r.arg), nil))
 		}},
 		{name: "redraw", help: "force a full UI repaint", run: func(r *slashRun) tea.Cmd {
@@ -544,7 +493,7 @@ func (a *app) coreCommands() []slashCommand {
 			r.sys(tr(txt.SlashCmdCoreRedrawDone))
 			return a.store.clearScreen()
 		}},
-		{name: "status", help: "show live session info", run: func(r *slashRun) tea.Cmd {
+		{name: "status", help: "this session's model, tokens and context; /system shows icebath itself", run: func(r *slashRun) tea.Cmd {
 			if r.sid == "" {
 				r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
 				return nil
@@ -555,15 +504,7 @@ func (a *app) coreCommands() []slashCommand {
 				}
 				return a.page(out, tr(txt.SlashCmdCoreStatusPageTitle))
 			}
-			if a.gw.canonical() {
-				return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: "status", SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
-					if res == nil {
-						return nil
-					}
-					return show(res.Output)
-				})
-			}
-			return ask(r.rpc, a.sys, tuigateway.SessionStatus, tuigateway.SessionStatusParams{SessionID: r.sid}, func(res *tuigateway.SessionStatusResult) tea.Cmd {
+			return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: "status", SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
 				if res == nil {
 					return nil
 				}
@@ -580,7 +521,7 @@ func (a *app) coreCommands() []slashCommand {
 			r.sys(tr(txt.SlashCmdCoreDensityState, onOff(next)))
 			return r.saveDisplayPref("density", onOff(next))
 		}},
-		{name: "timestamps", aliases: []string{"ts"}, help: "toggle [HH:MM] timestamps on transcript messages", usage: "[on|off|status]", run: func(r *slashRun) tea.Cmd {
+		{name: "timestamps", help: "toggle [HH:MM] timestamps on transcript messages", usage: "[on|off|status]", run: func(r *slashRun) tea.Cmd {
 			mode := strings.ToLower(trimJS(r.arg))
 			current := a.store.ui.Timestamps
 			if mode == "status" {
@@ -596,32 +537,7 @@ func (a *app) coreCommands() []slashCommand {
 			r.sys("timestamps " + onOff(next))
 			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "timestamps", Value: tuigateway.TextValue(onOff(next))}, done)
 		}},
-		{name: "config", help: "show the presentation settings the gateway serves for this profile", run: func(r *slashRun) tea.Cmd {
-			if !a.gw.canonical() {
-				return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: strings.TrimPrefix(r.cmd, "/"), SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
-					if res == nil {
-						return nil
-					}
-					out := res.Output
-					if out == "" {
-						out = "{}"
-					}
-					return a.page(out, "Config")
-				})
-			}
-			return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "full", SessionID: r.sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
-				var cfg map[string]any
-				if res != nil && res.Config != nil {
-					cfg, _ = tuigateway.Plain(*res.Config).(map[string]any)
-				}
-				lines := configLines(cfg, "")
-				if len(lines) == 0 {
-					lines = []string{"{}"}
-				}
-				return a.page(strings.Join(lines, "\n"), "Config")
-			})
-		}},
-	}
+	}, a.hubCommands()...)
 }
 
 // Word for a switch state
@@ -630,37 +546,6 @@ func onOff(on bool) string {
 		return "on"
 	}
 	return "off"
-}
-
-// Config as indented key and value lines, keys in order
-func configLines(value map[string]any, indent string) []string {
-	names := make([]string, 0, len(value))
-	for k := range value {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	var lines []string
-	for _, k := range names {
-		if nested, isMap := value[k].(map[string]any); isMap {
-			lines = append(lines, indent+k+":")
-			lines = append(lines, configLines(nested, indent+"  ")...)
-			continue
-		}
-		lines = append(lines, indent+k+": "+configValueText(value[k]))
-	}
-	return lines
-}
-
-// Text of one config value, text as it is and every other value as its JSON
-func configValueText(v any) string {
-	if text, isText := v.(string); isText {
-		return text
-	}
-	encoded, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Sprint(v)
-	}
-	return string(encoded)
 }
 
 // Asks the app to quit with a status after a command printed its last line

@@ -550,7 +550,7 @@ func joinPath(parts []string) string {
 
 // Document without values equal to the defaults, preserved paths kept even when equal
 func StripDefaults(doc, defaults map[string]any, preserve map[string]bool) map[string]any {
-	keep := map[string]bool{"_config_version": true}
+	keep := map[string]bool{}
 	for k := range preserve {
 		keep[k] = true
 	}

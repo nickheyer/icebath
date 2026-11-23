@@ -369,8 +369,8 @@ func dispatchToPluginProvider(ctx context.Context, env *tools.Env, prompt, aspec
 			logOf(env).Warn(fmt.Sprintf("image_gen provider '%s' rejected image-to-image kwargs (signature too narrow): %s", pname, excStr(err)))
 			return providerError(fmt.Sprintf("Provider '%s' does not support image-to-image / editing (its generate() "+
 				"signature is out of date with the image_generate schema). Omit image_url for "+
-				"text-to-image, or pick a backend that supports editing via `icebath tools` → "+
-				"Image Generation.", pname), "modality_unsupported"), true
+				"text-to-image, or pick a service that edits images in /settings → "+
+				"Images & media.", pname), "modality_unsupported"), true
 		}
 		suffix := ""
 		if typeErr {

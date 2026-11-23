@@ -14,7 +14,7 @@ func anthropicScopeEnv(t *testing.T, ctx context.Context) PoolEnv {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	env.Ctx = ctx
 	SetMultiplexActive(true)
 	return env

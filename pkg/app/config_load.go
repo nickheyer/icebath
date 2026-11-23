@@ -117,36 +117,6 @@ func parseServiceTierConfig(raw string) string {
 	return tier
 }
 
-var terminalEnvKeys = []string{
-	"degraded_mode", "cwd", "timeout", "home_mode", "lifetime_seconds", "docker_image",
-	"docker_forward_env", "modal_image", "daytona_image", "vercel_runtime", "vercel_image",
-	"ssh_host", "ssh_user", "ssh_port", "ssh_key", "container_cpu", "container_memory",
-	"container_disk", "container_persistent", "docker_volumes", "docker_env", "docker_extra_args",
-	"docker_shm_size", "docker_mount_cwd_to_workspace", "docker_network", "docker_run_as_host_user",
-	"docker_snap_compat",
-	"docker_persist_across_processes", "docker_shared_container_key", "docker_orphan_reaper",
-	"sandbox_dir", "persistent_shell",
-}
-
-// Ordered terminal config key to env var pairs, env_type first and sudo_password last
-func terminalEnvMappings() [][2]string {
-	out := [][2]string{{"env_type", "TERMINAL_ENV"}}
-	for _, key := range terminalEnvKeys {
-		out = append(out, [2]string{key, "TERMINAL_" + strings.ToUpper(key)})
-	}
-	return append(out, [2]string{"sudo_password", "SUDO_PASSWORD"})
-}
-
-var auxiliaryTaskEnv = []struct {
-	task   string
-	fields [][2]string
-}{
-	{"vision", [][2]string{{"provider", "AUXILIARY_VISION_PROVIDER"}, {"model", "AUXILIARY_VISION_MODEL"},
-		{"base_url", "AUXILIARY_VISION_BASE_URL"}, {"api_key", "AUXILIARY_VISION_API_KEY"}}},
-	{"approval", [][2]string{{"provider", "AUXILIARY_APPROVAL_PROVIDER"}, {"model", "AUXILIARY_APPROVAL_MODEL"},
-		{"base_url", "AUXILIARY_APPROVAL_BASE_URL"}, {"api_key", "AUXILIARY_APPROVAL_API_KEY"}}},
-}
-
 var cwdStandIns = map[string]bool{".": true, "auto": true, "cwd": true}
 
 // Dict valued section of a config, an empty map when missing or not a dict
@@ -157,127 +127,36 @@ func sectionOf(cfg map[string]any, key string) map[string]any {
 	return map[string]any{}
 }
 
-// Projects config values into the env vars the tool modules read, an already set env var winning
-func mirrorConfigToEnv(defaults map[string]any, fileHasTerminalConfig bool) {
-	terminalConfig := sectionOf(defaults, "terminal")
-	if backend, ok := terminalConfig["backend"]; ok {
-		terminalConfig["env_type"] = backend
+// Hands the terminal tools this launch's working folder: the launch folder on the local backend, else the configured one
+func exportTerminalCwd(cfg map[string]any) {
+	terminal, ok := cfg["terminal"].(map[string]any)
+	if !ok {
+		terminal = map[string]any{}
+		cfg["terminal"] = terminal
 	}
-	effectiveBackend := "local"
-	if v, ok := terminalConfig["env_type"]; ok {
-		effectiveBackend = pyrepr.Str(v)
+	backend := "local"
+	if v, set := terminal["backend"]; set && v != nil {
+		backend = pyrepr.Str(v)
 	}
-	if effectiveBackend == "local" {
-		cwd, _ := os.Getwd()
-		terminalConfig["cwd"] = cwd
-		if sec, ok := defaults["terminal"].(map[string]any); ok {
-			sec["cwd"] = cwd
+	cwd := ""
+	if backend == "local" {
+		cwd, _ = os.Getwd()
+		terminal["cwd"] = cwd
+	} else if v, set := terminal["cwd"]; set {
+		if text, isStr := v.(string); isStr && cwdStandIns[text] {
+			delete(terminal, "cwd")
 		} else {
-			defaults["terminal"] = terminalConfig
-		}
-	} else if v, ok := terminalConfig["cwd"]; ok {
-		if s, isStr := v.(string); isStr && cwdStandIns[s] {
-			delete(terminalConfig, "cwd")
+			cwd = pyrepr.Str(v)
 		}
 	}
-	isGateway := InGatewayProcess()
-	for _, pair := range terminalEnvMappings() {
-		val, ok := terminalConfig[pair[0]]
-		if !ok {
-			continue
-		}
-		envVar := pair[1]
-		if envVar == "TERMINAL_CWD" {
-			if !isGateway {
-				os.Setenv(envVar, pyrepr.Str(val))
-			}
-			continue
-		}
-		if _, set := os.LookupEnv(envVar); fileHasTerminalConfig || !set {
-			os.Setenv(envVar, envValueText(val))
-		}
-	}
-	browserConfig := sectionOf(defaults, "browser")
-	if v, ok := browserConfig["inactivity_timeout"]; ok {
-		os.Setenv("BROWSER_INACTIVITY_TIMEOUT", pyrepr.Str(v))
-	}
-	auxiliaryConfig := sectionOf(defaults, "auxiliary")
-	for _, task := range auxiliaryTaskEnv {
-		taskCfg, ok := auxiliaryConfig[task.task].(map[string]any)
-		if !ok {
-			continue
-		}
-		for _, field := range task.fields {
-			val := strings.TrimSpace(pyrepr.Str(valueOr(taskCfg[field[0]], "")))
-			if val != "" && !(field[0] == "provider" && val == "auto") {
-				os.Setenv(field[1], val)
-			}
-		}
-	}
-	if securityConfig, ok := defaults["security"].(map[string]any); ok {
-		if redact, present := securityConfig["redact_secrets"]; present && redact != nil {
-			os.Setenv("ICEBATH_REDACT_SECRETS", strings.ToLower(pyrepr.Str(redact)))
-		}
-	}
-	if sessionsConfig, ok := defaults["sessions"].(map[string]any); ok {
-		if v, present := sessionsConfig["cjk_fts"]; present {
-			os.Setenv("ICEBATH_CJK_FTS", pyrepr.Str(v))
-		}
-		if v, present := sessionsConfig["search_slow_ms"]; present {
-			os.Setenv("ICEBATH_SEARCH_SLOW_MS", pyrepr.Str(v))
-		}
+	if cwd != "" && !InGatewayProcess() {
+		os.Setenv("TERMINAL_CWD", cwd)
 	}
 }
 
-// The value, or def when the value is missing
-func valueOr(v any, def any) any {
-	if v == nil {
-		return def
-	}
-	return v
-}
-
-// JSON text for a list or dict, Python str for everything else
-func envValueText(val any) string {
-	switch val.(type) {
-	case []any, map[string]any:
-		text, err := pyjson.Dumps(val)
-		if err != nil {
-			panic(err)
-		}
-		return text
-	}
-	return pyrepr.Str(val)
-}
-
-// Built in defaults for every config key the CLI reads
+// The registry defaults every config starts from
 func cliConfigDefaults() map[string]any {
-	img := config.DefaultSandboxImage
-	return map[string]any{
-		"model": map[string]any{"default": "", "base_url": "", "provider": "auto"},
-		"terminal": map[string]any{
-			"env_type": "local", "cwd": ".", "home_mode": "auto", "lifetime_seconds": 300,
-			"docker_image": img, "docker_forward_env": []any{}, "modal_image": img, "daytona_image": img, "docker_volumes": []any{},
-			"docker_mount_cwd_to_workspace": false,
-			"docker_shared_container_key":   "",
-		},
-		"browser":     map[string]any{"inactivity_timeout": 120, "engine": "auto"},
-		"compression": map[string]any{"enabled": true, "threshold": 0.50, "min_tail_user_messages": 1},
-		"agent": map[string]any{
-			"max_turns": 500, "verbose": false, "system_prompt": "", "prefill_messages_file": "",
-			"reasoning_effort": "", "service_tier": "",
-			"personalities": map[string]any{},
-		},
-		"display": map[string]any{
-			"show_reasoning": true, "reasoning_full": false, "streaming": true, "busy_input_mode": "interrupt",
-			"cli_layout": "modern",
-			"skin":       "default",
-		},
-		"code_execution": map[string]any{"timeout": 300, "max_tool_calls": 50},
-		"auxiliary":      map[string]any{"vision": map[string]any{"provider": "auto", "model": "", "base_url": "", "api_key": ""}},
-		"delegation":     map[string]any{"max_iterations": 45, "model": "", "provider": "", "base_url": "", "api_key": ""},
-		"onboarding":     map[string]any{"seen": map[string]any{}},
-	}
+	return config.Clone(map[string]any(config.Defaults())).(map[string]any)
 }
 
 // Overlays a parsed config file onto the defaults in place with model normalization, deep merge and legacy keys
@@ -321,7 +200,7 @@ func mergeFileConfig(defaults, fileConfig map[string]any) {
 	}
 }
 
-// Home config.yaml, else cli-config.yaml beside the executable, over the built in defaults, with env mirroring
+// Home config.yaml, else cli-config.yaml beside the executable, over the registry defaults, the terminal working folder exported
 func LoadCLIConfig(ctx context.Context) map[string]any {
 	configPath := filepath.Join(home.Dir(ctx), "config.yaml")
 	exists, _ := config.ConfigExists(ctx, configPath)
@@ -329,7 +208,6 @@ func LoadCLIConfig(ctx context.Context) map[string]any {
 		configPath = filepath.Join(executableDir(), "cli-config.yaml")
 	}
 	defaults := cliConfigDefaults()
-	fileHasTerminalConfig := false
 	if exists, _ = config.ConfigExists(ctx, configPath); exists {
 		doc, err := config.ReadConfigDoc(ctx, configPath)
 		if err != nil {
@@ -339,14 +217,12 @@ func LoadCLIConfig(ctx context.Context) map[string]any {
 			if fileConfig == nil {
 				fileConfig = map[string]any{}
 			}
-			fileConfig = config.NormalizeRootModelKeys(fileConfig)
-			_, fileHasTerminalConfig = fileConfig["terminal"]
 			mergeFileConfig(defaults, fileConfig)
 		}
 	}
 	defaults = config.Expand(defaults, os.LookupEnv).(map[string]any)
 	defaults = config.ApplyManagedOverlay(defaults)
-	mirrorConfigToEnv(defaults, fileHasTerminalConfig)
+	exportTerminalCwd(defaults)
 	return defaults
 }
 

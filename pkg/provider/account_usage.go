@@ -39,10 +39,6 @@ var (
 	codexUsageResolveFn = func(env PoolEnv, force bool) (map[string]any, error) {
 		return resolveCodexRuntimeCredentials(env, CodexResolveOptions{ForceRefresh: force})
 	}
-	codexUsageReadTokensFn = func(env PoolEnv) (map[string]any, error) {
-		data, err := readCodexTokens(env, true)
-		return data.tokens, err
-	}
 	codexUsageLoadPoolFn = func(env PoolEnv) codexUsagePool {
 		if p := LoadPool(env, "openai-codex"); p != nil {
 			return p
@@ -289,43 +285,24 @@ func resolveCodexUsageCredentials(ctx context.Context, baseURL, apiKey string, f
 		return codexUsageCreds{explicit, strings.TrimSpace(baseURL), ""}, nil
 	}
 	if explicit != "" {
-		singleton := ""
-		tokens, err := codexUsageReadTokensFn(env)
-		if err != nil && !isAuthErr(err) {
-			return codexUsageCreds{}, err
+		var entry PooledCredential
+		ok := false
+		if pool := codexUsageLoadPoolFn(env); pool != nil {
+			entry, ok = pool.TryRefreshMatching(explicit, "")
 		}
-		if err == nil {
-			singleton = strings.TrimSpace(auStr(tokens["access_token"]))
+		if !ok {
+			return codexUsageCreds{}, errors.New("Could not refresh the Codex credential this session runs on")
 		}
-		if singleton != explicit {
-			var entry PooledCredential
-			ok := false
-			if pool := codexUsageLoadPoolFn(env); pool != nil {
-				entry, ok = pool.TryRefreshMatching(explicit, "")
-			}
-			if !ok {
-				return codexUsageCreds{}, errors.New("Could not refresh the Codex credential this session runs on")
-			}
-			return codexUsageCreds{entry.RuntimeAPIKey(), codexPoolRouteBaseURL(env, usageFirstNonEmpty(entry.RuntimeBaseURL(), baseURL)), ""}, nil
-		}
+		token := entry.RuntimeAPIKey()
+		return codexUsageCreds{token, codexPoolRouteBaseURL(env, usageFirstNonEmpty(entry.RuntimeBaseURL(), baseURL)), codexTokenAccountID(token)}, nil
 	}
 	creds, err := codexUsageResolveFn(env, forceRefresh)
 	if err == nil {
-		accountID := ""
-		tokens, terr := codexUsageReadTokensFn(env)
-		switch {
-		case terr == nil:
-			accountID = strings.TrimSpace(auStr(tokens["account_id"]))
-		case isAuthErr(terr):
-			pkgLog().Debug("codex ▸ /usage account_id read failed (best-effort)", "err", terr)
-		default:
-			return codexUsageCreds{}, terr
-		}
 		key, ok := creds["api_key"].(string)
 		if !ok {
 			return codexUsageCreds{}, errors.New("'api_key'")
 		}
-		return codexUsageCreds{key, strings.TrimSpace(auStr(creds["base_url"])), accountID}, nil
+		return codexUsageCreds{key, strings.TrimSpace(auStr(creds["base_url"])), codexTokenAccountID(key)}, nil
 	}
 	if !isAuthErr(err) {
 		return codexUsageCreds{}, err

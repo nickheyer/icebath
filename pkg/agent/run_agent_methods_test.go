@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -287,16 +286,6 @@ func TestConversationRootIDFallbacks(t *testing.T) {
 func TestRuntimeHelpersSmall(t *testing.T) {
 	if pyStrRepr("it's") != `"it's"` || pyStrRepr("gpt-5.5") != "'gpt-5.5'" || pyStrRepr("a'b\"c") != `'a\'b"c'` {
 		t.Fatal("repr")
-	}
-	if v, err := parsePyFloat(" 1_0.5 "); err != nil || v != 10.5 {
-		t.Fatalf("float %v %v", v, err)
-	}
-	if v, _ := parsePyFloat("inf"); !math.IsInf(v, 1) {
-		t.Fatal("inf")
-	}
-	t.Setenv("ICEBATH_TEST_FLOAT", "abc")
-	if envFloatOr("ICEBATH_TEST_FLOAT", 3) != 3 {
-		t.Fatal("bad env float falls back")
 	}
 	a := &AIAgent{model: "m", provider: "p", baseURL: "u", apiKey: "k", apiMode: "chat_completions", sessionID: "s"}
 	want := map[string]any{"model": "m", "provider": "p", "base_url": "u", "api_key": "k", "api_mode": "chat_completions", "auth_mode": "", "session_id": "s"}

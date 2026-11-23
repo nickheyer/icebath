@@ -13,8 +13,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 //go:embed locales/*.yaml
@@ -48,12 +48,6 @@ var languageAliases = map[string]string{
 	"ar-sa": "ar", "ar-eg": "ar", "ar-ae": "ar", "ar-ma": "ar", "ar-dz": "ar",
 }
 
-// SecretReader resolves a per profile env value through the secret scope carried by ctx
-type SecretReader func(ctx context.Context, name string) (string, bool, error)
-
-// ErrUnscopedSecret marks a secret read refused because multiplexing is on with no scope bound
-var ErrUnscopedSecret = errors.New("secret read with no profile scope while multiplexing")
-
 var (
 	catalogMu      sync.Mutex
 	catalogCache   = map[[2]string]map[string]string{}
@@ -62,7 +56,6 @@ var (
 	bundledSurf    = map[string]map[langSurface]bool{}
 	configLangMu   sync.Mutex
 	configLangLRU  []configLangEntry
-	secretReader   SecretReader = envSecretReader
 	localesDirFn                = localesDir
 	configLangFn                = configLanguage
 )
@@ -71,19 +64,6 @@ type configLangEntry struct {
 	home string
 	lang string
 	ok   bool
-}
-
-// SetSecretReader installs the scoped secret resolver the language lookup reads ICEBATH_LANGUAGE through
-func SetSecretReader(r SecretReader) {
-	if r == nil {
-		r = envSecretReader
-	}
-	secretReader = r
-}
-
-func envSecretReader(_ context.Context, name string) (string, bool, error) {
-	v, ok := os.LookupEnv(name)
-	return v, ok, nil
 }
 
 // BundledLocales is the bundled locale tree and the path label it is reported under
@@ -308,24 +288,10 @@ func configLanguageCached(ctx context.Context, h string) (string, bool) {
 	return lang, ok
 }
 
-// Reads display.language from the effective config, absent when unset, falsy or unreadable
+// Language setting of a home, absent when it is empty
 func configLanguage(ctx context.Context, h string) (string, bool) {
-	cfg, err := config.LoadReadonly(home.WithOverride(ctx, h), h, os.LookupEnv)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Could not read display.language from config: %v", err))
-		return "", false
-	}
-	display, ok := cfg["display"]
-	if !ok || !pyrepr.Truthy(display) {
-		return "", false
-	}
-	dm, ok := display.(map[string]any)
-	if !ok {
-		pkgLog().Debug(fmt.Sprintf("Could not read display.language from config: '%s' object has no attribute 'get'", pyrepr.TypeName(display)))
-		return "", false
-	}
-	lang, ok := dm["language"]
-	if !ok || !pyrepr.Truthy(lang) {
+	lang := settings.Language.Get(home.WithOverride(ctx, h))
+	if strings.TrimSpace(lang) == "" {
 		return "", false
 	}
 	return normalizeLang(ctx, lang, h), true
@@ -346,25 +312,15 @@ func ResetLanguageCache() {
 	ClearLayerCache()
 }
 
-// Env language through the secret scope, an unscoped refusal reading the process environment instead
+// Language of a home, the default when its setting is empty
 func resolveLanguage(ctx context.Context, h string) string {
-	envLang, _, err := secretReader(ctx, "ICEBATH_LANGUAGE")
-	if err != nil {
-		if !errors.Is(err, ErrUnscopedSecret) {
-			panic(err)
-		}
-		envLang = os.Getenv("ICEBATH_LANGUAGE")
-	}
-	if envLang != "" {
-		return normalizeLang(ctx, envLang, h)
-	}
 	if lang, ok := configLanguageCached(ctx, h); ok && lang != "" {
 		return lang
 	}
 	return DefaultLanguage
 }
 
-// GetLanguage resolves the active language, env over config over the default
+// GetLanguage resolves the active language, the language setting else the default
 func GetLanguage(ctx context.Context) string {
 	return resolveLanguage(ctx, currentHome(ctx))
 }

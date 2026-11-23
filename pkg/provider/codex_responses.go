@@ -15,11 +15,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -106,13 +105,7 @@ func (c *codexResponsesClient) requestTimeout(req *Request, settings wireSetting
 
 // Whether compression.checkpoint_required is explicitly enabled in the home configuration
 func codexCheckpointRequired(ctx context.Context) bool {
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		tree = config.Defaults()
-	}
-	v, ok := tree.Get("compression.checkpoint_required").(bool)
-	return ok && v
+	return settings.CompressionCheckpointRequired.Get(ctx)
 }
 
 // Request overrides merged from the route, the request body extras and the request fields

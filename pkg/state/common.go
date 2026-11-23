@@ -3,14 +3,12 @@ package state
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -26,27 +24,6 @@ const (
 	previewScaffoldWindow = 400
 	previewMaxChars       = 60
 )
-
-// Sessions setting for the profile whose store this context touches, nil when neither config nor env sets it
-func RoutedSessionsSetting(ctx context.Context, key, envVar string) any {
-	if home.Override(ctx) != "" {
-		cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-		if err != nil {
-			return nil
-		}
-		switch sessions := cfg["sessions"].(type) {
-		case map[string]any:
-			return sessions[key]
-		case config.Tree:
-			return sessions[key]
-		}
-		return nil
-	}
-	if v, ok := os.LookupEnv(envVar); ok {
-		return v
-	}
-	return nil
-}
 
 // LIKE wildcards and the escape character escaped so text matches literally under ESCAPE backslash
 func EscapeLike(text string) string {
@@ -524,3 +501,6 @@ func jsonOr(raw, fallback any, warning string) (any, error) {
 	}
 	return v, nil
 }
+
+// PreviewSQL is the listing column holding the first user message of the session sessionIDExpr names, read with ShapePreview
+func PreviewSQL(sessionIDExpr string) string { return sqlPreviewRaw(sessionIDExpr) }

@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Installed by the process wiring over pkg/commands, the native slash names the Slack manifest declares
@@ -637,63 +638,50 @@ var reactionTriggerSplitRe = mustPyRe(`[,\s]+`)
 
 // Reaction routing opt in, nil disabled, empty for every emoji, else the allowlisted names
 func (a *SlackAdapter) slackReactionTriggers(ctx context.Context) map[string]bool {
-	raw, ok := a.extra()["reaction_triggers"]
-	if !ok || raw == nil {
-		secret, _ := gateway.GetScopedSecret(ctx, "SLACK_REACTION_TRIGGERS", "", false)
-		if secret == "" {
-			return nil
-		}
-		raw = secret
+	v, err := settings.Resolve(gateway.SettingsContext(ctx), settings.SlackReactionTriggers.Key)
+	if err != nil {
+		pkgLog().Warn("Slack: reading the reaction triggers failed", "err", err)
+		return nil
 	}
 	clean := func(p any) string { return pystr.StripChars(pystr.Strip(pyrepr.Str(p)), ":") }
-	switch v := raw.(type) {
+	var names []string
+	switch t := v.Value.(type) {
+	case nil:
+		return nil
 	case bool:
-		if v {
+		if t {
 			return map[string]bool{}
 		}
 		return nil
 	case []any:
-		out := map[string]bool{}
-		for _, p := range v {
-			if c := clean(p); c != "" {
-				out[c] = true
-			}
+		for _, p := range t {
+			names = append(names, clean(p))
 		}
-		return out
-	case []string:
-		out := map[string]bool{}
-		for _, p := range v {
-			if c := clean(p); c != "" {
-				out[c] = true
-			}
+	default:
+		parts, _ := reactionTriggerSplitRe.Replace(pystr.Strip(pyrepr.Str(t)), ",", -1, -1)
+		for _, p := range strings.Split(parts, ",") {
+			names = append(names, clean(p))
 		}
-		return out
-	}
-	text := pystr.Strip(strOrEmpty(raw))
-	switch pystr.Lower(text) {
-	case "", "false", "0", "no", "off":
-		return nil
-	case "true", "1", "yes", "on", "all", "*":
-		return map[string]bool{}
 	}
 	out := map[string]bool{}
-	parts, _ := reactionTriggerSplitRe.Replace(text, ",", -1, -1)
-	for _, p := range strings.Split(parts, ",") {
-		if c := clean(p); c != "" {
-			out[c] = true
+	for _, name := range names {
+		switch pystr.Lower(name) {
+		case "", "false", "0", "no", "off":
+			continue
+		case "true", "1", "yes", "on", "all", "*":
+			return map[string]bool{}
 		}
+		out[name] = true
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
 
 // Optional reaction handoff target channel and thread from C123 or C123 colon ts
 func (a *SlackAdapter) slackReactionTriggerTarget(ctx context.Context) (string, string) {
-	raw, ok := a.extra()["reaction_trigger_target"]
-	if !ok || raw == nil {
-		secret, _ := gateway.GetScopedSecret(ctx, "SLACK_REACTION_TRIGGER_TARGET", "", false)
-		raw = secret
-	}
-	channel, thread, _ := strings.Cut(pystr.Strip(strOrEmpty(raw)), ":")
+	channel, thread, _ := strings.Cut(pystr.Strip(settings.SlackReactionTriggerTarget.Get(gateway.SettingsContext(ctx))), ":")
 	return pystr.Strip(channel), pystr.Strip(thread)
 }
 

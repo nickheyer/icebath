@@ -80,7 +80,6 @@ type messageCompleteResult struct {
 // Requests an interrupt needs, the gateway client in production
 type turnGateway interface {
 	request(ctx context.Context, method string, params map[string]any, timeout time.Duration) (any, error)
-	canonical() bool
 }
 
 // Transcript writers and session of an interrupt
@@ -107,43 +106,6 @@ func rpcErrorMessage(err error) string {
 		return describeRPCError(err)
 	}
 	return tr(txt.RpcRequestFailed)
-}
-
-// Trail rows of a finished call, one per label with the verbose blocks on the last
-func toolTrailLines(done *activeTool, name string, labels []toolLabel, summary, resultText string, took *float64, v toolVerdict) []string {
-	var heads []string
-	for _, label := range labels {
-		heads = append(heads, formatToolLabel(label))
-	}
-	verbose := resultText != ""
-	context := ""
-	if done != nil {
-		context = done.Context
-		verbose = verbose || done.VerboseArgs != ""
-	}
-	if len(heads) == 0 {
-		heads = []string{formatToolCall(name, context)}
-	}
-	out := make([]string, len(heads))
-	for i, head := range heads {
-		switch {
-		case i < len(heads)-1:
-			out[i] = toolTrailLine(head, toolVerdict{}, "", nil)
-		case verbose:
-			args := ""
-			if done != nil {
-				args = done.VerboseArgs
-			}
-			result := resultText
-			if result == "" {
-				result = summary
-			}
-			out[i] = verboseToolTrailLine(head, v, took, args, result)
-		default:
-			out[i] = toolTrailLine(head, v, summary, took)
-		}
-	}
-	return out
 }
 
 // Patch of a diff only segment, ok false for anything else
@@ -229,7 +191,7 @@ type turnController struct {
 	protocolWarned      bool
 	reasoningText       string
 	segmentMessages     []msg
-	pendingSegmentTools []string
+	pendingSegmentTools []toolRow
 	toolTokenAcc        int
 	// What the turn did so far by its finished tool calls, when it began, and the UTF-16 units of everything the model produced in it
 	summary   *turnSummaryCollector
@@ -403,21 +365,13 @@ func (c *turnController) idle(keepTurnArchive bool) {
 		t.StreamPendingTools, t.StreamSegments = c.pendingSegmentTools, c.segmentMessages
 	}
 	t.Streaming, t.Subagents, t.Tools, t.TurnTrail = "", nil, nil, nil
-	c.store.ui.Busy, c.store.ui.Compacting = false, false
+	c.store.setBusy(false)
+	c.store.ui.Compacting = false
 	c.store.resetFlowOverlays()
 }
 
-// Interrupts the turn, a canonical one only after the owner confirms the running generation
+// Interrupts the turn, sealed only after the owner confirms the running generation
 func (c *turnController) interruptTurn(deps interruptDeps, keepBusy bool) (tea.Cmd, error) {
-	if !deps.Gateway.canonical() {
-		gw, sid := deps.Gateway, deps.Sid
-		request := func() tea.Msg {
-			_, _ = gw.request(context.Background(), tuigateway.SessionInterrupt.Name(), wireParams(tuigateway.SessionInterruptParams{SessionID: sid}), 0)
-			return nil
-		}
-		c.sealInterrupt(deps, keepBusy)
-		return request, nil
-	}
 	destination, err := c.store.captureDestination()
 	if err != nil {
 		return nil, err
@@ -492,7 +446,8 @@ func (c *turnController) sealInterrupt(deps interruptDeps, keepBusy bool) {
 	}
 	c.clearStatusTimer()
 	if keepBusy {
-		c.store.ui.Busy, c.store.ui.Status = true, tr(txt.SessionStatusInterrupting)
+		c.store.setBusy(true)
+		c.store.ui.Status = tr(txt.SessionStatusInterrupting)
 		return
 	}
 	c.store.ui.Status = "interrupted"
@@ -611,7 +566,7 @@ func (c *turnController) flushPendingToolsIntoLastSegment() bool {
 }
 
 // Anchors an edit's diff between the narration before it and what streams after
-func (c *turnController) pushInlineDiffSegment(diffText string, tools []string) {
+func (c *turnController) pushInlineDiffSegment(diffText string, tools []toolRow) {
 	stripped := strings.TrimFunc(diffHeaderChrome.ReplaceAllString(diffText, ""), isJSSpace)
 	if stripped == "" {
 		return
@@ -863,7 +818,7 @@ func (c *turnController) recordInlineDiffToolComplete(diffText, toolID, fallback
 }
 
 // Removes a call from the active set and returns its trail rows marked with the verdict, none for a call whose row a settled prompt put into the transcript
-func (c *turnController) completeTool(toolID, fallbackName, summary string, duration *float64, resultText string, eventLabels []toolLabel, v toolVerdict) []string {
+func (c *turnController) completeTool(toolID, fallbackName, summary string, duration *float64, resultText string, eventLabels []toolLabel, v toolVerdict) []toolRow {
 	var done *activeTool
 	if i := slices.IndexFunc(c.activeTools, func(t activeTool) bool { return t.ID == toolID }); i >= 0 {
 		found := c.activeTools[i]
@@ -885,7 +840,11 @@ func (c *turnController) completeTool(toolID, fallbackName, summary string, dura
 		elapsed := float64(c.store.now().Sub(done.StartedAt).Milliseconds()) / 1000
 		took = &elapsed
 	}
-	lines := toolTrailLines(done, name, labels, summary, resultText, took, v)
+	context, args := "", ""
+	if done != nil {
+		context, args = done.Context, done.VerboseArgs
+	}
+	lines := finishedToolRows(name, context, labels, args, summary, resultText, took, v)
 	if c.persistedToolLabels[label] {
 		delete(c.persistedToolLabels, label)
 		lines = nil
@@ -1001,7 +960,7 @@ func (c *turnController) startMessage() {
 	c.summary.begin()
 	c.began, c.flowUnits = c.store.now(), 0
 	clear(c.persistedToolLabels)
-	c.store.ui.Busy = true
+	c.store.setBusy(true)
 	c.segmentMessages, c.pendingSegmentTools = nil, nil
 	t := &c.store.turn
 	t.Activity, t.Outcome, t.StreamPendingTools, t.StreamSegments, t.Subagents, t.ToolTokens, t.Tools, t.TurnTrail = nil, "", nil, nil, nil, 0, nil, nil

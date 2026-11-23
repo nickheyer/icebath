@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Fields explaining why this install cannot self update from git, nil when it can
@@ -281,12 +282,10 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	if err != nil {
 		return nil, err
 	}
-	if opts.Passive {
-		if updates, ok := cfg["updates"].(map[string]any); ok && updates["check"] == false {
-			disabled := result.Copy()
-			disabled.Set("reason", "disabled")
-			return disabled, nil
-		}
+	if opts.Passive && !settings.UpdatesCheck.Get(home.WithOverride(ctx, h)) {
+		disabled := result.Copy()
+		disabled.Set("reason", "disabled")
+		return disabled, nil
 	}
 	var channel string
 	if opts.Channel == nil {

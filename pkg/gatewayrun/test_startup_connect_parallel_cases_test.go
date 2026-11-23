@@ -2,12 +2,14 @@ package gatewayrun
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Connect start and end events in arrival order, independent of clock resolution
@@ -173,10 +175,9 @@ func coldStartRunner(t *testing.T) *GatewayRunner {
 
 // test_startup_connect_parallel.py TestTelegramColdStartCap.test_initial_telegram_budget_is_capped
 func TestTelegramColdStartCapInitialTelegramBudgetIsCapped(t *testing.T) {
-	t.Setenv("ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT", "")
 	r := coldStartRunner(t)
-	initial := r.platformConnectTimeoutSecs(gateway.PlatformTelegram, true)
-	full := r.platformConnectTimeoutSecs(gateway.PlatformTelegram, false)
+	initial := r.platformConnectTimeoutSecs(context.Background(), gateway.PlatformTelegram, true)
+	full := r.platformConnectTimeoutSecs(context.Background(), gateway.PlatformTelegram, false)
 	if initial >= full {
 		t.Fatalf("cold-start Telegram budget must be shorter than the reconnect budget (initial=%v, full=%v)", initial, full)
 	}
@@ -187,25 +188,27 @@ func TestTelegramColdStartCapInitialTelegramBudgetIsCapped(t *testing.T) {
 
 // test_startup_connect_parallel.py TestTelegramColdStartCap.test_other_platforms_unchanged
 func TestTelegramColdStartCapOtherPlatformsUnchanged(t *testing.T) {
-	t.Setenv("ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT", "")
 	r := coldStartRunner(t)
-	if r.platformConnectTimeoutSecs(gateway.PlatformDiscord, true) != r.platformConnectTimeoutSecs(gateway.PlatformDiscord, false) {
+	if r.platformConnectTimeoutSecs(context.Background(), gateway.PlatformDiscord, true) != r.platformConnectTimeoutSecs(context.Background(), gateway.PlatformDiscord, false) {
 		t.Fatal("discord initial budget differs from its reconnect budget")
 	}
 }
 
 // test_startup_connect_parallel.py TestTelegramColdStartCap.test_env_override_applies_to_initial
 func TestTelegramColdStartCapEnvOverrideAppliesToInitial(t *testing.T) {
-	t.Setenv("ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT", "12")
+	h := t.TempDir()
+	t.Setenv(home.EnvHome, h)
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("gateway:\n  platform_connect_timeout: 12\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	r := coldStartRunner(t)
-	if got := r.platformConnectTimeoutSecs(gateway.PlatformTelegram, true); got != 12.0 {
+	if got := r.platformConnectTimeoutSecs(context.Background(), gateway.PlatformTelegram, true); got != 12.0 {
 		t.Fatalf("initial = %v", got)
 	}
 }
 
 // test_startup_connect_parallel.py TestTelegramColdStartCap.test_initial_connect_times_out_at_cap_and_queues_retry
 func TestTelegramColdStartCapInitialConnectTimesOutAtCapAndQueuesRetry(t *testing.T) {
-	t.Setenv("ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT", "")
 	r := parallelConnectRunner(t)
 	prev := telegramInitialConnectTimeoutSecsDefault
 	telegramInitialConnectTimeoutSecsDefault = 0.2

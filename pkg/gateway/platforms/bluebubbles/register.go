@@ -7,6 +7,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const installHint = "BlueBubbles: BLUEBUBBLES_SERVER_URL/BLUEBUBBLES_PASSWORD not configured"
@@ -96,7 +97,7 @@ func info(lines ...*string) {
 // Line pointer for the info helper
 func ln(s string) *string { return &s }
 
-// BlueBubbles iMessage wizard of icebath gateway setup and /setup gateway
+// BlueBubbles iMessage wizard of icebath gateway setup and /setup chat-apps
 func InteractiveSetup(ctx context.Context) error {
 	gateway.WizardCLI.PrintHeader("BlueBubbles (iMessage)")
 	declined, err := gateway.PlatformSetup.DeclinesReconfigure(ctx, "BlueBubbles", "Reconfigure BlueBubbles?", "BLUEBUBBLES_SERVER_URL")
@@ -142,9 +143,12 @@ func InteractiveSetup(ctx context.Context) error {
 	}
 	info(nil, ln("Advanced settings (defaults are fine for most setups):"))
 	if gateway.WizardCLI.PromptYesNo(ctx, "Configure webhook listener settings?", false) {
-		if err := gateway.PlatformSetup.SavePort(ctx, "BLUEBUBBLES_WEBHOOK_PORT",
-			gateway.WizardCLI.Prompt("Webhook listener port (default: 8645)", "", false), "8645"); err != nil {
-			return err
+		if port := gateway.WizardCLI.Prompt("Webhook listener port (default: 8645)", "", false); port != "" {
+			if _, err := settings.Set(gateway.SettingsContext(ctx), settings.BluebubblesWebhookPort.Key, port, settings.Global); err != nil {
+				gateway.WizardCLI.PrintWarning("Port not saved: " + err.Error())
+			} else {
+				gateway.WizardCLI.PrintSuccess("Webhook port set to " + port)
+			}
 		}
 	}
 	info(nil, ln("Requires the BlueBubbles Private API helper for typing indicators,"),

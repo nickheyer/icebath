@@ -11,7 +11,7 @@ import (
 func auxCodexAuthHome(t *testing.T, accessToken string) context.Context {
 	t.Helper()
 	ctx := auxMainTestHome(t, "")
-	auxWriteAuthJSON(t, ctx, map[string]any{"version": 1, "providers": map[string]any{
+	auxWriteAuthJSON(t, ctx, map[string]any{"version": 2, "providers": map[string]any{
 		"openai-codex": map[string]any{"tokens": map[string]any{"access_token": accessToken, "refresh_token": "r"}},
 	}})
 	auxFixedPoolEntry(t, false, nil)

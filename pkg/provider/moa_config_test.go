@@ -219,50 +219,6 @@ func TestMoADefaultAndActivePresetSelection(t *testing.T) {
 	}
 }
 
-func moaSplitKey(key string) []string {
-	var parts []string
-	var cur strings.Builder
-	for i := 0; i < len(key); i++ {
-		if key[i] == '\\' && i+1 < len(key) && key[i+1] == '.' {
-			cur.WriteByte('.')
-			i++
-			continue
-		}
-		if key[i] == '.' {
-			parts = append(parts, cur.String())
-			cur.Reset()
-			continue
-		}
-		cur.WriteByte(key[i])
-	}
-	return append(parts, cur.String())
-}
-
-func TestMoAPresetFieldPaths(t *testing.T) {
-	for _, name := range []string{"default", "review", "review.v2", "code review"} {
-		escaped := strings.ReplaceAll(name, ".", `\.`)
-		for _, field := range []string{"fanout", "reference_timeout", "aggregator.provider", "aggregator.model", "aggregator.reasoning_effort"} {
-			if !IsPresetFieldPath(moaSplitKey("moa.presets." + escaped + "." + field)) {
-				t.Fatalf("%s %s should be a field path", name, field)
-			}
-		}
-		slot := map[string]any{"provider": "openrouter", "model": "test/actor"}
-		preset, err := ResolveMoAPreset(map[string]any{"presets": map[string]any{name: map[string]any{"reference_models": []any{slot},
-			"aggregator": map[string]any{"provider": "anthropic", "model": "test/judge", "reasoning_effort": "high"}, "fanout": "every_n:5", "reference_timeout": 900}}}, name)
-		if err != nil || preset["fanout"] != "every_n:5" || preset["reference_timeout"] != 900.0 ||
-			!reflect.DeepEqual(preset["aggregator"], map[string]any{"provider": "anthropic", "model": "test/judge", "reasoning_effort": "high"}) {
-			t.Fatalf("preset %v %v", preset, err)
-		}
-	}
-	for _, key := range []string{"moa.presets.default.fanoutt", "moa.presets.review.reference_timeot", `moa.presets.review\.v2.fanoutt`,
-		"moa.presets.review.unexpected.fanout", "moa.presets.review.fanout.unexpected", "moa.presets. review .fanout", "moa.presets.review",
-		"moa.presets.review.aggregator.bogus", "moa.presets.review.enabled.x", "moa.presets.review.fanout.n"} {
-		if IsPresetFieldPath(moaSplitKey(key)) {
-			t.Fatalf("%s must keep the unknown key notice", key)
-		}
-	}
-}
-
 func TestMoANamedPresetMapIsAuthoritativeOverDefaults(t *testing.T) {
 	user := map[string]any{"moa": map[string]any{"default_preset": "keep_a", "presets": map[string]any{
 		"keep_a": map[string]any{}, "doomed": map[string]any{}, "keep_b": map[string]any{}}}}

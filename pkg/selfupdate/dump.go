@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -219,17 +220,9 @@ func dumpFirstTruthy(fallback string, values ...any) string {
 	return fallback
 }
 
-// Model and provider of the config, (not set) and (auto) when absent
-func dumpModelAndProvider(cfg config.Tree) (string, string) {
-	switch model := cfg["model"].(type) {
-	case map[string]any:
-		return dumpFirstTruthy("(not set)", model["default"], model["model"], model["name"]), dumpFirstTruthy("(auto)", model["provider"])
-	case string:
-		if model != "" {
-			return model, "(auto)"
-		}
-	}
-	return "(not set)", "(auto)"
+// Model and provider of the profile, (not set) and (auto) when absent
+func dumpModelAndProvider(ctx context.Context) (string, string) {
+	return dumpFirstTruthy("(not set)", settings.Model.Get(ctx)), dumpFirstTruthy("(auto)", settings.ModelProvider.Get(ctx))
 }
 
 // Sections and keys with interesting user facing overrides
@@ -353,21 +346,6 @@ func dumpVersionLine(projectRoot string) string {
 	return line
 }
 
-// Effective terminal backend, a TERMINAL_ENV in the environment overriding terminal.backend
-func dumpEffectiveTerminalBackend(cfg config.Tree) string {
-	configBackend := any("local")
-	if terminal, ok := cfg["terminal"].(map[string]any); ok {
-		if v, has := terminal["backend"]; has {
-			configBackend = v
-		}
-	}
-	envBackend := pystr.Lower(pystr.Strip(os.Getenv("TERMINAL_ENV")))
-	if envBackend != "" && envBackend != pystr.Lower(pystr.Strip(pyrepr.Str(configBackend))) {
-		return fmt.Sprintf("%s  (TERMINAL_ENV overrides config.yaml terminal.backend=%s)", envBackend, pyrepr.Str(configBackend))
-	}
-	return pyrepr.Str(configBackend)
-}
-
 // API key lines, set or not set per provider with the shell only flag and the auth pool note
 func dumpAPIKeyLines(h string, showKeys bool) []string {
 	dotenv := dotenvKeyNames(h)
@@ -417,19 +395,13 @@ func RunDump(ctx context.Context, h string, ns map[string]any, w io.Writer) (int
 	if err != nil {
 		cfg = config.Tree{}
 	}
-	model, providerName := dumpModelAndProvider(cfg)
+	sctx := home.WithOverride(ctx, h)
+	model, providerName := dumpModelAndProvider(sctx)
 	profile := profiles.GetActiveProfileName(ctx)
 	if profile == "" {
 		profile = "(default)"
 	}
-	toolsets := []any{"icebath-cli"}
-	if raw, has := cfg["toolsets"]; has {
-		toolsets, _ = raw.([]any)
-	}
-	toolsetNames := make([]string, len(toolsets))
-	for i, ts := range toolsets {
-		toolsetNames[i] = pyrepr.Str(ts)
-	}
+	toolsetNames := settings.Toolsets.Strings(sctx)
 	var platforms []string
 	for _, pair := range dumpPlatformEnvVars {
 		if os.Getenv(pair[1]) != "" {
@@ -437,7 +409,6 @@ func RunDump(ctx context.Context, h string, ns map[string]any, w io.Writer) (int
 		}
 	}
 	mcp, _ := dumpSection(cfg, "mcp")
-	memory, _ := dumpSection(cfg, "memory")
 	lines := []string{
 		"--- icebath dump ---",
 		fmt.Sprintf("%-18s%s", "version:", dumpVersionLine(projectRoot)),
@@ -447,14 +418,14 @@ func RunDump(ctx context.Context, h string, ns map[string]any, w io.Writer) (int
 		fmt.Sprintf("%-18s%s", "icebath_home:", home.Display(h)),
 		fmt.Sprintf("%-18s%s", "model:", model),
 		fmt.Sprintf("%-18s%s", "provider:", providerName),
-		fmt.Sprintf("%-18s%s", "terminal:", dumpEffectiveTerminalBackend(cfg)),
+		fmt.Sprintf("%-18s%s", "terminal:", settings.WhereCommandsRun.Get(sctx)),
 		"", "api_keys:",
 	}
 	lines = append(lines, dumpAPIKeyLines(h, showKeys)...)
 	lines = append(lines, "", "features:",
 		"  toolsets:           "+dumpJoinOr(toolsetNames, "(default)"),
 		fmt.Sprintf("  mcp_servers:        %d", dumpLen(mcp["servers"])),
-		"  memory_provider:    "+dumpFirstTruthy("built-in", memory["provider"]),
+		"  memory_provider:    "+dumpFirstTruthy("built-in", settings.MemoryProvider.Get(sctx)),
 		"  gateway:            "+dumpGatewayStatus(ctx),
 		"  platforms:          "+dumpJoinOr(platforms, "none"),
 		"  cron_jobs:          "+dumpCronSummary(h),

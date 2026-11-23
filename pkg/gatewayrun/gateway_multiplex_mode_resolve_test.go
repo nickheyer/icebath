@@ -169,7 +169,7 @@ func TestExplicitTrueIsNeverSecondGuessedAndExplicitFalseIsRetired(t *testing.T)
 	if flag, err := gateway.ExplicitMultiplexFlag(f.ctx, f.root); err != nil || !isTrue(flag) {
 		t.Fatalf("explicit flag %v %v", flag, err)
 	}
-	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "false")
+	fleetWrite(t, filepath.Join(f.root, "config.yaml"), "gateway:\n  multiplex_profiles: false\n")
 	f.pids = map[string]int{}
 	decision, cfg = f.resolve(t)
 	if !decision.Enabled || decision.Source != "retired-opt-out" || !isTrue(cfg.MultiplexProfiles) {

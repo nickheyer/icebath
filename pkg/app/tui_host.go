@@ -1,6 +1,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,7 +34,28 @@ var tuiBootstrapScrubbedEnv = []string{"ICEBATH_MODEL", "ICEBATH_INFERENCE_MODEL
 
 // Host work the terminal UI hands to the launcher, owner attach, snapshot restore and worktree settling
 func terminalUIHost() tui.Host {
-	return tui.Host{Attach: tuiAttachOwner, RestoreSnapshot: tuiRestoreSnapshot, SettleWorktrees: settleTUIWorktrees}
+	return tui.Host{Attach: tuiAttachOwner, RestoreSnapshot: tuiRestoreSnapshot, SettleWorktrees: settleTUIWorktrees, ReplaceOwner: tuiReplaceOwner}
+}
+
+// Stops the home's background service of another build, busy or not, so the window's reconnect starts one of this build
+func tuiReplaceOwner(ctx context.Context) error {
+	h, err := tuiRealHome(ctx)
+	if err != nil {
+		return err
+	}
+	if refusal := gateway.ReplaceIncompatibleOwner(ctx, h, pythread.Monotonic()+20); refusal != "" {
+		return errors.New(cmp.Or(replaceOwnerRefusals[refusal], refusal))
+	}
+	return nil
+}
+
+// Why the background service of another build did not stop, in plain words, by refusal code
+var replaceOwnerRefusals = map[string]string{
+	"owner_newer":        "it runs a newer icebath",
+	"foreign_install":    "another icebath install started it",
+	"owner_unverified":   "it could not be identified",
+	"owner_did_not_exit": "it did not stop in time",
+	"owner_unreachable":  "it did not answer",
 }
 
 // Verdict line the TUI shows when no owner can be attached, each detail line kept a verdict
@@ -69,6 +91,15 @@ type ticketAnswer struct {
 	} `json:"result"`
 }
 
+// Real path of the profile home the terminal UI runs on
+func tuiRealHome(ctx context.Context) (string, error) {
+	abs, err := filepath.Abs(home.Dir(ctx))
+	if err != nil {
+		return "", err
+	}
+	return realHome(abs)
+}
+
 // Real path of a home, a missing tail kept as written under its resolved parent
 func realHome(path string) (string, error) {
 	real, err := filepath.EvalSymlinks(path)
@@ -91,11 +122,7 @@ func realHome(path string) (string, error) {
 
 // Ensures or discovers the gateway owner and mints the private interactive grant the terminal UI attaches with
 func tuiAttachOwner(ctx context.Context, start, recover bool) (tui.Grant, error) {
-	abs, err := filepath.Abs(home.Dir(ctx))
-	if err != nil {
-		return tui.Grant{}, err
-	}
-	h, err := realHome(abs)
+	h, err := tuiRealHome(ctx)
 	if err != nil {
 		return tui.Grant{}, err
 	}

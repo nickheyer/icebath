@@ -475,13 +475,13 @@ func MapCachePathToContainer(env *Env, hostPath, containerBase string) string {
 	return ""
 }
 
-// Active TERMINAL_ENV through the per turn terminal scope
+// Active terminal backend through the per turn terminal scope
 func terminalBackendName(env *Env) string {
 	policy, err := terminalPolicy(env)
 	if err != nil {
 		return "local"
 	}
-	v := strings.ToLower(strings.TrimSpace(policy.Get("TERMINAL_ENV", "")))
+	v := strings.ToLower(strings.TrimSpace(policy.Setting("backend")))
 	if v == "" {
 		return "local"
 	}

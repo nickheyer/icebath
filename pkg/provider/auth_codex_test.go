@@ -100,7 +100,7 @@ func (timeoutError) Temporary() bool { return true }
 
 func codexAuthStore(tokens map[string]any) map[string]any {
 	return map[string]any{
-		"version": 1, "active_provider": "openai-codex",
+		"version": 2, "active_provider": "openai-codex",
 		"providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens, "last_refresh": "2026-02-26T00:00:00Z", "auth_mode": "chatgpt"}},
 	}
 }
@@ -135,7 +135,7 @@ func TestResolveCodexRuntimeCredentialsMissingAccessToken(t *testing.T) {
 func TestResolveCodexFallsBackToPoolWhenSingletonEmpty(t *testing.T) {
 	h, env := codexTestEnv(t)
 	writeAuthStore(t, h, map[string]any{
-		"version": 1, "providers": map[string]any{},
+		"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai-codex": []any{map[string]any{
 			"source": "device_code", "access_token": "pool-fallback-token", "refresh_token": "pool-refresh", "last_status": "ok", "auth_type": "oauth"}}},
 	})
@@ -151,7 +151,7 @@ func TestResolveCodexFallsBackToPoolWhenSingletonEmpty(t *testing.T) {
 func TestSaveCodexTokensSyncsCredentialPool(t *testing.T) {
 	h, env := codexTestEnv(t)
 	writeAuthStore(t, h, map[string]any{
-		"version": 1,
+		"version": 2,
 		"providers": map[string]any{"openai-codex": map[string]any{
 			"tokens": map[string]any{"access_token": "old-at", "refresh_token": "old-rt"}, "last_refresh": "2026-01-01T00:00:00Z", "auth_mode": "chatgpt"}},
 		"credential_pool": map[string]any{"openai-codex": []any{
@@ -185,7 +185,7 @@ func TestSaveCodexTokensSyncsCredentialPool(t *testing.T) {
 func TestSaveCodexTokensSyncsManualDeviceCodeAliases(t *testing.T) {
 	h, env := codexTestEnv(t)
 	writeAuthStore(t, h, map[string]any{
-		"version": 1,
+		"version": 2,
 		"providers": map[string]any{"openai-codex": map[string]any{
 			"tokens": map[string]any{"access_token": "old-at", "refresh_token": "old-rt"}, "last_refresh": "2026-01-01T00:00:00Z", "auth_mode": "chatgpt"}},
 		"credential_pool": map[string]any{"openai-codex": []any{
@@ -224,7 +224,7 @@ func TestSaveCodexTokensSyncsManualDeviceCodeAliases(t *testing.T) {
 func TestSaveCodexTokensClearsErrorMarkersOnlyOnRefreshedEntries(t *testing.T) {
 	h, env := codexTestEnv(t)
 	writeAuthStore(t, h, map[string]any{
-		"version": 1,
+		"version": 2,
 		"providers": map[string]any{"openai-codex": map[string]any{
 			"tokens": map[string]any{"access_token": "acctA-at", "refresh_token": "acctA-rt"}, "auth_mode": "chatgpt"}},
 		"credential_pool": map[string]any{"openai-codex": []any{
@@ -255,7 +255,7 @@ func TestCodexTokensNotWrittenToCodexCLIFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("CODEX_HOME", codexHome)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	if err := saveCodexTokens(env, map[string]any{"access_token": "icebath-at", "refresh_token": "icebath-rt"}, "", "", true, false); err != nil {
 		t.Fatal(err)
 	}
@@ -315,19 +315,19 @@ func TestRefresh429WithoutRetryAfterHeader(t *testing.T) {
 func TestPoolOnlyForceRefreshRotatesThePoolEntry(t *testing.T) {
 	h, env := codexTestEnv(t)
 	writeAuthStore(t, h, map[string]any{
-		"version": 1, "providers": map[string]any{},
+		"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai-codex": []any{map[string]any{
 			"source": "device_code", "access_token": "pool-revoked", "refresh_token": "pool-refresh", "last_status": "ok", "auth_type": "oauth"}}},
 	})
 	var hints []string
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
+	spec.refresh = pairRefresh(func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		hints = append(hints, accessToken)
 		return map[string]any{"access_token": "pool-fresh", "refresh_token": "pool-refresh-2", "last_refresh": utcNowZ()}, nil
-	}
-	tokensSingletonProviders["openai-codex"] = spec
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	})
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	resolved, err := resolveCodexRuntimeCredentials(env, CodexResolveOptions{ForceRefresh: true})
 	if err != nil {
 		t.Fatal(err)
@@ -373,7 +373,7 @@ func seedCodexHomes(t *testing.T, h string, icebathTokens, cliTokens map[string]
 		t.Fatal(err)
 	}
 	t.Setenv("CODEX_HOME", codexHome)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{"tokens": icebathTokens, "auth_mode": "chatgpt"}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{"tokens": icebathTokens, "auth_mode": "chatgpt"}}})
 	raw, _ := json.Marshal(map[string]any{"tokens": cliTokens})
 	if err := os.WriteFile(filepath.Join(codexHome, "auth.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
@@ -671,7 +671,7 @@ func TestProbeCountsAdditionalRateLimits(t *testing.T) {
 
 func poolOnlyRateLimitedStore(now float64) map[string]any {
 	return map[string]any{
-		"version": 1, "providers": map[string]any{},
+		"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai-codex": []any{map[string]any{
 			"id": "cred-quota", "label": "quota-frozen", "auth_type": "oauth", "priority": 0, "source": "device_code",
 			"access_token": "tok-quota", "last_status": "exhausted", "last_status_at": now, "last_error_code": 429,
@@ -927,7 +927,7 @@ func TestProfileRefreshOfRootGrantWritesThroughToRoot(t *testing.T) {
 		"providers":       map[string]any{"openai-codex": map[string]any{"auth_mode": "chatgpt", "tokens": tokenPair("old")}},
 		"credential_pool": map[string]any{"openai-codex": []any{mergeTokens(map[string]any{"provider": "openai-codex", "source": "device_code"}, tokenPair("old"))}},
 	})
-	writeAuthStore(t, profile, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, profile, map[string]any{"version": 2, "providers": map[string]any{}})
 	rotated := tokenPair("new")
 	if err := saveCodexTokens(env, rotated, "2026-08-16T00:00:00Z", "", true, true); err != nil {
 		t.Fatal(err)
@@ -947,8 +947,8 @@ func TestProfileRefreshOfRootGrantWritesThroughToRoot(t *testing.T) {
 
 func TestProfileOwnedGrantStaysLocal(t *testing.T) {
 	profile, root, env := profileEnvForTest(t, "work")
-	writeAuthStore(t, profile, map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{"auth_mode": "chatgpt", "tokens": tokenPair("prof")}}})
-	writeAuthStore(t, root, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, profile, map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{"auth_mode": "chatgpt", "tokens": tokenPair("prof")}}})
+	writeAuthStore(t, root, map[string]any{"version": 2, "providers": map[string]any{}})
 	rotated := tokenPair("next")
 	if err := saveCodexTokens(env, rotated, "2026-08-16T00:00:00Z", "", true, true); err != nil {
 		t.Fatal(err)
@@ -959,8 +959,8 @@ func TestProfileOwnedGrantStaysLocal(t *testing.T) {
 	if providerTokens(readAuthStore(t, root)) != nil {
 		t.Fatal("root gained a profile grant")
 	}
-	writeAuthStore(t, profile, map[string]any{"version": 1, "providers": map[string]any{}})
-	writeAuthStore(t, root, map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{"auth_mode": "chatgpt", "tokens": tokenPair("root")}}})
+	writeAuthStore(t, profile, map[string]any{"version": 2, "providers": map[string]any{}})
+	writeAuthStore(t, root, map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{"auth_mode": "chatgpt", "tokens": tokenPair("root")}}})
 	if err := saveCodexTokens(env, tokenPair("login"), "", "", true, false); err != nil {
 		t.Fatal(err)
 	}
@@ -1001,8 +1001,8 @@ func (r *rotatingEndpoint) RoundTrip(req *http.Request) (*http.Response, error) 
 
 func TestConcurrentRefreshesOfSharedRootGrantSubmitOldTokenOnce(t *testing.T) {
 	profile, root, env := profileEnvForTest(t, "work")
-	writeAuthStore(t, root, map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{"auth_mode": "chatgpt", "tokens": tokenPair("old")}}})
-	writeAuthStore(t, profile, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, root, map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{"auth_mode": "chatgpt", "tokens": tokenPair("old")}}})
+	writeAuthStore(t, profile, map[string]any{"version": 2, "providers": map[string]any{}})
 	endpoint := &rotatingEndpoint{hold: 1500 * time.Millisecond}
 	useCodexTransport(t, endpoint)
 	results := map[string]map[string]any{}
@@ -1074,7 +1074,7 @@ func exhaustedJWTPool(t *testing.T, h string) {
 	t.Helper()
 	now := nowEpoch()
 	writeAuthStore(t, h, map[string]any{
-		"version": 1, "providers": map[string]any{},
+		"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai-codex": []any{map[string]any{
 			"id": "gw", "label": "gateway", "auth_type": "oauth", "priority": 0, "source": "device_code",
 			"access_token": codexAccountJWT("acct", "acct"), "base_url": DefaultCodexBaseURL,
@@ -1196,7 +1196,7 @@ func TestReadOnlyResolverNeverProbesOrMutatesAnExhaustedPool(t *testing.T) {
 		"request_count": 0, "access_token": jwtWithClaims(map[string]any{"exp": nowEpoch() - 3600}), "refresh_token": "codex-refresh-token-0",
 		"base_url": DefaultCodexBaseURL, "last_status": "exhausted", "last_error_code": 429, "last_error_reason": "usage_limit_reached",
 		"last_error_reset_at": nowEpoch() + 3600}
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"openai-codex": []any{entry}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"openai-codex": []any{entry}}})
 	before, _ := os.ReadFile(filepath.Join(h, "auth.json"))
 	transport := &usageTransport{payload: usagePayload(0, 0)}
 	useCodexTransport(t, transport)
@@ -1232,7 +1232,7 @@ func TestSetCodexQuotaProbeSwapsAndRestoresTheProbe(t *testing.T) {
 func TestResolveCodexRuntimeCredentialsExportedMatchesInternal(t *testing.T) {
 	h, env := codexTestEnv(t)
 	writeAuthStore(t, h, map[string]any{
-		"version": 1, "providers": map[string]any{},
+		"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai-codex": []any{map[string]any{
 			"source": "device_code", "access_token": "pool-fallback-token", "refresh_token": "pool-refresh", "last_status": "ok", "auth_type": "oauth"}}},
 	})

@@ -499,6 +499,8 @@ hosted_rooms.discussion.max_rounds
 human_delay.max_ms
 human_delay.min_ms
 human_delay.mode
+image_gen.model
+image_gen.provider
 kanban.auto_decompose
 kanban.auto_decompose_per_tick
 kanban.auto_promote_children
@@ -863,16 +865,17 @@ vertex.region
 vision.embed_target_bytes
 vision.max_calls_per_image
 vision.replay_recent_images
-voice.auto_tts
 voice.barge_in
 voice.barge_in_grace_seconds
 voice.barge_in_threshold_multiplier
 voice.beep_enabled
 voice.beep_volume
+voice.input_enabled
 voice.max_recording_seconds
 voice.record_key
 voice.silence_duration
 voice.silence_threshold
+voice.speak_replies
 voice.stop_phrases
 voice.submit_mode
 voice.thinking_sound
@@ -944,31 +947,6 @@ func TestDefaultsCarryExactlyThePinnedKeySet(t *testing.T) {
 		for p := range have {
 			t.Errorf("extra default %s", p)
 		}
-	}
-}
-
-func TestDefaultsRootsAreKnownAndContainerSlotsFollowThem(t *testing.T) {
-	for root := range Defaults() {
-		if !KnownRootKey(root) {
-			t.Errorf("default root %s is not a known root key", root)
-		}
-		if !InDefaultConfig(root) {
-			t.Errorf("default root %s is not in the default config", root)
-		}
-	}
-	for _, path := range []string{"voice.record_key", "browser.inactivity_timeout", "stt.enabled", "tts.provider", "display.personality"} {
-		if !InDefaultConfig(path) {
-			t.Errorf("%s is not in the default config", path)
-		}
-	}
-	slots := ContainerSlots()
-	for _, path := range []string{"toolsets", "agent.disabled_toolsets", "tools.tool_search.defer"} {
-		if _, ok := slots[path]; !ok {
-			t.Errorf("container slot %s is missing", path)
-		}
-	}
-	if Defaults()["_config_version"] != 69 || Version != 69 {
-		t.Errorf("schema version %v, want 69", Defaults()["_config_version"])
 	}
 }
 

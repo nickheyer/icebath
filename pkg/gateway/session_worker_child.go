@@ -7,14 +7,17 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Delegation caps a frozen policy falls back to
-var delegationDefaults = map[string]int64{"max_concurrent_children": 10, "max_spawn_depth": 1}
+// Delegation caps a frozen policy falls back to, the registry defaults
+var delegationDefaults = map[string]int64{"max_concurrent_children": int64(settings.DelegationMaxConcurrentChildren.Default),
+	"max_spawn_depth": int64(settings.DelegationMaxSpawnDepth.Default)}
 
 // Positive cap of a delegation section key, its default when the value is not an int
 func delegationLimit(section map[string]any, key string) int64 {
@@ -57,12 +60,15 @@ func delegationLimits(ctx context.Context, a *SessionAuthority, executionID, ses
 			return 0, 0, err
 		}
 	}
-	var config map[string]any
-	if policy != nil {
-		config, err = policy.config(ctx, a, true)
-	} else {
-		config, err = profileConfig(ctx, a)
+	if policy == nil {
+		h, err := launchOwnerHome(a)
+		if err != nil {
+			return 0, 0, err
+		}
+		sctx := profileEnvScope(home.WithOverride(ctx, h), h)
+		return max(1, int64(settings.DelegationMaxConcurrentChildren.Get(sctx))), max(1, int64(settings.DelegationMaxSpawnDepth.Get(sctx))), nil
 	}
+	config, err := policy.config(ctx, a, true)
 	if err != nil {
 		return 0, 0, err
 	}

@@ -230,7 +230,7 @@ func auxWithCustomEndpointExtraBody(ctx context.Context, extraBody map[string]an
 		if err != nil {
 			panic(err)
 		}
-		inherited = CustomProviderExtraBodyForAgent(provider, model, baseURL, CompatibleCustomProviders(cfg))
+		inherited = CustomProviderExtraBodyForAgent(provider, model, baseURL, ProviderEntries(cfg))
 	}); err != nil {
 		pkgLog().Debug("custom provider extra_body lookup failed for aux request", "error", err)
 		return extraBody

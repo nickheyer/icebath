@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -111,7 +112,6 @@ func TestCJKEmitSplitsRunsIntoBigrams(t *testing.T) {
 func TestCJKTokenizerServesTwoCharTermsThroughFTS5(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Setenv("ICEBATH_FTS5_CJK_SO", "")
-	t.Setenv("ICEBATH_CJK_FTS", "")
 	ctx := context.Background()
 	conn, _ := schemaConn(t)
 	_, err := conn.ExecContext(ctx, FTSCJKTableSQL)
@@ -183,16 +183,20 @@ func TestLoadFTS5CJKExtensionGates(t *testing.T) {
 		t.Fatal("an explicit absent extension path keeps the tokenizer unloaded")
 	}
 	t.Setenv("ICEBATH_FTS5_CJK_SO", "")
-	for value, want := range map[string]bool{"false": false, " OFF ": false, "0": false, "no": false, "yes": true, "true": true} {
-		t.Setenv("ICEBATH_CJK_FTS", value)
+	for value, want := range map[string]bool{"false": false, "off": false, "no": false, "yes": true, "true": true} {
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("sessions:\n  cjk_fts: "+value+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		if got := cjkFTSConfigEnabled(ctx); got != want {
-			t.Fatalf("ICEBATH_CJK_FTS=%q enabled = %v", value, got)
+			t.Fatalf("cjk_fts %q enabled = %v", value, got)
 		}
 		if got := LoadFTS5CJKExtension(ctx, conn); got != want {
-			t.Fatalf("ICEBATH_CJK_FTS=%q loaded = %v", value, got)
+			t.Fatalf("cjk_fts %q loaded = %v", value, got)
 		}
 	}
-	t.Setenv("ICEBATH_CJK_FTS", "")
+	if err := os.Remove(filepath.Join(dir, "config.yaml")); err != nil {
+		t.Fatal(err)
+	}
 	logs := captureSlog(t)
 	if LoadFTS5CJKExtension(ctx, struct{ SQLiteConn }{conn}) {
 		t.Fatal("a connection without a SQLite handle cannot register")

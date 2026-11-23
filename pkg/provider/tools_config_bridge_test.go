@@ -11,7 +11,7 @@ import (
 
 func TestToolsConfigHooksReadTheRunHome(t *testing.T) {
 	h, _ := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "openrouter", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openrouter", "providers": map[string]any{}})
 	hooks := tools.ToolsConfigHooks
 	if hooks.CodexAuthStatus(context.Background(), h)["logged_in"] == true || hooks.XAIOAuthStatus(context.Background(), h)["logged_in"] == true {
 		t.Fatal("empty store read as logged in")

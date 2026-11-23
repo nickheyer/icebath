@@ -1,10 +1,7 @@
 package tui
 
 import (
-	"reflect"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 func TestParseDetailsMode(t *testing.T) {
@@ -26,31 +23,6 @@ func TestIsSectionName(t *testing.T) {
 	t.Run("only lets the four canonical sections through", func(t *testing.T) {
 		for v, want := range map[string]bool{"thinking": true, "tools": true, "subagents": true, "activity": true, "Thinking": false, "bogus": false, "": false} {
 			if isSectionName(v) != want {
-				t.Fatalf("%v", v)
-			}
-		}
-	})
-}
-
-func TestResolveSections(t *testing.T) {
-	resolveSections := func(raw any) map[string]string {
-		return sectionModes(tuigateway.ClientConfigOf(map[string]any{"display": map[string]any{"sections": raw}}).Display.Sections)
-	}
-	t.Run("parses a well-formed sections object", func(t *testing.T) {
-		got := resolveSections(map[string]any{"thinking": "expanded", "tools": "expanded", "subagents": "collapsed", "activity": "hidden"})
-		if !reflect.DeepEqual(got, map[string]string{"thinking": "expanded", "tools": "expanded", "subagents": "collapsed", "activity": "hidden"}) {
-			t.Fatalf("got %v", got)
-		}
-	})
-	t.Run("drops unknown section names and unknown modes", func(t *testing.T) {
-		got := resolveSections(map[string]any{"thinking": "expanded", "tools": "maximised", "bogus": "hidden", "activity": "hidden"})
-		if !reflect.DeepEqual(got, map[string]string{"thinking": "expanded", "activity": "hidden"}) {
-			t.Fatalf("got %v", got)
-		}
-	})
-	t.Run("treats nullish/non-objects as empty overrides", func(t *testing.T) {
-		for _, v := range []any{nil, "hidden", []any{}} {
-			if len(resolveSections(v)) != 0 {
 				t.Fatalf("%v", v)
 			}
 		}

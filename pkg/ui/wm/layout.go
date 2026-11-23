@@ -3,6 +3,7 @@ package wm
 import (
 	"math"
 	"slices"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 )
@@ -270,8 +271,10 @@ func cutOf(b Box) bool {
 
 // Card placed in a workspace with the motion state of its frame
 type entry struct {
-	id       int
-	card     Card
+	id   int
+	card Card
+	// Whoever opened the card, handed to the route with every command the card returns
+	owner    any
 	ws       *Workspace
 	rect     anim.Rect
 	open     anim.Value
@@ -296,6 +299,12 @@ type entry struct {
 	tinted   screen
 	view     string
 	hints    []hintSpan
+	// Sheets the card asked to show inside its frame, the first one showing and the rest waiting behind it
+	sheets []*entry
+	// Card a sheet sits in, nil for any other entry
+	host *entry
+	// When a sheet came into view and when a key last went past it to its card while it held keys back
+	shownAt, lastKey time.Time
 }
 
 // Columns one legend entry covers on the bottom edge, in stage coordinates

@@ -35,7 +35,7 @@ func advisoryIsolatedHome(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(h, "cache"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	seed := fmt.Sprintf("_config_version: %d\nsecurity: {}\n", config.LatestConfigVersion())
+	seed := "security: {}\n"
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(seed), 0o644); err != nil {
 		t.Fatal(err)
 	}

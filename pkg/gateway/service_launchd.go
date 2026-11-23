@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -791,8 +792,30 @@ func tempHomeInServiceDefinition(definition string) string {
 	return ""
 }
 
-// Refuses with guidance when a service definition carries a temp directory home
+// Tail of a binary `go run` built: in its scratch directory, deleted when that command exits, or in the Go build cache, trimmed by Go
+const goRunBinaryTail = `[/\\](?:go-build\d+[/\\]b\d+[/\\]exe|[0-9a-f]{2}[/\\][0-9a-f]{64}-d)[/\\][^\s"'<>/\\]+`
+
+var (
+	goRunBinaryInText = regexp.MustCompile(`[^\s"'<>=]*` + goRunBinaryTail)
+	goRunBinaryPath   = regexp.MustCompile(goRunBinaryTail + `$`)
+)
+
+// Path of this process's executable when `go run` built it, else empty
+func GoRunExecutable() string {
+	exe, err := os.Executable()
+	if err != nil || !goRunBinaryPath.MatchString(exe) {
+		return ""
+	}
+	return exe
+}
+
+// Refuses with guidance when a service definition carries a temp directory home or a binary `go run` built
 func refuseTempHomeServiceWrite(definition, kind string) bool {
+	if binary := goRunBinaryInText.FindString(definition); binary != "" {
+		lifecyclePrintf("✗ Refusing to write the gateway %s: it would run %s, a temporary `go run` build that Go deletes.\n", kind, binary)
+		lifecyclePrintf("  Build or install icebath first (for example: go build -o ~/.local/bin/icebath ./cmd/icebath), then run: icebath gateway install\n")
+		return true
+	}
 	tempHome := tempHomeInServiceDefinition(definition)
 	if tempHome == "" {
 		return false

@@ -514,15 +514,6 @@ func (a *GatewayACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionR
 	if err != nil {
 		return nil, err
 	}
-	descriptor, err := a.rpc(ctx, link, "runtime.describe", nil)
-	if err != nil {
-		return nil, err
-	}
-	sources, _ := dget(asObject(dget(descriptor, "session_create")), "sources").([]any)
-	capabilities, _ := dget(descriptor, "capabilities").([]any)
-	if !containsValue(sources, "acp") || !containsValue(capabilities, "acp-editor-policy-v1") {
-		return nil, &gateway.GatewayClientError{Msg: "acp_policy_unavailable"}
-	}
 	flags := EnvLaunchFlags()
 	params := map[string]any{"request_id": uuidHex(), "source": "acp", "cwd": translateACPCwd(req.Cwd)}
 	editor := pyjson.NewObject()

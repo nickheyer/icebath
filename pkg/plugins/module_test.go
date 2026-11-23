@@ -169,7 +169,7 @@ func TestPluginManagerScopedByHomeAndPublishedHosts(t *testing.T) {
 	}
 }
 
-func TestActiveConfigKeyManifestsAndDisabledPlugins(t *testing.T) {
+func TestDisabledPlugins(t *testing.T) {
 	h := t.TempDir()
 	for name, keys := range map[string]string{"lit": "alpha.key", "dark": "beta.key", "idle": "gamma.key"} {
 		dir := filepath.Join(h, "plugins", name)
@@ -181,15 +181,6 @@ func TestActiveConfigKeyManifestsAndDisabledPlugins(t *testing.T) {
 	}
 	if got := DisabledPlugins(h); !reflect.DeepEqual(got, map[string]bool{"dark": true}) {
 		t.Fatalf("disabled %v", got)
-	}
-	var names []string
-	for _, m := range ActiveConfigKeyManifests(h) {
-		if m.Name == "lit" || m.Name == "dark" || m.Name == "idle" {
-			names = append(names, m.Name)
-		}
-	}
-	if !reflect.DeepEqual(names, []string{"lit"}) {
-		t.Fatalf("active %v", names)
 	}
 }
 

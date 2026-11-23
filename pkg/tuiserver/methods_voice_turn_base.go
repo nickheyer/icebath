@@ -2,10 +2,10 @@ package tuiserver
 
 import (
 	"context"
-	"os"
 	"sync"
+	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -75,17 +75,55 @@ func voiceEmit(ctx context.Context, event string, payload map[string]any) {
 	tuihost.Emit(ctx, event, sid, payload)
 }
 
-// Whether the runtime only voice mode flag is on
-func voiceModeEnabled() bool { return pystr.Strip(os.Getenv("ICEBATH_VOICE")) == "1" }
-
-// Whether the runtime only spoken reply flag is on
-func voiceTTSEnabled() bool { return pystr.Strip(os.Getenv("ICEBATH_VOICE_TTS")) == "1" }
-
-// voice section of the config, empty for any non dict shape
-func voiceCfgDict(ctx context.Context) map[string]any {
-	voice, isDict := loadCfg(ctx)["voice"].(map[string]any)
-	if !isDict {
-		return map[string]any{}
-	}
-	return voice
+// Voice input and spoken reply flags of this process, loaded from the settings and kept current by their changes
+var voiceFlags struct {
+	once          sync.Once
+	input, speaks atomic.Bool
 }
+
+func init() {
+	settings.Subscribe(func(_ context.Context, c settings.Change) {
+		if on, isBool := c.New.Value.(bool); isBool {
+			storeVoiceFlag(c.Key, on)
+		}
+	})
+}
+
+// Loads both voice flags from the settings of the process home
+func loadVoiceFlags() {
+	ctx := context.Background()
+	voiceFlags.input.Store(settings.VoiceInput.Get(ctx))
+	voiceFlags.speaks.Store(settings.SpeakReplies.Get(ctx))
+}
+
+// Process flag of a voice setting, any other key ignored
+func storeVoiceFlag(key string, on bool) {
+	switch key {
+	case settings.VoiceInput.Key:
+		voiceFlags.input.Store(on)
+	case settings.SpeakReplies.Key:
+		voiceFlags.speaks.Store(on)
+	}
+}
+
+// Stores a voice flag in the settings, the process flag following even when the write is refused
+func setVoiceFlag(ctx context.Context, key string, on bool) {
+	voiceFlags.once.Do(loadVoiceFlags)
+	if _, err := settings.Set(context.WithoutCancel(ctx), key, on, settings.Global); err != nil {
+		pkgLog().Warn("voice: keeping " + key + " for this run only: " + err.Error())
+	}
+	storeVoiceFlag(key, on)
+}
+
+// Whether voice input is on
+func voiceModeEnabled() bool {
+	voiceFlags.once.Do(loadVoiceFlags)
+	return voiceFlags.input.Load()
+}
+
+// Whether replies are spoken
+func voiceTTSEnabled() bool {
+	voiceFlags.once.Do(loadVoiceFlags)
+	return voiceFlags.speaks.Load()
+}
+

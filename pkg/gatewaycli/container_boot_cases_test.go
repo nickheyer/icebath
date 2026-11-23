@@ -109,7 +109,7 @@ func TestANamedProfileSlotIsRegisteredButNeverAutostarted(t *testing.T) {
 }
 
 func TestTheRetiredOptOutCannotBootASecondGatewayInTheContainer(t *testing.T) {
-	for _, tc := range []struct{ id, config, env string }{{"config-false", "false", ""}, {"env-false-overrides-config", "true", "false"}} {
+	for _, tc := range []struct{ id, config string }{{"config-false", "false"}} {
 		t.Run(tc.id, func(t *testing.T) {
 			hermeticContainerArgv(t)
 			home := t.TempDir()
@@ -118,11 +118,6 @@ func TestTheRetiredOptOutCannotBootASecondGatewayInTheContainer(t *testing.T) {
 			makeBootProfile(t, home, "coder", "running", "")
 			os.WriteFile(filepath.Join(home, "config.yaml"), []byte("multiplex_profiles: "+tc.config+"\n"), 0o644)
 			t.Setenv("ICEBATH_HOME", home)
-			if tc.env == "" {
-				os.Unsetenv("GATEWAY_MULTIPLEX_PROFILES")
-			} else {
-				t.Setenv("GATEWAY_MULTIPLEX_PROFILES", tc.env)
-			}
 			actions, err := ReconcileProfileGateways(context.Background(), home, scandir, false, nil)
 			if err != nil {
 				t.Fatal(err)

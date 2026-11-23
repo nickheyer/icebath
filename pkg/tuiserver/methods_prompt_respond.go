@@ -9,14 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-var promptRespondRegistry = &handlerRegistry{}
-
-func init() {
-	promptRespondRegistry.method("clarify.lock", clarifyLock)
-	promptRespondRegistry.method("approval.respond", approvalRespond)
-	promptRespondRegistry.install()
-}
-
 // Locks one answer of an open clarify card, expired once the wait already ended
 func clarifyLock(ctx context.Context, rid any, params map[string]any) map[string]any {
 	requestID, questionID := strOr(params["request_id"]), strOr(params["question_id"])

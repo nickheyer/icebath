@@ -118,11 +118,11 @@ var builtinTTSDispatch = map[string]builtinTTSEntry{
 	"mistral":    {nil, "Mistral Voxtral TTS", func() ttsGenerator { return ttsGenerateMistral }, ""},
 	"gemini":     {nil, "Google Gemini TTS", func() ttsGenerator { return ttsGenerateGemini }, ""},
 	"neutts": {func(ctx context.Context) bool { return ttsCheckNeuTTS(ctx) }, "NeuTTS (local)", func() ttsGenerator { return ttsGenerateNeuTTS },
-		"NeuTTS provider selected but neutts is not installed. Start icebath, type /setup tts and choose NeuTTS; espeak-ng is also required."},
+		"NeuTTS provider selected but neutts is not installed. Start icebath, type /setup voice and choose NeuTTS; espeak-ng is also required."},
 	"kittentts": {func(ctx context.Context) bool { return ttsImportable(ctx, ttsImportKittenTTS) }, "KittenTTS (local, ~25MB)", func() ttsGenerator { return ttsGenerateKittenTTS },
-		"KittenTTS provider selected but 'kittentts' package not installed. Start 'icebath', type '/setup tts' and choose KittenTTS."},
+		"KittenTTS provider selected but 'kittentts' package not installed. Start 'icebath', type '/setup voice' and choose KittenTTS."},
 	"piper": {func(context.Context) bool { return ttsSpeechSupported() }, "Piper (local)", func() ttsGenerator { return ttsGeneratePiper },
-		"Piper provider selected but the local speech engine has no build for this platform. Start 'icebath', type '/setup tts' and choose another provider."},
+		"Piper provider selected but the local speech engine has no build for this platform. Start 'icebath', type '/setup voice' and choose another provider."},
 }
 
 // Generator seams resolved at call time so tests can replace each engine

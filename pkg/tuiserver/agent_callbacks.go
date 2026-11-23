@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Prefill message loaders of the CLI config package, assigned by the command wiring from the app package
@@ -16,20 +17,15 @@ var Prefill struct {
 	Load        func(ctx context.Context, filePath, baseDir string) []any
 }
 
-// Agent turn limit, the env override first then agent max_turns then the top level key
-func cfgMaxTurns(cfg map[string]any, fallback int) int {
+// Agent turn limit, the launch flag first then the max turns setting, fallback when neither is set
+func cfgMaxTurns(ctx context.Context, fallback int) int {
 	if envValue := os.Getenv("ICEBATH_TUI_MAX_TURNS"); envValue != "" {
 		return config.ResolveTurnLimit(envValue, fallback)
 	}
-	agentCfg, _ := cfg["agent"].(map[string]any)
-	raw := agentCfg["max_turns"]
-	if raw == nil {
-		raw = cfg["max_turns"]
+	if limit, set := settings.MaxTurns.Lookup(ctx); set {
+		return config.ResolveTurnLimit(limit, fallback)
 	}
-	if raw == nil {
-		return fallback
-	}
-	return config.ResolveTurnLimit(raw, fallback)
+	return fallback
 }
 
 // Skills named in ICEBATH_TUI_SKILLS, comma or newline separated, first occurrence kept

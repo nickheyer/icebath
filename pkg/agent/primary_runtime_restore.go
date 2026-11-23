@@ -19,7 +19,7 @@ type primaryRestoreState struct {
 	codexReopenCheckedAt float64
 }
 
-var agentLoadPool = provider.LoadPool
+var agentLoadPool = provider.LoadSelectedPool
 
 // Earliest instant the pool serves model again, swappable so tests script the reset a pool reports
 var restoreNextAvailableAt = func(pool *provider.Pool, model string) (time.Time, bool) { return pool.NextAvailableAt(model) }

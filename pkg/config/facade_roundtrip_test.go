@@ -271,7 +271,7 @@ func TestP2EveryDocumentedKeyIsSettableAndChangesExactlyOneKey(t *testing.T) {
 				s, want := roundtrip.SetValueFor(def, current, g)
 				out.Reset()
 				errOut.Reset()
-				if err := SetConfigValue(context.Background(), h, key, s, false, testCommandSources()); err != nil {
+				if err := SetConfigValue(context.Background(), h, key, s, testCommandSources()); err != nil {
 					failures = append(failures, fmt.Sprintf("%v: refused: %v %.200s", path, err, strings.TrimSpace(out.String()+errOut.String())))
 					continue
 				}
@@ -304,7 +304,7 @@ func rtP3Ops(t *testing.T) map[string]rtOp {
 	ctx := context.Background()
 	return map[string]rtOp{
 		"cli_set": {func(h string) error {
-			return SetConfigValue(ctx, h, "display.skin", "taro", false, testCommandSources())
+			return SetConfigValue(ctx, h, "display.skin", "taro", testCommandSources())
 		}, [][]string{rtP3Target}},
 		"save_config": {func(h string) error {
 			cfg, err := Load(h, facadeLookup)
@@ -314,21 +314,14 @@ func rtP3Ops(t *testing.T) map[string]rtOp {
 			roundtrip.Set(map[string]any(cfg), rtP3Target, "taro")
 			return SaveConfig(ctx, h, cfg, SaveOptions{})
 		}, [][]string{rtP3Target}},
-		"migrate": {func(h string) error {
-			_, err := MigrateConfig(ctx, h, false, true)
-			return err
-		}, [][]string{{"_config_version"}, {"delegation", "max_iterations"}}},
 	}
 }
 
 func rtP3Case(t *testing.T, seed int64) *roundtrip.Case {
 	t.Helper()
 	c := rtGen(t, seed, roundtrip.GenOptions{NoNullLeaves: true, ExcludeTop: []string{"display", "delegation", "agent"}})
-	text, err := roundtrip.BeforeVersion(c.Text, "display:\n  skin: contrast\n  bell_on_complete: true\ndelegation:\n  max_iterations: 50\n"+
-		"agent:\n  verify_on_stop: false\n")
-	if err != nil {
-		t.Fatal(err)
-	}
+	text := c.Text + "display:\n  skin: contrast\n  bell_on_complete: true\ndelegation:\n  max_iterations: 50\n" +
+		"agent:\n  verify_on_stop: false\n"
 	tree, err := FastSafeLoad([]byte(text))
 	if err != nil {
 		t.Fatal(err)
@@ -359,7 +352,7 @@ func rtP3Check(label, beforeText, afterText string, targets [][]string, outcome 
 		slices.Sort(lost)
 		return fmt.Sprintf("%s (%s): clobbered %d untargeted path(s) %v; lost sections %v", label, outcome, len(stray), stray[:min(5, len(stray))], lost)
 	}
-	if outcome != "ok" && afterText != beforeText && strings.Fields(label)[0] != "migrate" {
+	if outcome != "ok" && afterText != beforeText {
 		return fmt.Sprintf("%s: refused (%s) but still rewrote the file", label, outcome)
 	}
 	return ""
@@ -377,12 +370,9 @@ func rtOutcome(err error) string {
 }
 
 func TestP3ATransientErrorOnAnySingleReadNeverClobbers(t *testing.T) {
-	for _, name := range []string{"cli_set", "save_config", "migrate"} {
+	for _, name := range []string{"cli_set", "save_config"} {
 		t.Run(name, func(t *testing.T) {
 			h, cfg := facadeHome(t, "")
-			if name == "migrate" {
-				registerMigrationFacade(t)
-			}
 			captureFacade(t)
 			op := rtP3Ops(t)[name]
 			c := rtP3Case(t, 700)
@@ -390,9 +380,6 @@ func TestP3ATransientErrorOnAnySingleReadNeverClobbers(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			text := c.Text
-			if name == "migrate" {
-				text = roundtrip.Restamp(text, 35)
-			}
 			rtWrite(t, h, c.Text, false)
 			rtLoad(t, h)
 			faults := installReadFaults(t, cfg)
@@ -427,8 +414,10 @@ func TestP3ATransientErrorOnAnySingleReadNeverClobbers(t *testing.T) {
 // Text cut five bytes into the first double quoted scalar after the header
 func rtTruncateMidScalar(text string) string {
 	nl := 10 + strings.Index(text[10:], "\n")
-	idx := nl + strings.Index(text[nl:], `"`)
-	return text[:idx+5]
+	if q := strings.Index(text[nl:], `"`); q >= 0 {
+		return text[:nl+q+1]
+	}
+	return text[:nl] + "\ncut: \"unterminated"
 }
 
 func TestP3UnreadableOrPartialFileIsNeverRewritten(t *testing.T) {
@@ -437,13 +426,10 @@ func TestP3UnreadableOrPartialFileIsNeverRewritten(t *testing.T) {
 		"truncated_mid_write": rtTruncateMidScalar,
 		"unreadable":          nil,
 	}
-	for _, name := range []string{"cli_set", "save_config", "migrate"} {
+	for _, name := range []string{"cli_set", "save_config"} {
 		for _, fault := range []string{"non_mapping_root", "truncated_mid_write", "unreadable"} {
 			t.Run(name+"/"+fault, func(t *testing.T) {
 				h, cfg := facadeHome(t, "")
-				if name == "migrate" {
-					registerMigrationFacade(t)
-				}
 				captureFacade(t)
 				c := rtGen(t, 710, roundtrip.GenOptions{NoNullLeaves: true, ExcludeTop: []string{"display"}})
 				for k, v := range c.Env {
@@ -548,10 +534,7 @@ func rtP6Setup(t *testing.T, h, section string) (string, map[string]any, int) {
 	t.Helper()
 	idx := slices.Index(rtSchema().TopLevel, section)
 	c := rtGen(t, int64(1000+idx), roundtrip.GenOptions{NSections: [2]int{3, 5}, NoNullLeaves: true, ExcludeTop: []string{section, "display", "agent"}})
-	text, err := roundtrip.BeforeVersion(c.Text, section+": null\n")
-	if err != nil {
-		t.Fatal(err)
-	}
+	text := c.Text + section + ": null\n"
 	for k, v := range c.Env {
 		t.Setenv(k, v)
 	}
@@ -613,7 +596,7 @@ func TestP6NullSectionSurvivesTheFacadeSurfaces(t *testing.T) {
 				t.Fatal(err)
 			}
 			rtWrite(t, h, text, false)
-			if err := SetConfigValue(context.Background(), h, "terminal.timeout", "4242", false, testCommandSources()); err != nil {
+			if err := SetConfigValue(context.Background(), h, "terminal.timeout", "4242", testCommandSources()); err != nil {
 				t.Fatalf("[%s] cli_set: %v", ctx, err)
 			}
 			_, got := rtParse(t, cfg)
@@ -630,68 +613,8 @@ func TestP6NullSectionSurvivesTheFacadeSurfaces(t *testing.T) {
 	}
 }
 
-func TestP6AllSectionsNullAtOnceThroughTheEffectiveLoaderAndMigration(t *testing.T) {
-	h, cfg := facadeHome(t, "")
-	registerMigrationFacade(t)
-	captureFacade(t)
-	s := rtSchema()
-	var b strings.Builder
-	b.WriteString("# every section null\n")
-	for _, k := range s.TopLevel {
-		b.WriteString(k + ": null\n")
-	}
-	fmt.Fprintf(&b, "_config_version: %d\n", s.Latest-1)
-	rtWrite(t, h, b.String(), false)
-	if _, err := LoadUserEffective(cfg, facadeLookup); err != nil {
-		t.Fatal(err)
-	}
-	effective := rtLoad(t, h)
-	for _, k := range s.TopLevel {
-		if _, isMap := s.Defaults[k].(map[string]any); isMap {
-			if _, ok := effective[k].(map[string]any); !ok {
-				t.Fatalf("load_config()[%q] = %#v", k, effective[k])
-			}
-		}
-	}
-	if _, err := MigrateConfig(context.Background(), h, false, true); err != nil {
-		t.Fatal(err)
-	}
-	after, got := rtParse(t, cfg)
-	if v := roundtrip.Get(got, []string{"_config_version"}); !roundtrip.Equal(v, s.Latest) {
-		t.Fatalf("stamp %#v:\n%s", v, after)
-	}
-	if !strings.Contains(after, "# every section null") {
-		t.Fatalf("comment dropped:\n%s", after)
-	}
-	if err := roundtrip.NoDuplicateTopLevel(after, "all-null migrate"); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestP5MigrationIsIdempotentAndKeepsUserValuesThroughTheLadderDoubles(t *testing.T) {
-	for _, version := range roundtrip.MigrationStarts(MigrationVersions(), SupportFloorVersion) {
-		name, seed := roundtrip.MigrationStartName(version)
-		t.Run(name, func(t *testing.T) {
-			h, cfg := facadeHome(t, "")
-			registerMigrationFacade(t)
-			captureFacade(t)
-			envPath := filepath.Join(h, ".env")
-			read := func(path string) func() (string, error) {
-				return func() (string, error) { data, err := os.ReadFile(path); return string(data), err }
-			}
-			m := roundtrip.MigrationHome{
-				WriteConfig: func(text string) error { rtWrite(t, h, text, false); return nil },
-				WriteEnv:    func(text string) error { return os.WriteFile(envPath, []byte(text), 0o600) },
-				Migrate: func() error {
-					ResetCache()
-					_, err := MigrateConfig(context.Background(), h, false, true)
-					return err
-				},
-				ReadConfig: read(cfg), ReadEnv: read(envPath), Load: FastSafeLoad,
-			}
-			if err := roundtrip.MigrationProperty(m, version, seed, rtSchema().Latest); err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
+// Text of a file, empty when it cannot be read
+func readText(path string) string {
+	data, _ := os.ReadFile(path)
+	return string(data)
 }

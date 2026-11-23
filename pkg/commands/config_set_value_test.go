@@ -59,7 +59,7 @@ func (c *configHome) isolateEnv(names ...string) {
 }
 
 func (c *configHome) set(key, value string, force bool) error {
-	return config.SetConfigValue(context.Background(), c.h, key, value, force, configCommandSources(c.h))
+	return config.SetConfigValue(context.Background(), c.h, key, value, configCommandSources(c.h))
 }
 
 func (c *configHome) mustSet(key, value string, force bool) {
@@ -389,7 +389,7 @@ func TestListNavigation(t *testing.T) {
 
 func TestStringTypedConfigValues(t *testing.T) {
 	t.Run("test_string_typed_values_are_not_coerced", func(t *testing.T) {
-		for _, value := range []string{"off", "true", "01"} {
+		for _, value := range []string{"off", "smart", "manual"} {
 			c := newConfigHome(t)
 			c.mustSet("approvals.mode", value, false)
 			if got, isStr := c.at("approvals", "mode").(string); !isStr || got != value {
@@ -811,7 +811,7 @@ func TestContainerTypeRefusal(t *testing.T) {
 		}
 	})
 	t.Run("test_unseeded_or_top_level_container_key_is_refused_without_on_disk_value", func(t *testing.T) {
-		for _, key := range []string{"model.aliases", "providers", "toolsets"} {
+		for _, key := range []string{"model.aliases", "providers"} {
 			c := newConfigHome(t)
 			c.writeDoc(map[string]any{"model": map[string]any{"default": "m"}})
 			if err := c.set(key, "notacontainer", false); exitStatus(err) != 1 {

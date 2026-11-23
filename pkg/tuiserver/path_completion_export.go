@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
@@ -17,7 +18,7 @@ func PathCompletionItems(ctx context.Context, word, root, sessionKey string, loc
 				return nil, err
 			}
 			root = cwd
-		} else if root = strings.TrimSpace(workdirTerminalCfg(ctx, "cwd")); root == "" || cwdPlaceholders[root] {
+		} else if root = strings.TrimSpace(settings.WorkingFolder.Get(ctx)); root == "" || cwdPlaceholders[root] {
 			root = "~"
 		}
 	}

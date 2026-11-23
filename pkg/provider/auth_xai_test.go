@@ -45,7 +45,7 @@ func TestXAIReadTokensUsesCredentialPoolWhenProviderTokensEmpty(t *testing.T) {
 
 func TestXAIReadTokensMissingIsRelogin(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	_, err := readXAIOAuthTokens(testEnv(t, h), true)
 	var ae *AuthError
 	if !errors.As(err, &ae) || ae.Code != "xai_auth_missing" || !ae.ReloginRequired {
@@ -55,7 +55,7 @@ func TestXAIReadTokensMissingIsRelogin(t *testing.T) {
 
 func TestXAIWriteThroughIsNoopInClassicMode(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	if err := saveXAIOAuthTokens(testEnv(t, h), map[string]any{"access_token": "a", "refresh_token": "r"}, xaiSaveOptions{SetActive: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -67,8 +67,8 @@ func TestXAIWriteThroughIsNoopInClassicMode(t *testing.T) {
 
 func TestXAIRootResolvedGrantWritesBackToRootOnly(t *testing.T) {
 	profile, root, env := profileEnvForTest(t, "work")
-	writeAuthStore(t, profile, map[string]any{"version": 1, "providers": map[string]any{}})
-	writeAuthStore(t, root, map[string]any{"version": 1, "providers": map[string]any{"xai-oauth": map[string]any{
+	writeAuthStore(t, profile, map[string]any{"version": 2, "providers": map[string]any{}})
+	writeAuthStore(t, root, map[string]any{"version": 2, "providers": map[string]any{"xai-oauth": map[string]any{
 		"tokens": map[string]any{"access_token": "old", "refresh_token": "old-r"}}}})
 	if err := saveXAIOAuthTokens(env, map[string]any{"access_token": "new", "refresh_token": "new-r"}, xaiSaveOptions{}); err != nil {
 		t.Fatal(err)
@@ -148,7 +148,7 @@ func TestXAIResolveRefreshesExpiringGrantAndQuarantinesDeadOne(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
 	expiring := jwtWithClaims(map[string]any{"exp": time.Now().Unix() + 60})
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"xai-oauth": map[string]any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"xai-oauth": map[string]any{
 		"tokens": map[string]any{"access_token": expiring, "refresh_token": "r0"}, "auth_mode": "oauth_pkce",
 		"discovery": map[string]any{"token_endpoint": "https://auth.x.ai/oauth2/token"}}}})
 	status, body := 200, `{"access_token":"fresh","refresh_token":"r1"}`
@@ -231,7 +231,7 @@ func TestResolveXAIOAuthRuntimeCredentialsExportedReadsStore(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
 	token := jwtWithClaims(map[string]any{"exp": time.Now().Unix() + 3600})
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"xai-oauth": map[string]any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"xai-oauth": map[string]any{
 		"tokens": map[string]any{"access_token": token, "refresh_token": "r0"}, "auth_mode": "oauth_pkce"}}})
 	creds, err := ResolveXAIOAuthRuntimeCredentials(env, false, false, 0)
 	if err != nil || creds["api_key"] != token || creds["base_url"] != DefaultXAIOAuthBaseURL {

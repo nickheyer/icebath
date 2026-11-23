@@ -8,8 +8,6 @@ import (
 	"os/signal"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -48,16 +46,9 @@ type ConfigFns struct {
 
 // The module as the platform wizards see it, every call on the home in ctx
 var WizardConfig = ConfigFns{
-	GetEnvValue: func(ctx context.Context, key string) (string, error) {
-		v, _, err := config.GetEnvValue(ctx, home.Dir(ctx), key)
-		return v, err
-	},
-	SaveEnvValue: func(ctx context.Context, key, value string) error {
-		return config.SaveEnvValueContext(ctx, home.Dir(ctx), key, value)
-	},
-	RemoveEnvValue: func(ctx context.Context, key string) (bool, error) {
-		return config.RemoveHomeEnvValue(ctx, home.Dir(ctx), key)
-	},
+	GetEnvValue:    setupValue,
+	SaveEnvValue:   saveSetupValue,
+	RemoveEnvValue: removeSetupValue,
 }
 
 // Prints a line on the setup console like a bare print in a platform wizard

@@ -27,7 +27,6 @@ func smokeEvent(text, user, ts, threadTS, botID string) map[string]any {
 
 // Adapter of the documented peer agent profile after its preflight checks pass
 func smokeAdapter(t *testing.T) (*SlackAdapter, *fakeSlackAPI, *capturedEvents) {
-	cleanMentionEnv(t)
 	a, f, captured := newHarnessAdapter(t, map[string]any{"require_mention": true, "strict_mention": true, "allow_bots": "mentions", "allowed_channels": ""})
 	bot := smokeBotUserID
 	a.botUserID = &bot

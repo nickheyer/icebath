@@ -83,6 +83,8 @@ func (a *app) openRoom(r roomInfo, self string) tea.Cmd {
 	c.composer.Literal = true
 	c.composer.SessionID = roomSessionPrefix + r.ID
 	c.composer.Hint = tr(txt.RoomComposerHint)
+	c.composer.History = a.inputs
+	c.composer.Apply = a.applyOffer
 	return a.wm.OpenHere(c)
 }
 
@@ -113,12 +115,12 @@ func (c *roomCard) Selectable() bool    { return true }
 func (c *roomCard) MinSize() (int, int) { return 40, 10 }
 func (c *roomCard) Init() tea.Cmd       { return c.read() }
 
-// Room keys first, then the composer and transcript keys of a session window
+// The completion popup while it takes keys, then the room keys, then the prompt and transcript keys of a session window and the field keys
 func (c *roomCard) Contexts() []string {
 	if c.composer.Completing() {
-		return []string{roomContext, keys.Complete, keys.Session}
+		return []string{keys.Complete, roomContext, keys.Session, keys.Text}
 	}
-	return []string{roomContext, keys.Session}
+	return []string{roomContext, keys.Session, keys.Text}
 }
 
 func (c *roomCard) Hints() []wm.Hint {
@@ -397,9 +399,9 @@ func (c *roomCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 	case wm.FocusMsg:
 		return c, c.composer.SetFocus(m.Focused)
 	case wm.ActionMsg:
-		return c, c.action(m.ID)
+		return c, tea.Batch(c.action(m.ID), c.app.syncCompletion())
 	case tea.KeyPressMsg, tea.PasteMsg:
-		return c, c.composer.Update(m)
+		return c, tea.Batch(c.composer.Update(m), c.app.syncCompletion())
 	case tea.MouseWheelMsg:
 		switch m.Button {
 		case tea.MouseWheelUp:
@@ -448,8 +450,10 @@ func (c *roomCard) action(id string) tea.Cmd {
 		c.scroll++
 	case "tui.scroll.line.down":
 		c.scroll--
+	case "complete.start":
+		return c.app.tabComplete(c.composer)
 	default:
-		if strings.HasPrefix(id, "composer.") || strings.HasPrefix(id, "complete.") {
+		if strings.HasPrefix(id, "composer.") || strings.HasPrefix(id, "complete.") || strings.HasPrefix(id, "text.") {
 			return c.composer.Action(id)
 		}
 	}

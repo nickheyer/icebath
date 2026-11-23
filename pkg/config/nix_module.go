@@ -20,9 +20,6 @@ func NixRenderSettings(settingsJSON string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("the Nix settings are %s, expected a mapping", errchain.Kind(v))
 	}
-	if _, has := obj.Get("_config_version"); !has {
-		obj.Set("_config_version", Defaults()["_config_version"])
-	}
 	return pyjson.Dumps(obj)
 }
 

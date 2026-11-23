@@ -1538,6 +1538,20 @@ func (r *resolver) resolveFromPool(provider, requestedProvider string, modelCfg 
 	return r.runtimeFromPoolEntry(provider, cred, requestedProvider, modelCfg, targetModel)
 }
 
+// Refusal of a provider whose selected login or rotation set serves nothing, so the ladder never falls over to another account
+func (r *resolver) selectedLoginUnavailable(provider, requestedProvider string, modelCfg map[string]any, explicitAPIKey, explicitBaseURL, targetModel string) *AuthError {
+	if provider == "openrouter" && !r.openrouterShouldUsePool(requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL) {
+		return nil
+	}
+	src, ok := r.creds.(interface {
+		LoginUnavailable(provider, model string) *AuthError
+	})
+	if !ok {
+		return nil
+	}
+	return src.LoginUnavailable(provider, targetModel)
+}
+
 // ---- explicit --api-key / --base-url path ----
 
 func (r *resolver) explicitAnthropic(requestedProvider string, modelCfg map[string]any, apiKey, baseURL, targetModel string) (*Runtime, error) {
@@ -2056,6 +2070,9 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 	}
 	if rt := r.resolveFromPool(provider, requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel); rt != nil {
 		return rt, nil
+	}
+	if err := r.selectedLoginUnavailable(provider, requestedProvider, modelCfg, explicitAPIKey, explicitBaseURL, targetModel); err != nil {
+		return nil, err
 	}
 	var swallowed *AuthError
 	if spec, ok := oauthRuntimeProviders[provider]; ok {

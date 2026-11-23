@@ -9,12 +9,14 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -52,18 +54,12 @@ func waitAgent(ctx context.Context, session *tuihost.Session, rid any, timeout f
 	return nil
 }
 
-// Seconds a submitted prompt waits for the deferred build, agent build_wait_timeout overriding 600
-func agentBuildWaitCap(ctx context.Context) (limit float64) {
-	limit = agentBuildDefaultWaitCapSe
-	suppress(func() {
-		agentCfg, _ := loadCfg(ctx)["agent"].(map[string]any)
-		if raw := agentCfg["build_wait_timeout"]; raw != nil {
-			if value, ok := pyFloatOf(raw); ok && value > 0 {
-				limit = value
-			}
-		}
-	})
-	return limit
+// Seconds a submitted prompt waits for the deferred build
+func agentBuildWaitCap(ctx context.Context) float64 {
+	if limit := settings.AgentBuildWaitTimeout.Get(ctx).Seconds(); limit > 0 {
+		return limit
+	}
+	return agentBuildDefaultWaitCapSe
 }
 
 // float() of a config value, false when it does not parse
@@ -450,6 +446,7 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 	if sessionKey == "" {
 		sessionKey = key
 	}
+	ctx = withSessionLogin(ctx, sid, o.sessionDB)
 	if synthetic := maybeBuildSyntheticAgent(sessionKey, o.modelOverride); synthetic != nil {
 		return synthetic, nil
 	}
@@ -500,14 +497,14 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 		}
 	}
 	opts := agent.AIAgentOptions{
-		Model: model, MaxIterations: new(cfgMaxTurns(cfg, 500)), Provider: rt.Provider, RequestedProvider: rt.RequestedProvider,
+		Model: model, MaxIterations: new(cfgMaxTurns(ctx, config.TurnLimitUnlimited)), Provider: rt.Provider, RequestedProvider: rt.RequestedProvider,
 		BaseURL: rt.BaseURL, APIKey: rt.APIKey, APIMode: string(rt.APIMode), ACPCommand: rt.Command, ACPArgs: rt.Args,
 		CredentialPool: rt.CredentialPool, Runtime: rt, QuietMode: true, VerboseLogging: false, ReasoningConfig: reasoning,
 		ServiceTier: tier, EnabledToolsets: loadEnabledToolsets(ctx, platform),
 		DisabledToolsets: loadDisabledToolsets(ctx), ProvidersAllowed: routing["only"], ProvidersIgnored: routing["ignore"],
 		ProvidersOrder: routing["order"], ProviderSort: routing["sort"], ProviderRequireParameters: truthy(routing["require_parameters"]),
 		ProviderDataCollection: routing["data_collection"], Platform: platform, SessionID: sessionKey, Cwd: o.cwdOverride,
-		UserID: userID, SessionDB: db, EphemeralSystemPrompt: systemPrompt, CheckpointsEnabled: resolveCheckpointsEnabled(cfg),
+		UserID: userID, SessionDB: db, EphemeralSystemPrompt: systemPrompt, CheckpointsEnabled: resolveCheckpointsEnabled(ctx),
 		PassSessionID: provider.IsTruthyValue(os.Getenv("ICEBATH_TUI_PASS_SESSION_ID")), SkipContextFiles: ignoreRules,
 		SkipMemory: ignoreRules, FallbackModel: loadFallbackModel(ctx), RequestOverrides: rt.RequestOverrides,
 		PrefillMessages: loadPrefillMessages(ctx)}
@@ -519,6 +516,7 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 	if err != nil {
 		return nil, err
 	}
+	wireLoginExhausted(ctx, sid, a)
 	if fallbackNotice != "" {
 		a.SetPendingFallbackNotice([]string{fallbackNotice})
 	}
@@ -560,13 +558,15 @@ func initSession(ctx context.Context, sid, key string, built any, history []any,
 			"history_version": int64(0), "inflight_turn": nil, "created_at": now, "last_active": now,
 			"running": false, "attached_images": []any{}, "image_counter": 0, "cwd": cwd,
 			"explicit_cwd": explicitCwd, "cols": cols,
-			"show_reasoning": loadShowReasoning(ctx), "source": resolveSessionSource(source),
-			"tool_progress_mode": loadToolProgressMode(ctx), "edit_snapshots": map[string]any{}, "tool_started_at": map[string]any{},
+			"source": resolveSessionSource(source), "edit_snapshots": map[string]any{}, "tool_started_at": map[string]any{},
 			"profile_home": profile, "model_override": nil, "transport": transport, "auth_user_id": authUserID})
 		tuihost.SetSessionRecord(sid, record)
 		sessionTodoState(record)
 	}()
 	hydrateSessionCwd(ctx, sid, key, sessionDB, profileHome)
+	if err := applyLaunchToolProgress(ctx, sid); err != nil {
+		pkgLog().Warn("launch tool progress not applied", "session", sid, "err", err)
+	}
 	registerSessionCwd(ctx, tuihost.SessionRecord(sid))
 	wireSessionAgent(ctx, sid, key, built)
 	current := tuihost.SessionRecord(sid)

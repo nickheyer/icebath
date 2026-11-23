@@ -18,20 +18,21 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Logs the enforced per turn iteration budget the bridged env slot resolves to
-func logAgentBudget() {
+// Logs the enforced per turn iteration budget of the profile in ctx
+func logAgentBudget(ctx context.Context) {
 	var raw any
-	if v, ok := os.LookupEnv("ICEBATH_MAX_ITERATIONS"); ok {
-		raw = v
+	if n, set := settings.MaxTurns.Lookup(ctx); set {
+		raw = n
 	}
 	limit := config.ResolveTurnLimit(raw, config.TurnLimitUnlimited)
 	shown := any(limit)
 	if limit == config.TurnLimitUnlimited {
 		shown = "unlimited"
 	}
-	pkgLog().Info(fmt.Sprintf("Agent budget: max_iterations=%v (agent.max_turns from config.yaml, else the ICEBATH_MAX_ITERATIONS bridge)", shown))
+	pkgLog().Info(fmt.Sprintf("Agent budget: max_iterations=%v", shown))
 }
 
 // Parks the last platform after a non retryable failure so the gateway stays up degraded, false when it must stop

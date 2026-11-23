@@ -20,8 +20,3 @@ type APIAgentRuntimeResolver interface {
 // Resolver the gateway runner package installs at init
 var APIAgentRuntime APIAgentRuntimeResolver
 
-// Default size and idle bounds of the gateway agent cache, the run module constants
-const (
-	AgentCacheMaxSize     = 128
-	AgentCacheIdleTTLSecs = 3600.0
-)

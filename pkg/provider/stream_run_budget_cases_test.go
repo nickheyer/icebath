@@ -19,7 +19,7 @@ func streamBudgetHome(t *testing.T, configBody string) {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
-	for _, name := range []string{"ICEBATH_API_CALL_STALE_TIMEOUT", StreamStaleTimeoutEnv, LocalStreamStaleTimeoutEnv} {
+	for _, name := range []string{"ICEBATH_API_CALL_STALE_TIMEOUT"} {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
@@ -46,7 +46,7 @@ func TestRunBudgetStreamStaleTimeout(t *testing.T) {
 		}{{"", "", 60.0}, {"providers:\n  openai:\n    stale_timeout_seconds: 1200\n", "", 1200.0}, {"", "900", 900.0}} {
 			streamBudgetHome(t, tc.configBody)
 			if tc.envValue != "" {
-				t.Setenv(StreamStaleTimeoutEnv, tc.envValue)
+				setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": tc.envValue})
 			}
 			agent := &budgetChatAgent{fakeChatAgent: &fakeChatAgent{provider: "openai", apiMode: "chat_completions", baseURL: "https://api.openai.com/v1",
 				model: "deepseek/deepseek-v4-pro"}, budget: 900, started: now() - 800}

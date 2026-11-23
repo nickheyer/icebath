@@ -40,7 +40,7 @@ func (o *anthEventsOverride) Events(resp *http.Response) anthEventSource { retur
 func scriptedAnthropicClient(t *testing.T, open func(resp *http.Response) anthEventSource) *anthropicClient {
 	t.Helper()
 	t.Setenv(home.EnvHome, t.TempDir())
-	t.Setenv(StreamStaleTimeoutEnv, "0.3")
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 	srv := newAnthServer(t, func(w http.ResponseWriter, body map[string]any) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(200)
@@ -159,7 +159,7 @@ type abandonHarness struct {
 func newAbandonHarness(t *testing.T, open func() (anthMessageStream, error)) *abandonHarness {
 	t.Helper()
 	t.Setenv(home.EnvHome, t.TempDir())
-	t.Setenv(StreamStaleTimeoutEnv, "0.3")
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 	t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "5")
 	client := &scriptedMessagesClient{open: open}
 	agent := &fakeChatAgent{provider: "custom", apiMode: "anthropic_messages", baseURL: "https://example.com/v1", model: "claude-opus-4-7", plat: "cli",
@@ -391,7 +391,7 @@ func TestWedgedWorkerUnderTheLifetimeCapIsAbandonedOnce(t *testing.T) {
 			release := make(chan struct{})
 			defer close(release)
 			h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
-			t.Setenv(StreamStaleTimeoutEnv, tc.stale)
+			setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": tc.stale})
 			if err := os.WriteFile(home.ConfigPath(os.Getenv(home.EnvHome)), []byte("agent:\n  stream_max_lifetime: "+tc.cap+"\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -444,7 +444,7 @@ func silentStreamServer(t *testing.T) *httptest.Server {
 func TestWatchdogKillWithALiveRequestContextIsNeverAnInterrupt(t *testing.T) {
 	t.Run("chat_completions", func(t *testing.T) {
 		t.Setenv(home.EnvHome, t.TempDir())
-		t.Setenv(StreamStaleTimeoutEnv, "0.3")
+		setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 		srv := silentStreamServer(t)
 		c := newTestClient(t, Route{Provider: "custom", Model: "m", BaseURL: srv.URL + "/v1", APIKey: "k", Mode: ModeChatCompletions})
 		_, err := c.Stream(context.Background(), userRequest("hi"), func(StreamEvent) error { return nil })
@@ -462,7 +462,7 @@ func TestWatchdogKillWithALiveRequestContextIsNeverAnInterrupt(t *testing.T) {
 	})
 	t.Run("gemini_native", func(t *testing.T) {
 		t.Setenv(home.EnvHome, t.TempDir())
-		t.Setenv(StreamStaleTimeoutEnv, "0.3")
+		setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
 		srv := silentStreamServer(t)
 		c, err := NewClient(Route{Provider: "gemini", Model: "gemini-3.7-flash", BaseURL: srv.URL + "/v1beta", APIKey: "k", Mode: ModeGeminiNative})
 		if err != nil {

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -23,29 +23,13 @@ var (
 	moaCostFields  = []string{"cost_usd", "cost_status", "cost_source"}
 )
 
-// Reads the moa config section per call, swapped by tests
-var loadMoAConfig = func(ctx context.Context) (map[string]any, error) {
-	cfg, err := config.Load(home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return nil, err
-	}
-	switch section := cfg["moa"].(type) {
-	case map[string]any:
-		return section, nil
-	case config.Tree:
-		return map[string]any(section), nil
-	}
-	return map[string]any{}, nil
-}
-
 // Trace directory when moa.save_traces is on, moa.trace_dir overriding the home default
 func moaTracesEnabledAndDir(ctx context.Context) (string, bool) {
-	moaCfg, err := loadMoAConfig(ctx)
-	if err != nil || !pyrepr.Truthy(moaCfg["save_traces"]) {
+	if !settings.MoaSaveTraces.Get(ctx) {
 		return "", false
 	}
-	if override := moaCfg["trace_dir"]; pyrepr.Truthy(override) {
-		return pypath.Expandvars(pypath.Expanduser(pyrepr.Str(override))), true
+	if override := settings.MoaTraceDir.Get(ctx); override != "" {
+		return pypath.Expandvars(pypath.Expanduser(override)), true
 	}
 	return filepath.Join(home.Dir(ctx), "moa-traces"), true
 }

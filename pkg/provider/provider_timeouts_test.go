@@ -10,7 +10,7 @@ import (
 func TestExplicitProviderStaleTimeoutWinsOverContextTierAndReasoningFloor(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
-	unsetEnvForTest(t, StreamStaleTimeoutEnv)
+	unsetEnvForTest(t)
 	kwargs := map[string]any{"model": "gpt-5.6-sol", "messages": []any{map[string]any{"role": "user", "content": strings.Repeat("word ", 60000)}}}
 	writeConfigYAML(t, h, "providers:\n  custom:\n    stale_timeout_seconds: 60\n")
 	if got := cloudStaleTimeoutFor(context.Background(), "custom", "gpt-5.6-sol", kwargs); got != 60 {

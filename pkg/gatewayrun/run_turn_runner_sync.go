@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -184,6 +185,7 @@ func (t *TurnRunner) resolveTurnEffort(ctx context.Context, policy *gateway.Loca
 // Executor thread body of the turn, the gateway result of one agent run
 func (t *TurnRunner) runSyncScoped(ctx context.Context) (map[string]any, error) {
 	tc, runner := t.ctx, t.runner
+	ctx = t.sessionScope(ctx)
 	policy, err := gateway.LocalPolicyForSource(ctx, runner, tc.source)
 	if err != nil {
 		return nil, err
@@ -213,6 +215,7 @@ func (t *TurnRunner) runSyncScoped(ctx context.Context) (map[string]any, error) 
 	model, runtimeKwargs, pendingFallbackNotice, err := t.resolveTurnRuntime(ctx, policy)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Model resolution failed for session %s: %s", tc.sessionKey, err), "exc_info", err)
+		t.noteResolutionLoginExhausted(ctx, err)
 		text, reason, retryable := resolutionFailureReply(ctx, err, tc.source.Platform)
 		return agent.StampFailure(map[string]any{"final_response": text, "messages": []any{}, "api_calls": 0, "tools": []any{},
 			"failed": true, "completed": false, "error": err.Error()}, reason, retryable), nil
@@ -242,6 +245,7 @@ func (t *TurnRunner) runSyncScoped(ctx context.Context) (map[string]any, error) 
 	if pendingFallbackNotice != "" {
 		a.SetPendingFallbackNotice([]string{pendingFallbackNotice})
 	}
+	a.SetLoginExhaustedSink(func(_ context.Context, ev provider.LoginExhaustedEvent) { t.publishLoginExhausted(ev) })
 	if err := t.wireTurnAgentCallbacks(ctx, a, route, reasoningConfig, streams); err != nil {
 		return nil, err
 	}

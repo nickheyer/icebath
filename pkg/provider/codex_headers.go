@@ -126,3 +126,14 @@ func requiredLower(h map[string]string) map[string]struct{} {
 	}
 	return out
 }
+
+// ChatGPT account id the claims of a Codex access token name, empty when none
+func codexTokenAccountID(accessToken string) string {
+	parts := strings.Split(accessToken, ".")
+	if len(parts) < 2 {
+		return ""
+	}
+	auth, _ := DecodeJWTClaims(parts[0] + "." + parts[1] + ".x")["https://api.openai.com/auth"].(map[string]any)
+	account, _ := auth["chatgpt_account_id"].(string)
+	return strings.TrimSpace(account)
+}

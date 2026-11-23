@@ -13,79 +13,37 @@ func unsetTUICheckpoints(t *testing.T) {
 	}
 }
 
-func TestLoadCheckpointsEnabledDefaultsToFalseWhenNoConfigSection(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if loadCheckpointsEnabled(map[string]any{}) {
+func TestResolveCheckpointsEnabledDefaultsToFalse(t *testing.T) {
+	unsetTUICheckpoints(t)
+	if resolveCheckpointsEnabled(turnLimitHome(t, "model: {}\n")) {
 		t.Fatal("no checkpoints section must fall back to the disabled default")
 	}
 }
 
-func TestLoadCheckpointsEnabledHonorsConfigEnabledTrue(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if !loadCheckpointsEnabled(map[string]any{"checkpoints": map[string]any{"enabled": true}}) {
-		t.Fatal("checkpoints enabled true must enable")
-	}
-}
-
-func TestLoadCheckpointsEnabledHonorsConfigEnabledFalse(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if loadCheckpointsEnabled(map[string]any{"checkpoints": map[string]any{"enabled": false}}) {
-		t.Fatal("checkpoints enabled false must disable")
-	}
-}
-
-func TestLoadCheckpointsEnabledLegacyBoolForm(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if !loadCheckpointsEnabled(map[string]any{"checkpoints": true}) {
-		t.Fatal("legacy checkpoints true must enable")
-	}
-	if loadCheckpointsEnabled(map[string]any{"checkpoints": false}) {
-		t.Fatal("legacy checkpoints false must disable")
-	}
-}
-
-func TestLoadCheckpointsEnabledMalformedSectionFallsBackToDefault(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if loadCheckpointsEnabled(map[string]any{"checkpoints": "enabled"}) {
-		t.Fatal("a malformed section must fall back to the disabled default")
-	}
-}
-
-func TestLoadCheckpointsEnabledNoneCfgFallsBack(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if loadCheckpointsEnabled(nil) {
-		t.Fatal("a nil config must fall back to the disabled default")
-	}
-}
-
 func TestResolveCheckpointsEnabledConfigEnabledUsedWhenEnvUnset(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
 	unsetTUICheckpoints(t)
-	if !resolveCheckpointsEnabled(map[string]any{"checkpoints": map[string]any{"enabled": true}}) {
+	if !resolveCheckpointsEnabled(turnLimitHome(t, "checkpoints:\n  enabled: true\n")) {
 		t.Fatal("config enabled must win without the env opt in")
 	}
 }
 
 func TestResolveCheckpointsEnabledConfigDisabledUsedWhenEnvUnset(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
 	unsetTUICheckpoints(t)
-	if resolveCheckpointsEnabled(map[string]any{"checkpoints": map[string]any{"enabled": false}}) {
+	if resolveCheckpointsEnabled(turnLimitHome(t, "checkpoints:\n  enabled: false\n")) {
 		t.Fatal("config disabled must win without the env opt in")
 	}
 }
 
 func TestResolveCheckpointsEnabledEnvVarOverridesConfig(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Setenv("ICEBATH_TUI_CHECKPOINTS", "1")
-	if !resolveCheckpointsEnabled(map[string]any{"checkpoints": map[string]any{"enabled": false}}) {
+	if !resolveCheckpointsEnabled(turnLimitHome(t, "checkpoints:\n  enabled: false\n")) {
 		t.Fatal("the env opt in must win over config")
 	}
 }
 
 func TestResolveCheckpointsEnabledEnvVarFalseOverridesConfigTrue(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Setenv("ICEBATH_TUI_CHECKPOINTS", "0")
-	if resolveCheckpointsEnabled(map[string]any{"checkpoints": map[string]any{"enabled": true}}) {
+	if resolveCheckpointsEnabled(turnLimitHome(t, "checkpoints:\n  enabled: true\n")) {
 		t.Fatal("an env opt out must win over config")
 	}
 }

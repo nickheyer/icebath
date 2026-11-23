@@ -141,7 +141,7 @@ func sendCronStoreNotice(ctx context.Context, r *GatewayRunner, event string, re
 		if _, err := config.PresentNotification(scoped, func(c context.Context) error {
 			r.sendHomeChannelMessage(c, t.platform, t.home, t.transport, message, "Cron store notice failed for %s:%s: %s")
 			return nil
-		}, string(t.platform), true, nil); err != nil {
+		}, string(t.platform), true); err != nil {
 			return err
 		}
 	}

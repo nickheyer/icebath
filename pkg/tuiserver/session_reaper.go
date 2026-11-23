@@ -12,41 +12,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Seconds of a sessions orphan knob, the env override winning when set and the default on a bad value
-func wsOrphanSetting(ctx context.Context, envVar, cfgKey string, def float64) float64 {
-	var raw any
-	if value, set := os.LookupEnv(envVar); set && strings.TrimSpace(value) != "" {
-		raw = value
-	} else {
-		func() {
-			defer func() { _ = recover() }()
-			cfg, err := loadConfig(ctx)
-			if err != nil {
-				return
-			}
-			if sessions, isDict := cfg["sessions"].(map[string]any); isDict {
-				raw = sessions[cfgKey]
-			}
-		}()
-	}
-	if raw == nil {
-		return math.Max(0, def)
-	}
-	value, err := pyint.Float(raw)
-	if err != nil {
-		return math.Max(0, def)
-	}
-	return math.Max(0, value)
-}
-
 // Grace before an orphaned WebSocket session is interrupted and reaped, zero parking it forever
 var wsOrphanReapGraceS = sync.OnceValue(func() float64 {
-	return wsOrphanSetting(context.Background(), "ICEBATH_TUI_WS_ORPHAN_REAP_GRACE_S", "ws_orphan_reap_grace_s", 20.0)
+	return settings.SessionsWsOrphanReapGraceS.Get(context.Background()).Seconds()
 })
 
 // Hours scale last resort idle window of a session, zero disabling the TTL sweeps
@@ -63,7 +36,6 @@ var (
 // Timer and config seams of the reaper, the real functions swapped only where a test installs a fake
 var (
 	reaperAfterFunc            = time.AfterFunc
-	reaperLoadCfg              = loadCfg
 	sessionOrphanReaperEnabled = orphanReaperEnabled
 )
 
@@ -84,23 +56,9 @@ func reaperDaemonTimer(delay float64, fn func(), failLog string, level string) {
 	})
 }
 
-// Whether the startup orphan sweep is on, failing open when the config is unreadable or silent
-func orphanReaperEnabled(ctx context.Context) (enabled bool) {
-	defer func() {
-		if recover() != nil {
-			enabled = true
-		}
-	}()
-	cfg := reaperLoadCfg(ctx)
-	if sessions, isDict := cfg["sessions"].(map[string]any); isDict {
-		if value, present := sessions["startup_orphan_sweep"]; present {
-			if value == nil {
-				return true
-			}
-			return isTruthyValue(value)
-		}
-	}
-	return true
+// Whether the startup orphan sweep is on
+func orphanReaperEnabled(ctx context.Context) bool {
+	return settings.SessionsStartupOrphanSweep.Get(ctx)
 }
 
 // Ends the tui and subagent rows a dead process left open, sparing every id this process holds

@@ -1,14 +1,14 @@
 package tuigateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"math"
-	"reflect"
 	"slices"
-	"strconv"
 	"strings"
-	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Value of a config key, a word for most keys and a flag for the boolean switches
@@ -210,196 +210,79 @@ var ConfigGet = NewMethod[ConfigGetParams, ConfigGetResult]("config.get")
 // Changes one config key, persisted or for the session, and answers the value it took, on both routes
 var ConfigSet = NewMethod[ConfigSetParams, ConfigSetResult]("config.set")
 
-// Mouse tracking spellings mapped to off, wheel, buttons or all
-var MouseTrackingAliases = map[string]string{
-	"0": "off", "1": "all", "all": "all", "any": "all", "button": "buttons", "buttons": "buttons",
-	"click": "buttons", "false": "off", "full": "all", "no": "off", "off": "off", "on": "all",
-	"scroll": "wheel", "true": "all", "wheel": "wheel", "yes": "all",
-}
-
-var (
-	falseWords      = map[string]bool{"0": true, "off": true, "false": true, "no": true}
-	sectionNames    = []string{"thinking", "tools", "subagents", "activity"}
-	thinkingDetails = map[string]DetailsMode{"collapsed": "collapsed", "full": "expanded", "truncated": "collapsed"}
-	statusBarWords  = map[string]StatusBarPlace{"bottom": "bottom", "off": "off", "on": "top", "top": "top"}
-)
-
-// Lowered trimmed text of a config value, empty for anything but text
-func wordOf(v any) string {
-	text, _ := v.(string)
-	return strings.ToLower(strings.TrimSpace(text))
-}
-
-// Word of a config value when the enum allows it, else the default
+// Typed word of a setting the terminal UI takes from an enum, the type's first value when the setting holds another
 func choiceOf[T interface {
 	~string
 	Values() []string
-}](v any, def T) T {
-	if word := wordOf(v); slices.Contains(def.Values(), word) {
+}](word string) T {
+	if slices.Contains(T("").Values(), word) {
 		return T(word)
 	}
-	return def
+	return T(T("").Values()[0])
 }
 
-// Number of a config value, false for anything but a number
-func numberOf(v any) (float64, bool) {
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(rv.Int()), true
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(rv.Uint()), true
-	case reflect.Float32, reflect.Float64:
-		return rv.Float(), true
-	}
-	return 0, false
-}
-
-// Flag of a config value, off words and zero false, other text and numbers true, a missing value the default
-func flagOf(v any, def bool) bool {
-	switch x := v.(type) {
-	case nil:
-		return def
-	case bool:
-		return x
-	case string:
-		word := strings.ToLower(strings.TrimSpace(x))
-		return word != "" && !falseWords[word]
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	if n, isNumber := numberOf(v); isNumber {
-		return n != 0
-	}
-	return def
-}
-
-// Paste collapse threshold of a config value, a non negative number or leading integer text, else the default
-func thresholdOf(v any, def int64) int64 {
-	if text, isText := v.(string); isText {
-		text = strings.TrimLeftFunc(text, unicode.IsSpace)
-		end := 0
-		if end < len(text) && (text[end] == '+' || text[end] == '-') {
-			end++
-		}
-		digits := end
-		for end < len(text) && text[end] >= '0' && text[end] <= '9' {
-			end++
-		}
-		if n, err := strconv.ParseInt(text[:end], 10, 64); end > digits && err == nil && n >= 0 {
-			return n
-		}
-		return def
-	}
-	if n, isNumber := numberOf(v); isNumber && n >= 0 && !math.IsInf(n, 0) && !math.IsNaN(n) {
-		return int64(math.Floor(n + 0.5))
-	}
-	return def
-}
-
-// Mouse tracking mode of a display section, the legacy tui_mouse only when mouse_tracking is absent
-func MouseTrackingOf(display map[string]any) MouseTracking {
-	raw, present := display["mouse_tracking"]
-	if !present {
-		if raw, present = display["tui_mouse"]; !present {
-			return "all"
-		}
-	}
-	if text, isText := raw.(string); isText {
-		if mode, known := MouseTrackingAliases[strings.ToLower(strings.TrimSpace(text))]; known {
-			return MouseTracking(mode)
-		}
-		return "all"
-	}
-	if n, isNumber := numberOf(raw); raw == false || (isNumber && n == 0) {
-		return "off"
-	}
-	return "all"
-}
-
-// Global details mode from details_mode, then the legacy thinking_mode, then collapsed
-func detailsModeOf(display map[string]any) DetailsMode {
-	if mode := choiceOf(display["details_mode"], DetailsMode("")); mode != "" {
-		return mode
-	}
-	if mode, known := thinkingDetails[wordOf(display["thinking_mode"])]; known {
-		return mode
-	}
-	return "collapsed"
-}
-
-// Per section details overrides, unknown sections and modes dropped
-func sectionsOf(raw any) map[string]DetailsMode {
+// Fold states set for single transcript parts, parts without their own left out
+func sectionsOf(ctx context.Context) map[string]DetailsMode {
 	out := map[string]DetailsMode{}
-	obj, _ := raw.(map[string]any)
-	for name, v := range obj {
-		if mode := choiceOf(v, DetailsMode("")); mode != "" && slices.Contains(sectionNames, name) {
-			out[name] = mode
+	for part, raw := range settings.DetailSectionModes.Get(ctx) {
+		mode, _ := raw.(string)
+		if slices.Contains(settings.DetailSections, part) && slices.Contains(DetailsMode("").Values(), mode) {
+			out[part] = DetailsMode(mode)
 		}
 	}
 	return out
 }
 
-// Status bar fields named in a list, lowered, each once
-func fieldsOf(raw any) []string {
-	list, _ := raw.([]any)
+// Status bar fields to show, lowered and each once
+func fieldsOf(ctx context.Context) []string {
 	var out []string
-	for _, item := range list {
-		if name := wordOf(item); name != "" && !slices.Contains(out, name) {
+	for _, name := range settings.StatusBarFields.Strings(ctx) {
+		if name = strings.ToLower(strings.TrimSpace(name)); name != "" && !slices.Contains(out, name) {
 			out = append(out, name)
 		}
 	}
 	return out
 }
 
-// Settings the terminal UI follows, read from a config whose display section is the local one
-func ClientConfigOf(cfg map[string]any) ClientConfig {
-	display, _ := cfg["display"].(map[string]any)
-	approvals, _ := cfg["approvals"].(map[string]any)
-	voice, _ := cfg["voice"].(map[string]any)
-	statusBar, _ := display["status_bar"].(map[string]any)
-	pet, _ := display["pet"].(map[string]any)
-	recordKey, _ := voice["record_key"].(string)
-	language, _ := display["language"].(string)
-	place := StatusBarPlace("top")
-	if raw := display["tui_statusbar"]; raw == false {
-		place = "off"
-	} else if word, known := statusBarWords[wordOf(raw)]; known {
-		place = word
-	}
+// Settings the terminal UI follows for ctx: its home, its session's own values, and the terminal UI's display overrides
+func ClientConfigOf(ctx context.Context) ClientConfig {
+	ctx = settings.WithPlatform(ctx, settings.LocalPlatform)
 	return ClientConfig{
 		Display: ClientDisplay{
-			BellOnComplete:   flagOf(display["bell_on_complete"], false),
-			BellOnPrompt:     flagOf(display["bell_on_prompt"], false),
-			Theme:            choiceOf(display["tui_theme"], ThemeMode("auto")),
-			Battery:          flagOf(display["battery"], false),
-			BusyInputMode:    choiceOf(display["busy_input_mode"], BusyInputMode("queue")),
-			Compact:          flagOf(display["tui_compact"], false),
-			DetailsMode:      detailsModeOf(display),
-			Sections:         sectionsOf(display["sections"]),
-			FocusView:        flagOf(display["focus_view"], false),
-			Indicator:        choiceOf(display["tui_status_indicator"], IndicatorStyle("unicode")),
-			InlineDiffs:      flagOf(display["inline_diffs"], true),
-			InlineImages:     display["inline_images"] != false && wordOf(display["inline_images"]) != "off",
-			MouseTracking:    MouseTrackingOf(display),
-			ShowReasoning:    flagOf(display["show_reasoning"], true),
-			StatusBarPlace:   place,
-			StatusBar:        ClientStatusBar{Fields: fieldsOf(statusBar["fields"])},
-			Streaming:        flagOf(display["streaming"], true),
-			Timestamps:       flagOf(display["timestamps"], false),
-			Language:         strings.TrimSpace(language),
-			AgentsNudge:      flagOf(display["tui_agents_nudge"], true),
-			AutoResumeRecent: flagOf(display["tui_auto_resume_recent"], false),
-			TurnSummary:      flagOf(display["turn_summary"], true),
-			SpinnerTokenFlow: flagOf(display["spinner_token_flow"], true),
-			Pet:              ClientPet{RenderMode: choiceOf(pet["render_mode"], PetRenderMode("auto"))},
-			Arena:            display["arena"],
+			BellOnComplete:   settings.BellOnComplete.Get(ctx),
+			BellOnPrompt:     settings.BellOnPrompt.Get(ctx),
+			Theme:            choiceOf[ThemeMode](settings.Theme.Get(ctx)),
+			Battery:          settings.Battery.Get(ctx),
+			BusyInputMode:    choiceOf[BusyInputMode](settings.BusyMode.Get(ctx)),
+			Compact:          settings.Compact.Get(ctx),
+			DetailsMode:      choiceOf[DetailsMode](settings.DetailsMode.Get(ctx)),
+			Sections:         sectionsOf(ctx),
+			FocusView:        settings.DetailLevel.Get(ctx) == "minimal",
+			Indicator:        choiceOf[IndicatorStyle](settings.BusyIndicator.Get(ctx)),
+			InlineDiffs:      settings.DisplayInlineDiffs.Get(ctx),
+			InlineImages:     settings.InlineImages.Get(ctx) != "off",
+			MouseTracking:    choiceOf[MouseTracking](settings.Mouse.Get(ctx)),
+			ShowReasoning:    settings.ShowThinking.Get(ctx),
+			StatusBarPlace:   choiceOf[StatusBarPlace](settings.StatusBar.Get(ctx)),
+			StatusBar:        ClientStatusBar{Fields: fieldsOf(ctx)},
+			Streaming:        settings.DisplayStreaming.Get(ctx),
+			Timestamps:       settings.Timestamps.Get(ctx),
+			Language:         strings.TrimSpace(settings.Language.Get(ctx)),
+			AgentsNudge:      settings.DisplayTuiAgentsNudge.Get(ctx),
+			AutoResumeRecent: settings.ResumeLast.Get(ctx),
+			TurnSummary:      settings.DisplayTurnSummary.Get(ctx),
+			SpinnerTokenFlow: settings.DisplaySpinnerTokenFlow.Get(ctx),
+			Pet:              ClientPet{RenderMode: choiceOf[PetRenderMode](settings.DisplayPetRenderMode.Get(ctx))},
+			Arena:            config.RedactConfigValue(settings.DisplayArena.Get(ctx)),
 		},
-		Approvals:                  ClientApprovals{DestructiveSlashConfirm: flagOf(approvals["destructive_slash_confirm"], true)},
-		Voice:                      ClientVoice{RecordKey: strings.TrimSpace(recordKey), SubmitMode: choiceOf(voice["submit_mode"], VoiceSubmitMode("direct"))},
-		PasteCollapseThreshold:     thresholdOf(cfg["paste_collapse_threshold"], 5),
-		PasteCollapseCharThreshold: thresholdOf(cfg["paste_collapse_char_threshold"], 2000),
+		Approvals:                  ClientApprovals{DestructiveSlashConfirm: settings.ConfirmDestructive.Get(ctx)},
+		Voice:                      ClientVoice{RecordKey: strings.TrimSpace(settings.RecordKey.Get(ctx)), SubmitMode: choiceOf[VoiceSubmitMode](settings.VoiceSubmit.Get(ctx))},
+		PasteCollapseThreshold:     int64(settings.PasteCollapseThreshold.Get(ctx)),
+		PasteCollapseCharThreshold: int64(settings.PasteCollapseCharThreshold.Get(ctx)),
 	}
+}
+
+// Settings the terminal UI follows when it could not read them, every one at its default
+func DefaultClientConfig() ClientConfig {
+	return ClientConfigOf(settings.DefaultsOnly(context.Background()))
 }

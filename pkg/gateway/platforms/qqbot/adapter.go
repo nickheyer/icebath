@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -192,10 +193,10 @@ func NewQQAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*QQAdapter,
 	a.markdownSupport = pyrepr.Truthy(getOr(extra, "markdown_support", true))
 	a.DMPolicy = pystr.Lower(pystr.Strip(pyrepr.Str(getOr(extra, "dm_policy", "pairing"))))
 	a.GroupPolicy = pystr.Lower(pystr.Strip(pyrepr.Str(getOr(extra, "group_policy", "pairing"))))
-	for _, entry := range CoerceList(pyrepr.Or(extra["allow_from"], extra["allowFrom"])) {
+	for _, entry := range gateway.SettingList(ctx, settings.QqbotAllowFrom) {
 		a.AllowFrom[entry] = true
 	}
-	for _, entry := range CoerceList(pyrepr.Or(extra["group_allow_from"], extra["groupAllowFrom"])) {
+	for _, entry := range gateway.SettingList(ctx, settings.QqbotGroupAllowFrom) {
 		a.GroupAllowFrom[entry] = true
 	}
 	a.OwnAccessPolicyMixin.EntryMatches = func(_ context.Context, entries map[string]bool, target string) (bool, error) {

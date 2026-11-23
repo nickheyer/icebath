@@ -7,9 +7,23 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func footerSecs(v float64) *float64 { return &v }
+
+// Context of a fresh home whose config.yaml holds body
+func footerHome(t *testing.T, body string) context.Context {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return home.WithOverride(context.Background(), dir)
+}
 
 func TestModelShortDropsVendorPrefix(t *testing.T) {
 	for _, c := range [][2]string{{"openai/gpt-5.4", "gpt-5.4"}, {"anthropic/claude-sonnet-4.6", "claude-sonnet-4.6"}, {"gpt-5.4", "gpt-5.4"}, {"", ""}} {
@@ -52,39 +66,30 @@ func TestFormatFooterSkipsMissingContextLength(t *testing.T) {
 }
 
 func TestResolvePlatformOverrideWins(t *testing.T) {
-	user := map[string]any{"display": map[string]any{
-		"runtime_footer": map[string]any{"enabled": true, "fields": []any{"model"}},
-		"platforms":      map[string]any{"slack": map[string]any{"runtime_footer": map[string]any{"enabled": false}}},
-	}}
-	if enabled, _ := ResolveFooterConfig(user, "telegram"); !enabled {
+	ctx := footerHome(t, "display:\n  runtime_footer:\n    enabled: true\n    fields: [model]\n  platforms:\n    slack:\n      runtime_footer:\n        enabled: false\n")
+	if enabled, _ := ResolveFooterConfig(ctx, "telegram"); !enabled {
 		t.Fatal("telegram off")
 	}
-	if enabled, _ := ResolveFooterConfig(user, "slack"); enabled {
+	if enabled, _ := ResolveFooterConfig(ctx, "slack"); enabled {
 		t.Fatal("slack on")
 	}
 }
 
 func TestResolvePlatformCanAddFieldsOnly(t *testing.T) {
-	user := map[string]any{"display": map[string]any{
-		"runtime_footer": map[string]any{"enabled": true},
-		"platforms":      map[string]any{"discord": map[string]any{"runtime_footer": map[string]any{"fields": []any{"context_pct"}}}},
-	}}
-	enabled, fields := ResolveFooterConfig(user, "telegram")
+	ctx := footerHome(t, "display:\n  runtime_footer:\n    enabled: true\n  platforms:\n    discord:\n      runtime_footer:\n        fields: [context_pct]\n")
+	enabled, fields := ResolveFooterConfig(ctx, "telegram")
 	if !enabled || !slices.Equal(fields, []string{"model", "context_pct", "cwd"}) {
 		t.Fatalf("telegram %v %v", enabled, fields)
 	}
-	enabled, fields = ResolveFooterConfig(user, "discord")
+	enabled, fields = ResolveFooterConfig(ctx, "discord")
 	if !enabled || !slices.Equal(fields, []string{"context_pct"}) {
 		t.Fatalf("discord %v %v", enabled, fields)
 	}
 }
 
 func TestBuildFooterPerPlatformOffSuppresses(t *testing.T) {
-	user := map[string]any{"display": map[string]any{
-		"runtime_footer": map[string]any{"enabled": true},
-		"platforms":      map[string]any{"slack": map[string]any{"runtime_footer": map[string]any{"enabled": false}}},
-	}}
-	out, err := BuildFooterLine(context.Background(), user, "slack", FooterInputs{Model: "openai/gpt-5.4", ContextTokens: 10, ContextLength: 100, Cwd: "/tmp"})
+	ctx := footerHome(t, "display:\n  runtime_footer:\n    enabled: true\n  platforms:\n    slack:\n      runtime_footer:\n        enabled: false\n")
+	out, err := BuildFooterLine(ctx, "slack", FooterInputs{Model: "openai/gpt-5.4", ContextTokens: 10, ContextLength: 100, Cwd: "/tmp"})
 	if err != nil || out != "" {
 		t.Fatalf("got %q %v", out, err)
 	}
@@ -144,8 +149,8 @@ func TestFormatFooterLatencyInFieldOrder(t *testing.T) {
 func TestBuildFooterLineThreadsTurnSeconds(t *testing.T) {
 	t.Setenv("TERMINAL_CWD", "")
 	os.Unsetenv("TERMINAL_CWD")
-	user := map[string]any{"display": map[string]any{"runtime_footer": map[string]any{"enabled": true, "fields": []any{"model", "latency"}}}}
-	out, err := BuildFooterLine(context.Background(), user, "discord", FooterInputs{Model: "gpt-5.4", TurnSeconds: footerSecs(22.0)})
+	ctx := footerHome(t, "display:\n  runtime_footer:\n    enabled: true\n    fields: [model, latency]\n")
+	out, err := BuildFooterLine(ctx, "discord", FooterInputs{Model: "gpt-5.4", TurnSeconds: footerSecs(22.0)})
 	if err != nil || out != "gpt-5.4 · 22s" {
 		t.Fatalf("got %q %v", out, err)
 	}
@@ -154,14 +159,14 @@ func TestBuildFooterLineThreadsTurnSeconds(t *testing.T) {
 func TestDefaultBuildFooterLineIgnoresTurnSeconds(t *testing.T) {
 	t.Setenv("TERMINAL_CWD", "")
 	os.Unsetenv("TERMINAL_CWD")
-	user := map[string]any{"display": map[string]any{"runtime_footer": map[string]any{"enabled": true}}}
+	ctx := footerHome(t, "display:\n  runtime_footer:\n    enabled: true\n")
 	in := FooterInputs{Model: "openai/gpt-5.4", ContextTokens: 50_247, ContextLength: 1_000_000, Cwd: "/var/data"}
-	baseline, err := BuildFooterLine(context.Background(), user, "discord", in)
+	baseline, err := BuildFooterLine(ctx, "discord", in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	in.TurnSeconds = footerSecs(125.0)
-	withTiming, err := BuildFooterLine(context.Background(), user, "discord", in)
+	withTiming, err := BuildFooterLine(ctx, "discord", in)
 	if err != nil || baseline != "gpt-5.4 · 5% · /var/data" || withTiming != baseline {
 		t.Fatalf("baseline %q timing %q %v", baseline, withTiming, err)
 	}
@@ -176,7 +181,7 @@ func TestFormatFooterServedModelIsOptInAndSkipsSameModel(t *testing.T) {
 		}
 		return out
 	}
-	if strings.Contains(render(FooterInputs{Model: "auto-router", Cwd: "/x", ServedModel: "gpt-4o-2024-11-20"}, defaultFooterFields), "→") {
+	if strings.Contains(render(FooterInputs{Model: "auto-router", Cwd: "/x", ServedModel: "gpt-4o-2024-11-20"}, config.AsStrings(settings.DisplayRuntimeFooterFields.Default)), "→") {
 		t.Fatal("served model shown by default")
 	}
 	if got := render(FooterInputs{Model: "auto-router", Cwd: "/x", ServedModel: "gpt-4o-2024-11-20"}, []string{"served_model"}); got != "auto-router → gpt-4o-2024-11-20" {

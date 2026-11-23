@@ -98,5 +98,6 @@ func InitializeSessionAuthority(ctx context.Context, runner AuthorityRunner, pro
 	if err := recoverLocalSessions(ctx, a, false); err != nil {
 		return nil, err
 	}
+	rearmLoginWaits(context.WithoutCancel(ctx), a)
 	return a, nil
 }

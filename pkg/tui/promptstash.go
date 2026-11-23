@@ -9,7 +9,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
@@ -45,11 +44,11 @@ func registerStashKeys(km *keys.Map) {
 		}
 	}
 	for _, a := range []keys.Action{
-		{ID: "tui.stash", Context: tuiContext, Label: "stash", Doc: "stash the prompt, restore the stashed one, or browse several", Default: []string{"ctrl+s"}},
+		{ID: "tui.stash", Context: tuiContext, Label: "stash", Doc: "put the prompt aside, or bring a stashed one back", Default: []string{"ctrl+s"}},
 		{ID: "tui.stash.up", Context: stashContext, Label: "up", Doc: "highlight the newer stashed prompt", Default: []string{"up"}, Quiet: true},
 		{ID: "tui.stash.down", Context: stashContext, Label: "down", Doc: "highlight the older stashed prompt", Default: []string{"down"}, Quiet: true},
 		{ID: "tui.stash.restore", Context: stashContext, Label: "restore", Doc: "put the highlighted stashed prompt back into the composer", Default: []string{"enter"}},
-		{ID: "tui.stash.delete", Context: stashContext, Label: "delete", Doc: "discard the highlighted stashed prompt", Default: []string{"d", "D"}},
+		{ID: "tui.stash.delete", Context: stashContext, Label: "delete", Doc: "discard the highlighted stashed prompt", Default: []string{"ctrl+d", "delete"}},
 		{ID: "tui.stash.close", Context: stashContext, Label: "close", Doc: "close the stash panel", Default: []string{"esc"}},
 	} {
 		km.Register(a)
@@ -78,6 +77,7 @@ func (a *app) stashAction(id string) (tea.Cmd, bool) {
 		s.DeleteAtCursor()
 	case "tui.stash.close":
 		s.ClosePanel()
+		a.escapeClosed()
 	case "tui.stash.restore":
 		if text, attached, ok := s.RestoreAtCursor(); ok {
 			return a.restoreDraft(text, attached), true
@@ -92,29 +92,44 @@ func (a *app) pressStash() tea.Cmd {
 		return nil
 	}
 	value := a.card.composer.Value()
+	action, payload := ResolveCtrlS(a.promptStash().PromptStash, value, a.draftTokens(value))
+	switch action {
+	case ActionStashed:
+		return a.draftStashed()
+	case ActionRestored:
+		return a.restoreDraft(payload.Text, payload.Images)
+	}
+	return nil
+}
+
+// Puts the typed draft in the stash, false when there was nothing to put aside
+func (a *app) stashDraft() (tea.Cmd, bool) {
+	value := a.card.composer.Value()
+	if !a.promptStash().Stash(value, a.draftTokens(value)) {
+		return nil, false
+	}
+	return a.draftStashed(), true
+}
+
+// Tokens the draft still shows, stashed with its text
+func (a *app) draftTokens(value string) []any {
 	var attached []any
 	for _, t := range a.tokens {
 		if strings.Contains(value, t.Label) {
 			attached = append(attached, t)
 		}
 	}
-	action, payload := ResolveCtrlS(a.promptStash().PromptStash, value, attached)
-	switch action {
-	case ActionStashed:
-		if a.queueEdit != nil {
-			a.queueEdit = nil
-			if err := a.queue.setQueueEdit(nil); err != nil {
-				a.sys(errorLine(err.Error()))
-			}
-		}
-		cleared := a.card.composer.SetValue("")
-		detached := a.syncTokens()
-		a.draftRevision++
-		return tea.Batch(cleared, detached)
-	case ActionRestored:
-		return a.restoreDraft(payload.Text, payload.Images)
+	return attached
+}
+
+// Empties the composer of a draft that went into the stash
+func (a *app) draftStashed() tea.Cmd {
+	if a.queue.queueEditIndex() != nil {
+		a.setQueueEdit(nil)
 	}
-	return nil
+	cleared := a.card.composer.SetValue("")
+	a.syncTokens()
+	return cleared
 }
 
 // Puts a parked draft back into the composer, images of the current draft kept beside it
@@ -148,16 +163,7 @@ func (a *app) restoreDraft(text string, attached []any) tea.Cmd {
 		}
 	}
 	a.tokens = trimTokens(append(restored, kept...))
-	a.draftRevision++
-	cmds := []tea.Cmd{a.card.composer.SetValue(value)}
-	if sid := a.store.ui.Sid; !a.gw.canonical() && sid != "" {
-		for _, t := range restored {
-			if t.Kind == "image" && t.Path != "" {
-				cmds = append(cmds, ask(a.events.rpc, a.sys, tuigateway.ImageAttach, tuigateway.ImageAttachParams{Path: t.Path, SessionID: sid}, done))
-			}
-		}
-	}
-	return tea.Batch(cmds...)
+	return a.card.composer.SetValue(value)
 }
 
 // Age of a parked draft in words
@@ -191,7 +197,7 @@ func (a *app) stashPanelRows(width int, rc renderCtx) []string {
 	if n == 1 {
 		header = tr(txt.PromptStashHeaderOne, n)
 	}
-	headPrefix, headSuffix := "╭─ "+header+" ", " Ctrl+S ─╮"
+	headPrefix, headSuffix := "╭─ "+header+" ", " "+a.keys.Chord("tui.stash")+" ─╮"
 	footPrefix, footSuffix := "╰", " "+tr(txt.PromptStashFooter)+" ─╯"
 	if cw(headPrefix)+cw(headSuffix) > box {
 		headPrefix, headSuffix = "╭─ 📌 "+strconv.Itoa(n)+" ", "─╮"

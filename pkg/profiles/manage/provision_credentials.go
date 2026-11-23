@@ -64,7 +64,6 @@ func mirrorVoiceSections(ctx context.Context, path string) (bool, error) {
 			sections[key] = value
 		}
 	}
-	config.DropUnreadKeys(sections)
 	for _, key := range voiceSections {
 		if value, copied := sections[key]; copied && !truthy(value) {
 			delete(sections, key)

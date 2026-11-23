@@ -17,12 +17,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -342,35 +343,9 @@ func (e *doctorLiveEnv) doctorLiveRunOne(name string, fn func() (doctorLiveProbe
 	return result
 }
 
-// Probe timeout in seconds from doctor.live_probe_timeout, the default for a value float rejects, at least one second
-func doctorLiveTimeout(cfg map[string]any) (float64, error) {
-	timeout := doctorLiveDefaultProbeTimeout
-	if section := cfg["doctor"]; pyrepr.Truthy(section) {
-		block, ok := section.(map[string]any)
-		if !ok {
-			return 0, fmt.Errorf("config doctor section is %s where a mapping was expected", errchain.Kind(section))
-		}
-		if raw, has := block["live_probe_timeout"]; has {
-			switch v := raw.(type) {
-			case float64:
-				timeout = v
-			case int:
-				timeout = float64(v)
-			case int64:
-				timeout = float64(v)
-			case bool:
-				timeout = 0
-				if v {
-					timeout = 1
-				}
-			case string:
-				if parsed, err := pyint.ParseFloat(v); err == nil {
-					timeout = parsed
-				}
-			}
-		}
-	}
-	return max(1.0, timeout), nil
+// Probe timeout in seconds of the doctor's home, at least one second
+func doctorLiveTimeout(ctx context.Context, h string) float64 {
+	return max(1.0, settings.DoctorLiveProbeTimeout.Get(home.WithOverride(ctx, h)).Seconds())
 }
 
 // Runs one bounded read only probe per configured tool backend in order, appending an issue per failed probe
@@ -379,10 +354,7 @@ func (e *doctorLiveEnv) doctorRunLiveChecks(issues *[]string) ([]doctorLiveProbe
 	if err != nil {
 		return nil, err
 	}
-	timeout, err := doctorLiveTimeout(cfg)
-	if err != nil {
-		return nil, err
-	}
+	timeout := doctorLiveTimeout(e.ctx, e.d.Home)
 	doctorSection(e.d.W, "Live Backend Probes (opt-in, real calls)")
 	var results []doctorLiveProbeResult
 	for _, spec := range doctorLiveKeyedProbes {

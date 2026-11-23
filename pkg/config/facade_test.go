@@ -37,13 +37,6 @@ func facadeHome(t *testing.T, text string) (string, string) {
 				mergedMoA["presets"] = Clone(presets)
 			}
 		},
-		Stamp: func() StampHooks {
-			return StampHooks{
-				WorkerSnapshotActive: func() bool { return WorkerConfigSnapshot() != nil },
-				RecordCoreUse:        func(string, map[string]any, int) bool { return false },
-				AdoptAgentBrowserEnv: func(string, map[string]any) []string { return nil },
-			}
-		},
 	})
 	t.Cleanup(func() { RegisterConfigFacade(prev) })
 	path := filepath.Join(h, "config.yaml")

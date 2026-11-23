@@ -483,7 +483,7 @@ func (c *ContextCompressor) RecordTimeoutFailure(errText, failureKind string) {
 	seconds := float64(nextTimeoutCooldown(&c.consecutiveTimeoutFailures))
 	func() {
 		defer func() { _ = recover() }()
-		idle, _ := ResolveContextCompressionTimeouts(c.ctx, nil)
+		idle, _ := ResolveContextCompressionTimeouts(c.ctx)
 		seconds = max(seconds, idle)
 	}()
 	c.recordCompressionFailureCooldown(seconds, &stamped)

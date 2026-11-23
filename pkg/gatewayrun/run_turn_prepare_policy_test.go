@@ -81,7 +81,7 @@ func TestFrozenBareCustomRouteKeepsItsEndpointPoolAndLaunchKeyWins(t *testing.T)
 	h := runtimeTestHome(t, "{}\n", nil)
 	writeJSONConfig(t, h, map[string]any{"model": map[string]any{"provider": "custom", "base_url": url, "api_key": "sk-frozen-config", "default": "m"},
 		"custom_providers": []any{map[string]any{"name": "Pooled", "base_url": url}}})
-	auth := `{"version": 1, "providers": {}, "credential_pool": {"custom:pooled": [{"id": "k1", "label": "a", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-pooled"}]}}`
+	auth := `{"version": 2, "providers": {}, "credential_pool": {"custom:pooled": [{"id": "k1", "label": "a", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-pooled"}]}}`
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte(auth), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func frozenFixtureRoutes(t *testing.T, launches ...string) []map[string]any {
 			"custom_providers": []any{map[string]any{"name": "Fixture", "base_url": url}}})
 	}
 	write("https://a.fixture.example/v1")
-	auth := `{"version": 1, "providers": {}, "credential_pool": {"custom:fixture": [{"id": "k1", "label": "a", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-pool-key-for-endpoint-a"}]}}`
+	auth := `{"version": 2, "providers": {}, "credential_pool": {"custom:fixture": [{"id": "k1", "label": "a", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-pool-key-for-endpoint-a"}]}}`
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte(auth), 0o600); err != nil {
 		t.Fatal(err)
 	}

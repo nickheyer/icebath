@@ -3,7 +3,6 @@ package tuiserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -24,11 +24,14 @@ import (
 // Words config.set accepts for a boolean value
 var boolWords = map[string]bool{"1": true, "on": true, "true": true, "yes": true, "0": false, "off": false, "false": false, "no": false}
 
-// Display sections whose details mode a client can override
-var detailSectionNames = []string{"thinking", "tools", "subagents", "activity"}
+// Renderer switches the agent must see, answered as booleans
+var displayToggleKeys = map[string]bool{"display.message_reactions": true}
 
-// Renderer switches the agent must see, written as booleans
-var displayToggleKeys = map[string]bool{"display.message_reactions": true, "display.in_app_tips": true, "display.in_app_tours": true}
+// Aliases whose answer reports the setting as on or off
+var onOffAliases = map[string]bool{"density": true, "battery": true, "timestamps": true}
+
+// Aliases whose answer names the setting's key instead of the alias sent
+var answerKeys = map[string]string{"approval_mode": "approvals.mode"}
 
 // Keys whose sessionless branch writes a wider scope than the session branch
 var sessionScopedConfigKeys = map[string]bool{"model": true, "fast": true, "yolo": true, "reasoning": true}
@@ -43,15 +46,11 @@ var configSetters map[string]configSetter
 
 func init() {
 	configSetters = map[string]configSetter{
-		"model": cfgsetGuarded(setModel), "fast": setFast, "busy": setBusy, "verbose": setVerbose, "focus": setFocus,
-		"approval_mode": setApprovalMode, "approvals.mode": setWord, "yolo": cfgsetGuarded(setYolo),
-		"reasoning": cfgsetGuarded(setReasoning), "details_mode": setWord, "thinking_mode": setWord,
-		"density": setToggle, "battery": setToggle, "timestamps": setToggle, "theme": setWord,
-		"statusbar": setToggle, "mouse": setToggle, "indicator": setWord,
+		"model": cfgsetGuarded(setModel), "fast": setFast, "busy": setBusy,
+		"yolo": cfgsetGuarded(setYolo), "reasoning": cfgsetGuarded(setReasoning),
 		"cwd": setCwd, "terminal.cwd": setCwd, "workdir": setCwd,
 		"prompt": cfgsetGuarded(setPrompt), "personality": cfgsetGuarded(setPersonality), "skin": cfgsetGuarded(setSkin),
-		"daybreak": setDaybreak, "language": setLanguage}
-	configSetRegistry.scopedMethod("config.set", configSet)
+		"language": setLanguage}
 	configSetRegistry.install()
 }
 
@@ -62,60 +61,9 @@ func isConfigWriteError(failure any) bool {
 	return isErr && errors.As(err, &write)
 }
 
-// Persists display fields and section edits, explicit keyed edits when no config file backs the profile
-func writeDisplaySections(ctx context.Context, sections []config.KeyValue, dropSections []string, displayFields ...config.KeyValue) {
-	fileTooling, err := config.SupportsFileTooling(ctx)
-	panicIf(err)
-	if !fileTooling {
-		sets := make([]config.KeyValue, 0, len(displayFields)+len(sections))
-		for _, f := range displayFields {
-			sets = append(sets, config.KeyValue{Key: "display." + f.Key, Value: f.Value})
-		}
-		for _, s := range sections {
-			sets = append(sets, config.KeyValue{Key: "display.sections." + s.Key, Value: s.Value})
-		}
-		unsets := make([]string, 0, len(dropSections))
-		for _, name := range dropSections {
-			unsets = append(unsets, "display.sections."+name)
-		}
-		panicIf(writeConfigChanges(ctx, sets, unsets))
-		return
-	}
-	cfg, err := loadCfgRaw(ctx)
-	panicIf(err)
-	display, isDict := cfg["display"].(map[string]any)
-	if !isDict {
-		display = map[string]any{}
-	}
-	cur, isDict := display["sections"].(map[string]any)
-	if !isDict {
-		cur = map[string]any{}
-	}
-	for _, f := range displayFields {
-		display[f.Key] = f.Value
-	}
-	for _, s := range sections {
-		cur[s.Key] = s.Value
-	}
-	for _, name := range dropSections {
-		delete(cur, name)
-	}
-	display["sections"] = cur
-	cfg["display"] = display
-	panicIf(saveCfg(ctx, cfg))
-}
-
 // Stripped lower text of a value, any falsy value blank
 func cfgWord(value any) string {
 	if !truthy(value) {
-		return ""
-	}
-	return pystr.Lower(pystr.Strip(pyrepr.Str(value)))
-}
-
-// Stripped lower text of a value, only nil blank
-func cfgRawWord(value any) string {
-	if value == nil {
 		return ""
 	}
 	return pystr.Lower(pystr.Strip(pyrepr.Str(value)))
@@ -328,142 +276,55 @@ func setFast(ctx context.Context, rid any, params map[string]any, key string, va
 			return rpcErr(rid, 4002, "the provider of "+targetModel+" offers no "+nv+" tier for it; switch with /model to a model that has one", nil)
 		}
 	}
+	sid := strOr(params["session_id"])
+	scope := settings.Global
 	if session != nil {
-		pinned := nv
-		switch nv {
-		case "fast":
-			pinned = "priority"
-		case "normal":
-			pinned = ""
-		}
-		session.Set("create_service_tier_override", pinned)
-	} else {
-		panicIf(writeConfigKey(ctx, "agent.service_tier", nv))
+		scope = settings.Session
 	}
-	if a != nil {
-		switch nv {
-		case "fast":
-			tier := "priority"
-			a.SetServiceTier(&tier)
-		case "normal":
-			a.SetServiceTier(nil)
-		default:
-			tier := nv
-			a.SetServiceTier(&tier)
-		}
-		merged := map[string]any{}
-		for k, v := range a.RequestOverrides() {
-			if k != "service_tier" && k != "speed" {
-				merged[k] = v
-			}
-		}
-		for k, v := range overrides {
+	if _, err := settings.Set(sessionSettings(ctx, sid), settings.FastMode.Key, nv, scope); err != nil {
+		panic(asConfigWriteError(err))
+	}
+	applySessionTier(sessionSettings(ctx, sid), sid, session, overrides)
+	return cfgKV(rid, key, nv)
+}
+
+// Puts the fast mode in effect for a session onto its record and live agent, request overrides merged in
+func applySessionTier(ctx context.Context, sid string, session *tuihost.Session, overrides map[string]any) {
+	if session == nil {
+		return
+	}
+	word := settings.FastMode.Get(ctx)
+	tier := provider.ParseServiceTier(word)
+	session.Set("create_service_tier_override", tier)
+	a := sessionAgent(session)
+	if a == nil {
+		return
+	}
+	if tier == "" {
+		a.SetServiceTier(nil)
+	} else {
+		a.SetServiceTier(&tier)
+	}
+	merged := map[string]any{}
+	for k, v := range a.RequestOverrides() {
+		if k != "service_tier" && k != "speed" {
 			merged[k] = v
 		}
-		a.SetRequestOverrides(merged)
-		persistLiveSessionRuntime(ctx, session)
-		emitSessionInfo(ctx, strOr(params["session_id"]), session)
 	}
-	return cfgKV(rid, key, nv)
+	for k, v := range overrides {
+		merged[k] = v
+	}
+	a.SetRequestOverrides(merged)
+	persistLiveSessionRuntime(ctx, session)
+	emitSessionInfo(ctx, sid, session)
 }
 
-// Busy input mode status, else the word setter
+// Busy input mode status, else the registered setter
 func setBusy(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	if w := cfgWord(value); w == "" || w == "status" {
-		return cfgKV(rid, key, loadBusyInputMode(ctx))
+		return cfgKV(rid, key, loadBusyInputMode(sessionSettings(ctx, strOr(params["session_id"]))))
 	}
-	return setWord(ctx, rid, params, key, value, session)
-}
-
-// Sets or cycles the tool progress mode, mirrored onto the session and its agent
-func setVerbose(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	cycle := []string{"off", "new", "all", "verbose"}
-	var nv string
-	if truthy(value) && value != "cycle" {
-		nv = pystr.Lower(pystr.Strip(pyrepr.Str(value)))
-		if !slices.Contains(cycle, nv) {
-			return rpcErr(rid, 4002, "unknown verbose mode: "+pyrepr.Str(value), nil)
-		}
-	} else {
-		var cur any = loadToolProgressMode(ctx)
-		if session != nil {
-			if stored, has := session.Lookup("tool_progress_mode"); has {
-				cur = stored
-			}
-		}
-		idx := 2
-		if text, isText := cur.(string); isText && slices.Contains(cycle, text) {
-			idx = slices.Index(cycle, text)
-		}
-		nv = cycle[(idx+1)%len(cycle)]
-	}
-	panicIf(writeConfigKey(ctx, "display.tool_progress", nv))
-	if session != nil {
-		session.Set("tool_progress_mode", nv)
-		if a := sessionAgent(session); a != nil {
-			a.SetVerboseLogging(nv == "verbose")
-		}
-	}
-	return cfgKV(rid, key, nv)
-}
-
-// Focus view on stashes the tool progress mode and pins it off, off restores the stashed mode
-func setFocus(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	dF := displayCfg(ctx)
-	curFocus := truthy(dF["focus_view"])
-	arg := ""
-	if truthy(value) {
-		arg = pyrepr.Str(value)
-	}
-	action, target := tuihost.ResolveFocusArg(arg, curFocus)
-	if action == "usage" {
-		return rpcErr(rid, 4002, fmt.Sprintf("unknown focus value: %s (use on|off|status)", pyrepr.Str(value)), nil)
-	}
-	if action == "status" || target == nil {
-		state := "off"
-		if curFocus {
-			state = "on"
-		}
-		return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(state), ToolProgress: loadToolProgressMode(ctx)})
-	}
-	var updates []config.KeyValue
-	var effective string
-	if *target {
-		var saved any
-		if curFocus {
-			saved = dF["focus_saved_tool_progress"]
-		}
-		if !truthy(saved) {
-			saved = loadToolProgressMode(ctx)
-		}
-		updates = append(updates, config.KeyValue{Key: "display.focus_saved_tool_progress", Value: tuihost.NormalizeToolProgressMode(saved, "all")})
-		effective = "off"
-	} else {
-		saved := dF["focus_saved_tool_progress"]
-		if !truthy(saved) {
-			saved = "all"
-		}
-		effective = tuihost.NormalizeToolProgressMode(saved, "all")
-	}
-	updates = append(updates, config.KeyValue{Key: "display.tool_progress", Value: effective}, config.KeyValue{Key: "display.focus_view", Value: *target})
-	panicIf(writeConfigKeys(ctx, updates))
-	if session != nil {
-		session.Set("focus_view", *target)
-		session.Set("tool_progress_mode", effective)
-		if a := sessionAgent(session); a != nil {
-			catchPanic(func() { a.SetToolProgressMode(effective) })
-		}
-	}
-	state := "off"
-	if *target {
-		state = "on"
-	}
-	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(state), ToolProgress: effective})
-}
-
-// Legacy alias of approvals.mode reporting the real key
-func setApprovalMode(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	return setWord(ctx, rid, params, "approvals.mode", value, session)
+	return setRegistered(ctx, rid, params, key, value, session)
 }
 
 // Session yolo toggle, the global approvals.mode flip, or the process flag without a session
@@ -494,7 +355,7 @@ func setYolo(ctx context.Context, rid any, params map[string]any, key string, va
 		if enable {
 			next = "off"
 		}
-		panicIf(writeConfigKey(ctx, "approvals.mode", next))
+		mustSet(ctx, "approvals.mode", next)
 		emitAllSessionInfo(ctx)
 	case session != nil:
 		sessionKey := session.Get("session_key")
@@ -538,24 +399,18 @@ func setYolo(ctx context.Context, rid any, params map[string]any, key string, va
 	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(reported), Scope: reportedScope})
 }
 
-// One reasoning display word, the value it reports, its display field, thinking section and session flag
-type reasoningDisplayWord struct {
+// Reasoning display words: the setting each writes, the value, and the word answered
+var reasoningDisplayWords = []struct {
 	words    []string
+	key      string
+	value    bool
 	reported string
-	field    config.KeyValue
-	thinking string
-	show     *bool
+}{
+	{[]string{"show", "on"}, "display.show_reasoning", true, "show"},
+	{[]string{"hide", "off"}, "display.show_reasoning", false, "hide"},
+	{[]string{"full", "all"}, "display.reasoning_full", true, "full"},
+	{[]string{"clamp", "collapse", "short"}, "display.reasoning_full", false, "clamp"},
 }
-
-var (
-	reasoningShow         = true
-	reasoningHide         = false
-	reasoningDisplayWords = []reasoningDisplayWord{
-		{[]string{"show", "on"}, "show", config.KeyValue{Key: "show_reasoning", Value: true}, "expanded", &reasoningShow},
-		{[]string{"hide", "off"}, "hide", config.KeyValue{Key: "show_reasoning", Value: false}, "hidden", &reasoningHide},
-		{[]string{"full", "all"}, "full", config.KeyValue{Key: "reasoning_full", Value: true}, "expanded", nil},
-		{[]string{"clamp", "collapse", "short"}, "clamp", config.KeyValue{Key: "reasoning_full", Value: false}, "collapsed", nil}}
-)
 
 // Reasoning display words write display fields, effort levels pin the session or write the global effort
 func setReasoning(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
@@ -563,10 +418,7 @@ func setReasoning(ctx context.Context, rid any, params map[string]any, key strin
 	scope := cfgWord(params["scope"])
 	for _, spec := range reasoningDisplayWords {
 		if slices.Contains(spec.words, arg) {
-			writeDisplaySections(ctx, []config.KeyValue{{Key: "thinking", Value: spec.thinking}}, nil, spec.field)
-			if spec.show != nil && session != nil {
-				session.Set("show_reasoning", *spec.show)
-			}
+			mustSet(ctx, spec.key, spec.value)
 			return cfgKV(rid, key, spec.reported)
 		}
 	}
@@ -575,7 +427,7 @@ func setReasoning(ctx context.Context, rid any, params map[string]any, key strin
 		return rpcErr(rid, 4002, "unknown reasoning value: "+pyrepr.Str(value), nil)
 	}
 	if scope == "global" || session == nil {
-		panicIf(writeConfigKey(ctx, "agent.reasoning_effort", arg))
+		mustSet(ctx, "agent.reasoning_effort", arg)
 		if session != nil {
 			session.Pop("create_reasoning_override")
 		}
@@ -590,71 +442,7 @@ func setReasoning(ctx context.Context, rid any, params map[string]any, key strin
 	return cfgKV(rid, key, arg)
 }
 
-// One word setter, its normalizer, accepted words, error template and apply step
-type wordSetter struct {
-	norm    func(any) string
-	allowed []string
-	errText func(value any, raw string) string
-	apply   func(ctx context.Context, w string)
-}
-
-// Word setters keyed by config.set key, the reported value being the accepted word
-func wordSetters() map[string]wordSetter {
-	named := func(prefix string) func(any, string) string {
-		return func(value any, raw string) string { return prefix + pyrepr.Str(value) }
-	}
-	return map[string]wordSetter{
-		"busy": {cfgWord, []string{"queue", "steer", "interrupt"}, named("unknown busy mode: "),
-			func(ctx context.Context, w string) { panicIf(writeConfigKey(ctx, "display.busy_input_mode", w)) }},
-		"approvals.mode": {cfgWord, []string{"manual", "smart", "off"},
-			func(value any, raw string) string {
-				return "unknown approval mode: " + pyrepr.Str(value) + "; pick one of manual|smart|off"
-			},
-			func(ctx context.Context, w string) {
-				panicIf(writeConfigKey(ctx, "approvals.mode", w))
-				emitAllSessionInfo(ctx)
-			}},
-		"details_mode": {cfgWord, []string{"hidden", "collapsed", "expanded"}, named("unknown details_mode: "),
-			func(ctx context.Context, w string) {
-				sections := make([]config.KeyValue, 0, len(detailSectionNames))
-				for _, section := range detailSectionNames {
-					sections = append(sections, config.KeyValue{Key: section, Value: w})
-				}
-				writeDisplaySections(ctx, sections, nil, config.KeyValue{Key: "details_mode", Value: w})
-			}},
-		"thinking_mode": {cfgWord, []string{"collapsed", "truncated", "full"}, named("unknown thinking_mode: "),
-			func(ctx context.Context, w string) {
-				details := "collapsed"
-				if w == "full" {
-					details = "expanded"
-				}
-				panicIf(writeConfigKeys(ctx, []config.KeyValue{{Key: "display.thinking_mode", Value: w}, {Key: "display.details_mode", Value: details}}))
-			}},
-		"theme": {cfgWord, []string{"auto", "light", "dark"},
-			func(value any, raw string) string {
-				return "unknown theme value: " + pyrepr.Str(value) + " (use auto|light|dark)"
-			},
-			func(ctx context.Context, w string) { panicIf(writeConfigKey(ctx, "display.tui_theme", w)) }},
-		"indicator": {cfgRawWord, home.IndicatorStyles,
-			func(value any, raw string) string {
-				return "unknown indicator: " + raw + "; pick one of " + strings.Join(home.IndicatorStyles, "|")
-			},
-			func(ctx context.Context, w string) { panicIf(writeConfigKey(ctx, "display.tui_status_indicator", w)) }}}
-}
-
-// Applies an accepted word setter value, 4002 for any other word
-func setWord(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	spec := wordSetters()[key]
-	raw := spec.norm(value)
-	if !slices.Contains(spec.allowed, raw) {
-		return rpcErr(rid, 4002, spec.errText(value, raw), nil)
-	}
-	spec.apply(ctx, raw)
-	return cfgKV(rid, key, raw)
-}
-
-// Display language of the profile, a language a bundled catalog, the locale overlay or a language pack supplies, stored as its canonical id; the
-// answer warns when ICEBATH_LANGUAGE keeps another language in effect
+// Display language of the profile, a language a bundled catalog, the locale overlay or a language pack supplies, stored as its canonical id
 func setLanguage(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	raw := pystr.Strip(strOr(value))
 	loadLanguagePacks(ctx)
@@ -663,109 +451,29 @@ func setLanguage(ctx context.Context, rid any, params map[string]any, key string
 	if id == "" {
 		return rpcErr(rid, 4002, "unknown language: "+raw+"; pick one of "+strings.Join(i18n.SupportedLanguagesFor(ctx, ""), "|"), nil)
 	}
-	panicIf(writeConfigKey(ctx, config.DisplayLanguageKey, id))
+	mustSet(ctx, settings.Language.Key, id)
 	i18n.ResetLanguageCache()
-	answer := tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(id)}
-	if effective := i18n.GetLanguage(ctx); effective != id {
-		answer.Warning = "ICEBATH_LANGUAGE is set to " + effective + " and overrides display.language for this profile"
-	}
-	return setAnswer(rid, answer)
+	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(id)})
 }
 
-// Per section details mode override, an empty value clearing it
+// Per section fold state, an empty value clearing it
 func setDetailsSection(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	section := strings.SplitN(key, ".", 2)[1]
-	if !slices.Contains(detailSectionNames, section) {
-		return rpcErr(rid, 4002, "unknown section: "+section, nil)
+	child := settings.DetailSectionModes.Key + "." + strings.TrimPrefix(key, "details_mode.")
+	if settings.Find(child) == nil {
+		return rpcErr(rid, 4002, "unknown section: "+strings.TrimPrefix(key, "details_mode."), nil)
 	}
-	nv := cfgWord(value)
-	if nv != "" && !detailModes[nv] {
-		return rpcErr(rid, 4002, "unknown details_mode: "+pyrepr.Str(value), nil)
-	}
-	if nv != "" {
-		writeDisplaySections(ctx, []config.KeyValue{{Key: section, Value: nv}}, nil)
-	} else {
-		writeDisplaySections(ctx, nil, []string{section})
-	}
-	return cfgKV(rid, key, nv)
-}
-
-// One toggle setter, its normalizer, config key, alias words, flipped current value and report
-type toggleSetter struct {
-	norm    func(any) string
-	cfgKey  string
-	aliases map[string]any
-	flipped func(ctx context.Context) any
-	report  func(v any) string
-}
-
-// Toggle setters keyed by config.set key, empty or toggle flipping the current value
-func toggleSetters() map[string]toggleSetter {
-	onOff := func(v any) string {
-		if truthy(v) {
-			return "on"
+	if cfgWord(value) == "" {
+		scope, err := requestScope(params)
+		if err != nil {
+			return rpcErr(rid, 4002, err.Error(), nil)
 		}
-		return "off"
-	}
-	same := func(v any) string { return strOr(v) }
-	boolAliases := func(words map[string]bool) map[string]any {
-		out := map[string]any{}
-		for w, b := range words {
-			out[w] = b
+		change, err := settings.Reset(scopedSettingsCtx(ctx, params, scope), child, scope)
+		if err != nil {
+			return rpcErr(rid, 4002, err.Error(), nil)
 		}
-		return out
+		return registeredAnswer(rid, key, change.New.Value)
 	}
-	statusbarAliases := map[string]any{"on": "top"}
-	for mode := range statusbarModes {
-		statusbarAliases[mode] = mode
-	}
-	mouseAliases := map[string]any{}
-	for alias, mode := range tuihost.MouseTrackingAliases {
-		mouseAliases[alias] = mode
-	}
-	return map[string]toggleSetter{
-		"density": {cfgWord, "display.tui_compact", map[string]any{"on": true, "off": false},
-			func(ctx context.Context) any { return !truthy(displayCfg(ctx)["tui_compact"]) }, onOff},
-		"battery": {cfgWord, "display.battery",
-			map[string]any{"on": true, "true": true, "yes": true, "off": false, "false": false, "no": false},
-			func(ctx context.Context) any { return !truthy(displayCfg(ctx)["battery"]) }, onOff},
-		"timestamps": {cfgWord, "display.timestamps", boolAliases(boolWords),
-			func(ctx context.Context) any { return !truthy(displayCfg(ctx)["timestamps"]) }, onOff},
-		"statusbar": {cfgWord, "display.tui_statusbar", statusbarAliases,
-			func(ctx context.Context) any {
-				current, has := displayCfg(ctx)["tui_statusbar"]
-				if !has {
-					current = "top"
-				}
-				if coerceStatusbar(current) == "off" {
-					return "top"
-				}
-				return "off"
-			}, same},
-		"mouse": {cfgRawWord, "display.mouse_tracking", mouseAliases,
-			func(ctx context.Context) any {
-				if displayMouseTracking(displayCfg(ctx)) == "off" {
-					return "all"
-				}
-				return "off"
-			}, same}}
-}
-
-// Flips or sets one display toggle, 4002 for an unknown word
-func setToggle(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	spec := toggleSetters()[key]
-	raw := spec.norm(value)
-	var nv any
-	if raw == "" || raw == "toggle" {
-		nv = spec.flipped(ctx)
-	} else {
-		nv = spec.aliases[raw]
-	}
-	if nv == nil {
-		return rpcErr(rid, 4002, fmt.Sprintf("unknown %s value: %s", key, pyrepr.Str(value)), nil)
-	}
-	panicIf(writeConfigKey(ctx, spec.cfgKey, nv))
-	return cfgKV(rid, key, spec.report(nv))
+	return setRegistered(ctx, rid, params, child, value, session)
 }
 
 // Persists an existing working directory, publishing it to the launch process only for the launch profile
@@ -782,7 +490,7 @@ func setCwd(ctx context.Context, rid any, params map[string]any, key string, val
 	if !isDir(cwd) {
 		return rpcErr(rid, 4002, "working directory does not exist: "+raw, nil)
 	}
-	panicIf(writeConfigKey(ctx, "terminal.cwd", cwd))
+	mustSet(ctx, "terminal.cwd", cwd)
 	if resolveLax(home.Dir(ctx)) == resolveLax(importedHome()) {
 		os.Setenv("TERMINAL_CWD", cwd)
 	}
@@ -796,24 +504,13 @@ func setPrompt(ctx context.Context, rid any, params map[string]any, key string, 
 		reported = tuigateway.TextValue("")
 	}
 	answer := setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: reported})
-	fileTooling, err := config.SupportsFileTooling(ctx)
-	panicIf(err)
-	if !fileTooling {
-		if value == "clear" {
-			panicIf(writeConfigChanges(ctx, nil, []string{"custom_prompt"}))
-		} else {
-			panicIf(writeConfigChanges(ctx, []config.KeyValue{{Key: "custom_prompt", Value: value}}, nil))
+	if value == "clear" {
+		if _, err := settings.Reset(ctx, "custom_prompt", settings.Global); err != nil {
+			panic(asConfigWriteError(err))
 		}
 		return answer
 	}
-	cfg, err := loadCfgRaw(ctx)
-	panicIf(err)
-	if value == "clear" {
-		delete(cfg, "custom_prompt")
-	} else {
-		cfg["custom_prompt"] = value
-	}
-	panicIf(saveCfg(ctx, cfg))
+	mustSet(ctx, "custom_prompt", value)
 	return answer
 }
 
@@ -827,7 +524,7 @@ func setPersonality(ctx context.Context, rid any, params map[string]any, key str
 	panicIf(err)
 	pname, newPrompt, err := validatePersonality(text, cfg)
 	panicIf(err)
-	PersistPersonality(ctx, pname)
+	mustSet(ctx, "display.personality", pname)
 	historyReset, info := applyPersonalityToSession(ctx, strOr(params["session_id"]), session, newPrompt, pname)
 	reported := "none"
 	if truthy(value) {
@@ -847,30 +544,10 @@ func setPersonality(ctx context.Context, rid any, params map[string]any, key str
 
 // Persists the skin and repaints every surface, syncing the watcher baseline
 func setSkin(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	panicIf(writeConfigKey(ctx, "display.skin", value))
+	mustSet(ctx, "display.skin", value)
 	broadcastGlobalEvent("skin.changed", resolveSkin(ctx))
 	tuihost.NoteSkinBroadcast(ctx)
 	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: configValueOf(value)})
-}
-
-// Boolean renderer switch the agent sees
-func setDisplayToggle(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	on, known := boolWords[pystr.Lower(pystr.Strip(pyrepr.Str(value)))]
-	if !known {
-		return rpcErr(rid, 4002, key+" takes true or false", nil)
-	}
-	panicIf(writeConfigKey(ctx, key, on))
-	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.FlagValue(on)})
-}
-
-// Profile wide daybreak flag every turn reads
-func setDaybreak(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	on, known := boolWords[pystr.Lower(pystr.Strip(pyrepr.Str(value)))]
-	if !known {
-		return rpcErr(rid, 4002, key+" takes true or false", nil)
-	}
-	panicIf(writeConfigKey(ctx, "agent.daybreak", on))
-	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.FlagValue(on)})
 }
 
 // Applies one config key, a stale session refusing the session scoped keys and a backend refusal answering 4002
@@ -888,8 +565,8 @@ func configSet(ctx context.Context, rid any, params map[string]any) (res map[str
 	handler := configSetters[key]
 	if handler == nil && strings.HasPrefix(key, "details_mode.") {
 		handler = setDetailsSection
-	} else if handler == nil && displayToggleKeys[key] {
-		handler = setDisplayToggle
+	} else if handler == nil && settings.Find(key) != nil {
+		handler = setRegistered
 	}
 	if handler == nil {
 		return rpcErr(rid, 4002, "unknown config key: "+key, nil)

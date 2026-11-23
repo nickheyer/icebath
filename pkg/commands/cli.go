@@ -765,7 +765,7 @@ func (c *CLI) FirstPositional(argv []string) (string, bool) {
 // PluginCLIDiscoveryNeeded reports whether argv may name a plugin provided command
 func (c *CLI) PluginCLIDiscoveryNeeded(argv []string) bool {
 	first, ok := c.FirstPositional(argv)
-	return ok && !BuiltinSubcommands[first]
+	return ok && !BuiltinSubcommands[first] && !tierRefusedTopLevel(first)
 }
 
 func insideMCPAddArgs(argv []string, index int) bool {

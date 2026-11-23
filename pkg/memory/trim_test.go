@@ -42,9 +42,18 @@ func resetTrimState(t *testing.T) {
 	})
 }
 
-// Environment whose config carries the given memory_trim section
-func trimEnv(section map[string]any) *tools.Env {
-	return &tools.Env{Home: os.TempDir(), Config: config.Tree{"context": map[string]any{"memory_trim": section}}}
+// Environment of a fresh home whose config.yaml carries the given memory_trim section
+func trimEnv(t *testing.T, section map[string]any) *tools.Env {
+	t.Helper()
+	h := t.TempDir()
+	doc, err := config.SafeDump(map[string]any{"context": map[string]any{"memory_trim": section}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return &tools.Env{Home: h}
 }
 
 func floatPtr(f float64) *float64 { return &f }
@@ -73,7 +82,7 @@ func TestTrimCollectRunsEvenWithoutPagesReleased(t *testing.T) {
 	resetTrimState(t)
 	collects := 0
 	trimCollect = func() { collects++ }
-	if TrimMemory(context.Background(), trimEnv(map[string]any{}), TrimOptions{Force: true, Reason: "test"}) {
+	if TrimMemory(context.Background(), trimEnv(t, map[string]any{}), TrimOptions{Force: true, Reason: "test"}) {
 		t.Fatal("no released pages must report false")
 	}
 	if collects != 1 {
@@ -103,7 +112,7 @@ func TestTrimSuccessCollectsThenTrims(t *testing.T) {
 	var calls []string
 	trimCollect = func() { calls = append(calls, "gc") }
 	trimRelease = func() int { calls = append(calls, "trim"); return 1 }
-	if !TrimMemory(context.Background(), trimEnv(map[string]any{}), TrimOptions{Reason: "turn", Cooldown: floatPtr(60)}) {
+	if !TrimMemory(context.Background(), trimEnv(t, map[string]any{}), TrimOptions{Reason: "turn", Cooldown: floatPtr(60)}) {
 		t.Fatal("successful trim must report true")
 	}
 	if len(calls) != 2 || calls[0] != "gc" || calls[1] != "trim" {
@@ -119,7 +128,7 @@ func TestTrimAllocatorOnlySkipsCollectButStillTrims(t *testing.T) {
 	var calls []string
 	trimCollect = func() { calls = append(calls, "gc") }
 	trimRelease = func() int { calls = append(calls, "trim"); return 1 }
-	if !TrimMemory(context.Background(), trimEnv(map[string]any{}), TrimOptions{Reason: "post-compression", Cooldown: floatPtr(60), AllocatorOnly: true}) {
+	if !TrimMemory(context.Background(), trimEnv(t, map[string]any{}), TrimOptions{Reason: "post-compression", Cooldown: floatPtr(60), AllocatorOnly: true}) {
 		t.Fatal("allocator only trim must report true")
 	}
 	if len(calls) != 1 || calls[0] != "trim" {
@@ -132,7 +141,7 @@ func TestTrimCollectsByDefault(t *testing.T) {
 	var calls []string
 	trimCollect = func() { calls = append(calls, "gc") }
 	trimRelease = func() int { calls = append(calls, "trim"); return 1 }
-	TrimMemory(context.Background(), trimEnv(map[string]any{}), TrimOptions{Reason: "turn", Cooldown: floatPtr(60)})
+	TrimMemory(context.Background(), trimEnv(t, map[string]any{}), TrimOptions{Reason: "turn", Cooldown: floatPtr(60)})
 	if len(calls) != 2 || calls[0] != "gc" {
 		t.Fatalf("calls %v", calls)
 	}
@@ -144,7 +153,7 @@ func TestTrimCooldownSuppressesRepeatedCollection(t *testing.T) {
 	trimCollect = func() { collects++ }
 	trimRelease = func() int { releases++; return 1 }
 	lastTrim = trimAt(95)
-	env := trimEnv(map[string]any{})
+	env := trimEnv(t, map[string]any{})
 	if TrimMemory(context.Background(), env, TrimOptions{Cooldown: floatPtr(60)}) {
 		t.Fatal("trim inside the cooldown must be suppressed")
 	}
@@ -161,7 +170,7 @@ func TestTrimConfigCooldownControlsRateLimit(t *testing.T) {
 	releases := 0
 	trimRelease = func() int { releases++; return 1 }
 	lastTrim = trimAt(1)
-	if TrimMemory(context.Background(), trimEnv(map[string]any{"enabled": true, "cooldown_seconds": 120.0}), TrimOptions{}) {
+	if TrimMemory(context.Background(), trimEnv(t, map[string]any{"enabled": true, "cooldown_seconds": 120.0}), TrimOptions{}) {
 		t.Fatal("configured cooldown must suppress the trim")
 	}
 	if releases != 0 {
@@ -173,7 +182,7 @@ func TestTrimReleaseFailureIsFailOpenAndRateLimited(t *testing.T) {
 	resetTrimState(t)
 	calls := 0
 	trimRelease = func() int { calls++; panic("boom") }
-	env := trimEnv(map[string]any{})
+	env := trimEnv(t, map[string]any{})
 	if TrimMemory(context.Background(), env, TrimOptions{Reason: "test", Cooldown: floatPtr(60)}) {
 		t.Fatal("failing release must report false")
 	}
@@ -192,7 +201,7 @@ func TestTrimForceFloorCoalescesBurstCloses(t *testing.T) {
 	resetTrimState(t)
 	releases := 0
 	trimRelease = func() int { releases++; return 1 }
-	env := trimEnv(map[string]any{"enabled": true, "cooldown_seconds": 0.0, "log_every_n": 1, "info_log_min_delta_mb": 0.0})
+	env := trimEnv(t, map[string]any{"enabled": true, "cooldown_seconds": 0.0, "log_every_n": 1, "info_log_min_delta_mb": 0.0})
 	trimNow = func() time.Time { return trimAt(100) }
 	if !TrimMemory(context.Background(), env, TrimOptions{Force: true, Reason: "agent close"}) || releases != 1 {
 		t.Fatal("first forced close must run")
@@ -217,7 +226,7 @@ func TestTrimAllocatorOnlyDoesNotSuppressForcedCollection(t *testing.T) {
 	var calls []string
 	trimCollect = func() { calls = append(calls, "gc") }
 	trimRelease = func() int { return 1 }
-	env := trimEnv(map[string]any{"enabled": true, "cooldown_seconds": 60.0})
+	env := trimEnv(t, map[string]any{"enabled": true, "cooldown_seconds": 60.0})
 	if !TrimMemory(context.Background(), env, TrimOptions{Reason: "housekeeping", AllocatorOnly: true}) {
 		t.Fatal("housekeeping trim must run")
 	}
@@ -238,12 +247,12 @@ func TestTrimSettingsCoercion(t *testing.T) {
 		delta    float64
 	}{
 		{map[string]any{}, true, 60, 1, 0},
-		{map[string]any{"enabled": "false", "cooldown_seconds": true, "log_every_n": 0, "info_log_min_delta_mb": -3.0}, true, 60, 1, 0},
+		{map[string]any{"enabled": "off", "cooldown_seconds": true, "log_every_n": 0, "info_log_min_delta_mb": -3.0}, false, 60, 1, 0},
 		{map[string]any{"enabled": false, "cooldown_seconds": "5", "log_every_n": "3", "info_log_min_delta_mb": "1.5"}, false, 5, 3, 1.5},
-		{map[string]any{"cooldown_seconds": -10, "log_every_n": 2.7, "info_log_min_delta_mb": "bad"}, true, 0, 2, 0},
+		{map[string]any{"cooldown_seconds": -10, "log_every_n": 2, "info_log_min_delta_mb": "bad"}, true, 0, 2, 0},
 	}
 	for i, c := range cases {
-		enabled, cooldown, every, delta := trimSettings(context.Background(), trimEnv(c.section))
+		enabled, cooldown, every, delta := trimSettings(context.Background(), trimEnv(t, c.section))
 		if enabled != c.enabled || cooldown != c.cooldown || every != c.every || delta != c.delta {
 			t.Fatalf("case %d got %v %v %v %v", i, enabled, cooldown, every, delta)
 		}
@@ -282,7 +291,7 @@ func idleClock(t *testing.T) (*fakeQuietClock, *[]float64, func()) {
 	trimCollect = func() { collects = append(collects, clock.now) }
 	trimRelease = func() int { return 1 }
 	trimNow = func() time.Time { return trimAt(clock.now) }
-	env := trimEnv(map[string]any{"enabled": true, "cooldown_seconds": 0.0, "log_every_n": 1, "info_log_min_delta_mb": 0.0})
+	env := trimEnv(t, map[string]any{"enabled": true, "cooldown_seconds": 0.0, "log_every_n": 1, "info_log_min_delta_mb": 0.0})
 	tick := func() { TrimMemoryWhenIdle(context.Background(), env, "messaging gateway housekeeping", clock) }
 	return clock, &collects, tick
 }

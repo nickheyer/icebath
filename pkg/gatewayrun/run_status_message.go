@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Transient auxiliary and compression statuses that stay in logs instead of gateway chats
@@ -75,26 +76,9 @@ var compressionProgressStatusRe = func() *regexp2.Regexp {
 	return pyre.MustCompile(`(?i)` + strings.Join(sources, "|"))
 }()
 
-// Whether compression.progress_notices is on in the gateway config, false on a read failure
-func gatewayCompressionProgressNoticesEnabled(ctx context.Context) (enabled bool) {
-	defer func() {
-		if recover() != nil {
-			enabled = false
-		}
-	}()
-	compression, ok := gateway.LoadGatewayConfigMap(ctx, "")["compression"].(map[string]any)
-	if !ok {
-		return false
-	}
-	value, present := compression["progress_notices"]
-	if !present {
-		value = false
-	}
-	switch pystr.Lower(pystr.Strip(pyrepr.Str(value))) {
-	case "true", "1", "yes", "on":
-		return true
-	}
-	return false
+// Whether compression progress notices are on for the profile in ctx
+func gatewayCompressionProgressNoticesEnabled(ctx context.Context) bool {
+	return settings.CompressionProgressNotices.Get(ctx)
 }
 
 // Status text a surface may show, raw for programmatic surfaces and filtered of noise on chats, nil when suppressed

@@ -44,7 +44,7 @@ func newCatalogFixture(t *testing.T, cfg CatalogConfig) *catalogFixture {
 	ResetCatalogCache()
 	prevLoad, prevFetch, prevClock := loadCatalogConfig, fetchCatalogManifest, catalogClock
 	if cfg.URL == "" {
-		cfg = ParseCatalogConfig(nil)
+		cfg = CatalogConfig{Enabled: true, URL: DefaultCatalogURL, TTLHours: DefaultCatalogTTLHours, Providers: map[string]any{}}
 	}
 	loadCatalogConfig = func(context.Context) CatalogConfig { return cfg }
 	prevOR := fetchOpenRouterModelsFn
@@ -357,18 +357,17 @@ func TestProviderOverrideURLTakesPrecedence(t *testing.T) {
 	}
 }
 
-func TestDefaultTTLIsTwentyMinutesAndLegacyHoursHonoured(t *testing.T) {
-	if got := ParseCatalogConfig(map[string]any{"ttl_minutes": 20}); got.TTLHours*3600 != 20*60 {
-		t.Fatalf("ttl %v", got.TTLHours)
-	}
-	if got := ParseCatalogConfig(map[string]any{"ttl_minutes": 20, "ttl_hours": 3}); got.TTLHours != 3 {
-		t.Fatalf("legacy ttl %v", got.TTLHours)
-	}
-	if got := ParseCatalogConfig(map[string]any{"ttl_minutes": 5, "ttl_hours": 3}); got.TTLHours*60 != 5 {
-		t.Fatalf("user minutes must win: %v", got.TTLHours)
-	}
-	if got := ParseCatalogConfig(map[string]any{"ttl_minutes": -1, "url": " ", "enabled": false}); got.TTLHours*60 != 20 || got.URL != DefaultCatalogURL || got.Enabled {
+func TestDefaultTTLIsTwentyMinutes(t *testing.T) {
+	h := t.TempDir()
+	ctx := home.WithOverride(context.Background(), h)
+	if got := loadCatalogConfigFromHome(ctx); got.TTLHours*3600 != 20*60 || got.URL != DefaultCatalogURL || !got.Enabled {
 		t.Fatalf("defaults %+v", got)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model_catalog:\n  ttl_minutes: -1\n  url: ' '\n  enabled: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := loadCatalogConfigFromHome(ctx); got.TTLHours*60 != 20 || got.URL != DefaultCatalogURL || got.Enabled {
+		t.Fatalf("fallbacks %+v", got)
 	}
 	f := newCatalogFixture(t, CatalogConfig{Enabled: true, URL: "http://master", TTLHours: 20.0 / 60.0, Providers: map[string]any{}})
 	if CatalogRefreshInterval(f.ctx) != 20*time.Minute {

@@ -99,14 +99,9 @@ func getCustomProviderConfig(poolKey string, cfg map[string]any) map[string]any 
 	return nil
 }
 
-// GetPoolStrategy is the configured selection strategy for a provider
-func GetPoolStrategy(cfg map[string]any, provider string) string {
-	strategies, _ := cfg["credential_pool_strategies"].(map[string]any)
-	if strategies == nil {
-		return StrategyFillFirst
-	}
-	strategy := strings.ToLower(strings.TrimSpace(anyString(strategies[provider])))
-	if SupportedPoolStrategies[strategy] {
+// GetPoolStrategy is the selection strategy logins.<provider>.strategy names, fill_first when unset
+func GetPoolStrategy(ctx context.Context, provider string) string {
+	if strategy := strings.ToLower(strings.TrimSpace(loginStrategy(ctx, provider))); SupportedPoolStrategies[strategy] {
 		return strategy
 	}
 	return StrategyFillFirst
@@ -515,7 +510,7 @@ func applyPoolField(e *PooledCredential, key string, value any) bool {
 	return !sameAnyValue(before[key], poolFieldValues(*e)[key])
 }
 
-var anthropicSourceRank = map[string]int{"env:ANTHROPIC_TOKEN": 0, "env:CLAUDE_CODE_OAUTH_TOKEN": 1, IcebathPKCESource: 2, "claude_code": 3, "env:ANTHROPIC_API_KEY": 4}
+var anthropicSourceRank = map[string]int{"env:ANTHROPIC_TOKEN": 0, "env:CLAUDE_CODE_OAUTH_TOKEN": 1, "claude_code": 2, "env:ANTHROPIC_API_KEY": 3}
 
 // Orders anthropic rows manual first then by seeded source rank, reporting whether priorities changed
 func normalizePoolPriorities(provider string, entries []PooledCredential) bool {
@@ -631,7 +626,8 @@ func (env PoolEnv) envVal(key string) string {
 	return strings.TrimSpace(env.secretStr(key))
 }
 
-func seedAnthropicSingletons(seed *seeder) {
+// Linked Anthropic row of the Claude Code login, dropped while an API key without an OAuth env token is set or adoption is off
+func seedAnthropicLinked(seed *seeder) {
 	if !IsProviderExplicitlyConfigured(seed.env, "anthropic") {
 		return
 	}
@@ -639,34 +635,23 @@ func seedAnthropicSingletons(seed *seeder) {
 	if oauthEnv == "" {
 		oauthEnv = seed.env.envVal("CLAUDE_CODE_OAUTH_TOKEN")
 	}
-	if seed.env.envVal("ANTHROPIC_API_KEY") != "" && oauthEnv == "" {
-		seed.changed = retainSourcesNotIn(seed.entries, map[string]bool{IcebathPKCESource: true, "claude_code": true}) || seed.changed
+	if (seed.env.envVal("ANTHROPIC_API_KEY") != "" && oauthEnv == "") || !AdoptExternalLoginsEnabled(seed.env) {
+		seed.changed = retainSourcesNotIn(seed.entries, map[string]bool{"claude_code": true}) || seed.changed
 		return
 	}
-	type src struct {
-		name  string
-		creds map[string]any
+	creds := ReadClaudeCodeCredentials(seed.env)
+	access := anyString(creds["accessToken"])
+	if access == "" {
+		return
 	}
-	sources := []src{{IcebathPKCESource, ReadIcebathOAuthCredentials(seed.env)}}
-	if AdoptExternalLoginsEnabled(seed.env) {
-		sources = append(sources, src{"claude_code", ReadClaudeCodeCredentials(seed.env)})
-	} else {
-		seed.changed = retainSourcesNotIn(seed.entries, map[string]bool{"claude_code": true}) || seed.changed
+	payload := map[string]any{"auth_type": AuthTypeOAuth, "access_token": access, "label": LabelFromToken(access, "claude_code")}
+	if rt := anyString(creds["refreshToken"]); rt != "" {
+		payload["refresh_token"] = rt
 	}
-	for _, s := range sources {
-		access := anyString(s.creds["accessToken"])
-		if s.creds == nil || access == "" {
-			continue
-		}
-		payload := map[string]any{"auth_type": AuthTypeOAuth, "access_token": access, "label": LabelFromToken(access, s.name)}
-		if rt := anyString(s.creds["refreshToken"]); rt != "" {
-			payload["refresh_token"] = rt
-		}
-		if ms, ok := anyFloat(s.creds["expiresAt"]); ok {
-			payload["expires_at_ms"] = ms
-		}
-		seed.upsert(s.name, payload)
+	if ms, ok := anyFloat(creds["expiresAt"]); ok {
+		payload["expires_at_ms"] = ms
 	}
+	seed.upsert("claude_code", payload)
 }
 
 // Rows a plugin provider profile seeds itself from ambient tokens it validates or exchanges
@@ -727,83 +712,14 @@ func seedQwenSingleton(seed *seeder) {
 	seed.upsert(source, payload)
 }
 
-func seedMinimaxSingleton(seed *seeder) {
-	state, err := seed.env.Store.GetProviderAuthState("minimax-oauth")
-	if err != nil {
-		seed.env.log().Debug(fmt.Sprintf("MiniMax OAuth token seed failed: %v", err))
-		return
-	}
-	access := anyString(state["access_token"])
-	if state == nil || access == "" {
-		return
-	}
-	payload := map[string]any{"auth_type": AuthTypeOAuth, "access_token": access,
-		"base_url": strings.TrimRight(anyString(state["inference_base_url"]), "/")}
-	if rt := anyString(state["refresh_token"]); rt != "" {
-		payload["refresh_token"] = rt
-	}
-	if raw := anyString(state["expires_at"]); raw != "" {
-		if epoch, ok := ParseISOTimestamp(raw); ok {
-			payload["expires_at_ms"] = float64(int64(epoch * 1000))
-		}
-	}
-	if label := anyString(state["label"]); label != "" {
-		payload["label"] = label
-	} else {
-		payload["label"] = LabelFromToken(access, "oauth")
-	}
-	seed.upsert("oauth", payload)
-}
-
-// Surfaces the Codex or xAI auth.json tokens singleton as a device_code row
-func seedTokensSingleton(seed *seeder, data AuthData) {
-	state, sourcePath := seed.env.Store.ProviderStateWithSource(data, seed.provider)
-	if ownedProfileReadsRootState(seed.env, data, seed.provider, sourcePath) {
-		return
-	}
-	tokens, ok := state["tokens"].(map[string]any)
-	access := anyString(tokens["access_token"])
-	if !ok || access == "" {
-		return
-	}
-	baseURL, customLabel := DefaultXAIOAuthBaseURL, ""
-	if seed.provider == "openai-codex" {
-		baseURL = DefaultCodexBaseURL
-		customLabel = strings.TrimSpace(anyString(state["label"]))
-	}
-	payload := map[string]any{"auth_type": AuthTypeOAuth, "access_token": access, "base_url": baseURL}
-	if rt := anyString(tokens["refresh_token"]); rt != "" {
-		payload["refresh_token"] = rt
-	}
-	if lr := anyString(state["last_refresh"]); lr != "" {
-		payload["last_refresh"] = lr
-	}
-	if customLabel != "" {
-		payload["label"] = customLabel
-	} else {
-		payload["label"] = LabelFromToken(access, "device_code")
-	}
-	seed.upsert("device_code", payload)
-}
-
 func seedFromSingletons(env PoolEnv, provider string, entries *[]PooledCredential) (bool, map[string]bool) {
 	seed := newSeeder(env, provider, entries)
-	data, err := env.Store.Load()
-	if err != nil {
-		data = emptyAuthData()
-	}
-	switch {
-	case provider == "anthropic":
-		seedAnthropicSingletons(seed)
-	case provider == "qwen-oauth":
+	switch provider {
+	case "anthropic":
+		seedAnthropicLinked(seed)
+	case "qwen-oauth":
 		seedQwenSingleton(seed)
-	case provider == "minimax-oauth":
-		seedMinimaxSingleton(seed)
-	case tokensSingletonProviders[provider].refresh != nil:
-		if provider == "openai-codex" && seed.isSuppressed("device_code") {
-			return seed.changed, seed.activeSources
-		}
-		seedTokensSingleton(seed, data)
+	case "minimax-oauth", "openai-codex", "xai-oauth":
 	default:
 		seedProfileSingleton(seed)
 	}
@@ -1250,9 +1166,18 @@ func (c *PoolCredentials) Pool(poolKey string) *Pool {
 	if pool, ok := c.pools[key]; ok {
 		return pool
 	}
-	pool := LoadPool(c.env, key)
+	pool := LoadSelectedPool(c.env, key)
 	c.pools[key] = pool
 	return pool
+}
+
+// LoginUnavailable is the refusal of a provider whose selected login or rotation set serves nothing, nil otherwise
+func (c *PoolCredentials) LoginUnavailable(provider, model string) *AuthError {
+	pool := c.Pool(provider)
+	if pool == nil || pool.HasAvailable(model) {
+		return nil
+	}
+	return loginUnavailableError(pool, model)
 }
 
 // Reload drops every cached pool so the next read reloads from disk

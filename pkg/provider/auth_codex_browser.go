@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -31,30 +33,12 @@ func codexBrowserPortBusyNotice() string {
 	return fmt.Sprintf("Port %d is already in use (a Codex CLI sign-in may be running). OpenAI only redirects to that port, so falling back to the device-code login.", CodexBrowserCallbackPort)
 }
 
-// CodexLoginFlows are the login flows auth.codex_login_flow may name
-var CodexLoginFlows = []string{"device_code", "browser"}
-
 // browser only when the user asked for it through the flag or auth.codex_login_flow
-func codexLoginFlow(env PoolEnv, out io.Writer, args CodexLoginArgs) string {
+func codexLoginFlow(env PoolEnv, args CodexLoginArgs) string {
 	if args.Browser {
 		return "browser"
 	}
-	authCfg, _ := env.config()["auth"].(map[string]any)
-	flow := "device_code"
-	if authCfg != nil {
-		if v, has := authCfg["codex_login_flow"]; has {
-			flow = anyString(v)
-		}
-	}
-	flow = strings.ToLower(strings.TrimSpace(flow))
-	if flow == "" {
-		flow = "device_code"
-	}
-	if !containsString(CodexLoginFlows, flow) {
-		fmt.Fprintf(out, "Ignoring unknown auth.codex_login_flow '%s' (expected one of %s).\n", flow, strings.Join(CodexLoginFlows, ", "))
-		return "device_code"
-	}
-	return flow
+	return settings.AuthCodexLoginFlow.Get(env.loginCtx())
 }
 
 // Device code login runner the browser flow falls back to, swappable so tests observe the fallback
@@ -62,7 +46,7 @@ var codexDeviceCodeLoginFn = codexDeviceCodeLogin
 
 // Runs the Codex OAuth flow the args or config select, a busy callback port falling back to device code
 func codexOAuthLogin(env PoolEnv, out io.Writer, args CodexLoginArgs) (map[string]any, error) {
-	if codexLoginFlow(env, out, args) == "browser" {
+	if codexLoginFlow(env, args) == "browser" {
 		creds, err := codexBrowserLogin(env, out, !args.NoBrowser, args.Timeout)
 		if err == nil {
 			return creds, nil

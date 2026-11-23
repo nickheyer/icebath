@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -223,14 +224,7 @@ func (r *GatewayRunner) hmwaPrependReasoning(ctx context.Context, agentResult ma
 			return response, nil
 		}
 	}
-	show := func() (show bool) {
-		defer func() {
-			if recover() != nil {
-				show = source.Platform != gateway.PlatformMattermost && r.showReasoning
-			}
-		}()
-		return resolveGatewayDisplayBool(ctx, gateway.LoadGatewayConfigMap(ctx, ""), platformConfigKey(source.Platform), "show_reasoning", r.showReasoning, source.Platform, []gateway.Platform{gateway.PlatformMattermost})
-	}()
+	show := displaySwitchOn(ctx, settings.ShowThinking, source.Platform, platformConfigKey(source.Platform), gateway.PlatformMattermost)
 	lastReasoning := noneText(agentResult["last_reasoning"])
 	if !(show && response != "" && !silent && lastReasoning != "") {
 		return response, nil
@@ -240,14 +234,7 @@ func (r *GatewayRunner) hmwaPrependReasoning(ctx context.Context, agentResult ma
 	if len(lines) > 15 {
 		display = strings.Join(lines[:15], "\n") + i18n.T(ctx, "gateway.reasoning.more_lines", "", map[string]any{"count": len(lines) - 15})
 	}
-	style := func() (style string) {
-		defer func() {
-			if recover() != nil {
-				style = "code"
-			}
-		}()
-		return pyrepr.Str(config.ResolveDisplaySetting(ctx, gateway.LoadGatewayConfigMap(ctx, ""), platformConfigKey(source.Platform), "reasoning_style", "code"))
-	}()
+	style := settings.DisplayReasoningStyle.Get(settings.WithPlatform(ctx, platformConfigKey(source.Platform)))
 	if quote, ok := reasoningQuoteStyles[style]; ok {
 		var quoted []string
 		for _, ln := range strings.Split(display, "\n") {
@@ -285,7 +272,7 @@ func (r *GatewayRunner) hmwaRuntimeFooterLine(ctx context.Context, agentResult m
 		if err != nil {
 			return "", err
 		}
-		return gateway.BuildFooterLine(ctx, gateway.LoadGatewayConfigMap(ctx, ""), platformConfigKey(source.Platform), gateway.FooterInputs{
+		return gateway.BuildFooterLine(ctx, platformConfigKey(source.Platform), gateway.FooterInputs{
 			Model: noneText(agentResult["model"]), ContextTokens: contextTokens, ContextLength: contextLength, Cwd: cwd,
 			TurnSeconds: &turnSeconds, RequestedModel: noneText(agentResult["requested_model"]), ServedModel: noneText(agentResult["served_model"]),
 		})
@@ -568,7 +555,7 @@ func (r *GatewayRunner) hmwaPersistTurnTranscript(ctx context.Context, event *ga
 // Final delivery decisions for silence, voice reply and streamed media or footer, nil when already delivered
 func (r *GatewayRunner) hmwaDeliverTurnResponse(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, entry *gateway.SessionEntry, sessionKey string, runGeneration int,
 	agentResult map[string]any, agentMessages []map[string]any, response, footerLine string, silent bool) (*string, error) {
-	if config.DiagnosticWakeMuted(ctx, event, nil) {
+	if config.DiagnosticWakeMuted(ctx, event) {
 		return nil, nil
 	}
 	if silent {

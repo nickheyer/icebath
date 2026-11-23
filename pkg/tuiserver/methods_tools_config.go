@@ -23,8 +23,6 @@ import (
 var toolsConfigRegistry = &handlerRegistry{}
 
 func init() {
-	guardedRPC(toolsConfigRegistry, "tools.show", 5034, rpcShape{}, toolsShow)
-	guardedRPC(toolsConfigRegistry, "tools.configure", 5035, rpcShape{}, toolsConfigure)
 	guardedRPC(toolsConfigRegistry, "learning.frames", 5000, rpcShape{prefix: "learning.frames failed: "}, learningFrames)
 	toolsConfigRegistry.install()
 }

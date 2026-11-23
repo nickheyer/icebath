@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Discord HTTP failure rendered the way discord.py words it, status, reason, code and flattened errors
@@ -614,9 +615,9 @@ func (a *DiscordAdapter) removeReaction(ctx context.Context, m *inboundMessage, 
 	return true
 }
 
-// Whether outcome reactions are on via the reactions extra or DISCORD_REACTIONS
+// Whether outcome reactions are on for this adapter's profile
 func (a *DiscordAdapter) reactionsEnabled(ctx context.Context) bool {
-	return a.extraOrEnvFlag(ctx, "reactions", "DISCORD_REACTIONS", "true", false)
+	return settings.DiscordReactions.Get(a.sctx(ctx))
 }
 
 // Adds the in progress reaction and records durable handling state

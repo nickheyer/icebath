@@ -17,7 +17,6 @@ import (
 
 // Declares the stored session listing methods on the session module registry
 func registerSessionListHandlers() {
-	sessionRegistry.method("session.list", withProfileDB(5006, sessionList))
 	sessionRegistry.method("session.most_recent", sessionMostRecent)
 }
 

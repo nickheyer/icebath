@@ -2,19 +2,11 @@ package agent
 
 import (
 	"context"
-	"os"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
-)
-
-const (
-	DefaultContextTimeoutSeconds      = 120.0
-	DefaultContextTotalCeilingSeconds = 600.0
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // CompressionDeadlineFence is the commit fence surface the deadline scope reads live and pushes back
@@ -23,45 +15,15 @@ type CompressionDeadlineFence interface {
 	ExtendDeadline(seconds float64)
 }
 
-// Loads the compression section of the config, an empty one when the config or section is unusable
-var loadCompressionConfig = func(ctx context.Context) any {
-	raw, err := config.Load(home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return map[string]any{}
-	}
-	switch section := raw["compression"].(type) {
-	case map[string]any:
-		return section
-	case config.Tree:
-		return map[string]any(section)
-	}
-	return map[string]any{}
-}
-
 // Effective aux compression request budget the idle window is floored at, swapped by tests
 var compressionAuxTimeout = provider.EffectiveAuxTimeout
 
-// Idle timeout and total ceiling seconds of context compression, nil config read from the config file
-func ResolveContextCompressionTimeouts(ctx context.Context, compressionCfg any) (float64, float64) {
-	idle, ceiling := DefaultContextTimeoutSeconds, DefaultContextTotalCeilingSeconds
-	cfg := compressionCfg
-	if cfg == nil {
-		cfg = loadCompressionConfig(ctx)
-	}
-	if tree, ok := cfg.(config.Tree); ok {
-		cfg = map[string]any(tree)
-	}
-	if m, ok := cfg.(map[string]any); ok {
-		if v := m["context_timeout_seconds"]; v != nil {
-			if f, err := pyint.Float(v); err == nil {
-				idle = f
-			}
-		}
-		if v := m["context_total_ceiling_seconds"]; v != nil {
-			if f, err := pyint.Float(v); err == nil && f > 0 {
-				ceiling = f
-			}
-		}
+// Idle timeout and total ceiling seconds of context compression, a ceiling at or below zero taking the default
+func ResolveContextCompressionTimeouts(ctx context.Context) (float64, float64) {
+	idle := settings.CompressionContextTimeoutSeconds.Get(ctx).Seconds()
+	ceiling := settings.CompressionContextTotalCeilingSeconds.Get(ctx).Seconds()
+	if ceiling <= 0 {
+		ceiling = settings.CompressionContextTotalCeilingSeconds.Default.Seconds()
 	}
 	if idle > 0 {
 		ceiling = max(ceiling, idle)

@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Runner reading the busy input mode a messaging source runs under
@@ -21,8 +22,8 @@ func LocalLive(runner any, source *SessionSource) *LiveSession {
 // Busy mode the local session's next input runs under, its own pin, else its policy, else the runner's
 func SessionBusyMode(ctx context.Context, runner AuthorityRunner, live *LiveSession) (string, error) {
 	valid := func(v any) bool { return v == "interrupt" || v == "steer" || v == "queue" }
-	if valid(live.BusyInputMode) {
-		return live.BusyInputMode, nil
+	if own, ok := SessionOwnSetting(ctx, live, settings.BusyMode.Key); ok && valid(own) {
+		return own.(string), nil
 	}
 	policy, err := policyForSource(ctx, runner, live.Source)
 	if err != nil {

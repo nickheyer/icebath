@@ -1,7 +1,6 @@
 package gatewayrun
 
 import (
-	"context"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -100,7 +99,6 @@ type TurnContext struct {
 	logModeEnabled                  bool
 	interimAssistantMessagesEnabled bool
 	needsProgressQueue              bool
-	resolveDisplaySetting           func(ctx context.Context, userConfig map[string]any, platformKey, setting string, fallback any) any
 	resultHolder                    map[string]any
 	toolsHolder                     []map[string]any
 	streamConsumerHolder            *gateway.GatewayStreamConsumer

@@ -119,7 +119,7 @@ func postAutoPrunePrompt(ctx context.Context, r *GatewayRunner, profile *string,
 		if _, err := config.PresentNotification(scoped, func(c context.Context) error {
 			sent = append(sent, r.sendHomeChannelMessage(c, platform, homeChannel, transport, message, "Auto-prune prompt failed for %s:%s: %s"))
 			return nil
-		}, string(platform), true, nil); err != nil {
+		}, string(platform), true); err != nil {
 			return delivered, err
 		}
 		for _, ok := range sent {

@@ -153,42 +153,6 @@ func TestTerminalScopeRecomputesThePinPerProfile(t *testing.T) {
 	if scope, err = BuildProfileTerminalScope(ctx, other, nil); err != nil || scope["TERMINAL_DOCKER_IMAGE_PINNED"] != "1" {
 		t.Fatalf("file pinned profile %v %v", scope, err)
 	}
-	if err := os.WriteFile(filepath.Join(other, ".env"), []byte("TERMINAL_DOCKER_IMAGE=ghcr.io/me/env:2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	writeSandboxSwitchConfig(t, other, map[string]any{"backend": "docker"})
-	if scope, err = BuildProfileTerminalScope(ctx, other, nil); err != nil || scope["TERMINAL_DOCKER_IMAGE_PINNED"] != "1" {
-		t.Fatalf("dotenv pinned profile %v %v", scope, err)
-	}
-}
-
-func TestTerminalScopePinsAnImageWrittenInTheProfileEnvEvenWhenItSpellsTheDefault(t *testing.T) {
-	h, _ := sandboxSwitchHome(t)
-	ctx := context.Background()
-	writeSandboxSwitchConfig(t, h, map[string]any{"backend": "docker"})
-	envPath := filepath.Join(h, ".env")
-	if err := os.WriteFile(envPath, []byte("TERMINAL_DOCKER_IMAGE="+config.DefaultSandboxImage+"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	scope, err := BuildProfileTerminalScope(ctx, h, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if scope["TERMINAL_DOCKER_IMAGE"] != config.DefaultSandboxImage || scope["TERMINAL_DOCKER_IMAGE_PINNED"] != "1" {
-		t.Fatalf("default spelled in .env %v", scope)
-	}
-	if err := os.WriteFile(envPath, []byte("TERMINAL_DOCKER_IMAGE=ghcr.io/me/mine:1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if scope, err = BuildProfileTerminalScope(ctx, h, nil); err != nil || scope["TERMINAL_DOCKER_IMAGE_PINNED"] != "1" {
-		t.Fatalf("own image in .env %v %v", scope, err)
-	}
-	if err := os.WriteFile(envPath, []byte("OTHER=1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if scope, err = BuildProfileTerminalScope(ctx, h, nil); err != nil || scope["TERMINAL_DOCKER_IMAGE_PINNED"] != "0" {
-		t.Fatalf("no image in .env %v %v", scope, err)
-	}
 }
 
 func TestPendingNeedsDockerBackendUnpinnedAndAStaleContainer(t *testing.T) {
@@ -243,9 +207,6 @@ func TestDecidePinsAndEitherAnswerEndsTheOffer(t *testing.T) {
 		t.Fatalf("after keep %+v %v evicted %v", p, err, evicted)
 	}
 
-	for _, v := range []string{"TERMINAL_DOCKER_IMAGE", "TERMINAL_DOCKER_IMAGE_PINNED"} {
-		os.Unsetenv(v)
-	}
 	writeSandboxSwitchConfig(t, h, map[string]any{"backend": "docker"})
 	if p, err = PendingSandboxImageSwitch(ctx, env); err != nil || p == nil {
 		t.Fatalf("pending after unpin %+v %v", p, err)
@@ -255,9 +216,6 @@ func TestDecidePinsAndEitherAnswerEndsTheOffer(t *testing.T) {
 	}
 	if got := rawSandboxSwitchTerminal(t, h)["docker_image"]; got != config.DefaultSandboxImage {
 		t.Fatalf("approve = pin the target even though it equals the default, got %v", got)
-	}
-	if got := os.Getenv("TERMINAL_DOCKER_IMAGE_PINNED"); got != "1" {
-		t.Fatalf("the live process is re-bridged, pinned %q", got)
 	}
 	if !slices.Equal(evicted, []string{""}) {
 		t.Fatalf("the cached env is dropped so the next terminal call recreates, evicted %q", evicted)
@@ -273,10 +231,6 @@ func TestPendingReadsABoundTerminalScopeNotTheLaunchEnv(t *testing.T) {
 	env := &Env{Home: h}
 	fakeSandboxDocker(t, tmp, "icebath-abc\t"+config.LegacySandboxImage+"\n")
 	writeSandboxSwitchConfig(t, h, map[string]any{"backend": "docker"})
-	os.Setenv("TERMINAL_DOCKER_IMAGE", "ghcr.io/launch-profile/pinned:1")
-	if p, err := PendingSandboxImageSwitch(ctx, env); err != nil || p != nil {
-		t.Fatalf("launch env pin %+v %v", p, err)
-	}
 	scoped := SetTerminalScope(ctx, &TerminalScope{Policy: TerminalPolicy{"TERMINAL_ENV": "docker", "TERMINAL_DOCKER_IMAGE_PINNED": "0"}})
 	if p, err := PendingSandboxImageSwitch(scoped, env); err != nil || p == nil {
 		t.Fatalf("the routed profile's scope says unpinned, the launch env is not consulted %+v %v", p, err)

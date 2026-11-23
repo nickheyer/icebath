@@ -10,19 +10,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// Resets recorded profile policy and pins the launch switch for one test
+// Resets recorded profile policy and records the launch profile's switch for one test
 func pinRedactPolicy(t *testing.T, launch bool) {
 	t.Helper()
-	origLaunch := launchRedactEnabled
-	launchRedactEnabled = func() bool { return launch }
 	redactPolicy.Lock()
-	origEnv, origCfg := redactPolicy.env, redactPolicy.cfg
-	redactPolicy.env, redactPolicy.cfg = map[string]*string{}, map[string]*string{}
+	orig := redactPolicy.cfg
+	redactPolicy.cfg = map[string]bool{processHomeKey(): launch}
 	redactPolicy.Unlock()
 	t.Cleanup(func() {
-		launchRedactEnabled = origLaunch
 		redactPolicy.Lock()
-		redactPolicy.env, redactPolicy.cfg = origEnv, origCfg
+		redactPolicy.cfg = orig
 		redactPolicy.Unlock()
 	})
 }
@@ -30,7 +27,7 @@ func pinRedactPolicy(t *testing.T, launch bool) {
 func TestRedactingHandlerRedactsMessageAndAttributes(t *testing.T) {
 	pinRedactPolicy(t, true)
 	var buf bytes.Buffer
-	logger := slog.New(NewRedactingHandler(slog.NewTextHandler(&buf, nil), nil))
+	logger := slog.New(NewRedactingHandler(slog.NewTextHandler(&buf, nil)))
 	secret := "sk-proj-" + strings.Repeat("a", 30)
 	logger.With("bound", secret).Warn("key "+secret, "attr", secret)
 	if strings.Contains(buf.String(), secret) {
@@ -45,24 +42,12 @@ func TestRoutedRecordsFollowTheirOwnProfilesRedactionPolicy(t *testing.T) {
 		name     string
 		launch   bool
 		record   func()
-		scope    map[string]string
 		redacted bool
 	}{
 		{name: "unrecorded profile redacts", launch: false, redacted: true},
-		{name: "config opt out", launch: true, record: func() {
-			NoteEnvPolicy(home.Key(routed), nil)
-			NoteConfigPolicy(home.Key(routed), false)
-		}, redacted: false},
-		{name: "config opt out before the env is read still redacts", launch: false, record: func() { NoteConfigPolicy(home.Key(routed), false) }, redacted: true},
-		{name: "env opt out", launch: true, record: func() { NoteEnvPolicy(home.Key(routed), "false") }, redacted: false},
-		{name: "env unset falls to config", launch: true, record: func() {
-			NoteEnvPolicy(home.Key(routed), nil)
-			NoteConfigPolicy(home.Key(routed), "no")
-		}, redacted: false},
-		{name: "live scope opt out", launch: true, scope: map[string]string{"ICEBATH_REDACT_SECRETS": "false"}, redacted: false},
-		{name: "live scope without the key reads config", launch: false, scope: map[string]string{}, record: func() {
-			NoteEnvPolicy(home.Key(routed), "false")
-		}, redacted: true},
+		{name: "config opt out", launch: true, record: func() { NoteConfigPolicy(home.Key(routed), false) }, redacted: false},
+		{name: "config no", launch: true, record: func() { NoteConfigPolicy(home.Key(routed), "no") }, redacted: false},
+		{name: "unreadable value keeps redacting", launch: false, record: func() { NoteConfigPolicy(home.Key(routed), "maybe") }, redacted: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -71,8 +56,7 @@ func TestRoutedRecordsFollowTheirOwnProfilesRedactionPolicy(t *testing.T) {
 				tc.record()
 			}
 			var buf bytes.Buffer
-			scopeOf := func(context.Context) map[string]string { return tc.scope }
-			logger := slog.New(NewRedactingHandler(slog.NewTextHandler(&buf, nil), scopeOf))
+			logger := slog.New(NewRedactingHandler(slog.NewTextHandler(&buf, nil)))
 			logger.WarnContext(home.WithOverride(context.Background(), routed), "provider rejected key "+secret)
 			if got := !strings.Contains(buf.String(), secret); got != tc.redacted {
 				t.Fatalf("redacted = %v, log %s", got, buf.String())
@@ -86,7 +70,7 @@ func TestLaunchRecordsFollowTheLaunchPolicy(t *testing.T) {
 	for _, launch := range []bool{true, false} {
 		pinRedactPolicy(t, launch)
 		var buf bytes.Buffer
-		slog.New(NewRedactingHandler(slog.NewTextHandler(&buf, nil), nil)).Warn("launch key " + secret)
+		slog.New(NewRedactingHandler(slog.NewTextHandler(&buf, nil))).Warn("launch key " + secret)
 		if got := !strings.Contains(buf.String(), secret); got != launch {
 			t.Fatalf("launch %v redacted = %v", launch, got)
 		}

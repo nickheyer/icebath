@@ -4,31 +4,25 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
-	"os"
 	"reflect"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
-	emptyHealEscalateAfter = 3
-	emptyHealWindowS       = 600.0
-	emptyHealMaxSessions   = 1024
+	emptyHealWindowS     = 600.0
+	emptyHealMaxSessions = 1024
 )
 
 var validAPIRoles = map[string]bool{"system": true, "user": true, "assistant": true, "tool": true, "function": true, "developer": true}
@@ -308,52 +302,9 @@ func fillEmptyNonFinalWirePayload(msg map[string]any, isFinal bool) bool {
 	return true
 }
 
-// Escalation threshold from agent.sanitizer_heal_escalation_threshold, the module default on any read error
+// Escalation threshold from agent.sanitizer_heal_escalation_threshold
 func healEscalationThreshold(ctx context.Context) int {
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return emptyHealEscalateAfter
-	}
-	agentCfg, _ := cfg.Get("agent").(map[string]any)
-	raw, ok := agentCfg["sanitizer_heal_escalation_threshold"]
-	if !ok || raw == nil {
-		return emptyHealEscalateAfter
-	}
-	if n, ok := pythonInt(raw); ok {
-		return n
-	}
-	return emptyHealEscalateAfter
-}
-
-var pyIntLiteral = regexp.MustCompile(`^[+-]?[0-9](_?[0-9])*$`)
-
-// Python int() of a config scalar, false where int() raises
-func pythonInt(v any) (int, bool) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	case float64:
-		if math.IsNaN(x) || math.IsInf(x, 0) {
-			return 0, false
-		}
-		return int(math.Trunc(x)), true
-	case float32:
-		return pythonInt(float64(x))
-	case string:
-		s := pystr.Strip(x)
-		if !pyIntLiteral.MatchString(s) {
-			return 0, false
-		}
-		n, err := strconv.Atoi(strings.ReplaceAll(s, "_", ""))
-		return n, err == nil
-	}
-	if b, ok := pyrepr.Int(v); ok && b.IsInt64() {
-		return int(b.Int64()), true
-	}
-	return 0, false
+	return settings.AgentSanitizerHealEscalationThreshold.Get(ctx)
 }
 
 // Drains the one time repeated heal notice for the session at most once per session lifetime

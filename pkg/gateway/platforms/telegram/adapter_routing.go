@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -89,17 +90,11 @@ func normalizeChatType(chatType any, isForum bool) string {
 	return normalized
 }
 
-// TELEGRAM_ALLOWED_USERS decision for the user, nil when no allowlist is configured
+// Allowed people decision for the user, nil when the profile allows nobody by list
 func envAllowlistDecision(ctx context.Context, userID string) *bool {
-	allowedCSV := pystr.Strip(gateway.PlatformGateEnv(ctx, "TELEGRAM_ALLOWED_USERS", ""))
-	if allowedCSV == "" {
+	allowed := gateway.SettingSet(ctx, settings.TelegramAllowFrom)
+	if len(allowed) == 0 {
 		return nil
-	}
-	allowed := map[string]bool{}
-	for _, uid := range strings.Split(allowedCSV, ",") {
-		if uid = pystr.Strip(uid); uid != "" {
-			allowed[uid] = true
-		}
 	}
 	decision := allowed["*"] || allowed[userID]
 	return &decision
@@ -121,10 +116,17 @@ func nonEmpty(text string) *string {
 	return &text
 }
 
-// Whether Telegram auth env vars make an early intake decision safe
+// Whether the profile's access lists make an early intake decision safe
 func telegramAuthEnvConfigured(ctx context.Context) bool {
-	for _, key := range []string{"TELEGRAM_ALLOWED_USERS", "TELEGRAM_GROUP_ALLOWED_USERS", "TELEGRAM_GROUP_ALLOWED_CHATS",
-		"TELEGRAM_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS", "GATEWAY_ALLOW_ALL_USERS"} {
+	for _, e := range []settings.Entry{settings.TelegramAllowFrom, settings.TelegramGroupAllowFrom, settings.TelegramGroupAllowedChats} {
+		if len(gateway.SettingList(ctx, e)) > 0 {
+			return true
+		}
+	}
+	if gateway.SettingText(ctx, settings.GatewayAllowAllUsers) != "" {
+		return true
+	}
+	for _, key := range []string{"TELEGRAM_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"} {
 		if pystr.Strip(gateway.PlatformGateEnv(ctx, key, "")) != "" {
 			return true
 		}

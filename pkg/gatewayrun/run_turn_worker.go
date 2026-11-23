@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -164,8 +165,8 @@ func numberOf(v any) (float64, bool) {
 }
 
 // Timeout of an env var in seconds, none for zero or less
-func positiveEnvSeconds(name string, def float64) *float64 {
-	if v := floatEnv(name, def); v > 0 {
+func optionalSeconds(d time.Duration) *float64 {
+	if v := d.Seconds(); v > 0 {
 		return &v
 	}
 	return nil
@@ -177,7 +178,7 @@ func (r *GatewayRunner) runAgentStartTurnWorker(ctx context.Context, tc *TurnCon
 	baseline := tools.DefaultProcessRegistry().SnapshotRunningIDs(taskID)
 	tc.processTaskID, tc.processBaseline = taskID, baseline
 	w := &runAgentWorker{
-		agentTimeout: positiveEnvSeconds("ICEBATH_AGENT_TIMEOUT", 1800), agentWarning: positiveEnvSeconds("ICEBATH_AGENT_TIMEOUT_WARNING", 900),
+		agentTimeout: optionalSeconds(settings.AgentGatewayTimeout.Get(ctx)), agentWarning: optionalSeconds(settings.AgentGatewayTimeoutWarning.Get(ctx)),
 		taskID: taskID, processBaseline: baseline, workerDone: &pythread.Event{}, timeoutFired: &pythread.Event{},
 		isCurrent: func() bool { return true },
 	}

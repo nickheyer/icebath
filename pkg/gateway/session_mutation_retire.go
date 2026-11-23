@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -182,6 +183,7 @@ func retireLiveSessions(ctx context.Context, a *SessionAuthority, sessionIDs []s
 		a.mu.Lock()
 		candidate := a.Sessions[sid]
 		delete(a.Sessions, sid)
+		settings.EndSession(sid)
 		_, retiredRoute := a.retiredRoutes[sid]
 		if candidate != nil {
 			delete(a.retiredRoutes, sid)

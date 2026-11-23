@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Busy input mode of the routed profile startup snapshot for the session controls
@@ -19,22 +18,15 @@ func (r *GatewayRunner) SetSessionServiceTierOverride(sessionKey string, service
 
 // Voice mode of the chat a source arrived on, off when none was stored
 func (r *GatewayRunner) VoiceModeFor(source *gateway.SessionSource) string {
-	if r.voiceMode == nil {
-		return "off"
-	}
-	if mode, ok := r.voiceMode.Get(r.voiceKeyForSource(source)); ok {
+	if mode, ok := chatVoiceMode(r.voiceKeyForSource(source)); ok {
 		return mode
 	}
 	return "off"
 }
 
-// Stores and persists the voice mode of the chat a source arrived on
+// Stores the voice mode of the chat a source arrived on
 func (r *GatewayRunner) StoreVoiceMode(source *gateway.SessionSource, mode string) {
-	if r.voiceMode == nil {
-		r.voiceMode = pydict.New[string, string]()
-	}
-	r.voiceMode.Set(r.voiceKeyForSource(source), mode)
-	r.saveVoiceModes()
+	storeChatVoiceMode(r.voiceKeyForSource(source), mode)
 }
 
 // Service tier the session's next turn runs, its fast pick else the routed profile's

@@ -6,19 +6,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -34,7 +32,7 @@ var corruptDBMarkers = []string{"file is not a database", "database disk image i
 // Kanban dispatch settings read once at boot
 type dispatcherSettings struct {
 	interval                float64
-	maxSpawn                any
+	maxSpawn                *int
 	maxInProgress           *int
 	failureLimit            int64
 	staleTimeoutSeconds     int64
@@ -43,100 +41,30 @@ type dispatcherSettings struct {
 	maxInProgressPerProfile *int
 }
 
-// Parses and logs the dispatcher settings in their established order
-func resolveDispatcherSettings(kanbanCfg map[string]any) dispatcherSettings {
-	get := func(key string, def any) any {
-		if v, ok := kanbanCfg[key]; ok {
-			return v
-		}
-		return def
-	}
-	rawInterval := get("dispatch_interval_seconds", int64(60))
-	if !pyrepr.Truthy(rawInterval) {
-		rawInterval = int64(60)
-	}
-	interval, err := pyint.Float(rawInterval)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: invalid dispatch_interval_seconds=%s, using default 60",
-			pyrepr.Repr(kanbanCfg["dispatch_interval_seconds"])))
-		interval = 60.0
-	}
-	interval = math.Max(interval, 1.0)
-
-	maxSpawn := kanbanCfg["max_spawn"]
-	if maxSpawn != nil {
-		pkgLog().Info(fmt.Sprintf("kanban dispatcher: max_spawn=%s", pyrepr.Str(maxSpawn)))
-	}
-
-	maxInProgress := positiveIntSetting(kanbanCfg, "max_in_progress")
+// Reads and logs the dispatcher settings of the profile in ctx
+func resolveDispatcherSettings(ctx context.Context) dispatcherSettings {
+	maxSpawn := positiveSetting(ctx, settings.KanbanMaxSpawn)
+	maxInProgress := positiveSetting(ctx, settings.KanbanMaxInProgress)
 	effectiveMaxInProgress := kanban.ResolveMaxInProgress(maxInProgress)
 	if maxInProgress == nil && effectiveMaxInProgress != nil {
-		pkgLog().Info(fmt.Sprintf("kanban dispatcher: kanban.max_in_progress unset; using "+
-			"memory-derived default max_in_progress=%d "+
-			"(set kanban.max_in_progress in config.yaml to override)", *effectiveMaxInProgress))
+		pkgLog().Info(fmt.Sprintf("kanban dispatcher: no in-progress limit set; using the memory-derived limit %d", *effectiveMaxInProgress))
 	}
-
-	rawFailureLimit := get("failure_limit", int64(kanban.DefaultFailureLimit))
-	failureLimit, err := pyint.Int64(rawFailureLimit)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.failure_limit=%s; using default %d",
-			pyrepr.Repr(rawFailureLimit), kanban.DefaultFailureLimit))
-		failureLimit = kanban.DefaultFailureLimit
-	}
-	if failureLimit < 1 {
-		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: kanban.failure_limit=%s is below 1; using default %d",
-			pyrepr.Repr(rawFailureLimit), kanban.DefaultFailureLimit))
-		failureLimit = kanban.DefaultFailureLimit
-	}
-
-	rawStale := get("dispatch_stale_timeout_seconds", int64(0))
-	if !pyrepr.Truthy(rawStale) {
-		rawStale = int64(0)
-	}
-	staleTimeoutSeconds, err := pyint.Int64(rawStale)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.dispatch_stale_timeout_seconds=%s; "+
-			"disabling stale detection", pyrepr.Repr(rawStale)))
-		staleTimeoutSeconds = 0
-	}
-
 	var defaultAssignee *string
-	if raw := kanbanCfg["default_assignee"]; pyrepr.Truthy(raw) {
-		if s := pystr.Strip(pyrepr.Str(raw)); s != "" {
-			defaultAssignee = &s
-		}
-	}
-	if defaultAssignee != nil {
+	if assignee := pystr.Strip(settings.KanbanDefaultAssignee.Get(ctx)); assignee != "" {
+		defaultAssignee = &assignee
 		pkgLog().Info(fmt.Sprintf("kanban dispatcher: default_assignee=%s (unassigned ready tasks "+
-			"will route to this profile)", pyrepr.StrRepr(*defaultAssignee)))
+			"will route to this profile)", pyrepr.StrRepr(assignee)))
 	}
-
 	return dispatcherSettings{
-		interval:                interval,
+		interval:                max(settings.KanbanDispatchIntervalSeconds.Get(ctx).Seconds(), 1.0),
 		maxSpawn:                maxSpawn,
 		maxInProgress:           effectiveMaxInProgress,
-		failureLimit:            failureLimit,
-		staleTimeoutSeconds:     staleTimeoutSeconds,
-		reconcileOrphans:        pyrepr.Truthy(get("reconcile_orphans", true)),
+		failureLimit:            int64(settings.KanbanFailureLimit.Get(ctx)),
+		staleTimeoutSeconds:     int64(max(0, settings.KanbanDispatchStaleTimeoutSeconds.Get(ctx).Seconds())),
+		reconcileOrphans:        settings.KanbanReconcileOrphans.Get(ctx),
 		defaultAssignee:         defaultAssignee,
-		maxInProgressPerProfile: positiveIntSetting(kanbanCfg, "max_in_progress_per_profile"),
+		maxInProgressPerProfile: positiveSetting(ctx, settings.KanbanMaxInProgressPerProfile),
 	}
-}
-
-// Integer spawn cap of a configured max_spawn, a TypeError for a value that cannot compare with an int
-func maxSpawnCap(v any) (*int, error) {
-	if v == nil {
-		return nil, nil
-	}
-	if n, ok := pyint.Instance(v); ok {
-		c := int(n.Int64())
-		return &c, nil
-	}
-	if f, ok := v.(float64); ok {
-		c := int(math.Ceil(f))
-		return &c, nil
-	}
-	return nil, fmt.Errorf("'>=' not supported between instances of 'int' and '%s'", config.PyTypeName(v))
 }
 
 // Database fingerprint of a board, its resolved path with stat fields when the file exists
@@ -238,10 +166,7 @@ func (d *kanbanDispatcher) tickOnceForBoard(ctx context.Context, slug string) (*
 		}
 	}()
 	result, err := func() (*kanban.DispatchResult, error) {
-		maxSpawn, err := maxSpawnCap(d.settings.maxSpawn)
-		if err != nil {
-			return nil, err
-		}
+		var err error
 		conn, err = kanbanConnect(pinned, "", &slug)
 		if err != nil {
 			conn = nil
@@ -249,7 +174,7 @@ func (d *kanbanDispatcher) tickOnceForBoard(ctx context.Context, slug string) (*
 		}
 		s := d.settings
 		return kanban.DispatchOnce(pinned, conn, kanban.DispatchOptions{
-			Board: &slug, MaxSpawn: maxSpawn, MaxInProgress: s.maxInProgress, FailureLimit: s.failureLimit,
+			Board: &slug, MaxSpawn: s.maxSpawn, MaxInProgress: s.maxInProgress, FailureLimit: s.failureLimit,
 			StaleTimeoutSeconds: s.staleTimeoutSeconds, ReconcileOrphans: s.reconcileOrphans,
 			DefaultAssignee: s.defaultAssignee, MaxInProgressPerProfile: s.maxInProgressPerProfile,
 		})

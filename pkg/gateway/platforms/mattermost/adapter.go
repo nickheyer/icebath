@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -101,6 +102,15 @@ func channelIDSet(raw any) map[string]bool {
 	return out
 }
 
+// Channel ids a list setting holds, written as a list or as comma separated text
+func channelSetting(ctx context.Context, e settings.Entry) (map[string]bool, error) {
+	v, err := settings.Resolve(gateway.SettingsContext(ctx), e.Info().Key)
+	if err != nil || v.Value == nil {
+		return map[string]bool{}, err
+	}
+	return channelIDSet(v.Value), nil
+}
+
 // Send result of a created or patched post, the given error when the reply carries no id
 func postResult(data any, failure string) gateway.SendResult {
 	m, _ := data.(map[string]any)
@@ -124,18 +134,11 @@ func urlFilename(rawURL, fallback string) string {
 	return name
 }
 
-// Server URL and token, the config first and the scoped env after
+// Server URL from settings and token from the config, the scoped env after
 func urlAndToken(ctx context.Context, config *gateway.PlatformConfig) (any, any, error) {
-	var serverURL, token any
+	var token any
 	if config != nil {
-		serverURL, token = config.Extra["url"], config.Token
-	}
-	if !pyrepr.Truthy(serverURL) {
-		scoped, err := gateway.GetScopedSecret(ctx, "MATTERMOST_URL", "", false)
-		if err != nil {
-			return nil, nil, err
-		}
-		serverURL = scoped
+		token = config.Token
 	}
 	if !pyrepr.Truthy(token) {
 		scoped, err := gateway.GetScopedSecret(ctx, "MATTERMOST_TOKEN", "", false)
@@ -144,7 +147,7 @@ func urlAndToken(ctx context.Context, config *gateway.PlatformConfig) (any, any,
 		}
 		token = scoped
 	}
-	return serverURL, token, nil
+	return settings.MattermostURL.Get(gateway.SettingsContext(ctx)), token, nil
 }
 
 // The HTTP and WebSocket clients are compiled in
@@ -169,7 +172,7 @@ func validateMattermostConfig(ctx context.Context, config *gateway.PlatformConfi
 		return false, attributeError(serverURL, "strip")
 	}
 	if pystr.Strip(urlText) == "" {
-		pkgLog().Warn("Mattermost: MATTERMOST_URL not set")
+		pkgLog().Warn("Mattermost: the server address is not set")
 		return false, nil
 	}
 	return true, nil
@@ -483,7 +486,7 @@ func (a *MattermostAdapter) Connect(ctx context.Context, isReconnect bool) (bool
 	meMap, _ := me.(map[string]any)
 	id, hasID := meMap["id"]
 	if !pyrepr.Truthy(me) || !hasID {
-		pkgLog().Error("Mattermost: failed to authenticate — check MATTERMOST_TOKEN and MATTERMOST_URL")
+		pkgLog().Error("Mattermost: failed to authenticate — check MATTERMOST_TOKEN and the server address")
 		a.closeSession()
 		return false, nil
 	}
@@ -995,32 +998,19 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 
 // Mention gates a channel post, the cleaned text or false when the post is ignored
 func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, messageText string) (string, bool, error) {
-	extra := a.Config.Extra
-	read := func(key, env string, def any) (any, error) {
-		return gateway.ExtraOrSecret(ctx, extra, key, env, def, false)
-	}
-	allowedRaw, err := read("allowed_channels", "MATTERMOST_ALLOWED_CHANNELS", "")
+	allowed, err := channelSetting(ctx, settings.MattermostAllowedChannels)
 	if err != nil {
 		return "", false, err
 	}
-	if allowed := channelIDSet(allowedRaw); len(allowed) > 0 && !allowed[channelID] {
+	if len(allowed) > 0 && !allowed[channelID] {
 		pkgLog().Debug(fmt.Sprintf("Mattermost: ignoring message in non-allowed channel: %s", channelID))
 		return "", false, nil
 	}
-	requireRaw, err := read("require_mention", "MATTERMOST_REQUIRE_MENTION", "true")
+	requireMention := settings.MattermostRequireMention.Get(gateway.SettingsContext(ctx))
+	freeChannels, err := channelSetting(ctx, settings.MattermostFreeResponseChannels)
 	if err != nil {
 		return "", false, err
 	}
-	requireMention := true
-	switch pystr.Lower(pyrepr.Str(requireRaw)) {
-	case "false", "0", "no":
-		requireMention = false
-	}
-	freeRaw, err := read("free_response_channels", "MATTERMOST_FREE_RESPONSE_CHANNELS", "")
-	if err != nil {
-		return "", false, err
-	}
-	freeChannels := channelIDSet(freeRaw)
 	a.mu.Lock()
 	mentionPatterns := []string{"@" + pyrepr.Str(a.botUsername), "@" + pyrepr.Str(a.botUserID)}
 	a.mu.Unlock()

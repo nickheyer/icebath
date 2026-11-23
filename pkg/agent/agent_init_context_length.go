@@ -247,7 +247,7 @@ func configContextLengthForRuntime(ctx context.Context, a *AIAgent, cfg map[stri
 	if pin <= 0 {
 		return nil
 	}
-	return scopeContextLengthToDefaultRuntime(ctx, a, agentCfg, modelSection, provider.CompatibleCustomProviders(agentCfg), &pin, a.baseURL)
+	return scopeContextLengthToDefaultRuntime(ctx, a, agentCfg, modelSection, provider.ProviderEntries(agentCfg), &pin, a.baseURL)
 }
 
 // Warns once when the matching custom provider model carries a context length that is not a positive integer
@@ -315,7 +315,7 @@ func resolveContextLength(ctx context.Context, a *AIAgent, agentCfg map[string]a
 				"must be a plain integer (e.g. 256000, not '256K')", "auto-detection", "auto-detected context window", a)
 		}
 	}
-	customProviders := provider.CompatibleCustomProviders(agentCfg)
+	customProviders := provider.ProviderEntries(agentCfg)
 	if configContextLength != nil {
 		configContextLength = scopeContextLengthToDefaultRuntime(ctx, a, agentCfg, modelSection, customProviders, configContextLength, baseURL)
 	}

@@ -174,6 +174,7 @@ func (a *AIAgent) recoverWithCredentialPool(ctx context.Context, statusCode *int
 		}
 		next, ok := pool.MarkExhaustedAndRotate(req)
 		if !ok {
+			a.noteLoginExhausted(ctx, pool, credentialID)
 			return false
 		}
 		nextID := next.ID

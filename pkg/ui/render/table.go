@@ -21,10 +21,11 @@ type Column struct {
 	Max int
 }
 
-// Cell of the selected row being typed into in place, its text shown selected until the first keystroke
+// Cell of the selected row being typed into in place, its text with the caret at a rune offset, shown selected until the first keystroke
 type Edit struct {
 	Col      int
 	Text     string
+	Cursor   int
 	Selected bool
 }
 
@@ -152,17 +153,22 @@ func TableMarked(cols []Column, rows [][]string, width int, selected int, marked
 				cell = cells[i]
 			}
 			if ed != nil && ed.Col == i {
-				text := ed.Text
-				if n := ansi.StringWidth(text); n > widths[i]-1 {
-					text = ansi.TruncateLeft(text, n-widths[i]+1, "")
+				runes := []rune(strings.ReplaceAll(ed.Text, "\n", " "))
+				at := min(max(ed.Cursor, 0), len(runes))
+				before, after := string(runes[:at]), string(runes[at:])
+				room := max(widths[i]-1, 1)
+				if n := ansi.StringWidth(before); n > room {
+					before = ansi.TruncateLeft(before, n-room, "")
 				}
-				pad := widths[i] - ansi.StringWidth(text) - 1
-				if ed.Selected && text != "" {
-					sb.WriteString(chosen.Render(text))
+				after = ansi.Truncate(after, max(room-ansi.StringWidth(before), 0), "")
+				pad := widths[i] - ansi.StringWidth(before) - ansi.StringWidth(after) - 1
+				if ed.Selected && ed.Text != "" {
+					sb.WriteString(chosen.Render(before + after))
+					sb.WriteString(field.Render(t.Glyphs.Caret))
 				} else {
-					sb.WriteString(field.Render(text))
+					sb.WriteString(field.Render(before + t.Glyphs.Caret + after))
 				}
-				sb.WriteString(field.Render(t.Glyphs.Caret + strings.Repeat(" ", max(pad, 0))))
+				sb.WriteString(field.Render(strings.Repeat(" ", max(pad, 0))))
 			} else {
 				cell = Truncate(cell, widths[i], t)
 				pad := widths[i] - ansi.StringWidth(cell)

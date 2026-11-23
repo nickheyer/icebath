@@ -2,12 +2,7 @@ package slack
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
 const (
@@ -19,8 +14,6 @@ const (
 var ignoreSelfUIDs = map[string]bool{ignoreBotUserID: true}
 
 func TestIgnoreOtherUserMentionsDefaultsOff(t *testing.T) {
-	t.Setenv("SLACK_IGNORE_OTHER_USER_MENTIONS", "")
-	os.Unsetenv("SLACK_IGNORE_OTHER_USER_MENTIONS")
 	a, _, _ := newHarnessAdapter(t, nil)
 	if a.slackIgnoreOtherUserMentions(context.Background()) {
 		t.Fatal("ignore_other_user_mentions must default off")
@@ -52,12 +45,8 @@ func TestMentionsSelfIDPrefixIsNotAMatch(t *testing.T) {
 	}
 }
 
-// Adapter of the live pipeline cases with the mention env cleared
+// Adapter of the live pipeline cases with no mention settings
 func ignoreAdapter(t *testing.T) (*SlackAdapter, *capturedEvents) {
-	for _, k := range []string{"SLACK_IGNORE_OTHER_USER_MENTIONS", "SLACK_FREE_RESPONSE_CHANNELS", "SLACK_REQUIRE_MENTION"} {
-		t.Setenv(k, "")
-		os.Unsetenv(k)
-	}
 	a, _, captured := newHarnessAdapter(t, nil)
 	bot := ignoreBotUserID
 	a.botUserID = &bot
@@ -106,37 +95,5 @@ func TestMentionedThreadIgnoresFollowupAddressedToOtherUser(t *testing.T) {
 	}
 	if n := len(captured.all()); n != 0 {
 		t.Fatalf("dispatched %d", n)
-	}
-}
-
-// Writes a slack block config.yaml under a fresh home and loads the gateway config through it
-func loadSlackYAML(t *testing.T) {
-	home := t.TempDir()
-	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("slack:\n  ignore_other_user_mentions: true\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ICEBATH_HOME", home)
-	prev := plugins.InstalledServices()
-	plugins.InstallServices(&plugins.Services{Platforms: gateway.PlatformRegistryService()})
-	t.Cleanup(func() { plugins.InstallServices(prev) })
-	if _, err := gateway.LoadGatewayConfig(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestConfigBridgesSlackIgnoreOtherUserMentions(t *testing.T) {
-	t.Setenv("SLACK_IGNORE_OTHER_USER_MENTIONS", "")
-	os.Unsetenv("SLACK_IGNORE_OTHER_USER_MENTIONS")
-	loadSlackYAML(t)
-	if got := os.Getenv("SLACK_IGNORE_OTHER_USER_MENTIONS"); got != "true" {
-		t.Fatalf("bridged env %q", got)
-	}
-}
-
-func TestIgnoreOtherUserMentionsEnvWinsOverYAML(t *testing.T) {
-	t.Setenv("SLACK_IGNORE_OTHER_USER_MENTIONS", "false")
-	loadSlackYAML(t)
-	if got := os.Getenv("SLACK_IGNORE_OTHER_USER_MENTIONS"); got != "false" {
-		t.Fatalf("explicit env overwritten to %q", got)
 	}
 }

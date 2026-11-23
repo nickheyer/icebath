@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"unsafe"
 
 	"modernc.org/libc"
@@ -14,8 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const FTSCJKTableSQL = `
@@ -87,15 +85,7 @@ func FTS5CJKSoPath(ctx context.Context) string {
 
 // Reports whether sessions.cjk_fts, default on, allows the CJK bigram index for the served profile
 func cjkFTSConfigEnabled(ctx context.Context) bool {
-	value := RoutedSessionsSetting(ctx, "cjk_fts", "ICEBATH_CJK_FTS")
-	if value == nil {
-		return true
-	}
-	text, err := pyrepr.Format(value, "")
-	if err != nil {
-		text = pyrepr.Repr(value)
-	}
-	return !slices.Contains([]string{"0", "false", "off", "no"}, pystr.Lower(pystr.Strip(text)))
+	return settings.SessionsCjkFts.Get(ctx)
 }
 
 // Registers the built in cjk_unicode61 tokenizer on conn unless sessions.cjk_fts is off or an explicit extension path is absent

@@ -18,10 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-const (
-	copilotDeviceExpiresIn = 900
-	copilotTokenEnvVar     = "COPILOT_GITHUB_TOKEN"
-)
+// Seconds a Copilot device code stays valid when GitHub does not say
+const copilotDeviceExpiresIn = 900
 
 // Device code endpoints of the GitHub web host
 var (
@@ -71,8 +69,16 @@ func copilotCatalogFor(ctx context.Context, apiKey string) ([]any, []string, fun
 	return catalog, ids, normalize
 }
 
-// Exchanged Copilot token of the first supported env token with its env name, the raw token when the exchange fails
+// Exchanged Copilot token of the selected login, else of the first supported env token, with where it came from, the raw token when the exchange fails
 func copilotSetupAPIKey(ctx context.Context) (string, string, error) {
+	if entry, ok := LoadSelectedPool(LoginEnv(ctx), "copilot").Peek(); ok && entry.AccessToken != "" {
+		raw := entry.AccessToken
+		if valid, _ := validateCopilotToken(raw); !valid {
+			return raw, entry.Source, nil
+		}
+		token, _ := getCopilotAPIToken(ctx, raw)
+		return token, entry.Source, nil
+	}
 	raw, source, err := resolveCopilotToken(ctx)
 	if err != nil {
 		return "", "", err
@@ -82,6 +88,12 @@ func copilotSetupAPIKey(ctx context.Context) (string, string, error) {
 	}
 	token, _ := getCopilotAPIToken(ctx, raw)
 	return token, source, nil
+}
+
+// Stores a GitHub token for Copilot as an owned login made the profile default, never in .env
+func saveCopilotLogin(ctx context.Context, token string) error {
+	_, _, err := AddKeyLogin(LoginEnv(ctx), "copilot", token, AddLoginOptions{MakeDefault: true})
+	return err
 }
 
 // Every id the models endpoint lists for the token without chat filtering, empty on any failure
@@ -137,7 +149,7 @@ func copilotObtainToken(r *ModelFlowRun) (bool, error) {
 			return false, nil
 		}
 		if err == nil {
-			err = config.SaveEnvValueContext(r.ctx(), r.home(), copilotTokenEnvVar, token)
+			err = saveCopilotLogin(r.ctx(), token)
 		}
 		if err != nil {
 			fmt.Fprintf(r.Out, "  Login failed: %v\n", err)
@@ -146,7 +158,7 @@ func copilotObtainToken(r *ModelFlowRun) (bool, error) {
 		flowSay(r.Out, "  Copilot token saved.", "")
 		return true, nil
 	case "2":
-		newKey, ok := flowAskFn(r.Out, "  Token (COPILOT_GITHUB_TOKEN): ", flowAskOptions{Secret: true, CancelMsg: &blank})
+		newKey, ok := flowAskFn(r.Out, "  GitHub token: ", flowAskOptions{Secret: true, CancelMsg: &blank})
 		if !ok {
 			return false, nil
 		}
@@ -158,7 +170,7 @@ func copilotObtainToken(r *ModelFlowRun) (bool, error) {
 			fmt.Fprintf(r.Out, "  ✗ %s\n", msg)
 			return false, nil
 		}
-		if err := config.SaveEnvValueContext(r.ctx(), r.home(), copilotTokenEnvVar, newKey); err != nil {
+		if err := saveCopilotLogin(r.ctx(), newKey); err != nil {
 			return false, err
 		}
 		flowSay(r.Out, "  Token saved.", "")
@@ -188,7 +200,8 @@ func copilotModelFlowBody(r *ModelFlowRun) error {
 		if apiKey, _, err = copilotSetupAPIKey(ctx); err != nil {
 			return err
 		}
-	} else if source == "GITHUB_TOKEN" || source == "GH_TOKEN" {
+	} else if source == "GITHUB_TOKEN" || source == "GH_TOKEN" || source == "env:GITHUB_TOKEN" || source == "env:GH_TOKEN" {
+		source = strings.TrimPrefix(source, "env:")
 		flowSay(r.Out, fmt.Sprintf("  GitHub token: %s... ✓ (%s%s)", pystr.Slice(apiKey, 0, 8), source, SecretSourceLabel(r.home(), source)), "")
 	} else {
 		flowSay(r.Out, "  GitHub token: ✓", "")
@@ -218,8 +231,12 @@ func copilotSetupReasoningEfforts(model string) any {
 	return githubModelReasoningEfforts(context.Background(), model, nil, "")
 }
 
-// Accounts card status from the env token ladder only, no exchange
+// Accounts card status of the selected Copilot login, else of the env token ladder, no exchange
 func copilotAccountStatus(ctx context.Context) (any, error) {
+	if entry, ok := LoadSelectedPool(LoginEnv(ctx), "copilot").Peek(); ok && entry.AccessToken != "" {
+		return pyjson.ObjectOf("logged_in", true, "source", "login", "source_label", "login "+entry.LoginName(),
+			"token_preview", nil, "expires_at", nil, "has_refresh_token", false), nil
+	}
 	h := home.Dir(ctx)
 	for _, envVar := range copilotEnvVars {
 		raw, _, err := config.GetEnvValue(ctx, h, envVar)
@@ -353,9 +370,9 @@ func copilotPollDeviceLogin(ctx context.Context, state any) (any, error) {
 	return map[string]any{"status": outcome[0], "message": outcome[1]}, nil
 }
 
-// Saves the approved GitHub OAuth token where the terminal device login puts it
+// Saves the approved GitHub OAuth token as an owned Copilot login made the profile default
 func copilotSaveDeviceLogin(ctx context.Context, token any) error {
-	return config.SaveEnvValueContext(ctx, home.Dir(ctx), copilotTokenEnvVar, pyStr(token))
+	return saveCopilotLogin(ctx, pyStr(token))
 }
 
 // Value following a flag in the raw auth arguments, empty when the flag is absent

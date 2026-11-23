@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Home of a named routed profile, the unresolved marker never standing for the launch profile
@@ -130,13 +131,13 @@ func (r *GatewayRunner) adapterDisconnectTimeoutSecs() float64 {
 	return adapterDisconnectTimeoutSecsDefault
 }
 
-// Per platform connect timeout, the capped Telegram budget on the cold start connect
-func (r *GatewayRunner) platformConnectTimeoutSecs(platform gateway.Platform, initial bool) float64 {
-	if override := envTimeoutOverride("ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT"); override != nil {
-		return *override
+// Per platform connect timeout, a configured timeout for every platform, else the capped Telegram budget on the cold start connect
+func (r *GatewayRunner) platformConnectTimeoutSecs(ctx context.Context, platform gateway.Platform, initial bool) float64 {
+	if v, err := settings.Resolve(ctx, settings.GatewayPlatformConnectTimeout.Key); err == nil && v.Source != settings.SourceDefault {
+		return max(0, settings.GatewayPlatformConnectTimeout.Get(ctx).Seconds())
 	}
 	if platform != gateway.PlatformTelegram {
-		return platformConnectTimeoutSecsDefault
+		return settings.GatewayPlatformConnectTimeout.Default.Seconds()
 	}
 	if initial {
 		return telegramInitialConnectTimeoutSecsDefault
@@ -151,7 +152,7 @@ func (r *GatewayRunner) connectAdapterWithTimeout(ctx context.Context, adapter g
 
 // Connect bounded by the platform timeout, a TimeoutError once it passes
 func (r *GatewayRunner) connectAdapterBounded(ctx context.Context, adapter gateway.PlatformAdapter, platform gateway.Platform, isReconnect, initial bool) (bool, error) {
-	timeout := r.platformConnectTimeoutSecs(platform, initial)
+	timeout := r.platformConnectTimeoutSecs(ctx, platform, initial)
 	if timeout <= 0 {
 		return adapter.Connect(ctx, isReconnect)
 	}

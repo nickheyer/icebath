@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -15,6 +17,39 @@ func unsetEnvForTest(t *testing.T, keys ...string) {
 	for _, k := range keys {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
+	}
+}
+
+// Writes settings into the test home's config.yaml, giving the test a fresh home unless it already has a temporary one
+func setSettingsForTest(t *testing.T, values map[string]any) {
+	t.Helper()
+	h := os.Getenv(home.EnvHome)
+	if h == "" || !strings.HasPrefix(h, os.TempDir()) {
+		h = t.TempDir()
+		t.Setenv(home.EnvHome, h)
+	}
+	path := filepath.Join(h, "config.yaml")
+	doc := map[string]any{}
+	if data, err := os.ReadFile(path); err == nil {
+		parsed, err := config.FastSafeLoad(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m, ok := parsed.(map[string]any); ok {
+			doc = m
+		}
+	}
+	for key, value := range values {
+		if err := config.Tree(doc).Set(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := config.SafeDump(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -33,7 +68,7 @@ func writeGateAuthStore(t *testing.T, h, body string) {
 	}
 }
 
-const gateEmptyStore = `{"version": 1, "providers": {}, "active_provider": null}`
+const gateEmptyStore = `{"version": 2, "providers": {}, "active_provider": null}`
 
 func explicitIn(ctx context.Context, provider string) bool {
 	return IsProviderExplicitlyConfigured(modelsPoolEnv(ctx), provider)
@@ -44,7 +79,7 @@ func explicitlyConfigured(provider string) bool { return explicitIn(context.Back
 func TestAmbientPoolSourceDoesNotCountAsExplicit(t *testing.T) {
 	h := gateHome(t)
 	unsetEnvForTest(t, "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
-	writeGateAuthStore(t, h, `{"version": 1, "providers": {}, "active_provider": null, "credential_pool": {"copilot": [
+	writeGateAuthStore(t, h, `{"version": 2, "providers": {}, "active_provider": null, "credential_pool": {"copilot": [
 		{"id": "abc123", "source": "gh_cli", "auth_type": "api_key", "access_token": "ghu_sometoken"}]}}`)
 	if explicitlyConfigured("copilot") {
 		t.Fatal("gh_cli seeded pool entry counted as explicit")
@@ -120,7 +155,7 @@ func TestReturnsTrueWhenMoAReferenceSlotUsesProvider(t *testing.T) {
 	writeConfigYAML(t, h, "model:\n  provider: openai-codex\n  default: gpt-5.5\nmoa:\n  presets:\n    default:\n      reference_models:\n"+
 		"        - provider: anthropic\n          model: claude-opus-4-8\n        - provider: opencode-go\n          model: glm-5.2\n"+
 		"      aggregator:\n        provider: openai-codex\n        model: gpt-5.5\n")
-	writeGateAuthStore(t, h, `{"version": 1, "providers": {}, "active_provider": "openai-codex"}`)
+	writeGateAuthStore(t, h, `{"version": 2, "providers": {}, "active_provider": "openai-codex"}`)
 	if !explicitlyConfigured("anthropic") {
 		t.Fatal("moa reference slot provider did not count")
 	}
@@ -129,7 +164,7 @@ func TestReturnsTrueWhenMoAReferenceSlotUsesProvider(t *testing.T) {
 func TestStaleEnvPoolEntryDoesNotCountWhenVarUnset(t *testing.T) {
 	h := gateHome(t)
 	unsetEnvForTest(t, "DEEPSEEK_API_KEY")
-	writeGateAuthStore(t, h, `{"version": 1, "providers": {}, "active_provider": null, "credential_pool": {"deepseek": [
+	writeGateAuthStore(t, h, `{"version": 2, "providers": {}, "active_provider": null, "credential_pool": {"deepseek": [
 		{"id": "aaa111", "source": "env:DEEPSEEK_API_KEY", "auth_type": "api_key"}]}}`)
 	if explicitlyConfigured("deepseek") {
 		t.Fatal("stale env pool entry counted")

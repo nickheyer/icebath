@@ -33,8 +33,9 @@ type queueItem struct {
 	ControlMethod       string
 	ExecutionGeneration *int64
 	PreparedText        *string
-	LegacyAttempted     *bool
-	Settle              func(accepted bool)
+	// Set on a correction once it went out: it carries no input id the owner could tell a second delivery by, so it is never sent again
+	SentOnce *bool
+	Settle   func(accepted bool)
 }
 
 // Reports whether the owner took the input, for a queue entry waiting on its answer
@@ -143,7 +144,7 @@ type journalRecord struct {
 	Attachments         []journalAttachment `json:"attachments,omitempty"`
 	ControlMethod       string              `json:"controlMethod,omitempty"`
 	ExecutionGeneration *int64              `json:"executionGeneration,omitempty"`
-	LegacyAttempted     *bool               `json:"legacyAttempted,omitempty"`
+	SentOnce            *bool               `json:"sentOnce,omitempty"`
 	CreatedAt           *float64            `json:"createdAt,omitempty"`
 	Queued              *bool               `json:"queued,omitempty"`
 }
@@ -206,7 +207,7 @@ func (p *pendingInputs) save(item queueItem) error {
 	}
 	record := journalRecord{SubmissionID: item.SubmissionID, Destination: destinationJSON(destination), OwnerDestination: destinationJSON(&owner),
 		Display: &item.Display, Text: &item.Text, Attempted: item.InFlight || item.Failed, PreparedText: item.PreparedText,
-		ControlMethod: item.ControlMethod, ExecutionGeneration: item.ExecutionGeneration, LegacyAttempted: item.LegacyAttempted,
+		ControlMethod: item.ControlMethod, ExecutionGeneration: item.ExecutionGeneration, SentOnce: item.SentOnce,
 		CreatedAt: item.CreatedAt, Queued: item.Queued}
 	if item.Attachments != nil {
 		record.Attachments = make([]journalAttachment, len(item.Attachments))
@@ -312,7 +313,7 @@ func (p *pendingInputs) load(destination submissionDestination, durableResume bo
 		item := queueItem{Display: *record.Display, Text: *record.Text, SubmissionID: record.SubmissionID, Destination: destinationOf(record.Destination),
 			OwnerDestination: destinationOf(record.OwnerDestination), Failed: record.Attempted, ControlMethod: record.ControlMethod,
 			PreparedText: record.PreparedText, CreatedAt: record.CreatedAt, ExecutionGeneration: record.ExecutionGeneration,
-			LegacyAttempted: record.LegacyAttempted, Queued: record.Queued}
+			SentOnce: record.SentOnce, Queued: record.Queued}
 		if record.Attachments != nil {
 			item.Attachments = []imageAttachment{}
 			for _, a := range record.Attachments {

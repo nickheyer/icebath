@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -145,12 +144,9 @@ func pluginProviderName(env *tools.Env) string {
 	return configured
 }
 
-// Configured FAL model with the env override, the default with a warning when unknown
+// Configured FAL model, the default with a warning when unknown
 func resolveFalModel(env *tools.Env) (string, map[string]any) {
 	modelID := readImageGenKey(env, "model")
-	if modelID == "" {
-		modelID = strings.TrimSpace(os.Getenv("FAL_IMAGE_MODEL"))
-	}
 	if _, ok := falModels[modelID]; modelID != "" && !ok {
 		logOf(env).Warn(fmt.Sprintf("Unknown FAL model '%s' in config; falling back to %s", modelID, falDefaultModel))
 		modelID = ""
@@ -394,7 +390,7 @@ func prepareFalRequest(ctx context.Context, env *tools.Env, modelID string, meta
 	if len(sources) > 0 && editEndpoint == "" {
 		return "", nil, &imageValueError{fmt.Sprintf("Model '%s' (%s) is not capable of image-to-image / editing. "+
 			"Provide a text-only prompt (omit image_url), or switch to an edit-capable model "+
-			"via `icebath tools` → Image Generation.", display, modelID)}
+			"in /settings → Images & media.", display, modelID)}
 	}
 	aspect := aspectRatio
 	if aspect == "" {
@@ -570,7 +566,7 @@ func buildNoBackendSetupMessage() string {
 	return strings.Join([]string{"Image generation is unavailable in this environment.", "", "Missing requirements:",
 		"  - FAL_KEY environment variable is not set", "", "To enable image generation, do one of:",
 		"  1. Get a free API key at https://fal.ai and set FAL_KEY=<your-key> (then restart the session)",
-		"  2. Configure a different image_gen provider via `icebath tools` → Image Generation " +
+		"  2. Pick another image service in /settings → Images & media " +
 			"(run `icebath plugins list` to see installed backends)"}, "\n")
 }
 

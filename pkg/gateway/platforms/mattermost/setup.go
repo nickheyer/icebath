@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Mattermost wizard of icebath gateway setup writing the server, token, allowlist and home channel to the home .env
@@ -25,7 +26,7 @@ func InteractiveSetup(ctx context.Context) error {
 		"   1. In Mattermost: Integrations → Bot Accounts → Add Bot Account", "   2. Copy the bot token")
 	gateway.WizardPrintln("")
 	if url := cli.Prompt("Mattermost server URL (e.g. https://mm.example.com)", "", false); url != "" {
-		if err := cfg.SaveEnvValue(ctx, "MATTERMOST_URL", strings.TrimRight(url, "/")); err != nil {
+		if _, err := settings.Set(gateway.SettingsContext(ctx), settings.MattermostURL.Key, strings.TrimRight(url, "/"), settings.Global); err != nil {
 			return err
 		}
 	}

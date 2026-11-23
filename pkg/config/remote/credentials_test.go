@@ -3,7 +3,6 @@ package remote
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )

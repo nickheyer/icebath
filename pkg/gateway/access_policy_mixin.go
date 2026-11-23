@@ -85,7 +85,7 @@ func NewOwnAccessPolicyMixin(host, prefix string) (*OwnAccessPolicyMixin, error)
 // The adapter enforces its own access policy
 func (p *OwnAccessPolicyMixin) EnforcesOwnAccessPolicy() bool { return true }
 
-// The global and platform allow all users env names
+// The global and platform allow all users names, each read from the setting it moved to or else the env
 func (p *OwnAccessPolicyMixin) AllowAllEnvNames() []string {
 	return append([]string{"GATEWAY_ALLOW_ALL_USERS", p.AllowAllEnvPrefix + "_ALLOW_ALL_USERS"}, p.ExtraAllowAllEnvNames...)
 }
@@ -93,9 +93,15 @@ func (p *OwnAccessPolicyMixin) AllowAllEnvNames() []string {
 // Whether a profile scoped allow all users opt in is set, failing closed
 func (p *OwnAccessPolicyMixin) OpenDMOptedIn(ctx context.Context) (bool, error) {
 	for _, name := range p.AllowAllEnvNames() {
-		value, err := GetScopedSecret(ctx, name, "", false)
-		if err != nil {
-			return false, err
+		value := ""
+		if e := envSetting(name); e != nil {
+			value = SettingText(ctx, e)
+		} else {
+			scoped, err := GetScopedSecret(ctx, name, "", false)
+			if err != nil {
+				return false, err
+			}
+			value = scoped
 		}
 		if accessOptinTruthy[strings.ToLower(pystr.Strip(value))] {
 			return true, nil

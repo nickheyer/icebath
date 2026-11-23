@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -138,9 +139,10 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 		a.replyToMode = pyrepr.Str(mode)
 	}
 	a.disableLinkPreviews = a.core.coerceBoolExtra("disable_link_previews", false)
-	a.richMessagesEnabled = a.core.coerceBoolExtra("rich_messages", false)
-	a.allowCJKRichMessages = a.core.coerceBoolExtra("allow_cjk_rich_messages", false)
-	a.richDraftsEnabled = a.core.coerceBoolExtra("rich_drafts", false)
+	sctx := gateway.SettingsContext(ctx)
+	a.richMessagesEnabled = settings.TelegramExtraRichMessages.Get(sctx)
+	a.allowCJKRichMessages = settings.TelegramExtraAllowCjkRichMessages.Get(sctx)
+	a.richDraftsEnabled = settings.TelegramExtraRichDrafts.Get(sctx)
 	maxCooldown, maxRetrigger := 300.0, 30.0
 	a.pacer = newSendPacer(a.CoerceFloatExtra("typing_cooldown_seconds", 30.0, 1.0, &maxCooldown))
 	a.typingRetriggerInterval = a.CoerceFloatExtra("typing_retrigger_min_interval_seconds", 2.0, 0.0, &maxRetrigger)

@@ -73,7 +73,7 @@ func TestStaleKillIncrementsStreak(t *testing.T) {
 	recordStreamBackoff(t)
 	drops := &droppingStreams{}
 	h := newAbandonHarness(t, func() (anthMessageStream, error) { return drops.open(5*time.Second, false), nil })
-	t.Setenv(StreamStaleTimeoutEnv, "0.1")
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.1})
 	t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "50")
 	h.agent.onAbort = drops.abort
 	o := h.wait(h.start(t.Context()), 30*time.Second)
@@ -84,7 +84,7 @@ func TestStaleKillIncrementsStreak(t *testing.T) {
 
 func TestStaleWindowCoversTheHeaderWaitOfAnAttempt(t *testing.T) {
 	t.Setenv(home.EnvHome, t.TempDir())
-	t.Setenv(StreamStaleTimeoutEnv, "0.2")
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.2})
 	t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "50")
 	srv := newAnthServer(t, func(w http.ResponseWriter, body map[string]any) { time.Sleep(3 * time.Second) })
 	c := srv.client(srv.route("https://example.invalid", "test-key"))
@@ -109,7 +109,7 @@ func TestOneAttemptCountsOnceHoweverOftenTheTimerFires(t *testing.T) {
 				}
 				return drops.open(1500*time.Millisecond, true), nil
 			})
-			t.Setenv(StreamStaleTimeoutEnv, "0.1")
+			setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.1})
 			t.Setenv("ICEBATH_STREAM_STALE_GIVEUP", "50")
 			t.Setenv("ICEBATH_STREAM_RETRIES", "0")
 			if slow == "worker_start" {

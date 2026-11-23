@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -74,11 +75,7 @@ func (g *adapterCore) isCallbackUserAuthorized(ctx context.Context, userID strin
 	}
 	decision := envAllowlistDecision(ctx, normalizedUserID)
 	if decision == nil {
-		switch pystr.Lower(gateway.PlatformGateEnv(ctx, "GATEWAY_ALLOW_ALL_USERS", "")) {
-		case "true", "1", "yes":
-			return true
-		}
-		return false
+		return settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx))
 	}
 	return *decision
 }
@@ -216,17 +213,14 @@ func (g *adapterCore) isUserAuthorizedFromMessage(ctx context.Context, message *
 	}
 	userID := *source.UserID
 	var authorized *bool
-	key := "allow_from"
+	list := settings.Entry(settings.TelegramAllowFrom)
 	switch source.ChatType {
 	case "group", "forum", "channel":
-		key = "group_allow_from"
+		list = settings.TelegramGroupAllowFrom
 	}
-	if g.base.Config != nil && g.base.Config.Extra != nil {
-		if raw, ok := g.base.Config.Extra[key]; ok && raw != nil {
-			allowed := gateway.CoerceAllowSet(raw)
-			decision := allowed[userID] || allowed["*"]
-			authorized = &decision
-		}
+	if allowed := gateway.SettingSet(ctx, list); len(allowed) > 0 {
+		decision := allowed[userID] || allowed["*"]
+		authorized = &decision
 	}
 	if authorized == nil {
 		auth := g.legacyRunnerAuthFn()

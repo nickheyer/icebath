@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -22,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -272,10 +275,10 @@ var doctorToolsetSetupHints = map[string]string{
 var doctorToolsetNeedHints = map[string]string{
 	"vision":          "(no configured model reads images — pick one with /model, or set the vision task in /setup aux)",
 	"video":           "(no configured model reads video — pick one with /model, or set the video or vision task in /setup aux)",
-	"feishu_doc":      "(needs the Feishu / Lark app, FEISHU_APP_ID and FEISHU_APP_SECRET — set it up in /setup gateway)",
-	"feishu_drive":    "(needs the Feishu / Lark app, FEISHU_APP_ID and FEISHU_APP_SECRET — set it up in /setup gateway)",
-	"a2a":             "(needs the A2A platform turned on — set it up in /setup gateway)",
-	"icebath-yuanbao": "(needs the Yuanbao platform — set it up in /setup gateway)",
+	"feishu_doc":      "(needs the Feishu / Lark app, FEISHU_APP_ID and FEISHU_APP_SECRET — set it up in /setup chat-apps)",
+	"feishu_drive":    "(needs the Feishu / Lark app, FEISHU_APP_ID and FEISHU_APP_SECRET — set it up in /setup chat-apps)",
+	"a2a":             "(needs the A2A platform turned on — set it up in /setup chat-apps)",
+	"icebath-yuanbao": "(needs the Yuanbao platform — set it up in /setup chat-apps)",
 	"browser-cdp":     "(needs a browser to attach to — run /browser connect, or set browser.cdp_url or BROWSER_CDP_URL)",
 	"computer_use":    "(needs the cua-driver program — run: icebath computer-use install)",
 }
@@ -374,16 +377,17 @@ func doctorCheckDockerBackend(ctx context.Context, w io.Writer, terminalEnv stri
 
 // Probes the configured SSH host with a batch mode connection
 func doctorCheckSSHBackend(ctx context.Context, d *Doctor, issues *[]string) error {
-	sshHost := os.Getenv("TERMINAL_SSH_HOST")
+	sctx := home.WithOverride(ctx, d.Home)
+	sshHost := settings.TerminalSSHHost.Get(sctx)
 	if sshHost == "" {
 		doctorFailAndIssue(d.W, "SSH host not configured", "(needed for the 'ssh' terminal backend)",
 			"start `icebath`, type `/setup terminal` and enter the SSH host and user.", issues)
 		return nil
 	}
-	sshUser, sshPort, sshKey := os.Getenv("TERMINAL_SSH_USER"), os.Getenv("TERMINAL_SSH_PORT"), os.Getenv("TERMINAL_SSH_KEY")
+	sshUser, sshPort, sshKey := settings.TerminalSSHUser.Get(sctx), settings.TerminalSSHPort.Get(sctx), settings.TerminalSSHKey.Get(sctx)
 	cmd := []string{"ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes"}
-	if sshPort != "" {
-		cmd = append(cmd, "-p", sshPort)
+	if sshPort != 0 {
+		cmd = append(cmd, "-p", strconv.Itoa(sshPort))
 	}
 	if sshKey != "" {
 		cmd = append(cmd, "-i", pypath.Expanduser(sshKey))
@@ -421,26 +425,19 @@ func doctorCheckDaytonaBackend(ctx context.Context, d *Doctor, issues *[]string)
 	return nil
 }
 
-// Environment value with a default for an unset name
-func doctorGetenvDefault(name, def string) string {
-	if v, ok := os.LookupEnv(name); ok {
-		return v
-	}
-	return def
-}
-
 // Reports the Vercel runtime, disk setting, linked client, auth mode and persistence
 func doctorCheckVercelBackend(ctx context.Context, d *Doctor, issues *[]string) error {
-	runtimeName := pystr.Strip(doctorGetenvDefault("TERMINAL_VERCEL_RUNTIME", "node24"))
+	sctx := home.WithOverride(ctx, d.Home)
+	runtimeName := pystr.Strip(settings.TerminalVercelRuntime.Get(sctx))
 	if runtimeName == "" {
 		runtimeName = "node24"
 	}
 	supported := strings.Join(tools.SupportedVercelRuntimes, ", ")
 	doctorRequire(d.W, containsString(tools.SupportedVercelRuntimes, runtimeName), doctorRow{"Vercel runtime", "(" + runtimeName + ")"},
 		doctorRow{"Vercel runtime unsupported", "(" + runtimeName + "; use " + supported + ")"},
-		"Set TERMINAL_VERCEL_RUNTIME to one of: "+supported, issues)
-	disk := pystr.Strip(doctorGetenvDefault("TERMINAL_CONTAINER_DISK", "51200"))
-	doctorRequire(d.W, disk == "" || disk == "0" || disk == "51200",
+		"Set the Vercel runtime in /settings to one of: "+supported, issues)
+	disk := settings.TerminalContainerDisk.Get(sctx)
+	doctorRequire(d.W, disk == 0 || disk == 51200,
 		doctorRow{"Vercel disk setting", "(uses platform default)"},
 		doctorRow{"Vercel custom disk unsupported", "(reset terminal.container_disk to 51200)"},
 		"Vercel Sandbox does not support custom container_disk; use the shared default 51200", issues)
@@ -460,10 +457,9 @@ func doctorCheckVercelBackend(ctx context.Context, d *Doctor, issues *[]string) 
 	for _, line := range auth.DetailLines {
 		doctorCheckInfo(d.W, "Vercel auth "+line)
 	}
-	switch strings.ToLower(doctorGetenvDefault("TERMINAL_CONTAINER_PERSISTENT", "true")) {
-	case "1", "true", "yes", "on":
+	if settings.TerminalContainerPersistent.Get(sctx) {
 		doctorCheckInfo(d.W, "Vercel persistence: snapshot filesystem only; live processes do not survive sandbox recreation")
-	default:
+	} else {
 		doctorCheckInfo(d.W, "Vercel persistence: ephemeral filesystem")
 	}
 	return nil
@@ -497,10 +493,10 @@ var doctorBackendChecks = map[string]func(context.Context, *Doctor, *[]string) e
 	"ssh": doctorCheckSSHBackend, "daytona": doctorCheckDaytonaBackend, "vercel_sandbox": doctorCheckVercelBackend,
 }
 
-// Reports the Docker, SSH, Daytona, Vercel or plugin terminal backend TERMINAL_ENV selects
+// Reports the Docker, SSH, Daytona, Vercel or plugin terminal backend the profile selects
 func checkTerminalBackend(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
-		terminalEnv := doctorGetenvDefault("TERMINAL_ENV", "local")
+		terminalEnv := settings.WhereCommandsRun.Get(home.WithOverride(ctx, d.Home))
 		runningInContainer := func() (in bool) {
 			defer func() {
 				if recover() != nil {
@@ -546,10 +542,11 @@ func doctorChromiumNotNeededReason(ctx context.Context, d *Doctor) (string, erro
 	if err != nil {
 		return "", err
 	}
-	if os.Getenv("BROWSER_CDP_URL") != "" || config.PyTruthy(cfg.Get("browser.cdp_url")) {
+	sctx := home.WithOverride(ctx, d.Home)
+	if settings.BrowserCdpUrl.Get(sctx) != "" {
 		return "a CDP override is set", nil
 	}
-	if strings.ToLower(pystr.Strip(doctorConfigText(cfg.Get("browser.engine")))) == "lightpanda" {
+	if settings.BrowserEngine.Get(sctx) == "lightpanda" {
 		return "browser.engine is lightpanda", nil
 	}
 	provider := strings.ToLower(pystr.Strip(doctorConfigText(cfg.Get("browser.cloud_provider"))))

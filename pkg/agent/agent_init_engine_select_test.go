@@ -21,7 +21,7 @@ func startupAgent(t *testing.T, platform string) (*AIAgent, *[]string) {
 	printed := &[]string{}
 	prev := warningNotificationsEnabled
 	t.Cleanup(func() { warningNotificationsEnabled = prev })
-	warningNotificationsEnabled = func(context.Context, string, map[string]any) bool { return true }
+	warningNotificationsEnabled = func(context.Context, string) bool { return true }
 	return &AIAgent{platform: platform, printFn: func(s string) { *printed = append(*printed, s) }}, printed
 }
 

@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -16,23 +15,7 @@ import (
 )
 
 func init() {
-	config.RegisterMigrateCollaborators(config.MigrateCollaborators{
-		Personality: config.PersonalitySources{
-			Normalize:  NormalizePersonalityName,
-			PromptText: PromptText,
-			Render:     RenderPersonalityPrompt,
-			Available:  func(cfg map[string]any) map[string]any { return AvailablePersonalities(config.Tree(cfg)) },
-		},
-		ValidateMCPServerEntry:  mcp.ValidateServerEntry,
-		PlatformToolsetWarnings: platformToolsetWarnings,
-		SkillConfigVars:         discoverSkillConfigVars,
-	})
-}
-
-// Saved platform toolset problems resolved against the toolsets the saved config defines
-func platformToolsetWarnings(cfg map[string]any) ([]string, error) {
-	pt, _ := cfg["platform_toolsets"].(map[string]any)
-	return tools.ValidatePlatformToolsets(pt, tools.SavedToolsetResolver(context.Background(), cfg)), nil
+	config.RegisterSkillConfigVars(discoverSkillConfigVars)
 }
 
 // Skill declared config variables of every installed skill in the facade shape
@@ -50,7 +33,7 @@ func discoverSkillConfigVars() ([]config.SkillConfigVar, error) {
 
 // Binds icebath config and every config subcommand to the config facade
 func (c *CLI) bindConfig() {
-	for _, sub := range []string{"", "show", "edit", "get", "set", "unset", "path", "env-path", "check", "migrate"} {
+	for _, sub := range []string{"", "show", "edit", "get", "set", "unset", "path", "env-path", "check"} {
 		path := strings.TrimSpace("config " + sub)
 		c.Bind(path, func(cmd *cobra.Command, args []string) error { return runConfig(cmd, sub, args) })
 	}
@@ -77,9 +60,6 @@ func runConfig(cmd *cobra.Command, sub string, args []string) error {
 	if f.Lookup("raw") != nil {
 		a.Raw, _ = f.GetBool("raw")
 	}
-	if f.Lookup("force") != nil {
-		a.Force, _ = f.GetBool("force")
-	}
 	h := home.Dir(ctx)
 	err := config.ConfigCommand(ctx, h, a, configCommandSources(h))
 	var exit *config.ConfigExit
@@ -92,19 +72,14 @@ func runConfig(cmd *cobra.Command, sub string, args []string) error {
 // Readers and writers the config facade commands reach in provider, tools, plugins, skills and gateway owners
 func configCommandSources(h string) config.ConfigCommandSources {
 	return config.ConfigCommandSources{
-		RuntimeKeyOwners: config.RuntimeKeyOwners{
-			SelectionConfigKeys: tools.SelectionConfigKeys,
-			ActiveManifests:     func() []config.PluginConfigKeys { return plugins.ActiveConfigKeyManifests(h) },
-		},
-		LeftCoreTerminalKeys:    provider.LeftCoreTerminalKeys,
-		DisplayOverrideableKeys: config.DisplayOverrideableKeys(),
-		IsEnvSettingKey:         provider.IsEnvSettingKey,
-		SaveEnvSetting:          provider.SaveEnvSetting,
-		ReadEnvSetting:          provider.ReadEnvSetting,
-		RemoveEnvSetting:        provider.RemoveEnvSetting,
-		DropStaleModelRoute:     provider.DropStaleModelRoute,
-		Language:                provider.LanguageCatalog(),
-		Show:                    configShowSources,
+		LoadPluginSettings:  func() { plugins.RegisterActiveSettings(h) },
+		IsEnvSettingKey:     provider.IsEnvSettingKey,
+		SaveEnvSetting:      provider.SaveEnvSetting,
+		ReadEnvSetting:      provider.ReadEnvSetting,
+		RemoveEnvSetting:    provider.RemoveEnvSetting,
+		DropStaleModelRoute: provider.DropStaleModelRoute,
+		Language:            provider.LanguageCatalog(),
+		Show:                configShowSources,
 		CheckDiagnostics: config.CheckDiagnosticsSources{
 			PlatformToolsetDiagnostics: func(pt any, cfg map[string]any) []string {
 				m, _ := pt.(map[string]any)
@@ -116,14 +91,9 @@ func configCommandSources(h string) config.ConfigCommandSources {
 	}
 }
 
-// Readers config show consults, the loaded config and env of the home plus auth, personality and skill owners
+// Readers config show consults: the home's paths and env plus the auth and skill owners
 func configShowSources(ctx context.Context, h string) (config.ShowSources, error) {
-	cfg, err := config.LoadContext(ctx, h, config.EnvRefLookup)
-	if err != nil {
-		return config.ShowSources{}, err
-	}
 	return config.ShowSources{
-		Config:      map[string]any(cfg),
 		ConfigPath:  home.ConfigPath(h),
 		EnvPath:     home.EnvPath(h),
 		ProjectRoot: config.GetProjectRoot(),
@@ -131,11 +101,8 @@ func configShowSources(ctx context.Context, h string) (config.ShowSources, error
 			v, _, _ := config.GetEnvValue(ctx, h, name)
 			return v
 		},
-		EnvFile:           func() (map[string]string, error) { return config.LoadEnvFile(home.EnvPath(h)), nil },
-		AnthropicKey:      func() string { return provider.GetAnthropicKey(ctx) },
-		ActivePersonality: func(cfg map[string]any) (string, error) { return ActivePersonalityName(cfg), nil },
-		SkillSettings:     skills.SkillSettingsForShow,
-		MaskSecret:        config.MaskSecret,
-		RedactConfigValue: config.RedactConfigValue,
+		AnthropicKey:  func() string { return provider.GetAnthropicKey(ctx) },
+		SkillSettings: skills.SkillSettingsForShow,
+		MaskSecret:    config.MaskSecret,
 	}, nil
 }

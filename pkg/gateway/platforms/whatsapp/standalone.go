@@ -222,16 +222,3 @@ func pyTypeName(v any) string {
 	}
 	return "dict"
 }
-
-// config.yaml whatsapp keys bridged to WHATSAPP env, env winning
-var yamlBridgeRows = []gateway.YAMLBridgeRow{
-	{Key: "require_mention", Env: "WHATSAPP_REQUIRE_MENTION", Kind: "lower"}, {Key: "dm_policy", Env: "WHATSAPP_DM_POLICY", Kind: "lower"},
-	{Key: "group_policy", Env: "WHATSAPP_GROUP_POLICY", Kind: "lower"}, {Key: "mention_patterns", Env: "WHATSAPP_MENTION_PATTERNS", Kind: "json"},
-	{Key: "free_response_chats", Env: "WHATSAPP_FREE_RESPONSE_CHATS", Kind: "csv"}, {Key: "allow_from", Env: "WHATSAPP_ALLOWED_USERS", Kind: "csv"},
-	{Key: "group_allow_from", Env: "WHATSAPP_GROUP_ALLOWED_USERS", Kind: "csv"},
-}
-
-// Bridges config.yaml whatsapp keys into the WHATSAPP env and the platform extra
-func applyYAMLConfig(ctx context.Context, yamlCfg, whatsappCfg map[string]any) (map[string]any, error) {
-	return gateway.ApplyYAMLBridge(ctx, whatsappCfg, yamlBridgeRows)
-}

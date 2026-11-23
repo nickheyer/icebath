@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"strings"
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -18,12 +18,8 @@ import (
 var launchGetwd = os.Getwd
 
 // Launch cwd stamped on a new local CLI family session row, empty for remote backends or an unlinked cwd
-func launchCwdForSession(source string) string {
-	backend := strings.ToLower(strings.TrimSpace(os.Getenv("TERMINAL_ENV")))
-	if os.Getenv("TERMINAL_ENV") == "" {
-		backend = "local"
-	}
-	if !CLIFamilySources[source] || (backend != "" && backend != "local") {
+func launchCwdForSession(ctx context.Context, source string) string {
+	if !CLIFamilySources[source] || settings.WhereCommandsRun.Get(ctx) != "local" {
 		return ""
 	}
 	cwd, err := launchGetwd()
@@ -231,7 +227,7 @@ func (a *AIAgent) ensureDBSession() error {
 		ID: a.sessionID, Source: source, Model: a.sessionRowModel(), ModelConfig: a.sessionRowModelConfig(),
 		SystemPrompt: a.cachedSystemPrompt, UserID: a.userID, SessionKey: a.gatewaySessionKey, ChatID: a.chatID,
 		ChatType: a.chatType, ThreadID: a.threadID, DisplayName: displayName, OriginJSON: gatewayOriginJSON(ctx, a),
-		ParentSessionID: a.parentSessionID, Cwd: launchCwdForSession(source),
+		ParentSessionID: a.parentSessionID, Cwd: launchCwdForSession(ctx, source),
 		ProfileName: profiles.GetActiveProfileName(ctx),
 	})
 	if err != nil {

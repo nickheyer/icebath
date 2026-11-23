@@ -41,18 +41,20 @@ type ModelFlagParseResult struct {
 	ForceRefresh     bool
 	IsSession        bool
 	IsOnce           bool
+	// Login name or id the --login flag pins for the target provider
+	Login string
 }
 
 var modelBoolFlags = map[string]string{"--global": "is_global", "--session": "is_session", "--refresh": "force_refresh", "--once": "is_once"}
 
-var modelValueFlags = map[string]string{"--provider": "explicit_provider", "--reasoning": "reasoning_effort"}
+var modelValueFlags = map[string]string{"--provider": "explicit_provider", "--reasoning": "reasoning_effort", "--login": "login"}
 
-var modelFlagDashRE = regexp.MustCompile("[‒–—―](provider|reasoning|global|session|refresh|once)")
+var modelFlagDashRE = regexp.MustCompile("[‒–—―](provider|reasoning|global|session|refresh|once|login)")
 
 // Whitespace as Python str.split sees it
 func isPySpace(r rune) bool { return (r >= 0x1c && r <= 0x1f) || unicode.IsSpace(r) }
 
-// ParseModelFlagsDetailed splits provider, reasoning, global, session, refresh and once flags from the model text
+// ParseModelFlagsDetailed splits provider, reasoning, login, global, session, refresh and once flags from the model text
 func ParseModelFlagsDetailed(rawArgs string) ModelFlagParseResult {
 	rawArgs = modelFlagDashRE.ReplaceAllString(rawArgs, "--$1")
 	var out ModelFlagParseResult
@@ -80,6 +82,8 @@ func ParseModelFlagsDetailed(rawArgs string) ModelFlagParseResult {
 				out.ExplicitProvider = tokens[i]
 			case "reasoning_effort":
 				out.ReasoningEffort = tokens[i]
+			case "login":
+				out.Login = tokens[i]
 			}
 			continue
 		}
@@ -150,6 +154,8 @@ type ModelSwitchRequest struct {
 	ForceRefresh     bool
 	Scope            string
 	Errors           []string
+	// Login name or id to pin for the target provider, empty to keep the session's
+	Login string
 }
 
 // ModelInput is the target text, matching the flag parse result field
@@ -183,7 +189,7 @@ func ParseModelSwitchArgs(raw string) ModelSwitchRequest {
 		errs = append(errs, ModelSwitchErrBadReasoning)
 	}
 	if strings.ToLower(pyStripSpace(parsed.ModelInput)) == ModelSwitchResetToken && (parsed.ExplicitProvider != "" ||
-		parsed.ReasoningEffort != "" || parsed.IsGlobal || parsed.IsSession || parsed.IsOnce) {
+		parsed.ReasoningEffort != "" || parsed.Login != "" || parsed.IsGlobal || parsed.IsSession || parsed.IsOnce) {
 		errs = append(errs, ModelSwitchErrResetWithFlags)
 	}
 	scope := "default"
@@ -198,7 +204,7 @@ func ParseModelSwitchArgs(raw string) ModelSwitchRequest {
 	return ModelSwitchRequest{
 		Raw: raw, Target: parsed.ModelInput, Scope: scope, Errors: errs,
 		ExplicitProvider: parsed.ExplicitProvider, ReasoningEffort: parsed.ReasoningEffort, IsGlobal: parsed.IsGlobal,
-		IsSession: parsed.IsSession, IsOnce: parsed.IsOnce, ForceRefresh: parsed.ForceRefresh,
+		IsSession: parsed.IsSession, IsOnce: parsed.IsOnce, ForceRefresh: parsed.ForceRefresh, Login: parsed.Login,
 	}
 }
 

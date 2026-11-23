@@ -152,7 +152,7 @@ func bootstrapProfileDir(ctx context.Context, profileDir, sourceDir string, sync
 	if err := clonePlugins(sourceDir, profileDir); err != nil {
 		return err
 	}
-	if _, err := memory.CloneMemoryProviderConfig(sourceDir, profileDir, memory.ExternalMemoryProvider(memory.LoadProfileConfigDict(sourceDir))); err != nil {
+	if _, err := memory.CloneMemoryProviderConfig(sourceDir, profileDir, memory.ProfileMemoryProvider(ctx, sourceDir)); err != nil {
 		return err
 	}
 	if syncImports {

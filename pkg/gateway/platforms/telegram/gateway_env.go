@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Writes the csv list of fallback ips into the telegram extras, creating the entry when absent
@@ -28,7 +29,10 @@ var envOverrides = []gateway.EnvStep{
 
 var authz = map[string]any{"allowed_users_env": "TELEGRAM_ALLOWED_USERS", "allow_all_env": "TELEGRAM_ALLOW_ALL_USERS", "allow_bots_env": "TELEGRAM_ALLOW_BOTS", "group_allowed_chats_env": "TELEGRAM_GROUP_ALLOWED_CHATS", "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled telegram directory with the gateway config bridge
+// Registers the env declarations of the bundled telegram directory with the gateway config bridge, and the settings its access names moved to
 func init() {
 	gateway.RegisterBundledEnv("telegram", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
+	gateway.RegisterEnvSettings(map[string]settings.Entry{"TELEGRAM_ALLOWED_USERS": settings.TelegramAllowFrom,
+		"TELEGRAM_GROUP_ALLOWED_USERS": settings.TelegramGroupAllowFrom, "TELEGRAM_GROUP_ALLOWED_CHATS": settings.TelegramGroupAllowedChats,
+		"TELEGRAM_ALLOW_BOTS": settings.TelegramAllowBots})
 }

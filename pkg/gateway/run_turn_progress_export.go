@@ -11,9 +11,9 @@ func ToolLifecyclePayload(ctx context.Context, callID, toolName, args any) *pyjs
 	return toolLifecyclePayload(ctx, callID, toolName, args)
 }
 
-// Tool complete payload with the error flag and the verbose result block
-func ToolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool, verbose bool) *pyjson.Object {
-	return toolCompletePayload(ctx, callID, toolName, args, result, isError, verbose)
+// Tool complete payload with the error flag and the text the call printed
+func ToolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool) *pyjson.Object {
+	return toolCompletePayload(ctx, callID, toolName, args, result, isError)
 }
 
 // Seeds the agent compression counter from the count the live session carried
@@ -22,10 +22,10 @@ func SeedCompressionCount(live *LiveSession, agent any) { seedCompressionCount(l
 // Captured result of the executing admission, nil outside an execution
 func ExecutionResultOf(ctx context.Context) *pyjson.Object { return executionResultOf(ctx) }
 
-// Whether the active launch policy shows reasoning for a session with no flag of its own
-func LaunchShowsReasoningActive(ctx context.Context, a *SessionAuthority) (bool, error) {
+// Whether the active launch policy shows reasoning for a session with no pick of its own
+func LaunchShowsReasoningActive(ctx context.Context) bool {
 	policy, _ := ActivePolicy(ctx).(*LocalSessionPolicy)
-	return launchShowsReasoning(ctx, policy, a)
+	return launchShowsReasoning(ctx, policy)
 }
 
 // Whether the active launch is a TUI launch whose viewer defaults reasoning from config

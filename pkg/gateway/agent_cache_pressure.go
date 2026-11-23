@@ -1,24 +1,22 @@
 package gateway
 
 import (
+	"context"
 	"math"
-	"math/big"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
 	autoBudgetFraction          = 0.65
 	autoBudgetFloorMB           = 512
-	defaultMaxEvictionsPerPass  = 16
-	defaultProtectRecent        = 8
 	acpBytesPerMB               = 1024 * 1024
 	cgroupFiniteLimitUpperBound = int64(1) << 62
 )
@@ -51,15 +49,6 @@ func cgroupFileText(path string) (string, error) {
 		return "", err
 	}
 	return strings.TrimPrefix(string(raw), "\ufeff"), nil
-}
-
-// Python int that is not a bool
-func isPlainInt(v any) bool {
-	switch v.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, *big.Int:
-		return true
-	}
-	return false
 }
 
 // Positive integer value of v with bools and unparseable values rejected
@@ -208,43 +197,20 @@ func ResolveMemoryHighMB(setting any) *int {
 	return &budget
 }
 
-// Bounds read from the raw agent agent_cache config section so an unset key stays distinct from an explicit one
-func ResolveAgentCacheBounds(cfg map[string]any) AgentCacheBounds {
-	var section map[string]any
-	if cfg != nil {
-		agentSection, _ := cfg["agent"].(map[string]any)
-		if !pyrepr.Truthy(cfg["agent"]) {
-			agentSection = map[string]any{}
-		}
-		if agentSection != nil {
-			section, _ = agentSection["agent_cache"].(map[string]any)
-		}
-	}
-	if section == nil {
-		section = map[string]any{}
-	}
-	protectRecent := section["protect_recent"]
-	protectParsed := positiveInt(protectRecent)
-	if protectParsed == nil && isPlainInt(protectRecent) && pyrepr.Equal(protectRecent, 0) {
-		zero := 0
-		protectParsed = &zero
-	}
-	memorySetting, ok := section["memory_high_mb"]
-	if !ok {
-		memorySetting = "auto"
-	}
+// Agent cache bounds of the profile in ctx, a non positive size, lifetime or sweep size leaving the runner's own
+func ResolveAgentCacheBounds(ctx context.Context) AgentCacheBounds {
 	bounds := AgentCacheBounds{
-		MaxSize:             positiveInt(section["max_size"]),
-		IdleTTLSecs:         positiveFloat(section["idle_ttl_secs"]),
-		MemoryHighMB:        ResolveMemoryHighMB(memorySetting),
-		MaxEvictionsPerPass: defaultMaxEvictionsPerPass,
-		ProtectRecent:       defaultProtectRecent,
+		MaxSize:             positiveInt(settings.AgentAgentCacheMaxSize.Get(ctx)),
+		IdleTTLSecs:         positiveFloat(settings.AgentAgentCacheIdleTtlSecs.Get(ctx).Seconds()),
+		MemoryHighMB:        ResolveMemoryHighMB(settings.AgentAgentCacheMemoryHighMb.Get(ctx)),
+		MaxEvictionsPerPass: settings.AgentAgentCacheMaxEvictionsPerPass.Default,
+		ProtectRecent:       settings.AgentAgentCacheProtectRecent.Default,
 	}
-	if n := positiveInt(section["max_evictions_per_pass"]); n != nil {
-		bounds.MaxEvictionsPerPass = *n
+	if n := settings.AgentAgentCacheMaxEvictionsPerPass.Get(ctx); n > 0 {
+		bounds.MaxEvictionsPerPass = n
 	}
-	if protectParsed != nil {
-		bounds.ProtectRecent = *protectParsed
+	if n := settings.AgentAgentCacheProtectRecent.Get(ctx); n >= 0 {
+		bounds.ProtectRecent = n
 	}
 	return bounds
 }

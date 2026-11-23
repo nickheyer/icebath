@@ -12,13 +12,13 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -777,31 +777,7 @@ func pruneLedgerUnlocked(ctx context.Context, conn state.SQLiteConn, now float64
 	return nil
 }
 
-// Reads the gateway.delivery_ledger gate, on by default and on when config is unreadable
-func LedgerEnabled(ctx context.Context, cfg map[string]any) bool {
-	if cfg == nil {
-		tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-		if err != nil {
-			return true
-		}
-		cfg = tree
-	}
-	var value any = true
-	if section := cfg["gateway"]; pyrepr.Truthy(section) {
-		m, ok := section.(map[string]any)
-		if !ok {
-			return true
-		}
-		if v, present := m["delivery_ledger"]; present {
-			value = v
-		}
-	}
-	if s, ok := value.(string); ok {
-		switch pystr.Lower(pystr.Strip(s)) {
-		case "false", "0", "no", "off":
-			return false
-		}
-		return true
-	}
-	return pyrepr.Truthy(value)
+// Whether replies are recorded so a restart neither loses nor repeats them
+func LedgerEnabled(ctx context.Context) bool {
+	return settings.GatewayDeliveryLedger.Get(ctx)
 }

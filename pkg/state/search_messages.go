@@ -44,11 +44,7 @@ func (s *sessionSearch) SearchMessages(ctx context.Context, query string, o Sear
 	started := time.Now()
 	rows, err := s.searchMessagesImpl(ctx, query, o)
 	elapsedMS := float64(time.Since(started)) / float64(time.Millisecond)
-	threshold, terr := searchSlowMS(ctx)
-	if terr != nil {
-		return nil, terr
-	}
-	if elapsedMS >= threshold {
+	if elapsedMS >= searchSlowMS(ctx) {
 		count := "err"
 		if err == nil {
 			count = fmt.Sprint(len(rows))

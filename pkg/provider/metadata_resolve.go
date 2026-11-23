@@ -172,8 +172,7 @@ func resolveBedrockContextLength(ctx context.Context, model, baseURL string) int
 		}
 	}
 	if region == "" {
-		cfg := metadataConfig(ctx)
-		region = resolveBedrockRuntimeRegion(map[string]any{"bedrock": cfg["bedrock"]})
+		region = resolveBedrockRuntimeRegion(ctx)
 	}
 	memoKey := bedrockProbeKey{metadataHome(ctx), strings.TrimRight(cacheKeyURL, "/"), model, region}
 	if region != "" && !bedrockProbeFailedRecently(memoKey) {
@@ -239,7 +238,7 @@ func resolveMoaContextLength(ctx context.Context, model string, customProviders 
 		return 0
 	}
 	if customProviders == nil {
-		customProviders = CompatibleCustomProviders(cfg)
+		customProviders = ProviderEntries(cfg)
 	}
 	aggProvider, aggModel, ok := resolveMoaAggregator(config.Tree(cfg), model)
 	aggProvider, aggModel = strings.TrimSpace(aggProvider), strings.TrimSpace(aggModel)

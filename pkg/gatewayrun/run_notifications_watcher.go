@@ -338,7 +338,7 @@ func (r *GatewayRunner) watchProcess(ctx context.Context, watcher map[string]any
 			diagnostic := fields.ExitCode != nil && *fields.ExitCode != 0
 			if _, err := config.PresentNotification(ctx, func(sendCtx context.Context) error {
 				return r.sendWatcherMessage(sendCtx, platformName, chatID, threadID, messageText, watcher)
-			}, platformName, diagnostic, nil); err != nil {
+			}, platformName, diagnostic); err != nil {
 				return err
 			}
 		}

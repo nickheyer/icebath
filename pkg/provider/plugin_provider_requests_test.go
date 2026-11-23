@@ -95,7 +95,7 @@ func providerRequestAPIs(t *testing.T) (*loopbackAPI, *loopbackAPI, string) {
 
 func providerRequestSignIn(t *testing.T, h, token string) {
 	t.Helper()
-	raw, _ := json.Marshal(map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{
+	raw, _ := json.Marshal(map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{
 		"auth_mode": "chatgpt", "tokens": map[string]any{"access_token": token, "refresh_token": "fake-rt"}}}})
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), raw, 0o600); err != nil {
 		t.Fatal(err)

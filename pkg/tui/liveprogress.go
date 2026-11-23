@@ -38,7 +38,7 @@ type msg struct {
 	IsLiveReasoning        bool
 	ThinkingTokens         int
 	ToolTokens             int
-	Tools                  []string
+	Tools                  []toolRow
 	Todos                  []todoItem
 	TodoIncomplete         bool
 	TodoCollapsedByDefault bool
@@ -132,7 +132,7 @@ func canHoldToolShelf(m *msg) bool {
 
 // Row with the source's tool lines appended to its own
 func mergeToolShelfInto(target, source msg) msg {
-	target.Tools = append(append([]string(nil), target.Tools...), source.Tools...)
+	target.Tools = append(append([]toolRow(nil), target.Tools...), source.Tools...)
 	return target
 }
 

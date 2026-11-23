@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/media"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -120,7 +121,7 @@ func openLocalVoiceTurn(ctx context.Context, source *gateway.SessionSource) gate
 		voiceSidMu.Unlock()
 		emitSpeech(turn.ctx, speaker, sid, tuigateway.VoiceSpeechPayload{Kind: "think"})
 	}
-	if bargeIn, present := voiceCfgDict(turn.ctx)["barge_in"]; !present || truthy(bargeIn) {
+	if settings.VoiceBargeIn.Get(turn.ctx) {
 		armFullDuplexListener(turn.ctx)
 	}
 	return turn

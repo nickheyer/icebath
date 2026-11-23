@@ -42,10 +42,7 @@ var configSetupRegistry = &handlerRegistry{}
 
 func init() {
 	registerAtExit(func() { readinessPool.Shutdown(true) })
-	configSetupRegistry.method("setup.status", setupStatus)
-	configSetupRegistry.method("setup.runtime_check", setupRuntimeCheck)
 	configSetupRegistry.install()
-	addLongHandlers("setup.runtime_check")
 }
 
 // Forgets a settled probe so the next poll re-probes, logging a failure nobody waited for

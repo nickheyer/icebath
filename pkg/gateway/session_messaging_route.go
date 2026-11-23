@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Runner resolving a messaging chat's next turn route without building an agent
@@ -18,12 +19,8 @@ type messagingRouteRunner interface {
 
 // Model and effort fields a messaging chat's next turn resolves, session override over channel over config
 func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveSession) (*pyjson.Object, error) {
-	cfg := loadGatewayConfig(ctx, "")
-	block, _ := cfg["model"].(map[string]any)
-	if block == nil {
-		block = map[string]any{}
-	}
-	model, providerName, baseURL := any(resolveGatewayModel(ctx, cfg)), block["provider"], block["base_url"]
+	configured := settings.ModelProvider.Get(ctx)
+	model, providerName, baseURL := any(settings.Model.Get(ctx)), any(configured), any(settings.ModelBaseURL.Get(ctx))
 	resolver, ok := runner.(messagingRouteRunner)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot look up a channel override", runner)}
@@ -45,8 +42,8 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 	apiMode := get("api_mode")
 	if !pyTruthy(apiMode) {
 		apiMode = nil
-		if pyrepr.Equal(providerName, block["provider"]) {
-			apiMode = block["api_mode"]
+		if pyrepr.Equal(providerName, configured) && settings.ModelAPIMode.Get(ctx) != "" {
+			apiMode = settings.ModelAPIMode.Get(ctx)
 		}
 	}
 	modelText := anyText(model)

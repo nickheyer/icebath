@@ -12,7 +12,6 @@ import (
 	uv "github.com/charmbracelet/ultraviolet"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/gfx"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/lang"
@@ -26,9 +25,21 @@ const (
 	minTitleW   = 8
 )
 
-// Padding a frame of that size affords, dropped on an axis where it would leave too little content
+// Terminal size at or below which the chrome gives way so the content keeps the room: no stage margins and less padding
+const (
+	compactCols = 80
+	compactRows = 24
+)
+
+// Padding a frame of that size affords, dropped on an axis where it would leave too little content and thinned on a small terminal
 func (m *Model) inset(w, h int) (px, py int) {
 	px, py = m.padX, m.padY
+	if m.width <= compactCols {
+		px = min(px, 1)
+	}
+	if m.height <= compactRows {
+		py = 0
+	}
 	if w-2-2*px < minContentW {
 		px = 0
 	}
@@ -66,13 +77,16 @@ func (m *Model) View() tea.View {
 		m.paintBody(m.overlay, 0, true, 0)
 	}
 	m.paintToasts()
+	m.paintLeader()
 	m.paintSelection(buf)
 	v := tea.NewView(buf.Render())
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeAllMotion
 	v.BackgroundColor = m.theme.Bg
 	v.WindowTitle = m.title
-	v.Cursor = m.cursor()
+	if !m.leader {
+		v.Cursor = m.cursor()
+	}
 	v.ReportFocus = true
 	v.KeyboardEnhancements.ReportEventTypes = true
 	v.ProgramStatus = m.status
@@ -300,10 +314,14 @@ func (m *Model) paintBody(e *entry, dx int, shown bool, veil float64) {
 		avail -= sw + 2
 	}
 	m.paintTitle(face, e, avail, p.lit)
+	focused := e.ws == nil || (shown && e.ws.focus == e && m.overlay == nil)
 	if _, own := e.card.(Footer); own && !e.closing {
 		m.paintFooter(face, e, p.x, w, h)
-	} else if focused := e.ws == nil || (shown && e.ws.focus == e && m.overlay == nil); focused && !e.closing {
-		m.paintHints(face, e, p.x, w, h)
+	} else if focused && !e.closing {
+		m.paintHints(face, e, 0, h-1, p.x, w)
+	}
+	if !e.closing {
+		m.paintSheet(face, e, c, p.x, p.lit, focused)
 	}
 	m.stamp(face, p)
 }
@@ -500,7 +518,7 @@ func (m *Model) paintGlyph(face screen, e *entry, x, y, w, h int, lit float64) {
 	m.put(face, x+w/2, y+h/2, glyphOf(e.card, m.theme), uv.Style{Fg: fg, Bg: m.theme.Surface})
 }
 
-// Writes the notch and decoding title into the top edge of the face within avail columns
+// Writes the notch and the title into the top edge of the face within avail columns, the title brightening calmly as the card comes into view
 func (m *Model) paintTitle(face screen, e *entry, avail int, lit float64) {
 	if avail < minTitleW {
 		return
@@ -510,17 +528,18 @@ func (m *Model) paintTitle(face screen, e *entry, avail int, lit float64) {
 	if title == "" {
 		return
 	}
-	shown := []rune(anim.Decode(title, e.decode, m.tick, t.Glyphs.Churn))
-	reveal := min(anim.Revealed(title, e.decode), len(shown))
 	base := lipgloss.NewStyle().Background(t.Surface)
-	notch := t.Glyphs.Notch
+	// The notch marks the card that takes the keys, so focus shows even where colors do not
+	notch := strings.Repeat(" ", ansi.StringWidth(t.Glyphs.Notch))
+	if lit > 0.5 {
+		notch = t.Glyphs.Notch
+	}
 	if m.hover == e && m.hoverGrip && (m.hoverEdge == rTitle || m.hoverEdge == rClose) {
 		notch = t.Glyphs.Grip
 	}
 	label := base.Render(" ") +
 		base.Foreground(theme.Mix(t.TextDim, t.Accent, lit)).Render(notch+" ") +
-		base.Foreground(theme.Mix(t.TextDim, t.Text, lit)).Bold(lit > 0.5).Render(string(shown[:reveal])) +
-		base.Foreground(theme.Mix(t.TextDim, t.Ice, lit)).Render(string(shown[reveal:])) +
+		base.Foreground(theme.Mix(t.TextDim, theme.Mix(t.TextDim, t.Text, lit), e.decode)).Bold(lit > 0.5).Render(title) +
 		base.Render(" ")
 	if ansi.StringWidth(label) > avail {
 		label = ansi.Truncate(label, avail-1, t.Glyphs.Ellipsis) + base.Render(" ")
@@ -634,6 +653,107 @@ func (m *Model) paintToasts() {
 		face := m.face(lw, 1)
 		uv.NewStyledString(label).Draw(face, uv.Rect(0, 0, lw, 1))
 		m.stamp(face, placed{x: x, y: y, w: lw, h: 1, alpha: alpha})
+	}
+}
+
+// Strip of the keys the leader waits for across the bottom of the stage, one line per group, the leader chord ahead of the first
+func (m *Model) paintLeader() {
+	if !m.leader || m.width < 20 {
+		return
+	}
+	t := m.theme
+	base := lipgloss.NewStyle().Background(t.Surface)
+	item := func(chord, text string) string {
+		return base.Foreground(t.Accent).Bold(true).Render(chord) + base.Render(" ") + base.Foreground(t.Text).Render(text)
+	}
+	var order []string
+	groups := map[string][]string{}
+	add := func(group, it string) {
+		if _, seen := groups[group]; !seen {
+			order = append(order, group)
+		}
+		groups[group] = append(groups[group], it)
+	}
+	// Keys of one set of directions, such as focus left, down, up and right, shown as one item
+	var dir struct {
+		group, parent, label string
+		chords               []string
+	}
+	flush := func() {
+		if len(dir.chords) > 0 {
+			add(dir.group, item(strings.Join(dir.chords, " "), dir.label))
+		}
+		dir.parent, dir.chords = "", nil
+	}
+	for _, a := range m.keys.InContexts([]string{keys.Leader}) {
+		chord := m.keys.Display(a.ID)
+		if a.Context != keys.Leader || a.Quiet || chord == "" || !m.leaderApplies(a) {
+			continue
+		}
+		cut := strings.LastIndexByte(a.ID, '.')
+		parent, way := a.ID[:cut], a.ID[cut+1:]
+		if !slices.Contains([]string{"left", "down", "up", "right"}, way) {
+			flush()
+			add(a.Group, item(chord, a.LabelText()))
+			continue
+		}
+		if parent != dir.parent {
+			flush()
+			dir.group, dir.parent = a.Group, parent
+			dir.label = lang.OfID("keys.", parent, ".label", strings.TrimSuffix(a.Label, " "+way))
+		}
+		dir.chords = append(dir.chords, chord)
+	}
+	flush()
+	if literal, ok := m.keys.Action("leader.literal"); ok {
+		if chord := m.keys.Display("leader"); chord != "" {
+			add(literal.Group, item(chord, literal.LabelText()))
+		}
+	}
+	if cancel, ok := m.keys.Action("leader.cancel"); ok {
+		if chord := m.keys.Display(cancel.ID); chord != "" {
+			add(cancel.Group, item(chord, cancel.LabelText()))
+		}
+	}
+	head := base.Foreground(t.Ice).Bold(true).Render(m.keys.Display("leader")) + base.Render("  ")
+	indent := base.Render(strings.Repeat(" ", ansi.StringWidth(head)))
+	sep := base.Render("   ")
+	wrap := m.width - 4 - ansi.StringWidth(head)
+	var lines []string
+	for _, g := range order {
+		line := ""
+		for _, it := range groups[g] {
+			if line != "" && ansi.StringWidth(line)+ansi.StringWidth(sep)+ansi.StringWidth(it) > wrap {
+				lines = append(lines, line)
+				line = ""
+			}
+			if line != "" {
+				line += sep
+			}
+			line += it
+		}
+		lines = append(lines, line)
+	}
+	for i := range lines {
+		prefix := indent
+		if i == 0 {
+			prefix = head
+		}
+		lines[i] = prefix + lines[i]
+	}
+	limit := m.width - 4
+	top := m.height - len(lines) - 1
+	if top < barHeight {
+		lines = lines[barHeight-top:]
+		top = barHeight
+	}
+	for i, l := range lines {
+		y := top + i
+		row := base.Render(" ") + l + base.Render(strings.Repeat(" ", max(0, limit-ansi.StringWidth(l))+1))
+		w := ansi.StringWidth(row)
+		face := m.face(w, 1)
+		uv.NewStyledString(row).Draw(face, uv.Rect(0, 0, w, 1))
+		m.stamp(face, placed{x: 1, y: y, w: w, h: 1, alpha: 1})
 	}
 }
 
@@ -822,6 +942,9 @@ func (m *Model) cursor() *tea.Cursor {
 	e := m.overlay
 	if e == nil {
 		e = m.focused()
+		if c, on := m.sheetCursor(e); on {
+			return c
+		}
 	}
 	if e == nil {
 		return nil
@@ -841,6 +964,9 @@ func (m *Model) cursor() *tea.Cursor {
 	out := *c
 	out.X, out.Y = r.X+c.X, r.Y+barHeight+c.Y
 	if !r.contains(out.X, out.Y-barHeight) {
+		return nil
+	}
+	if b, on := m.sheetScreen(e); on && e != m.overlay && b.contains(out.X, out.Y-barHeight) {
 		return nil
 	}
 	return &out
@@ -900,7 +1026,7 @@ func (m *Model) frame() screen {
 func (screen) WidthMethod() uv.WidthMethod { return uv.WidthMethod(ansi.GraphemeWidth) }
 
 // Writes the card's bound keys into the bottom edge, skipping those that do not fit, lighting the hovered one
-func (m *Model) paintHints(face screen, e *entry, sx, w, h int) {
+func (m *Model) paintHints(face screen, e *entry, x0, y, sx, w int) {
 	e.hints = e.hints[:0]
 	hints := append([]Hint(nil), hintsOf(e.card)...)
 	if ctxs := contextsOf(e.card); e.ws != nil && closable(e.card) {
@@ -919,7 +1045,7 @@ func (m *Model) paintHints(face screen, e *entry, sx, w, h int) {
 	base := lipgloss.NewStyle().Background(t.Surface)
 	var sb strings.Builder
 	sb.WriteString(base.Render(" "))
-	col := sx + 2 + 1
+	col := sx + x0 + 2 + 1
 	used := 1
 	for _, h := range hints {
 		key, label := m.hintText(h)
@@ -954,7 +1080,7 @@ func (m *Model) paintHints(face screen, e *entry, sx, w, h int) {
 		return
 	}
 	sb.WriteString(base.Render(" "))
-	uv.NewStyledString(sb.String()).Draw(face, uv.Rect(2, h-1, used+1, 1))
+	uv.NewStyledString(sb.String()).Draw(face, uv.Rect(x0+2, y, used+1, 1))
 }
 
 // Key and label a hint paints, the key empty when the terminal can send none of its chords

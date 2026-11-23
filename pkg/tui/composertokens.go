@@ -185,12 +185,13 @@ func completionToApplyOnSubmit(value string, rowText *string, compReplace int, i
 	return "", false
 }
 
-// Completion request for a draft, slash names, inline skills or a path word, false when none applies
-func (s *tuiStore) completionRequestForInput(input string) (completionRequest, bool) {
+// Completion request for a draft, slash names, inline skills or a path word, false when none applies. The popup opens by itself for commands, skills
+// and @ references; a plain path at the end of the draft completes only on tab, so enter always sends a sentence that ends in one
+func (s *tuiStore) completionRequestForInput(input string, tab bool) (completionRequest, bool) {
 	isSlash := looksLikeSlashCommand(input)
 	pathWord := ""
 	if !isSlash {
-		if m := tabPathRe.FindStringSubmatch(input); m != nil {
+		if m := tabPathRe.FindStringSubmatch(input); m != nil && (tab || strings.HasPrefix(m[1], "@")) {
 			pathWord = m[1]
 		}
 	}

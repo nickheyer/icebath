@@ -45,7 +45,7 @@ func takeQueueItem(queue *[]*queueItem, index int, editedDisplay *string) *queue
 		return &next
 	}
 	kept := *item
-	kept.Failed, kept.InFlight, kept.LegacyAttempted, kept.PreparedText, kept.Settle, kept.SubmissionID = false, false, nil, nil, nil, ""
+	kept.Failed, kept.InFlight, kept.SentOnce, kept.PreparedText, kept.Settle, kept.SubmissionID = false, false, nil, nil, nil, ""
 	kept.Display, kept.Text = *editedDisplay, text
 	return &kept
 }
@@ -152,7 +152,41 @@ func editIndex(items []*queueItem, edited *queueItem) *int {
 		return nil
 	}
 	i := indexOfItem(items, edited)
+	if i < 0 {
+		return nil
+	}
 	return &i
+}
+
+// What a queue holds for editing: one of its own items, or a row of the background service counted from the end of the items
+type queueEdit struct {
+	item *queueItem
+	row  int
+	held bool
+}
+
+// What the queue holds for editing as it stands, before its items are reloaded
+func (queue *pendingQueue) editing() queueEdit {
+	switch {
+	case queue.edit == nil || *queue.edit < 0:
+		return queueEdit{}
+	case *queue.edit < len(queue.items):
+		return queueEdit{item: queue.items[*queue.edit], held: true}
+	}
+	return queueEdit{row: *queue.edit - len(queue.items), held: true}
+}
+
+// Edit index of what was held for editing over reloaded items: the item where it now stands, a row of the background service still behind
+// the items, nil when nothing was held or the item is gone
+func (e queueEdit) index(items []*queueItem) *int {
+	switch {
+	case !e.held:
+		return nil
+	case e.item != nil:
+		return editIndex(items, e.item)
+	}
+	at := len(items) + e.row
+	return &at
 }
 
 // Queue of a destination, moving queues of migrated sessions and binding inputs queued before a session existed
@@ -167,10 +201,7 @@ func (q *composerQueue) getQueue(destination *submissionDestination) (*pendingQu
 		if target == nil {
 			target = &pendingQueue{destination: owner, revision: -1}
 		}
-		var edited *queueItem
-		if source.edit != nil && *source.edit >= 0 && *source.edit < len(source.items) {
-			edited = source.items[*source.edit]
-		}
+		edited := source.editing()
 		for _, item := range source.items {
 			o := owner
 			item.OwnerDestination = &o
@@ -184,8 +215,8 @@ func (q *composerQueue) getQueue(destination *submissionDestination) (*pendingQu
 			return nil, err
 		}
 		target.items = items
-		if edited != nil {
-			target.edit = editIndex(items, edited)
+		if edited.held {
+			target.edit = edited.index(items)
 		}
 		delete(q.queues, oldKey)
 		q.queues[newKey] = target
@@ -215,15 +246,12 @@ func (q *composerQueue) getQueue(destination *submissionDestination) (*pendingQu
 		q.queues[key] = queue
 	}
 	if queue.revision != pendingJournal.revision {
-		var edited *queueItem
-		if queue.edit != nil && *queue.edit >= 0 && *queue.edit < len(queue.items) {
-			edited = queue.items[*queue.edit]
-		}
+		edited := queue.editing()
 		items, err := reloadItems(d, queue.items)
 		if err != nil {
 			return nil, err
 		}
-		queue.items, queue.edit = items, editIndex(items, edited)
+		queue.items, queue.edit = items, edited.index(items)
 		queue.revision = pendingJournal.revision
 	}
 	if len(q.unbound.items) > 0 {
@@ -334,6 +362,24 @@ func (q *composerQueue) cancelServerRow(row *pendingRow, then func(err error) te
 		})
 	}
 	return call(q.gw, tuigateway.CanonicalPromptResolveUnknown, tuigateway.PromptResolveUnknownParams{SessionID: sid, AdmissionID: row.AdmissionID, ExecutionGeneration: *row.ExecutionGeneration}, settled)
+}
+
+// Index of the queued input, local or the owner's, that the composer holds for editing, nil when it holds none
+func (q *composerQueue) queueEditIndex() *int {
+	queue, err := q.getQueue(nil)
+	if err != nil || queue.edit == nil || *queue.edit < 0 || *queue.edit >= len(queue.items)+len(q.serverRows()) {
+		return nil
+	}
+	i := *queue.edit
+	return &i
+}
+
+// Forgets the input held for editing in every queue, the composer having moved to another session
+func (q *composerQueue) dropEdits() {
+	for _, queue := range q.queues {
+		queue.edit = nil
+	}
+	q.unbound.edit = nil
 }
 
 // Sets the entry being edited
@@ -718,9 +764,11 @@ func spliceInterpolations(display, text string, typed []typedInterpolation, outp
 	return display, text
 }
 
-// Marks the queued input the composer holds for editing, nil when it holds none
+// Marks the queued input the composer holds for editing; nil marks none and forgets what was typed into the queued inputs
 func (a *app) setQueueEdit(index *int) {
-	a.queueEdit = index
+	if index == nil {
+		a.queueSlots = nil
+	}
 	if err := a.queue.setQueueEdit(index); err != nil {
 		a.sys(errorLine(err.Error()))
 	}
@@ -746,43 +794,64 @@ func (a *app) sendQueueHead() tea.Cmd {
 	return a.sendQueued(item)
 }
 
-// Puts the next queued input into the composer for editing, up from the first and down from the last, false when nothing is queued
+// Steps through the queued inputs, newest first, keeping what was typed into each; false leaves the key to the composer's history
 func (a *app) cycleQueue(dir int) (tea.Cmd, bool) {
 	rows, err := a.queue.queuedDisplay()
 	if err != nil {
 		return nil, false
 	}
-	if len(rows) == 0 {
-		if a.queueEdit != nil {
-			a.setQueueEdit(nil)
+	editing := a.queue.queueEditIndex()
+	if editing != nil {
+		if a.queueSlots == nil {
+			a.queueSlots = map[int]string{}
+		}
+		a.queueSlots[*editing] = a.card.composer.Value()
+	}
+	leave := func() tea.Cmd {
+		a.setQueueEdit(nil)
+		return a.card.composer.SetValue("")
+	}
+	n := len(rows)
+	if n == 0 {
+		if editing != nil {
+			return leave(), false
 		}
 		return nil, false
 	}
-	index := 0
-	switch n := len(rows); {
-	case a.queueEdit != nil:
-		index = ((*a.queueEdit+dir)%n + n) % n
-	case dir < 0:
+	var index int
+	switch {
+	case editing == nil && dir < 0:
 		index = n - 1
+	case editing == nil:
+		return nil, false
+	case *editing+dir < 0:
+		return leave(), false
+	case *editing+dir >= n:
+		return leave(), true
+	default:
+		index = *editing + dir
 	}
-	draft, err := a.queue.queueDraft(index)
-	if err != nil {
-		a.sys(errorLine(err.Error()))
-		return nil, true
+	draft, ok := a.queueSlots[index]
+	if !ok {
+		if draft, err = a.queue.queueDraft(index); err != nil {
+			a.sys(errorLine(err.Error()))
+			return nil, true
+		}
 	}
 	a.cancelPendingRewind(true)
 	a.setQueueEdit(&index)
-	a.draftRevision++
 	set := a.card.composer.SetValue(draft)
-	return tea.Batch(set, a.syncTokens()), true
+	a.syncTokens()
+	return set, true
 }
 
 // Deletes the queued input the composer holds for editing and empties the composer
 func (a *app) deleteQueueEdit() tea.Cmd {
-	if a.queueEdit == nil {
+	editing := a.queue.queueEditIndex()
+	if editing == nil {
 		return nil
 	}
-	removed, err := a.queue.removeQ(*a.queueEdit)
+	removed, err := a.queue.removeQ(*editing)
 	if err != nil {
 		a.sys(errorLine(err.Error()))
 	}

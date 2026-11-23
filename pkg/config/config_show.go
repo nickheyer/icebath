@@ -1,20 +1,12 @@
 package config
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"io"
-	"math/big"
 	"sort"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-const defaultVercelImage = "vercel/sandbox/universal:latest"
 
 // One skill declared config variable as config show lists it
 type SkillConfigVar struct {
@@ -25,19 +17,26 @@ type SkillConfigVar struct {
 	Default     any
 }
 
-// Readers config show consults, supplied by the facade, auth, personality, skills and redaction owners
+// Readers config show consults, supplied by the facade, auth, skills and redaction owners
 type ShowSources struct {
-	Config            map[string]any
-	ConfigPath        string
-	EnvPath           string
-	ProjectRoot       string
-	EnvValue          func(name string) string
-	EnvFile           func() (map[string]string, error)
-	AnthropicKey      func() string
-	ActivePersonality func(cfg map[string]any) (string, error)
-	SkillSettings     func() ([]SkillConfigVar, map[string]any, error)
-	MaskSecret        func(value, empty string) string
-	RedactConfigValue func(value any) any
+	ConfigPath    string
+	EnvPath       string
+	ProjectRoot   string
+	EnvValue      func(name string) string
+	AnthropicKey  func() string
+	SkillSettings func() ([]SkillConfigVar, map[string]any, error)
+	MaskSecret    func(value, empty string) string
+}
+
+// One settings group as config show prints it
+type ShowGroup struct {
+	Title string
+	Rows  []ShowRow
+}
+
+// One setting as config show prints it: its label, its value as text and where the value came from
+type ShowRow struct {
+	Label, Value, Source string
 }
 
 var showConfigAPIKeys = [][2]string{
@@ -64,34 +63,6 @@ func getOr(m map[string]any, key string, fallback any) any {
 	return fallback
 }
 
-// Mapping at key of a mapping, empty when absent and nil when present but not a mapping
-func subMap(m map[string]any, key string) map[string]any {
-	v, ok := m[key]
-	if !ok {
-		return map[string]any{}
-	}
-	return AsMap(v)
-}
-
-// Value times 100 as a whole percent, a refusal naming the kind for anything but a number
-func showPercent(v any) (string, error) {
-	var product any
-	switch x := v.(type) {
-	case float64:
-		product = x * 100
-	case float32:
-		product = float64(x) * 100
-	default:
-		n, ok := pyint.Instance(v)
-		if !ok {
-			return "", fmt.Errorf("expected a number, got %s", errchain.Kind(v))
-		}
-		product = new(big.Int).Mul(n, big.NewInt(100))
-	}
-	return pyrepr.Format(product, ".0f")
-}
-
-// Administrator pinned config and env keys with the managed dir, nothing without a managed scope
 func (p showPrinter) managedBanner() {
 	keys := ManagedConfigKeys()
 	env := LoadManagedEnv()
@@ -117,152 +88,21 @@ func (p showPrinter) managedBanner() {
 	}
 }
 
-func (p showPrinter) modelSection(cfg map[string]any, src ShowSources) {
-	p.section("Model")
-	p.line("  Model:        %s", PyStr(src.RedactConfigValue(getOr(cfg, "model", "not set"))))
-	maxTurns := getOr(subMap(cfg, "agent"), "max_turns", Defaults().Map("agent")["max_turns"])
-	p.line("  Max turns:    %s", PyStr(maxTurns))
-	env, err := src.EnvFile()
-	if err != nil {
+// Every settings group with its everyday settings and the advanced ones that are set
+func (p showPrinter) settingsSections(ctx context.Context) {
+	if settingsHooks.Show == nil {
 		return
 	}
-	if ghost, ok := env["ICEBATH_MAX_ITERATIONS"]; ok && pystr.Strip(ghost) != pystr.Strip(PyStr(maxTurns)) {
-		p.line("%s", colorize("                ⚠ .env has stale ICEBATH_MAX_ITERATIONS="+ghost+" (run 'icebath doctor --fix' to remove)", ColorYellow))
-	}
-}
-
-func (p showPrinter) displaySection(cfg map[string]any, src ShowSources) {
-	p.section("Display")
-	display := subMap(cfg, "display")
-	personality, err := src.ActivePersonality(cfg)
-	if err != nil {
-		personality = PyStr(display["personality"])
-		if !PyTruthy(display["personality"]) {
-			personality = ""
-		}
-	}
-	if personality == "" {
-		personality = "none"
-	}
-	onOff := func(v any) string {
-		if PyTruthy(v) {
-			return "on"
-		}
-		return "off"
-	}
-	p.line("  Personality:  %s", personality)
-	p.line("  Reasoning:    %s", onOff(getOr(display, "show_reasoning", true)))
-	p.line("  Bell:         complete=%s, prompt=%s", onOff(getOr(display, "bell_on_complete", false)), onOff(getOr(display, "bell_on_prompt", false)))
-}
-
-func (p showPrinter) terminalSection(cfg map[string]any, src ShowSources) {
-	p.section("Terminal")
-	terminal := subMap(cfg, "terminal")
-	p.line("  Backend:      %s", PyStr(getOr(terminal, "backend", "local")))
-	p.line("  Working dir:  %s", PyStr(getOr(terminal, "cwd", ".")))
-	p.line("  Timeout:      %ss", PyStr(getOr(terminal, "timeout", 60)))
-	configured := func(names ...string) string {
-		for _, n := range names {
-			if src.EnvValue(n) == "" {
-				return "(not set)"
+	for _, group := range settingsHooks.Show(ctx) {
+		p.section(group.Title)
+		for _, row := range group.Rows {
+			value := row.Value
+			if row.Source != "default" && row.Source != "global" {
+				value += colorize("  ("+row.Source+")", ColorDim)
 			}
-		}
-		return "configured"
-	}
-	orNotSet := func(v string) string {
-		if v == "" {
-			return "(not set)"
-		}
-		return v
-	}
-	backend, _ := terminal["backend"].(string)
-	switch backend {
-	case "docker":
-		p.line("  Docker image: %s", PyStr(getOr(terminal, "docker_image", DefaultSandboxImage)))
-	case "modal":
-		p.line("  Modal image:  %s", PyStr(getOr(terminal, "modal_image", DefaultSandboxImage)))
-		p.line("  Modal token:  %s", configured("MODAL_TOKEN_ID"))
-	case "daytona":
-		p.line("  Daytona image: %s", PyStr(getOr(terminal, "daytona_image", DefaultSandboxImage)))
-		p.line("  API key:      %s", configured("DAYTONA_API_KEY"))
-	case "vercel_sandbox":
-		image := any(defaultVercelImage)
-		if PyTruthy(terminal["vercel_runtime"]) {
-			image = terminal["vercel_runtime"]
-		} else if PyTruthy(terminal["vercel_image"]) {
-			image = terminal["vercel_image"]
-		}
-		auth := "(not set)"
-		if src.EnvValue("VERCEL_OIDC_TOKEN") != "" || (src.EnvValue("VERCEL_TOKEN") != "" && src.EnvValue("VERCEL_PROJECT_ID") != "" && src.EnvValue("VERCEL_TEAM_ID") != "") {
-			auth = "configured"
-		}
-		p.line("  Vercel image:   %s", PyStr(image))
-		p.line("  Vercel auth:    %s", auth)
-	case "ssh":
-		p.line("  SSH host:     %s", orNotSet(src.EnvValue("TERMINAL_SSH_HOST")))
-		p.line("  SSH user:     %s", orNotSet(src.EnvValue("TERMINAL_SSH_USER")))
-	}
-}
-
-func (p showPrinter) compressionSection(cfg map[string]any) error {
-	p.section("Context Compression")
-	compression := subMap(cfg, "compression")
-	enabled := PyTruthy(getOr(compression, "enabled", true))
-	if !enabled {
-		p.line("  Enabled:      no")
-		return nil
-	}
-	p.line("  Enabled:      yes")
-	threshold, err := showPercent(getOr(compression, "threshold", 0.50))
-	if err != nil {
-		return err
-	}
-	p.line("  Threshold:    %s%%", threshold)
-	if tt := compression["threshold_tokens"]; tt != nil {
-		n, err := pyint.Of(tt)
-		var intErr *pyint.Error
-		switch {
-		case errors.As(err, &intErr) && intErr.Kind == "OverflowError":
-			return &pyrepr.FormatError{Class: intErr.Kind, Msg: intErr.Msg}
-		case err == nil && n.Sign() > 0:
-			capText, ferr := pyrepr.Format(n, ",")
-			if ferr != nil {
-				return ferr
-			}
-			p.line("  Token cap:    %s tokens (takes lower of ratio vs absolute)", capText)
+			p.line("  %-22s %s", row.Label+":", value)
 		}
 	}
-	ratio, err := showPercent(getOr(compression, "target_ratio", 0.20))
-	if err != nil {
-		return err
-	}
-	p.line("  Target ratio: %s%% of threshold preserved", ratio)
-	p.line("  Protect last: %s messages", PyStr(getOr(compression, "protect_last_n", 20)))
-	p.line("  Protect first: %s non-system head messages", PyStr(getOr(compression, "protect_first_n", 3)))
-	aux := subMap(subMap(cfg, "auxiliary"), "compression")
-	model := "(auto)"
-	if v := getOr(aux, "model", ""); PyTruthy(v) {
-		model = PyStr(v)
-	}
-	p.line("  Model:        %s", model)
-	if prov := getOr(aux, "provider", "auto"); PyTruthy(prov) && prov != "auto" {
-		p.line("  Provider:     %s", PyStr(prov))
-	}
-	return nil
-}
-
-func (p showPrinter) auxOverrides(cfg map[string]any) {
-	vision := subMap(subMap(cfg, "auxiliary"), "vision")
-	prov, model := getOr(vision, "provider", "auto"), getOr(vision, "model", "")
-	if prov == "auto" && !PyTruthy(model) {
-		return
-	}
-	p.section("Auxiliary Models (overrides)")
-	parts := []string{"provider=" + PyStr(prov)}
-	if PyTruthy(model) {
-		parts = append(parts, "model="+PyStr(model))
-	}
-	p.line("  %-12s  %s", "Vision", strings.Join(parts, ", "))
 }
 
 func (p showPrinter) skillSettings(src ShowSources) {
@@ -280,10 +120,9 @@ func (p showPrinter) skillSettings(src ShowSources) {
 	}
 }
 
-// Prints the current configuration with paths, masked keys and the main sections
-func ShowConfig(out io.Writer, src ShowSources) error {
+// Prints the configuration of the home in ctx: paths, masked keys, then every settings group
+func ShowConfig(ctx context.Context, out io.Writer, src ShowSources) error {
 	p := showPrinter{out: out}
-	cfg := src.Config
 	p.line("")
 	p.line("%s", colorize("┌─────────────────────────────────────────────────────────┐", ColorCyan))
 	p.line("%s", colorize("│              󰆧 Icebath Configuration                    │", ColorCyan))
@@ -299,19 +138,7 @@ func ShowConfig(out io.Writer, src ShowSources) error {
 		p.line("  %-14s %s", row[1], src.MaskSecret(src.EnvValue(row[0]), notSet))
 	}
 	p.line("  %-14s %s", "Anthropic", src.MaskSecret(src.AnthropicKey(), notSet))
-	p.modelSection(cfg, src)
-	p.displaySection(cfg, src)
-	p.terminalSection(cfg, src)
-	p.section("Timezone")
-	tz := colorize("(server-local)", ColorDim)
-	if v := getOr(cfg, "timezone", ""); PyTruthy(v) {
-		tz = PyStr(v)
-	}
-	p.line("  Timezone:     %s", tz)
-	if err := p.compressionSection(cfg); err != nil {
-		return err
-	}
-	p.auxOverrides(cfg)
+	p.settingsSections(ctx)
 	p.section("Messaging Platforms")
 	for _, row := range [][2]string{{"Telegram", "TELEGRAM_BOT_TOKEN"}, {"Discord", "DISCORD_BOT_TOKEN"}} {
 		state := colorize("not configured", ColorDim)

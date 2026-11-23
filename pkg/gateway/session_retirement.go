@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -97,6 +98,7 @@ func retireIdle(ctx context.Context, a *SessionAuthority, sessionID string, live
 	}
 	delete(a.Sessions, sessionID)
 	delete(a.launchSources, sessionID)
+	settings.EndSession(sessionID)
 	a.retiredRoutes[sessionID] = live.Route
 	if live.Source.Platform == PlatformLocal {
 		if a.retiredLocal == nil {

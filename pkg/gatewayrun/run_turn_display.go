@@ -9,9 +9,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -21,10 +20,8 @@ type runAgentDisplay struct {
 	platformKey                     string
 	enabledToolsets                 []string
 	disabledToolsets                []string
-	resolveDisplaySetting           func(ctx context.Context, userConfig map[string]any, platformKey, setting string, fallback any) any
 	progressMode                    string
 	progressGrouping                string
-	displaySurfaceMode              func(setting string, def bool, platformOnly []gateway.Platform, allowGeneric bool) string
 	toolProgressEnabled             bool
 	liveStatusMode                  string
 	liveStatusAdapter               gateway.PlatformAdapter
@@ -58,12 +55,20 @@ type replyInThreadAdapter interface {
 	EffectiveReplyInThread() bool
 }
 
-// Text of a display value, empty for none
-func displayText(v any) string {
-	if v == nil {
-		return ""
+// Context resolving display settings for the turn's chat platform
+func (d *runAgentDisplay) settingsCtx(ctx context.Context) context.Context {
+	return settings.WithPlatform(ctx, d.platformKey)
+}
+
+// Whether a chat display switch is on for a platform, the opt in only platforms needing their own override
+func displaySwitchOn(ctx context.Context, e *settings.Bool, platform gateway.Platform, platformKey string, optInOnly ...gateway.Platform) bool {
+	current := gatewayPlatformValue(platform)
+	for _, item := range optInOnly {
+		if gatewayPlatformValue(item) == current && !hasPlatformDisplayOverride(ctx, platformKey, e) {
+			return false
+		}
 	}
-	return pyrepr.Str(v)
+	return e.Get(settings.WithPlatform(ctx, platformKey))
 }
 
 // Display, progress and status surface settings of a turn on the source's platform
@@ -94,54 +99,17 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 		}
 	}
 	adapter, _ := r.deliveryAdapterFor(ctx, source)
-	suppressPanic(func() {
-		v := config.ResolveDisplaySetting(ctx, userConfig, platformKey, "tool_preview_length", 0)
-		n := 0
-		if pyrepr.Truthy(v) {
-			parsed, err := pyint.Of(v)
-			if err != nil {
-				return
-			}
-			n = int(parsed.Int64())
-		}
-		tools.SetToolPreviewMaxLen(n)
-	})
-	suppressPanic(func() {
-		tools.SetFriendlyToolLabels(pyrepr.Truthy(config.ResolveDisplaySetting(ctx, userConfig, platformKey, "friendly_tool_labels", true)))
-	})
-	envMode, _, err := provider.GetSecret(ctx, "ICEBATH_TOOL_PROGRESS_MODE")
+	dctx := settings.WithPlatform(ctx, platformKey)
+	tools.SetToolPreviewMaxLen(max(0, settings.DisplayToolPreviewLength.Get(dctx)))
+	tools.SetFriendlyToolLabels(settings.DisplayFriendlyToolLabels.Get(dctx))
+	progress, err := settings.Resolve(dctx, settings.ToolProgress.Key)
 	if err != nil {
 		return nil, err
 	}
-	rawMode, explicit := config.ResolveToolProgress(ctx, userConfig, platformKey, envMode)
-	progressMode := displayText(rawMode)
-	progressGrouping := displayText(config.ResolveDisplaySetting(ctx, userConfig, platformKey, "tool_progress_grouping", nil))
-	if progressGrouping == "" {
-		progressGrouping = "accumulate"
-	}
+	progressMode, explicit := settings.ToolProgress.Get(dctx), progress.Source != settings.SourceDefault
+	progressGrouping := settings.DisplayToolProgressGrouping.Get(dctx)
 	recent := []string{}
 	catalog := resolveStatusPhraseCatalog(home.Dir(ctx), userConfig, platformKey)
-	displaySurfaceMode := func(setting string, def bool, platformOnly []gateway.Platform, allowGeneric bool) string {
-		if len(platformOnly) > 0 {
-			current := gatewayPlatformValue(source.Platform)
-			for _, item := range platformOnly {
-				if gatewayPlatformValue(item) == current && !hasPlatformDisplayOverride(userConfig, platformKey, setting) {
-					return "off"
-				}
-			}
-		}
-		value := config.ResolveDisplaySetting(ctx, userConfig, platformKey, setting, def)
-		if s, ok := value.(string); ok && strings.ToLower(strings.TrimSpace(s)) == "generic" {
-			if allowGeneric {
-				return "generic"
-			}
-			return "off"
-		}
-		if pyrepr.Truthy(value) {
-			return "raw"
-		}
-		return "off"
-	}
 	genericStatusPhrase := func(kind string) (phrase string) {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -158,15 +126,15 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 	}
 	isWebhook := source.Platform == gateway.PlatformWebhook
 	toolProgressEnabled := progressMode != "off" && progressMode != "log" && !isWebhook
-	liveStatusMode := displayText(config.ResolveDisplaySetting(ctx, userConfig, platformKey, "live_status", "full"))
+	liveStatusMode := settings.DisplayLiveStatus.Get(dctx)
 	var liveStatusAdapter gateway.PlatformAdapter
 	if adapter != nil && adapter.Base() != nil && adapter.Base().Traits.SupportsStatusText && liveStatusMode != "off" {
 		liveStatusAdapter = adapter
 	}
 	logModeEnabled := progressMode == "log" && !isWebhook
 	mattermostOnly := []gateway.Platform{gateway.PlatformMattermost}
-	interimMode := displaySurfaceMode("interim_assistant_messages", true, mattermostOnly, false)
-	thinkingEnabled := displaySurfaceMode("thinking_progress", false, mattermostOnly, false) != "off"
+	interimEnabled := displaySwitchOn(ctx, settings.DisplayInterimAssistantMessages, source.Platform, platformKey, mattermostOnly...)
+	thinkingEnabled := displaySwitchOn(ctx, settings.DisplayThinkingProgress, source.Platform, platformKey, mattermostOnly...)
 	nativeCards := false
 	if cards, ok := adapter.(nativeTaskCardsAdapter); ok && adapter != nil && source.Platform == gateway.PlatformSlack && !(explicit && progressMode == "off") {
 		enabled, err := cards.NativeTaskCardsEnabled()
@@ -178,10 +146,10 @@ func (r *GatewayRunner) runAgentDisplaySettings(ctx context.Context, source *gat
 	}
 	disp := &runAgentDisplay{
 		userConfig: userConfig, platformKey: platformKey, enabledToolsets: enabledToolsets, disabledToolsets: disabledToolsets,
-		resolveDisplaySetting: config.ResolveDisplaySetting, progressMode: progressMode, progressGrouping: progressGrouping,
-		displaySurfaceMode: displaySurfaceMode, toolProgressEnabled: toolProgressEnabled, liveStatusMode: liveStatusMode,
+		progressMode: progressMode, progressGrouping: progressGrouping,
+		toolProgressEnabled: toolProgressEnabled, liveStatusMode: liveStatusMode,
 		liveStatusAdapter: liveStatusAdapter, logModeEnabled: logModeEnabled,
-		interimAssistantMessagesEnabled: !isWebhook && interimMode != "off", thinkingEnabled: thinkingEnabled,
+		interimAssistantMessagesEnabled: !isWebhook && interimEnabled, thinkingEnabled: thinkingEnabled,
 		nativeSlackTaskCards: nativeCards, needsProgressQueue: toolProgressEnabled || thinkingEnabled || nativeCards,
 		genericStatusPhrase: genericStatusPhrase,
 	}
@@ -252,7 +220,7 @@ type turnContextParams struct {
 func (r *GatewayRunner) runAgentBuildTurnContext(ctx context.Context, disp *runAgentDisplay, message string, source *gateway.SessionSource,
 	sessionKey string, runGeneration *int, params turnContextParams) (*TurnContext, *TurnRunner, gateway.PlatformAdapter, error) {
 	voiceAckGuild := r.voiceAckGuildFor(ctx, source)
-	cleanupProgress := pyrepr.Truthy(disp.resolveDisplaySetting(ctx, disp.userConfig, disp.platformKey, "cleanup_progress", nil))
+	cleanupProgress := settings.DisplayCleanupProgress.Get(disp.settingsCtx(ctx))
 	var cleanupAdapter gateway.PlatformAdapter
 	if cleanupProgress {
 		cleanupAdapter, _ = r.deliveryAdapterFor(ctx, source)
@@ -271,7 +239,7 @@ func (r *GatewayRunner) runAgentBuildTurnContext(ctx context.Context, disp *runA
 	tc.voiceAckGuild, tc.voiceAckLoop = voiceAckGuild, r.gatewayLoop
 	tc.liveStatusAdapter, tc.liveStatusMode, tc.thinkingEnabled = disp.liveStatusAdapter, disp.liveStatusMode, disp.thinkingEnabled
 	tc.progressMode, tc.progressGrouping, tc.toolProgressEnabled = disp.progressMode, disp.progressGrouping, disp.toolProgressEnabled
-	tc.logQueue, tc.resolveDisplaySetting, tc.userConfig = disp.logQueue, disp.resolveDisplaySetting, disp.userConfig
+	tc.logQueue, tc.userConfig = disp.logQueue, disp.userConfig
 	tc.enabledToolsets, tc.disabledToolsets, tc.logModeEnabled = disp.enabledToolsets, disp.disabledToolsets, disp.logModeEnabled
 	tc.interimAssistantMessagesEnabled, tc.needsProgressQueue = disp.interimAssistantMessagesEnabled, disp.needsProgressQueue
 	tc.nativeSlackTaskCards = disp.nativeSlackTaskCards
@@ -285,7 +253,7 @@ func (r *GatewayRunner) runAgentBuildTurnContext(ctx context.Context, disp *runA
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	tc.muteNotificationReply = config.DiagnosticTurnMuted(ctx, tc.persistUserDisplayMetadata, string(source.Platform), tc.userConfig)
+	tc.muteNotificationReply = config.DiagnosticTurnMuted(ctx, tc.persistUserDisplayMetadata, string(source.Platform))
 	tc.progressCallback = turnRunner.progressCallback
 	tc.voiceAckCallback = turnRunner.voiceAckCallback
 	tc.nativeToolStartCallback = turnRunner.combinedToolStartCallback

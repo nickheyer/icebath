@@ -32,8 +32,6 @@ const (
 	orImageLabel          = "OpenRouter"
 	orImageDefaultModel   = "openai/gpt-5.4-image-2"
 	orImageFallbackModel  = "google/gemini-3-pro-image"
-	orImageModelEnv       = "OPENROUTER_IMAGE_MODEL"
-	orImageAPIEnvPrefix   = "OPENROUTER_IMAGE_API_"
 	orImageChatMaxRefs    = 3
 	orImageRequestTimeout = 300 * time.Second
 	orImageConnectTimeout = 20 * time.Second
@@ -162,13 +160,10 @@ func orImageAPIModelMeta(modelID string) orImageAPIModel {
 	return orUnknownImageAPIModel
 }
 
-// Knob value from the call, then OPENROUTER_IMAGE_API_<NAME>, then image_gen.openrouter, blanks counting as unset
+// Knob value from the call, then image_gen.openrouter, blanks counting as unset
 func orImageSetting(env *tools.Env, name string, explicit any) any {
 	if s, isStr := explicit.(string); explicit != nil && (!isStr || strings.TrimSpace(s) != "") {
 		return explicit
-	}
-	if v := strings.TrimSpace(rawEnvValue(env, orImageAPIEnvPrefix+strings.ToUpper(name))); v != "" {
-		return v
 	}
 	v := loadImageGenConfig(env, orImageProvider)[name]
 	if s, ok := v.(string); ok {
@@ -463,11 +458,11 @@ func orLoadReferences(env *tools.Env, refs []string) (parts, unreadable []string
 	return parts, unreadable, nil
 }
 
-// Model chain from the call, OPENROUTER_IMAGE_MODEL, image_gen.openrouter.model, image_gen.model, else the default chain
+// Model chain from the call, image_gen.openrouter.model, image_gen.model, else the default chain
 func orResolveModelChain(env *tools.Env, explicit any) []string {
 	scoped := loadImageGenConfig(env, orImageProvider)
 	top := loadImageGenConfig(env, "")
-	for _, candidate := range []any{explicit, rawEnvValue(env, orImageModelEnv), scoped["model"], top["model"]} {
+	for _, candidate := range []any{explicit, scoped["model"], top["model"]} {
 		if s, ok := candidate.(string); ok && strings.TrimSpace(s) != "" {
 			return []string{strings.TrimSpace(s)}
 		}
@@ -590,8 +585,8 @@ func orAccessErrorHint(modelID string, status int, message string) string {
 	if !gated {
 		return ""
 	}
-	return fmt.Sprintf("%s can't reach image model '%s' (%d) — enable OpenAI image access in your %s account, or set %s=%s.",
-		orImageLabel, modelID, status, orImageLabel, orImageModelEnv, orImageFallbackModel)
+	return fmt.Sprintf("%s can't reach image model '%s' (%d) — enable OpenAI image access in your %s account, or choose %s as the image model in /settings.",
+		orImageLabel, modelID, status, orImageLabel, orImageFallbackModel)
 }
 
 // Cost and token totals the provider reported for the call

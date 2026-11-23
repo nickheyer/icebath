@@ -29,7 +29,7 @@ func seededCredentialPool(t *testing.T, providerName string, rows ...map[string]
 	}
 	home.ResetKeyCache()
 	config.ResetCache()
-	raw, err := json.Marshal(map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{providerName: rows}})
+	raw, err := json.Marshal(map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{providerName: rows}})
 	if err != nil {
 		t.Fatal(err)
 	}

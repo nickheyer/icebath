@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -242,26 +241,6 @@ func splitTextForWeixinDelivery(content string, maxLength int, splitPerLine bool
 		return splitDeliveryUnitsForWeixin(content)
 	}
 	return []string{content}
-}
-
-// Config value as a bool, numbers by truthiness and unknown texts taking the default
-func coerceBool(value any, def bool) bool {
-	if value == nil {
-		return def
-	}
-	if _, isFloat := value.(float64); isFloat {
-		return pyrepr.Truthy(value)
-	}
-	if _, isInt := pyint.Instance(value); isInt {
-		return pyrepr.Truthy(value)
-	}
-	switch pystr.Lower(pystr.Strip(pyrepr.Str(value))) {
-	case "1", "true", "yes", "on":
-		return true
-	case "0", "false", "no", "off":
-		return false
-	}
-	return def
 }
 
 // Items of a message item list that are objects, the AttributeError of any other item

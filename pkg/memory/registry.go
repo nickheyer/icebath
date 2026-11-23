@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -130,6 +131,11 @@ func registryHome(ctx context.Context, env *tools.Env) string {
 	return envHome(env)
 }
 
+// Settings context of the home in effect
+func registrySettings(ctx context.Context, env *tools.Env) context.Context {
+	return home.WithOverride(ctx, registryHome(ctx, env))
+}
+
 // Config of the home in effect, the session tree when the environment carries one
 func registryConfig(ctx context.Context, env *tools.Env) (config.Tree, error) {
 	if env != nil && env.Config != nil && home.Override(ctx) == "" {
@@ -213,14 +219,9 @@ func DismissProvider(ctx context.Context, p Provider) {
 	}
 }
 
-// Active provider name from memory.provider, empty when unset or unreadable
+// Active provider name from memory.provider, empty when unset
 func ActiveMemoryProvider(ctx context.Context, env *tools.Env) string {
-	tree, err := registryConfig(ctx, env)
-	if err != nil || tree == nil {
-		return ""
-	}
-	name, _ := tree.Get("memory.provider").(string)
-	return name
+	return settings.MemoryProvider.Get(registrySettings(ctx, env))
 }
 
 // Loads a provider by name, nil when unknown, parked or failing, skills registering only for the active provider

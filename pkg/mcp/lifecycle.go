@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Stdio child ledgers guarded by mcpMu, live pids with their owner, orphans awaiting the sweep, groups and start times
@@ -321,7 +320,6 @@ func stopMCPLoopIfIdle() bool { return stopMCPLoop(true) }
 
 // Argv markers of gateway children that race into a spawn window and are never MCP servers, matched against argv[1:]
 var nonMCPChildCmdlineMarkers = []string{
-	tuihost.TUIGatewayEntry,
 	"-dorg.eclipse.equinox.launcher", "eclipse.jdt.ls", "org.eclipse.equinox.launcher_",
 }
 

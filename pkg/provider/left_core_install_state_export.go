@@ -21,6 +21,3 @@ func HomeRawConfig(h string) map[string]any { return leftCoreReadConfig(h) }
 func HomeRawConfigForWrite(path string) (map[string]any, error) {
 	return leftCoreReadUserConfigRaw(path)
 }
-
-// StampCreatedConfig stamps a config.yaml an automatic step creates as current with its rows in use noted
-func StampCreatedConfig(h string, cfg map[string]any) { leftCoreStampCreated(h, cfg) }

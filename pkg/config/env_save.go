@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )

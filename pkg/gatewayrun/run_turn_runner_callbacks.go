@@ -36,7 +36,7 @@ func (t *TurnRunner) noticeCallbackSync(notice provider.AgentNotice) {
 		}
 		return nil
 	}
-	if _, err := config.RenderNotification(t.turnCtx, present, string(tc.source.Platform), diagnostic, tc.userConfig); err != nil {
+	if _, err := config.RenderNotification(t.turnCtx, present, string(tc.source.Platform), diagnostic); err != nil {
 		pkgLog().Debug(fmt.Sprintf("render_notice_line failed: %s", err))
 	}
 }

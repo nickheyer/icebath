@@ -680,7 +680,7 @@ func (a *DiscordAdapter) deliverUnauthorizedSlashAlert(ctx context.Context, runn
 			var sendErr error
 			result, sendErr = adapter.Send(ctx, home.ChatID, msg, "", nil)
 			return sendErr
-		}, string(target), true, nil)
+		}, string(target), true)
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify via %s failed: %s", target, err))
 			continue

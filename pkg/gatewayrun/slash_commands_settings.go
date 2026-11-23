@@ -6,14 +6,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -136,15 +135,9 @@ func (r *GatewayRunner) handleYoloCommand(ctx context.Context, event *gateway.Me
 
 // Cycles the platform's tool progress display mode and saves it, gated for messaging chats
 func (r *GatewayRunner) handleVerboseCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	configPath, platformKey := displayConfigTarget(ctx, event)
+	platformKey := platformConfigKey(event.Source.Platform)
 	live := gateway.LocalLive(r, event.Source)
-	userConfig := gateway.LoadGatewayConfigMap(ctx, "")
-	var gate any
-	if display, ok := userConfig["display"].(map[string]any); ok {
-		gate = display["tool_progress_command"]
-	}
-	gateEnabled := provider.IsTruthyValue(gate)
-	if !gateEnabled && live == nil {
+	if !settings.DisplayToolProgressCommand.Get(ctx) && live == nil {
 		return i18n.T(ctx, "gateway.verbose.not_enabled", "", nil), nil
 	}
 	cycle := []string{"off", "new", "all", "verbose"}
@@ -152,22 +145,24 @@ func (r *GatewayRunner) handleVerboseCommand(ctx context.Context, event *gateway
 		cycle = append(cycle, "log")
 	}
 	current := ""
-	if live != nil {
-		current = live.ToolProgressMode
+	if own, ok := gateway.SessionOwnSetting(ctx, live, settings.ToolProgress.Key); ok {
+		current, _ = own.(string)
 	}
 	if current == "" {
-		current = pyrepr.Str(config.ResolveDisplaySetting(ctx, userConfig, platformKey, "tool_progress", "all"))
+		current = settings.ToolProgress.Get(settings.WithPlatform(ctx, platformKey))
 	}
 	idx := slices.Index(cycle, current)
 	if idx < 0 {
 		idx = slices.Index(cycle, "all")
 	}
 	newMode := cycle[(idx+1)%len(cycle)]
-	if live != nil {
-		live.ToolProgressMode = newMode
+	if live != nil && newMode != "log" {
+		if _, err := settings.Set(settings.WithSession(ctx, live.Source.ChatID), settings.ToolProgress.Key, newMode, settings.Session); err != nil {
+			pkgLog().Warn("could not keep the session's tool progress", "err", err)
+		}
 	}
 	description := i18n.T(ctx, "gateway.verbose.mode_"+newMode, "", nil)
-	if err := writeRawConfigLeaf(ctx, configPath, []string{"display", "platforms", platformKey, "tool_progress"}, newMode); err != nil {
+	if _, err := settings.Set(ctx, settings.PlatformDisplay.EntryKey(platformKey)+".tool_progress", newMode, settings.Global); err != nil {
 		pkgLog().Warn(fmt.Sprintf("Failed to save tool_progress mode: %s", pyrepr.ExceptionMessage(err)))
 		return description + "\n" + i18n.T(ctx, "gateway.verbose.save_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}
@@ -204,10 +199,12 @@ func (r *GatewayRunner) handleBusyCommand(ctx context.Context, event *gateway.Me
 		return gateway.NewEphemeralReply(i18n.T(ctx, "gateway.busy.save_failed", "", nil), nil), nil
 	}
 	if live != nil {
-		live.BusyInputMode = arg
+		if _, err := settings.Set(settings.WithSession(ctx, live.Source.ChatID), settings.BusyMode.Key, arg, settings.Session); err != nil {
+			pkgLog().Warn("could not keep the session's busy mode", "err", err)
+		}
 	}
 	if profileName := r.busyProfileNameForSource(ctx, event.Source); profileName != "" {
-		r.snapshotProfileBusyModes(profileName, gateway.LoadGatewayConfigMap(ctx, ""))
+		r.snapshotProfileBusyModes(ctx, profileName)
 	} else {
 		r.busyInputMode = arg
 		r.busyTextMode = loadBusyTextMode(ctx)
@@ -225,10 +222,10 @@ func (r *GatewayRunner) handleBusyCommand(ctx context.Context, event *gateway.Me
 
 // Shows or toggles the runtime metadata footer, a local session saving it under its own platform key
 func (r *GatewayRunner) handleFooterCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	configPath, platformKey := displayConfigTarget(ctx, event)
+	platformKey := platformConfigKey(event.Source.Platform)
 	arg := pystr.Lower(pystr.Strip(event.GetCommandArgs()))
 	userConfig := gateway.LoadGatewayConfigMap(ctx, "")
-	enabled, fields := gateway.ResolveFooterConfig(userConfig, platformKey)
+	enabled, fields := gateway.ResolveFooterConfig(ctx, platformKey)
 	state := func(on bool) string {
 		if on {
 			return i18n.T(ctx, "gateway.footer.state_on", "", nil)
@@ -246,12 +243,11 @@ func (r *GatewayRunner) handleFooterCommand(ctx context.Context, event *gateway.
 	if arg == "" {
 		newState = !enabled
 	}
-	leaf := []string{"display"}
+	key := settings.ReplyFooter.Key
 	if event.Source.Platform == gateway.PlatformLocal {
-		leaf = append(leaf, "platforms", platformKey)
+		key = settings.PlatformDisplay.EntryKey(platformKey) + ".runtime_footer.enabled"
 	}
-	leaf = append(leaf, "runtime_footer", "enabled")
-	if err := writeRawConfigLeaf(ctx, configPath, leaf, newState); err != nil {
+	if _, err := settings.Set(ctx, key, newState, settings.Global); err != nil {
 		pkgLog().Warn(fmt.Sprintf("Failed to save runtime_footer.enabled: %s", pyrepr.ExceptionMessage(err)))
 		return i18n.T(ctx, "gateway.config_save_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
 	}

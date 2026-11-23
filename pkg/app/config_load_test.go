@@ -20,22 +20,11 @@ func tempHome(t *testing.T) string {
 	return dir
 }
 
-// Unsets every env var the config loader mirrors for one case and restores the earlier values after it
+// Unsets the working folder the config loader exports for one case and restores it after
 func isolateMirroredEnv(t *testing.T) {
 	t.Helper()
-	names := []string{"BROWSER_INACTIVITY_TIMEOUT", "ICEBATH_REDACT_SECRETS", "ICEBATH_CJK_FTS", "ICEBATH_SEARCH_SLOW_MS"}
-	for _, pair := range terminalEnvMappings() {
-		names = append(names, pair[1])
-	}
-	for _, task := range auxiliaryTaskEnv {
-		for _, field := range task.fields {
-			names = append(names, field[1])
-		}
-	}
-	for _, name := range names {
-		t.Setenv(name, "")
-		os.Unsetenv(name)
-	}
+	t.Setenv("TERMINAL_CWD", "")
+	os.Unsetenv("TERMINAL_CWD")
 }
 
 func TestResolvePrefillMessagesFileUsesTopLevel(t *testing.T) {
@@ -156,59 +145,6 @@ func TestIgnoreUserConfigEnvGateFlagIgnoredWhenSetToOtherValue(t *testing.T) {
 	}
 }
 
-func TestSaveConfigSetBridgesEveryCliTerminalKey(t *testing.T) {
-	saveKeys := map[string]bool{}
-	for _, pair := range config.TerminalConfigEnvMap {
-		if pair[0] != "cwd" {
-			saveKeys[pair[0]] = true
-		}
-	}
-	exempt := map[string]bool{"env_type": true, "sudo_password": true, "cwd": true, "home_mode": true}
-	var missing []string
-	for _, pair := range terminalEnvMappings() {
-		if !exempt[pair[0]] && !saveKeys[pair[0]] {
-			missing = append(missing, pair[0])
-		}
-	}
-	if len(missing) > 0 {
-		t.Fatalf("config set does not sync %v", missing)
-	}
-}
-
-func TestMirrorConfigToEnvBridgesTerminalBrowserAuxiliaryAndSessionKeys(t *testing.T) {
-	for _, name := range []string{"TERMINAL_ENV", "TERMINAL_CWD", "TERMINAL_TIMEOUT", "TERMINAL_DOCKER_VOLUMES", "BROWSER_INACTIVITY_TIMEOUT",
-		"AUXILIARY_VISION_MODEL", "AUXILIARY_VISION_PROVIDER", "ICEBATH_REDACT_SECRETS", "ICEBATH_CJK_FTS", "SUDO_PASSWORD"} {
-		t.Setenv(name, "")
-		os.Unsetenv(name)
-	}
-	t.Setenv("TERMINAL_TIMEOUT", "7")
-	defaults := map[string]any{
-		"terminal":  map[string]any{"backend": "docker", "cwd": "auto", "timeout": 30, "docker_volumes": []any{"a:b"}, "sudo_password": "pw"},
-		"browser":   map[string]any{"inactivity_timeout": 15},
-		"auxiliary": map[string]any{"vision": map[string]any{"provider": "auto", "model": "gpt-4o", "base_url": "", "api_key": ""}},
-		"security":  map[string]any{"redact_secrets": true},
-		"sessions":  map[string]any{"cjk_fts": false},
-	}
-	mirrorConfigToEnv(defaults, false)
-	if os.Getenv("TERMINAL_ENV") != "docker" || os.Getenv("TERMINAL_TIMEOUT") != "7" || os.Getenv("TERMINAL_DOCKER_VOLUMES") != `["a:b"]` {
-		t.Fatalf("terminal env %q %q %q", os.Getenv("TERMINAL_ENV"), os.Getenv("TERMINAL_TIMEOUT"), os.Getenv("TERMINAL_DOCKER_VOLUMES"))
-	}
-	if _, set := os.LookupEnv("TERMINAL_CWD"); set {
-		t.Fatal("stand in cwd bridged for a non local backend")
-	}
-	if os.Getenv("BROWSER_INACTIVITY_TIMEOUT") != "15" || os.Getenv("AUXILIARY_VISION_MODEL") != "gpt-4o" || os.Getenv("AUXILIARY_VISION_PROVIDER") != "" {
-		t.Fatalf("browser or auxiliary env wrong")
-	}
-	if os.Getenv("ICEBATH_REDACT_SECRETS") != "true" || os.Getenv("ICEBATH_CJK_FTS") != "False" || os.Getenv("SUDO_PASSWORD") != "pw" {
-		t.Fatalf("security or session env wrong %q %q", os.Getenv("ICEBATH_REDACT_SECRETS"), os.Getenv("ICEBATH_CJK_FTS"))
-	}
-	mirrorConfigToEnv(map[string]any{"terminal": map[string]any{"timeout": 30}}, true)
-	cwd, _ := os.Getwd()
-	if os.Getenv("TERMINAL_TIMEOUT") != "30" || os.Getenv("TERMINAL_CWD") != cwd {
-		t.Fatalf("file terminal config did not win %q %q", os.Getenv("TERMINAL_TIMEOUT"), os.Getenv("TERMINAL_CWD"))
-	}
-}
-
 func TestMergeFileConfigPromotesModelAndLegacyMaxTurns(t *testing.T) {
 	defaults := cliConfigDefaults()
 	mergeFileConfig(defaults, map[string]any{"model": map[string]any{"model": "m1", "base_url": "http://x"}, "max_turns": 9,
@@ -234,7 +170,7 @@ func mirrorFromGatewayShell(t *testing.T) (string, string) {
 	t.Chdir(dir)
 	t.Setenv("_ICEBATH_GATEWAY", "1")
 	t.Setenv("TERMINAL_CWD", "/gateway/terminal/cwd")
-	mirrorConfigToEnv(map[string]any{"terminal": map[string]any{"backend": "local", "cwd": "/configured/cwd"}}, true)
+	exportTerminalCwd(map[string]any{"terminal": map[string]any{"backend": "local", "cwd": "/configured/cwd"}})
 	cwd, _ := os.Getwd()
 	return os.Getenv("TERMINAL_CWD"), cwd
 }
@@ -286,12 +222,10 @@ func TestRootLevelProviderOverrideRootBaseUrlUsedAsFallbackWhenModelBaseUrlMissi
 	}
 }
 
-func TestRootLevelProviderOverrideTerminalVercelRuntimeBridgedToEnv(t *testing.T) {
-	t.Setenv("TERMINAL_VERCEL_RUNTIME", "")
-	os.Unsetenv("TERMINAL_VERCEL_RUNTIME")
+func TestRootLevelProviderOverrideTerminalVercelRuntimeKept(t *testing.T) {
 	cfg := loadFromYAML(t, "terminal:\n  backend: vercel_sandbox\n  vercel_runtime: python3.13\n")
-	if sectionOf(cfg, "terminal")["vercel_runtime"] != "python3.13" || os.Getenv("TERMINAL_VERCEL_RUNTIME") != "python3.13" {
-		t.Fatalf("terminal %v env %q", cfg["terminal"], os.Getenv("TERMINAL_VERCEL_RUNTIME"))
+	if sectionOf(cfg, "terminal")["vercel_runtime"] != "python3.13" {
+		t.Fatalf("terminal %v", cfg["terminal"])
 	}
 }
 

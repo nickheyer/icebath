@@ -26,8 +26,6 @@ var sessionDelegationRegistry = &handlerRegistry{}
 
 func registerSessionDelegationHandlers() {
 	sessionDelegationRegistry.method("delegation.status", delegationStatus)
-	sessionDelegationRegistry.method("delegation.pause", delegationPause)
-	sessionDelegationRegistry.method("subagent.steer", subagentSteer)
 	sessionDelegationRegistry.method("spawn_tree.save", spawnTreeSave)
 	sessionDelegationRegistry.method("spawn_tree.list", spawnTreeList)
 	sessionDelegationRegistry.method("spawn_tree.load", spawnTreeLoad)

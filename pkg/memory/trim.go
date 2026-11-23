@@ -13,14 +13,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
-	defaultTrimCooldownSeconds   = 60.0
-	defaultTrimLogEveryN         = 1
-	defaultTrimInfoLogMinDeltaMB = 0.0
 	// Even forced trims honor this floor so a burst of agent closes coalesces into one collection
 	trimForceFloor = 5 * time.Second
 	// A process turn free this long runs the one full collection the busy path trims skip
@@ -52,78 +50,11 @@ func releaseOSMemory() int {
 	return 0
 }
 
-// Python float conversion of a config value, false for bools and unparseable values
-func settingFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case bool:
-		return 0, false
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case float64:
-		return x, true
-	case string:
-		s := pyStrip(x)
-		if s == "" {
-			return 0, false
-		}
-		f, err := strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
-		return f, err == nil
-	}
-	return 0, false
-}
-
-// Python int conversion of a config value, false for bools and unparseable values
-func settingInt(v any) (int, bool) {
-	switch x := v.(type) {
-	case bool:
-		return 0, false
-	case float64:
-		if math.IsInf(x, 0) || math.IsNaN(x) {
-			return 0, false
-		}
-	}
-	return pyInt(v)
-}
-
-// Value clamped to the floor the way Python max keeps the floor unless the value is greater
-func clampFloor(v, floor float64) float64 {
-	if v > floor {
-		return v
-	}
-	return floor
-}
-
-func trimCooldown(v any) float64 {
-	f, ok := settingFloat(v)
-	if !ok {
-		return defaultTrimCooldownSeconds
-	}
-	return clampFloor(f, 0)
-}
-
-// Fail open trim settings from context.memory_trim, enabled, cooldown, log cadence and minimum logged delta
+// Trim settings of the home in effect: enabled, cooldown seconds, log cadence and minimum logged delta
 func trimSettings(ctx context.Context, env *tools.Env) (bool, float64, int, float64) {
-	settings := map[string]any{}
-	if tree, err := registryConfig(ctx, env); err == nil && tree != nil {
-		if s, ok := tree.Get("context.memory_trim").(map[string]any); ok {
-			settings = s
-		}
-	}
-	enabled := true
-	if b, ok := settings["enabled"].(bool); ok {
-		enabled = b
-	}
-	logEveryN := defaultTrimLogEveryN
-	if n, ok := settingInt(settings["log_every_n"]); ok {
-		logEveryN = max(1, n)
-	}
-	minDelta := defaultTrimInfoLogMinDeltaMB
-	if f, ok := settingFloat(settings["info_log_min_delta_mb"]); ok {
-		minDelta = clampFloor(f, 0)
-	}
-	return enabled, trimCooldown(settings["cooldown_seconds"]), logEveryN, minDelta
+	sctx := registrySettings(ctx, env)
+	return settings.ContextMemoryTrimEnabled.Get(sctx), max(0, settings.ContextMemoryTrimCooldownSeconds.Get(sctx).Seconds()),
+		max(1, settings.ContextMemoryTrimLogEveryN.Get(sctx)), max(0, settings.ContextMemoryTrimInfoLogMinDeltaMb.Get(sctx))
 }
 
 // Linux process status text, false off Linux or when unreadable
@@ -230,7 +161,7 @@ func TrimMemory(ctx context.Context, env *tools.Env, opts TrimOptions) (released
 	now := trimNow()
 	cooldown := configuredCooldown
 	if opts.Cooldown != nil {
-		cooldown = trimCooldown(*opts.Cooldown)
+		cooldown = max(0, *opts.Cooldown)
 	}
 	last := lastTrim
 	if !collect && lastAllocTrim.After(last) {

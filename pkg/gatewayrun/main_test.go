@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Plugin collaborators of a gateway process, the registries the bundled platform and provider plugins load into
@@ -68,10 +67,6 @@ func processState(services *plugins.Services) hermetic.Fixture {
 			if !gateway.FlushRuntimeStatus(30 * time.Second) {
 				t.Error("gateway runtime status was still being written 30s after the test")
 			}
-			if !tuihost.StopHostedRoomService(30) {
-				t.Error("hosted room worker was still running 30s after the test")
-			}
-			tuihost.BindHostedRoomServer(nil, nil)
 			provider.SetMultiplexActive(false)
 			home.PinProcess("", true)
 			provider.ResetLaunchEnvSnapshotForTests()

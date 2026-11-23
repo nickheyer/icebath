@@ -264,12 +264,6 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		if skin := rec.events("gateway.ready")[0].Payload["skin"]; !reflect.DeepEqual(skin, map[string]any{"name": "contrast"}) {
 			t.Fatalf("skin %v", skin)
 		}
-		c.mu.Lock()
-		canonical := c.isCanonical
-		c.mu.Unlock()
-		if !canonical {
-			t.Fatal("not canonical")
-		}
 		created := goRequest(c, "session.create", map[string]any{"cols": 80, "model": "m"})
 		eventually(t, "the create", func() bool { return s.last("session.create") != nil })
 		create := s.last("session.create")

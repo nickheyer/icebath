@@ -89,7 +89,7 @@ func TestParaphrasedQueryRecoversViaORRetry(t *testing.T) {
 
 func TestSearchRoutesFieldsToolsAndGap(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv("ICEBATH_SEARCH_SLOW_MS", "0")
+	useTestProfile(t, "sessions:\n  search_slow_ms: 0\n")
 	logs := captureSlog(t)
 	s, host := searchStore(t, [][3]string{
 		{"user", "deploy the walrus service", ""},

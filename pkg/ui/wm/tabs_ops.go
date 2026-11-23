@@ -137,7 +137,7 @@ func (m *Model) OpenTab(c Card) tea.Cmd {
 	g.active = len(g.cards) - 1
 	e.dirty = true
 	m.retarget(ws)
-	return tea.Batch(cmd, c.Init(), m.send(e, FocusMsg{Focused: ws.focus == e}), m.wake())
+	return tea.Batch(cmd, m.routed(e, c.Init()), m.send(e, FocusMsg{Focused: ws.focus == e}), m.wake())
 }
 
 // Closes one tab of a group, the group dissolving into its last tab and closing with none left

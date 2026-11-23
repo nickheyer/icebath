@@ -12,29 +12,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // OTelSDKModule is the Go OpenTelemetry SDK module the exporter is linked against
 const OTelSDKModule = "go.opentelemetry.io/otel/sdk"
-
-// Nested monitoring section of a config, empty when any step is missing or not a mapping
-func monitoringSection(cfg map[string]any, path ...string) map[string]any {
-	var node any = cfg["monitoring"]
-	for _, key := range path {
-		m, ok := asConfigMap(node)
-		if !ok {
-			return map[string]any{}
-		}
-		node = m[key]
-	}
-	m, ok := asConfigMap(node)
-	if !ok {
-		return map[string]any{}
-	}
-	return m
-}
-
-func otlpConfig(cfg map[string]any) map[string]any { return monitoringSection(cfg, "export", "otlp") }
 
 // ResolveHeaders maps header names to the values of the env vars named for them, unset vars skipped
 func ResolveHeaders(headersEnv any) map[string]string {
@@ -74,14 +56,14 @@ var resourceAttributeKeys = map[string]bool{
 
 var safeResourceValue = regexp.MustCompile(`^[A-Za-z0-9._:/-]{1,128}$`)
 
-// The install id of the config, unknown when the policy cannot mint or read one
-func otlpInstallID(cfg map[string]any) (id string) {
+// The install id of the profile, unknown when the policy cannot mint or read one
+func otlpInstallID(ctx context.Context) (id string) {
 	defer func() {
 		if r := recover(); r != nil {
 			id = "unknown"
 		}
 	}()
-	return EnsureInstallID(context.Background(), cfg)
+	return EnsureInstallID(ctx)
 }
 
 // SafeResourceAttributes keeps allowlisted bounded resource labels, rejecting values redaction would change
@@ -106,36 +88,35 @@ func SafeResourceAttributes(raw any) map[string]string {
 }
 
 // RuntimeResourceAttributes builds the safe OTLP resource shared by spans, metrics and diagnostic logs
-func RuntimeResourceAttributes(cfg map[string]any, telemetryScope string) map[string]string {
-	attrs := SafeResourceAttributes(monitoringSection(cfg, "gateway_health_export")["resource_attributes"])
+func RuntimeResourceAttributes(ctx context.Context, telemetryScope string) map[string]string {
+	attrs := SafeResourceAttributes(settings.MonitoringGatewayHealthExportResourceAttributes.Get(ctx))
 	attrs["service.name"] = "icebath-gateway"
-	attrs["service.instance.id"] = safeInstanceID(otlpInstallID(cfg))
+	attrs["service.instance.id"] = safeInstanceID(otlpInstallID(ctx))
 	attrs["telemetry.scope"] = telemetryScope
 	return attrs
 }
 
-func resourceAttributes(cfg map[string]any) map[string]string {
-	return RuntimeResourceAttributes(cfg, "gateway_monitoring")
+func resourceAttributes(ctx context.Context) map[string]string {
+	return RuntimeResourceAttributes(ctx, "gateway_monitoring")
 }
 
-// BuildExporter constructs the OTLP span exporter the config names, an error without an endpoint
-func BuildExporter(cfg map[string]any) (*OTLPHTTPSpanExporter, error) {
-	otlp := otlpConfig(cfg)
-	endpoint := pyrepr.Str(otlp["endpoint"])
-	if !pyrepr.Truthy(otlp["endpoint"]) {
+// BuildExporter constructs the OTLP span exporter the profile names, an error without a collector address
+func BuildExporter(ctx context.Context) (*OTLPHTTPSpanExporter, error) {
+	endpoint := settings.MonitoringExportOtlpEndpoint.Get(ctx)
+	if endpoint == "" {
 		return nil, errors.New("monitoring.export.otlp.endpoint is not set")
 	}
-	return NewOTLPHTTPSpanExporter(endpoint, ResolveHeaders(otlp["headers_env"])), nil
+	return NewOTLPHTTPSpanExporter(endpoint, ResolveHeaders(settings.MonitoringExportOtlpHeadersEnv.Get(ctx))), nil
 }
 
 // Tracer provider and batch processor seam the streamer tests replace
-var makeProvider = func(cfg map[string]any) (*TracerProvider, *BatchSpanProcessor, error) {
-	exporter, err := BuildExporter(cfg)
+var makeProvider = func(ctx context.Context) (*TracerProvider, *BatchSpanProcessor, error) {
+	exporter, err := BuildExporter(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	processor := NewBatchSpanProcessor(exporter)
-	provider := NewTracerProvider(resourceAttributes(cfg), processor)
+	provider := NewTracerProvider(resourceAttributes(ctx), processor)
 	return provider, processor, nil
 }
 
@@ -205,9 +186,9 @@ type OTLPStreamer struct {
 	exported  int
 }
 
-// NewOTLPStreamer builds the provider the config names and the subscriber that exports every batch
-func NewOTLPStreamer(cfg map[string]any, eventFilter func(*pyjson.Object) bool) (*OTLPStreamer, error) {
-	provider, processor, err := makeProvider(cfg)
+// NewOTLPStreamer builds the provider the profile names and the subscriber that exports every batch
+func NewOTLPStreamer(ctx context.Context, eventFilter func(*pyjson.Object) bool) (*OTLPStreamer, error) {
+	provider, processor, err := makeProvider(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -257,18 +238,17 @@ func (s *OTLPStreamer) Shutdown() {
 	}
 }
 
-// IsOTLPEnabled reports an enabled export with an endpoint
-func IsOTLPEnabled(cfg map[string]any) bool {
-	otlp := otlpConfig(cfg)
-	return pyrepr.Truthy(otlp["enabled"]) && pyrepr.Truthy(otlp["endpoint"])
+// IsOTLPEnabled reports an enabled export with a collector address
+func IsOTLPEnabled(ctx context.Context) bool {
+	return settings.MonitoringExportOtlpEnabled.Get(ctx) && settings.MonitoringExportOtlpEndpoint.Get(ctx) != ""
 }
 
 // StartStreaming attaches a streamer to the singleton emitter when OTLP is enabled, nil otherwise or when the provider cannot build
-func StartStreaming(cfg map[string]any, eventFilter func(*pyjson.Object) bool) *OTLPStreamer {
-	if !IsOTLPEnabled(cfg) {
+func StartStreaming(ctx context.Context, eventFilter func(*pyjson.Object) bool) *OTLPStreamer {
+	if !IsOTLPEnabled(ctx) {
 		return nil
 	}
-	streamer, err := NewOTLPStreamer(cfg, eventFilter)
+	streamer, err := NewOTLPStreamer(ctx, eventFilter)
 	if err != nil {
 		pkgLog().Warn("monitoring.export.otlp.enabled but the OTLP exporter could not start: " + err.Error())
 		return nil

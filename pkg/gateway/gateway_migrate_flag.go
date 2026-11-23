@@ -2,21 +2,13 @@ package gateway
 
 import (
 	"context"
-	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Sets gateway.multiplex_profiles in the default profile's config through the guarded config write
+// Sets gateway.multiplex_profiles in the default profile's config through the settings writer
 func writeMultiplexFlag(ctx context.Context, defaultHome string, value bool) error {
-	cfgPath := filepath.Join(defaultHome, "config.yaml")
-	userConfig, err := config.RequireReadableConfigBeforeWrite(ctx, cfgPath)
-	if err != nil {
-		return err
-	}
-	delete(userConfig, "multiplex_profiles")
-	if err := config.Tree(userConfig).Set("gateway.multiplex_profiles", value); err != nil {
-		return err
-	}
-	return config.WriteUserConfig(ctx, defaultHome, cfgPath, userConfig)
+	_, err := settings.Set(home.WithOverride(ctx, defaultHome), settings.GatewayMultiplexProfiles.Key, value, settings.Global)
+	return err
 }

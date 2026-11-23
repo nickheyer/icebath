@@ -110,7 +110,7 @@ func sessionPluginEngine(ctx context.Context, job gateway.SessionCompressJob, re
 		engine.Base().ModelThresholds = parsed
 	}
 	baseURL, apiKey, providerName := runtimeText(job.Runtime, "base_url"), runtimeText(job.Runtime, "api_key"), runtimeText(job.Runtime, "provider")
-	providers := provider.CompatibleCustomProviders(job.Config)
+	providers := provider.ProviderEntries(job.Config)
 	request := provider.ContextLengthRequest{Model: job.Model, BaseURL: baseURL, APIKey: apiKey, Provider: providerName, CustomProviders: providers}
 	if configured := sessionConfiguredContextLength(ctx, job.Config, job.Model, providerName, baseURL, providers); configured != nil {
 		request.ConfigContextLength = *configured

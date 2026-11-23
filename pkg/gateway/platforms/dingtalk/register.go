@@ -68,47 +68,6 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	return map[string]any{"success": true, "platform": "dingtalk", "chat_id": chatID}, nil
 }
 
-// Value under a key of a YAML mapping, nil when the holder is not a mapping
-func mappingGet(holder any, key string) any {
-	if m, ok := holder.(map[string]any); ok {
-		return m[key]
-	}
-	return nil
-}
-
-// Allowlist from an extra block, this block's own first, then the gateway platforms and the platforms sections
-func nestedAllowedUsers(yamlCfg, dingtalkCfg map[string]any) any {
-	holders := []any{dingtalkCfg, mappingGet(mappingGet(yamlCfg["gateway"], "platforms"), "dingtalk"),
-		mappingGet(yamlCfg["platforms"], "dingtalk")}
-	for _, holder := range holders {
-		if extra, ok := mappingGet(holder, "extra").(map[string]any); ok && extra["allowed_users"] != nil {
-			return extra["allowed_users"]
-		}
-	}
-	return nil
-}
-
-// YAML keys of the dingtalk block bridged to env vars
-var yamlBridge = []gateway.YAMLBridgeRow{
-	{Key: "require_mention", Env: "DINGTALK_REQUIRE_MENTION", Kind: "lower"},
-	{Key: "mention_patterns", Env: "DINGTALK_MENTION_PATTERNS", Kind: "json"},
-	{Key: "free_response_chats", Env: "DINGTALK_FREE_RESPONSE_CHATS", Kind: "csv"},
-	{Key: "allowed_chats", Env: "DINGTALK_ALLOWED_CHATS", Kind: "csv"},
-	{Key: "allowed_users", Env: "DINGTALK_ALLOWED_USERS", Kind: "csv"},
-}
-
-// Bridges the dingtalk YAML keys to env vars and the platform extra, a nested only allowlist included
-func applyYAMLConfig(ctx context.Context, yamlCfg, dingtalkCfg map[string]any) (map[string]any, error) {
-	cfg := make(map[string]any, len(dingtalkCfg)+1)
-	for k, v := range dingtalkCfg {
-		cfg[k] = v
-	}
-	if cfg["allowed_users"] == nil {
-		cfg["allowed_users"] = nestedAllowedUsers(yamlCfg, dingtalkCfg)
-	}
-	return gateway.ApplyYAMLBridge(ctx, cfg, yamlBridge)
-}
-
 // Whether the config extra or the env carries both the client id and the client secret
 func isConnected(ctx context.Context, config *gateway.PlatformConfig) (bool, error) {
 	var extra map[string]any
@@ -151,7 +110,6 @@ func (dingtalkPlatformPlugin) Register(ctx *plugins.Context) error {
 		"is_connected":           isConnected,
 		"scoped_validate_config": isConnected,
 		"setup_fn":               InteractiveSetup,
-		"apply_yaml_config_fn":   applyYAMLConfig,
 		"cron_deliver_env_var":   "DINGTALK_HOME_CHANNEL",
 		"standalone_sender_fn":   standaloneSend,
 		"emoji":                  "🐳",

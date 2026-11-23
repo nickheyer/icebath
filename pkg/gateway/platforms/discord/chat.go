@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Seconds of a Retry-After value or header set, numeric or HTTP date, clamped at zero
@@ -272,21 +270,12 @@ func (a *DiscordAdapter) resolveAllowedUsernames(ctx context.Context) {
 			fmt.Printf("[%s] '%s' matches only a display name or server nickname, which any member can set; allowlist that member's username or numeric user ID instead\n", a.Name(), entry)
 		}
 	}
-	sorted := keysOf(numericIDs)
-	sort.Strings(sorted)
-	joined := strings.Join(sorted, ",")
 	a.mu.Lock()
 	a.allowedUserIDs = numericIDs
 	a.usernameResolvedIDs = resolved
-	if a.gateEnvSnapshot != nil {
-		a.gateEnvSnapshot["DISCORD_ALLOWED_USERS"] = joined
-	}
 	a.mu.Unlock()
-	if !tools.MultiplexActive() {
-		os.Setenv("DISCORD_ALLOWED_USERS", joined)
-	}
 	if len(resolved) > 0 {
-		fmt.Printf("[%s] Updated DISCORD_ALLOWED_USERS with %d resolved ID(s)\n", a.Name(), len(resolved))
+		fmt.Printf("[%s] Allowed %d user(s) by their resolved ID\n", a.Name(), len(resolved))
 	}
 }
 

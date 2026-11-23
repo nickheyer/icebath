@@ -7,19 +7,17 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"os"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -29,7 +27,6 @@ const (
 	largeToolResultTrimChars        = 1000000
 	maxToolWorkers                  = 8
 	defaultImageParallelRequests    = 4
-	defaultConcurrentToolTimeoutS   = 420.0
 	startOrderGateTimeoutDefaultS   = 120.0
 	authorizationGateLockTimeoutS   = 360.0
 	PrunedToolArgumentsError        = "suspected_pruned_tool_arguments"
@@ -74,34 +71,18 @@ func clampTimeoutSeconds(seconds float64, ok bool) time.Duration {
 	return time.Duration(seconds * float64(time.Second))
 }
 
-// Resolves timeouts.<key> then the env var then the default, invalid values fall through with a warning
-func resolveTimeout(env *Env, key string, def float64, hasDefault bool, envVar string) time.Duration {
-	if raw := cfgTree(env).Get("timeouts." + key); raw != nil {
-		if _, isBool := raw.(bool); !isBool {
-			if f, ok := config.AsFloat(raw); ok && !math.IsNaN(f) {
-				return clampTimeoutSeconds(f, true)
-			}
-		}
-		envLog(env).Warn(fmt.Sprintf("timeouts.%s: invalid value %s in config.yaml; ignoring", key, pyrepr.Repr(raw)))
-	}
-	if rawEnv := strings.TrimSpace(os.Getenv(envVar)); envVar != "" && rawEnv != "" {
-		if f, err := strconv.ParseFloat(rawEnv, 64); err == nil {
-			return clampTimeoutSeconds(f, true)
-		}
-		envLog(env).Warn(fmt.Sprintf("invalid %s=%s; ignoring", envVar, pyrepr.Repr(rawEnv)))
-	}
-	return clampTimeoutSeconds(def, hasDefault)
-}
-
 // Per batch concurrent deadline, zero disables
 func resolveConcurrentToolTimeout(env *Env) time.Duration {
-	return resolveTimeout(env, "tools.concurrent_batch", defaultConcurrentToolTimeoutS, true, "ICEBATH_CONCURRENT_TOOL_TIMEOUT_S")
+	return clampTimeoutSeconds(settings.TimeoutsToolsConcurrentBatch.Get(envHomeCtx(context.Background(), env)).Seconds(), true)
 }
 
 // Deadline for one sequential call, else the concurrent batch deadline so the two never drift
 func resolveSequentialToolTimeout(env *Env) time.Duration {
-	concurrent := resolveConcurrentToolTimeout(env)
-	return resolveTimeout(env, "tools.sequential_call", concurrent.Seconds(), concurrent > 0, "")
+	ctx := envHomeCtx(context.Background(), env)
+	if v, err := settings.Resolve(ctx, settings.TimeoutsToolsSequentialCall.Key); err == nil && v.Value != nil {
+		return clampTimeoutSeconds(settings.TimeoutsToolsSequentialCall.Get(ctx).Seconds(), true)
+	}
+	return resolveConcurrentToolTimeout(env)
 }
 
 // Authorization lock bound equal to the human wait ceiling so a prompt stays answerable

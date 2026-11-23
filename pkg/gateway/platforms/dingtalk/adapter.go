@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -44,7 +45,6 @@ var (
 	// Seconds to wait before each reconnect attempt, the last value repeating
 	reconnectBackoff  = []int{2, 5, 10, 30, 60}
 	dingtalkWebhookRE = pyre.MustCompile(`^https://(?:api|oapi)\.dingtalk\.com/`)
-	truthyValues      = map[string]bool{"true": true, "1": true, "yes": true, "on": true}
 	numberedRE        = pyre.MustCompile(`^\d+\.\s`)
 )
 
@@ -262,7 +262,7 @@ func NewDingTalkAdapter(ctx context.Context, config *gateway.PlatformConfig) (*D
 	if a.mentionPatterns, err = a.compileMentionPatterns(ctx); err != nil {
 		return nil, err
 	}
-	allowed, err := a.csvSetting(ctx, "allowed_users", "DINGTALK_ALLOWED_USERS")
+	allowed, err := chatSetting(ctx, settings.DingtalkAllowedUsers)
 	if err != nil {
 		return nil, err
 	}
@@ -478,64 +478,32 @@ func (a *DingTalkAdapter) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-// List or CSV setting from the env first, then the config extra key
-func (a *DingTalkAdapter) csvSetting(ctx context.Context, key, envName string) (map[string]bool, error) {
-	raw, err := gateway.ExtraOrSecret(ctx, a.Config.Extra, key, envName, "", false)
-	if err != nil {
-		return nil, err
-	}
-	return csvSet(raw), nil
-}
-
 // Whether group chats need an explicit bot trigger
 func (a *DingTalkAdapter) requireMention(ctx context.Context) (bool, error) {
-	configured, err := gateway.ExtraOrSecret(ctx, a.Config.Extra, "require_mention", "DINGTALK_REQUIRE_MENTION", "false", false)
-	if err != nil {
-		return false, err
-	}
-	if s, ok := configured.(string); ok {
-		return truthyValues[pystr.Lower(s)], nil
-	}
-	return pyrepr.Truthy(configured), nil
+	return settings.DingtalkRequireMention.Get(gateway.SettingsContext(ctx)), nil
 }
 
 // Group chat whitelist, a non empty one a hard gate even for a mention
 func (a *DingTalkAdapter) allowedChats(ctx context.Context) (map[string]bool, error) {
-	return a.csvSetting(ctx, "allowed_chats", "DINGTALK_ALLOWED_CHATS")
+	return chatSetting(ctx, settings.DingtalkAllowedChats)
 }
 
-// Wake word patterns from the config list, or from the env as JSON, lines or CSV
+// Chat ids a list setting holds, written as a list or as comma separated text
+func chatSetting(ctx context.Context, e settings.Entry) (map[string]bool, error) {
+	v, err := settings.Resolve(gateway.SettingsContext(ctx), e.Info().Key)
+	if err != nil || v.Value == nil {
+		return map[string]bool{}, err
+	}
+	return csvSet(v.Value), nil
+}
+
+// Wake word patterns from the settings list
 func (a *DingTalkAdapter) compileMentionPatterns(ctx context.Context) ([]*regexp2.Regexp, error) {
-	var patterns any
-	if a.Config.Extra != nil {
-		patterns = a.Config.Extra["mention_patterns"]
+	v, err := settings.Resolve(gateway.SettingsContext(ctx), settings.DingtalkMentionPatterns.Key)
+	if err != nil {
+		return nil, err
 	}
-	if patterns == nil {
-		scoped, err := gateway.GetScopedSecret(ctx, "DINGTALK_MENTION_PATTERNS", "", false)
-		if err != nil {
-			return nil, err
-		}
-		if raw := pystr.Strip(scoped); raw != "" {
-			if parsed, err := pyjson.Loads(raw); err == nil {
-				patterns = pyjson.Plain(parsed)
-			} else {
-				parts := []any{}
-				for _, part := range pystr.Splitlines(raw, false) {
-					if s := pystr.Strip(part); s != "" {
-						parts = append(parts, s)
-					}
-				}
-				if len(parts) == 0 {
-					for _, part := range strings.Split(raw, ",") {
-						if s := pystr.Strip(part); s != "" {
-							parts = append(parts, s)
-						}
-					}
-				}
-				patterns = parts
-			}
-		}
-	}
+	patterns := v.Value
 	if patterns == nil {
 		return nil, nil
 	}
@@ -602,7 +570,7 @@ func (a *DingTalkAdapter) shouldProcessMessage(ctx context.Context, message *Inc
 	if len(allowed) > 0 && chatID != "" && !allowed[chatID] {
 		return false, nil
 	}
-	free, err := a.csvSetting(ctx, "free_response_chats", "DINGTALK_FREE_RESPONSE_CHATS")
+	free, err := chatSetting(ctx, settings.DingtalkFreeResponseChats)
 	if err != nil {
 		return false, err
 	}

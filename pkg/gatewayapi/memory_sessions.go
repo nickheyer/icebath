@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -38,29 +39,15 @@ func NewAPIServerMemorySessions(maxSize *int, idleTTLSecs *float64) *APIServerMe
 	return &APIServerMemorySessions{entries: map[memorySessionKey]memorySessionEntry{}, maxSize: maxSize, idleTTLSec: idleTTLSecs}
 }
 
-// Size and idle bounds, the configured agent cache knobs or their defaults
+// Size and idle bounds, the fixed ones else the profile's agent cache settings
 func (m *APIServerMemorySessions) bounds(ctx context.Context) (int, float64) {
-	if m.maxSize == nil || m.idleTTLSec == nil {
-		var configured *gateway.AgentCacheBounds
-		func() {
-			defer func() { _ = recover() }()
-			b := gateway.ResolveAgentCacheBounds(gateway.LoadGatewayConfigMap(ctx, ""))
-			configured = &b
-		}()
-		if m.maxSize == nil {
-			size := gateway.AgentCacheMaxSize
-			if configured != nil && configured.MaxSize != nil && *configured.MaxSize != 0 {
-				size = *configured.MaxSize
-			}
-			m.maxSize = &size
-		}
-		if m.idleTTLSec == nil {
-			ttl := gateway.AgentCacheIdleTTLSecs
-			if configured != nil && configured.IdleTTLSecs != nil && *configured.IdleTTLSecs != 0 {
-				ttl = *configured.IdleTTLSecs
-			}
-			m.idleTTLSec = &ttl
-		}
+	if m.maxSize == nil {
+		size := settings.AgentAgentCacheMaxSize.Get(ctx)
+		m.maxSize = &size
+	}
+	if m.idleTTLSec == nil {
+		ttl := settings.AgentAgentCacheIdleTtlSecs.Get(ctx).Seconds()
+		m.idleTTLSec = &ttl
 	}
 	return *m.maxSize, *m.idleTTLSec
 }

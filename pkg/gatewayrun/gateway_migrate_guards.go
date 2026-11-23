@@ -7,12 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Owner uid of a live process, nil when unknown
@@ -224,18 +223,6 @@ func MaskedDefaultUnit(ctx context.Context, defaultHome string) (string, error) 
 // Whether the default profile's effective config sets gateway.auto_multiplex_migration false
 func AutoMigrationOptedOut(ctx context.Context, defaultHome string) (bool, error) {
 	scoped, restore := HomeEnv(ctx, defaultHome)
-	cfg, err := config.LoadReadonly(scoped, home.Dir(scoped), nil)
-	restore()
-	if err != nil {
-		return false, err
-	}
-	section, ok := cfg["gateway"].(map[string]any)
-	if !ok {
-		return false, nil
-	}
-	value, present := section["auto_multiplex_migration"]
-	if !present || value == nil {
-		return false, nil
-	}
-	return !provider.IsTruthyValue(value), nil
+	defer restore()
+	return !settings.GatewayAutoMultiplexMigration.Get(home.WithOverride(scoped, home.Dir(scoped))), nil
 }

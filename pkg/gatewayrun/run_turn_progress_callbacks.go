@@ -167,21 +167,11 @@ func (t *TurnRunner) combinedToolStartCallback(callID, toolName string, args map
 func (t *TurnRunner) combinedToolCompleteCallback(callID, toolName string, args map[string]any, result string) {
 	ctx := t.turnCtx
 	isError, _ := tools.DetectToolFailure(ctx, toolName, result)
-	verbose := false
-	if owner := t.approvalOwner; owner != nil {
-		if live, ok := owner.authority.Live(owner.sessionID); ok && live != nil {
-			mode := live.ToolProgressMode
-			if mode == "" {
-				mode = t.ctx.progressMode
-			}
-			verbose = mode == "verbose"
-		}
-	}
-	payload := gateway.ToolCompletePayload(ctx, callID, toolName, args, result, &isError, verbose)
+	payload := gateway.ToolCompletePayload(ctx, callID, toolName, args, result, &isError)
 	local := localViewerTurn(t)
 	if local {
 		name := toolName
-		fields := localCompleteFields(ctx, t, callID, &name, args, result)
+		fields := t.takeLocalCompleteFields(callID, &name, args, result)
 		for _, key := range fields.Keys {
 			payload.Set(key, fields.Vals[key])
 		}

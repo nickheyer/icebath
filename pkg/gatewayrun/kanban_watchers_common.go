@@ -8,13 +8,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -100,87 +98,28 @@ func objValue(o *pyjson.Object, key string) any {
 	return v
 }
 
-// Optional positive kanban cap, nil when unset, unparsable or below one
-func positiveIntSetting(kanbanCfg map[string]any, key string) *int {
-	raw, ok := kanbanCfg[key]
-	if !ok || raw == nil {
+// Optional positive kanban cap of the profile in ctx, nil when unset or below one
+func positiveSetting(ctx context.Context, e *settings.Int) *int {
+	v, set := e.Lookup(ctx)
+	if !set {
 		return nil
 	}
-	value, err := pyint.Int64(raw)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: invalid kanban.%s=%s; ignoring", key, pyrepr.Repr(raw)))
+	if v < 1 {
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: %s=%d is below 1; ignoring", e.Key, v))
 		return nil
 	}
-	if value < 1 {
-		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: kanban.%s=%s is below 1; ignoring", key, pyrepr.Repr(raw)))
-		return nil
-	}
-	pkgLog().Info(fmt.Sprintf("kanban dispatcher: %s=%d", key, value))
-	v := int(value)
+	pkgLog().Info(fmt.Sprintf("kanban dispatcher: %s=%d", e.Key, v))
 	return &v
 }
 
-// Live auto decompose toggle and per tick cap, disabled with cap three when config cannot load
-func resolveAutoDecomposeSettings(loadConfig func() (config.Tree, error)) (bool, int, error) {
-	cfg, err := loadConfig()
-	if err != nil {
-		return false, 3, nil
-	}
-	kcfg, err := kanbanSection(cfg)
-	if err != nil {
-		return false, 0, err
-	}
-	perTick := int64(3)
-	raw, ok := kcfg["auto_decompose_per_tick"]
-	if !ok || !pyrepr.Truthy(raw) {
-		raw = int64(3)
-	}
-	if v, err := pyint.Int64(raw); err == nil {
-		perTick = v
-	}
-	enabled, ok := kcfg["auto_decompose"]
-	if !ok {
-		enabled = true
-	}
-	return pyrepr.Truthy(enabled), int(max(perTick, 1)), nil
+// Live auto decompose toggle and per tick cap of the profile in ctx
+func resolveAutoDecomposeSettings(ctx context.Context) (bool, int) {
+	return settings.KanbanAutoDecompose.Get(ctx), max(settings.KanbanAutoDecomposePerTick.Get(ctx), 1)
 }
 
-// Kanban mapping of a loaded config, empty when absent and an AttributeError when not a mapping
-func kanbanSection(cfg config.Tree) (map[string]any, error) {
-	raw, ok := cfg["kanban"]
-	if !ok {
-		return map[string]any{}, nil
-	}
-	switch m := raw.(type) {
-	case map[string]any:
-		return m, nil
-	case config.Tree:
-		return m, nil
-	}
-	return nil, fmt.Errorf("'%s' object has no attribute 'get'", config.PyTypeName(raw))
-}
-
-// Retention days for done subscriptions re read on every sweep, thirty when config cannot load
+// Retention days for done subscriptions re read on every sweep
 func gcRetentionDays(ctx context.Context) int64 {
-	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return 30
-	}
-	kcfg := map[string]any{}
-	if cfg != nil {
-		if m, ok := cfg["kanban"].(map[string]any); ok && pyrepr.Truthy(m) {
-			kcfg = m
-		}
-	}
-	raw, ok := kcfg["done_sub_retention_days"]
-	if !ok {
-		raw = int64(30)
-	}
-	v, err := pyint.Int64(raw)
-	if err != nil {
-		return 30
-	}
-	return v
+	return int64(settings.KanbanDoneSubRetentionDays.Get(ctx).Hours() / 24)
 }
 
 // False while the global emergency stop holds kanban dispatch

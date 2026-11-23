@@ -100,15 +100,51 @@ var (
 	sessionEscapeHatches      = nameSet("stop", "approve", "deny")
 )
 
-// What to run instead, for the client local commands a shared gateway session cannot run
+// What to do instead, in plain words, for commands the background service does not run
 var RefusalHints = map[string]string{
-	"export":   "Type /export [profile] [-o <file>] in the terminal UI (bare `icebath`), or run `icebath profile export [name] -o <file>`.",
-	"import":   "Type /import <archive> [--name <name>] in the terminal UI (bare `icebath`), or run `icebath profile import <archive> [--name <name>]`.",
-	"snapshot": "Type /snapshot in the terminal UI (bare `icebath`): list, create [label], restore <id>, prune [N]. `icebath backup --quick` creates one from a shell.",
-	"handoff":  "Type /handoff <platform> in the terminal UI (bare `icebath`) on the session to hand off.",
-	"hatch":    "Type /hatch [description] in the terminal UI (bare `icebath`), or /pet to pick a gallery pet.",
-	"worktree": "Type /worktree [new [name]|list|prune] in the terminal UI (bare `icebath`), or start in a fresh worktree with `icebath -w`.",
+	"export":   "Type /export [profile] [-o <file>] in the terminal UI (run `icebath`), or run `icebath profile export [name] -o <file>`.",
+	"import":   "Type /import <archive> [--name <name>] in the terminal UI (run `icebath`), or run `icebath profile import <archive> [--name <name>]`.",
+	"snapshot": "Type /snapshot in the terminal UI (run `icebath`): list, create [label], restore <id>, prune [N]. `icebath backup --quick` creates one from a shell.",
+	"handoff":  "Type /handoff <platform> in the terminal UI (run `icebath`) on the session to hand off.",
+	"hatch":    "Type /hatch [description] in the terminal UI (run `icebath`), or /pet to pick a gallery pet.",
+	"worktree": "Type /worktree [new [name]|list|prune] in the terminal UI (run `icebath`), or start in a fresh worktree with `icebath -w`.",
 	"palette":  "Type / to search commands (the composer completes and filters them).",
+	"start":    chatAppOnlyHint,
+	"topic":    chatAppOnlyHint,
+	"sethome":  chatAppOnlyHint,
+	"voice":    "The terminal UI speaks replies itself: type /voice tts there. Spoken replies from the background service are for chat apps.",
+	"plugins":  "Type /plugins to open the plugin list, /plugins update to update them all, or /plugins enable|disable <name>. To install or remove one, run `icebath plugins` from the command palette.",
+	"skills":   "Type /skills to open the skill list; /skills search, install and inspect work too. To check, update, audit or uninstall skills, run `icebath skills <action>` from the command palette.",
+	"update":   "Type /update in the terminal UI: it updates once the UI exits, then starts it again. Run `icebath update --check` from the command palette to see what would change.",
+}
+
+// Kanban verbs that keep running until stopped, which a slash reply cannot carry
+var kanbanForegroundVerbs = nameSet("watch", "tail", "daemon")
+
+// Hint of a kanban verb that keeps running until stopped
+const kanbanForegroundHint = "/kanban watch, tail and daemon keep running until stopped, so they cannot answer here. Run `icebath kanban <action>` from the command palette; it opens in a terminal."
+
+// Arguments of /skills the background service runs, the review of pending skill writes
+var skillsReviewWords = nameSet("", "pending", "approve", "apply", "reject", "deny", "drop", "diff", "approval", "mode")
+
+// Hint of a command that only means something in a chat app conversation
+const chatAppOnlyHint = "This command only works in a chat app conversation (Telegram, Discord, Slack and the like). Connect a chat app from /setup in the terminal UI."
+
+// Hint of a registry command the background service has no handler for, run by the terminal UI itself
+const clientOnlyHint = "The terminal UI runs this command itself, not the background service. Type it in the terminal UI (run `icebath`), or type /help there to see what each command does."
+
+// Hint of a command only the terminal UI on this computer may run through the background service
+const ownerOnlyHint = "Only the terminal UI on this computer can run this command. Type it there (run `icebath`)."
+
+// Service controls, plugin toggles and listings only the local owner may run
+var ownerControlCommands = nameSet("pause", "restart", "platform", "plugins", "agents")
+
+// Read commands whose writing arguments only the local owner may run
+var ownerArgumentCommands = nameSet("kanban", "usage", "suggestions", "memory", "skills")
+
+// Whether the connection is the local owner, a same-user interactive client on the loopback socket
+func (c *AuthorityConnection) localOwner() bool {
+	return c.nativeOwner && c.actor.Capabilities["session:operator"]
 }
 
 // Argument split as a shlex splitting handler parses it, an unclosed quote refused on the arg field
@@ -215,6 +251,111 @@ func CommandVerdict(name, arg string) (string, error) {
 		}
 	}
 	return "refused", nil
+}
+
+// Verdict of a registry command typed by the local owner, CommandVerdict plus the owner-only commands
+func ownerCommandVerdict(name, arg string) (string, error) {
+	verdict, err := CommandVerdict(name, arg)
+	if err != nil || verdict != "refused" {
+		return verdict, err
+	}
+	if ownerControlCommands[name] || ownerArgumentCommands[name] {
+		return "control", nil
+	}
+	return "refused", nil
+}
+
+// Unsupported command refusal carrying what to do instead, the command's own hint or the fallback
+func unsupportedCommand(canonical, fallback string) error {
+	hint := RefusalHints[canonical]
+	if hint == "" {
+		hint = fallback
+	}
+	var detail *string
+	if hint != "" {
+		detail = &hint
+	}
+	return state.NewRuntimeStoreError("unsupported_command", nil, detail)
+}
+
+// Refusal of a command the owner unlocked that the background service still has no handler for, nil when it runs
+func ownerUnrunnable(a *SessionAuthority, canonical, arg string) error {
+	switch {
+	case canonical == "plugins":
+		if _, _, ok := pluginsToggleArgs(arg); ok {
+			return nil
+		}
+		return unsupportedCommand(canonical, "")
+	case canonical == "skills":
+		if skillsReviewWords[commandFirstWord(arg)] {
+			return nil
+		}
+		return unsupportedCommand(canonical, "")
+	case canonical == "kanban":
+		token, err := kanbanFirstToken(arg)
+		if err != nil || !kanbanForegroundVerbs[token] {
+			return err
+		}
+		return unsupportedCommand(canonical, kanbanForegroundHint)
+	case sessionPromptCommands[canonical]:
+		return nil
+	}
+	runner, ok := a.Runner.(localCommandRunner)
+	if !ok || runner.LocalCommandHandler(canonical) != nil {
+		return nil
+	}
+	return unsupportedCommand(canonical, clientOnlyHint)
+}
+
+// Whether a plugins argument is enable or disable of one named plugin, with that choice and name
+func pluginsToggleArgs(arg string) (bool, string, bool) {
+	words := strings.Fields(arg)
+	if len(words) != 2 {
+		return false, "", false
+	}
+	switch pystr.Lower(words[0]) {
+	case "enable":
+		return true, words[1], true
+	case "disable":
+		return false, words[1], true
+	}
+	return false, "", false
+}
+
+// Enables or disables one plugin for the local owner, answered in plain words
+func ownerPluginsCommand(ctx context.Context, arg string) (string, error) {
+	enable, name, _ := pluginsToggleArgs(arg)
+	result, err := plugins.SetAgentPluginEnabled(ctx, name, enable)
+	if err != nil {
+		return "", err
+	}
+	if !pyrepr.Truthy(result["ok"]) {
+		return fmt.Sprintf("Plugin %s was not changed: %s", name, pyrepr.Str(result["error"])), nil
+	}
+	if pyrepr.Truthy(result["name"]) {
+		name = pyrepr.Str(result["name"])
+	}
+	done := "disabled"
+	if enable {
+		done = "enabled"
+	}
+	if pyrepr.Truthy(result["unchanged"]) {
+		return fmt.Sprintf("Plugin %s is already %s.", name, done), nil
+	}
+	lines := []string{fmt.Sprintf("Plugin %s %s.", name, done)}
+	if activation, _ := result["activation"].(map[string]any); activation != nil {
+		if missing, _ := activation["missing_dependencies"].([]any); len(missing) > 0 {
+			names := make([]string, len(missing))
+			for i, item := range missing {
+				names[i] = pyrepr.Str(item)
+			}
+			lines = append(lines, "It needs packages that are not installed: "+strings.Join(names, ", ")+".")
+		}
+	}
+	if pyrepr.Truthy(result["restart_required"]) {
+		lines = append(lines, "Type /restart to restart the background service so every session picks up the change.")
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 // Command name and argument of a slash exec or command dispatch request
@@ -715,10 +856,17 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	}
 	definition, known := ResolveRegistryCommand(name)
 	canonical, verdict := name, ""
+	owner, ownerUnlocked := c.localOwner(), false
 	if known {
 		canonical = definition.Name
 		if verdict, err = CommandVerdict(canonical, arg); err != nil {
 			return nil, err
+		}
+		if owner && verdict == "refused" {
+			if verdict, err = ownerCommandVerdict(canonical, arg); err != nil {
+				return nil, err
+			}
+			ownerUnlocked = verdict != "refused"
 		}
 	}
 	fired := false
@@ -763,15 +911,17 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	if err != nil {
 		return nil, err
 	}
-	c.mu.Lock()
-	_, subscribed := c.subscriptions[ref.SessionID]
-	c.mu.Unlock()
-	if verdict == "refused" || (verdict == "control" && sessionOwnerCommands[canonical] && subscribed) {
-		var detail *string
-		if hint, ok := RefusalHints[canonical]; ok {
-			detail = &hint
+	if verdict == "refused" {
+		fallback := ownerOnlyHint
+		if owner {
+			fallback = clientOnlyHint
 		}
-		return nil, state.NewRuntimeStoreError("unsupported_command", nil, detail)
+		return nil, unsupportedCommand(canonical, fallback)
+	}
+	if ownerUnlocked {
+		if err := ownerUnrunnable(a, canonical, arg); err != nil {
+			return nil, err
+		}
 	}
 	if isHistoryMount(live) {
 		return nil, readOnly()
@@ -826,6 +976,13 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 			return nil, err
 		}
 		return skillDirective(inWorkspace, name, arg, live.Route)
+	}
+	if ownerUnlocked && canonical == "plugins" {
+		output, err := ownerPluginsCommand(scoped, arg)
+		if err != nil {
+			return nil, err
+		}
+		return &tuigateway.CommandDispatchResult{Type: "exec", Output: output}, nil
 	}
 	if sessionInfoReads[canonical] {
 		reply, err := runInfoRead(ctx, a, live, canonical)

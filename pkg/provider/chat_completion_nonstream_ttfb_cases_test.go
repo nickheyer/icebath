@@ -56,7 +56,7 @@ func ttfbSilentHang(agent *fakeChatAgent) func(ctx context.Context, kw map[strin
 func TestLocalEndpointTtfbDefaultUsesLocalStaleCeiling(t *testing.T) {
 	local := agentFormCodexAgent(t, "custom", "http://127.0.0.1:11434/v1")
 	hosted := agentFormCodexAgent(t, "custom", "https://api.example.com/v1")
-	t.Setenv(LocalStreamStaleTimeoutEnv, "600")
+	setSettingsForTest(t, map[string]any{"agent.local_stream_stale_timeout": 600})
 	kw := map[string]any{"model": "qwen3-27b", "input": "hi"}
 	if w, err := resolveAgentNonstreamWatchdogsOf(t.Context(), local, kw); err != nil || w.ttfb != 600 {
 		t.Fatalf("local %v %v", w.ttfb, err)
@@ -68,7 +68,7 @@ func TestLocalEndpointTtfbDefaultUsesLocalStaleCeiling(t *testing.T) {
 
 func TestLocalEndpointTtfbExplicitEnvStillWins(t *testing.T) {
 	local := agentFormCodexAgent(t, "custom", "http://127.0.0.1:11434/v1")
-	t.Setenv(LocalStreamStaleTimeoutEnv, "600")
+	setSettingsForTest(t, map[string]any{"agent.local_stream_stale_timeout": 600})
 	t.Setenv(CodexTTFBTimeoutEnv, "45")
 	if w, err := resolveAgentNonstreamWatchdogsOf(t.Context(), local, map[string]any{"model": "qwen3-27b", "input": "hi"}); err != nil || w.ttfb != 45 {
 		t.Fatalf("explicit %v %v", w.ttfb, err)

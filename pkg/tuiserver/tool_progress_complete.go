@@ -68,7 +68,7 @@ func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[
 	if path := tuigateway.ToolImagePath(name, args, result, failed); path != "" {
 		payload["image_path"] = path
 	}
-	if sessionVerbose(sid) {
+	if sessionVerbose(ctx, sid) {
 		if text := tuihost.ToolResultText(result); text != "" {
 			payload["result_text"] = text
 		}
@@ -85,7 +85,7 @@ func onToolComplete(ctx context.Context, sid, toolCallID, name string, args map[
 			cacheTodoState(session, todoState)
 		}
 	}
-	if toolProgressEnabled(sid) || truthy(payload["inline_diff"]) || toolLifecycleRequiredForUI(name) ||
+	if toolProgressEnabled(ctx, sid) || truthy(payload["inline_diff"]) || toolLifecycleRequiredForUI(name) ||
 		tools.IsTodoToolName(name) || connectorToolLifecycle(name, args) ||
 		(toolResultNeedsUser(result) && !tools.IsNeutralFailure(name, result)) {
 		emitToolLifecycle(ctx, "tool.complete", sid, name, args, payload)

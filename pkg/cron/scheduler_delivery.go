@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -405,23 +404,19 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 	if err != nil {
 		return nil, err
 	}
-	home := sourceHome
+	targetHome := sourceHome
 	if profile != "" {
 		dir, err := profiles.GetProfileDir(profile)
 		if err != nil {
 			return nil, err
 		}
-		if home, err = pypath.Resolve(dir); err != nil {
+		if targetHome, err = pypath.Resolve(dir); err != nil {
 			return nil, err
 		}
 	}
 	suppress := false
 	if forFailure {
-		userCfg, err := config.LoadUserEffective(filepath.Join(home, "config.yaml"), nil)
-		if err != nil {
-			return nil, err
-		}
-		suppress = !config.WarningNotificationsEnabled(ctx, BotChatPolicyPlatform, userCfg)
+		suppress = !config.WarningNotificationsEnabled(home.WithOverride(ctx, targetHome), BotChatPolicyPlatform)
 	}
 	runID := ""
 	if job.ExecutionID != nil && *job.ExecutionID != "" {
@@ -432,13 +427,13 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 		}
 		runID = job.run.botChatRunID
 	}
-	keyJSON, err := pyjson.Dumps([]any{sourceHome, jobID, runID, home}, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	keyJSON, err := pyjson.Dumps([]any{sourceHome, jobID, runID, targetHome}, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
 	if err != nil {
 		return nil, err
 	}
 	sum := sha256.Sum256([]byte(keyJSON))
 	key := hex.EncodeToString(sum[:])
-	receipt, err := readDeliveryResult(ctx, home, key)
+	receipt, err := readDeliveryResult(ctx, targetHome, key)
 	if err != nil {
 		return nil, err
 	}
@@ -449,10 +444,10 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 		return nil, nil
 	}
 	if receipt == nil {
-		owner, err := findCanonicalLiveOwner(ctx, home)
+		owner, err := findCanonicalLiveOwner(ctx, targetHome)
 		var pyErr *gateway.PyError
 		if errors.As(err, &pyErr) && pyErr.Kind == "ValueError" {
-			if err := s.botChatLegacyDefer(ctx, key, job, content, home, forFailure); err != nil {
+			if err := s.botChatLegacyDefer(ctx, key, job, content, targetHome, forFailure); err != nil {
 				return nil, err
 			}
 			job.botChatReceipts().Set(target, newReceipt("queued", key))
@@ -468,7 +463,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 		if forFailure {
 			category = "diagnostic"
 		}
-		if receipt, err = deliverToLiveOwner(ctx, home, owner, message, key, category); err != nil {
+		if receipt, err = deliverToLiveOwner(ctx, targetHome, owner, message, key, category); err != nil {
 			return nil, err
 		}
 	}
@@ -1183,7 +1178,7 @@ func (s *Store) queueForLiveReconnect(ctx context.Context, t *targetDelivery, co
 		if t.liveError != nil {
 			liveErr = *t.liveError
 		}
-		if !gateway.IsReconnectOnly(liveErr) || !gateway.LedgerEnabled(ctx, nil) {
+		if !gateway.IsReconnectOnly(liveErr) || !gateway.LedgerEnabled(ctx) {
 			return errNotQueued
 		}
 		sessionKey := fmt.Sprintf("cron:%s:%s", t.platformName, t.chatID)
@@ -1386,7 +1381,6 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 		taskName := jobNameOr(job, job.ID)
 		deliveryContent = fmt.Sprintf("Cronjob Response: %s\n(job_id: %s)\n-------------\n\n%s\n\nTo stop or manage this job, send me a new message (e.g. \"stop reminder %s\").", taskName, job.ID, content, taskName)
 	}
-	gateway.ApplyMediaPolicyEnv(ctx, userCfg)
 	media, cleaned, err := gateway.ExtractMedia(ctx, deliveryContent)
 	if err != nil {
 		return nil, err
@@ -1415,7 +1409,7 @@ func (s *Store) deliverJobResult(ctx context.Context, job *Job, content string, 
 	var deliveryErrors []string
 	suppressed := 0
 	for _, target := range targets {
-		if forFailure && target.Platform != BotChatPlatform && !config.WarningNotificationsEnabled(ctx, target.Platform, userCfg) {
+		if forFailure && target.Platform != BotChatPlatform && !config.WarningNotificationsEnabled(ctx, target.Platform) {
 			suppressed++
 			continue
 		}

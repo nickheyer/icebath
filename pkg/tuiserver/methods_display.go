@@ -12,6 +12,8 @@ const displayErr = 5300
 var (
 	displayRegistry      = &handlerRegistry{}
 	broadcastGlobalEvent = func(event string, payload map[string]any) { tuihost.BroadcastGlobalEvent(event, payload) }
+	// Fans one session's event to every client with its session id on the frame, a seam tests replace
+	broadcastSessionEvent = tuihost.BroadcastSessionEvent
 )
 
 // Bot desktop parts of the display card, bound by the extras tier that carries the bot desktop and nil in a build without it

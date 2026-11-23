@@ -155,8 +155,11 @@ func pairingMatchingIDs(ctx context.Context, platform string, approved *pyjson.O
 	return matching, nil
 }
 
-// Allowlist env var read through the profile secret scope, a scoped miss reading as empty
+// Allowlist of a platform: the setting its env name moved to, else the env var through the profile secret scope, a scoped miss reading as empty
 func readAllowlistEnv(ctx context.Context, envVar string) (string, error) {
+	if e := envSetting(envVar); e != nil {
+		return SettingText(ctx, e), nil
+	}
 	value, err := GetScopedSecret(ctx, envVar, "", false)
 	if err != nil {
 		return "", err
@@ -177,14 +180,18 @@ func configuredAllowlist(ctx context.Context, platform string) (envVar string, i
 	return envVar, splitAllowlist(current), true, nil
 }
 
-// Persists an allowlist, an empty list removing the key, failures leaving the pairing store as the grant record
+// Persists an allowlist into its setting or env var, an empty list removing it, failures logged and leaving the pairing store as the grant record
 func writeAllowlistEnv(ctx context.Context, envVar string, ids []string) {
 	defer func() { _ = recover() }()
+	var err error
 	if len(ids) > 0 {
-		_ = config.SaveEnvValueContext(ctx, home.Dir(ctx), envVar, strings.Join(ids, ","))
-		return
+		err = saveSetupValue(ctx, envVar, strings.Join(ids, ","))
+	} else {
+		_, err = removeSetupValue(ctx, envVar)
 	}
-	_, _ = config.RemoveHomeEnvValue(ctx, home.Dir(ctx), envVar)
+	if err != nil {
+		pkgLog().Warn("pairing: saving the allow list failed", "name", envVar, "err", err)
+	}
 }
 
 // Adds a user to the platform allowlist env var when one is configured

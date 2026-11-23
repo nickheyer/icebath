@@ -51,13 +51,15 @@ func TestBuildToolPreview(t *testing.T) {
 			}
 		}
 	}
-	if got := BuildToolPreview(nil, "terminal", map[string]any{"command": "cd app && npm test 2>&1 | tail -5; echo done"}, nil); got != "npm test + 1 command" {
-		t.Fatalf("shell summary %q", got)
+	command := "cd app && npm test 2>&1 | tail -5; echo done"
+	if got := BuildToolPreview(nil, "terminal", map[string]any{"command": "cd app &&\n  npm test 2>&1 | tail -5; echo done"}, nil); got != command {
+		t.Fatalf("shell preview %q", got)
 	}
-	if got := SummarizeShellCommand("cd app && npm test 2>&1 | tail -5 && echo ---- && git status"); got != "npm test + 1 command" {
-		t.Fatalf("shell summary plus %q", got)
+	ten := 10
+	if got := BuildToolPreview(nil, "terminal", map[string]any{"command": command}, &ten); got != "cd app &&…" {
+		t.Fatalf("cut shell preview %q", got)
 	}
-	if got := BuildToolPreview(nil, "read_file", map[string]any{"path": "/srv/app/main.go", "offset": 10, "limit": 5}, nil); got != "main.go L10-14" {
+	if got := BuildToolPreview(nil, "read_file", map[string]any{"path": "/srv/app/main.go", "offset": 10, "limit": 5}, nil); got != "/srv/app/main.go L10-14" {
 		t.Fatalf("read_file preview %q", got)
 	}
 }

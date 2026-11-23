@@ -14,7 +14,7 @@ func anthWritePool(t *testing.T, h string, rows ...map[string]any) {
 	for _, r := range rows {
 		list = append(list, r)
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"anthropic": list}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"anthropic": list}})
 }
 
 func TestAnthropicDoesNotResolvePrimaryAPIKeyAsNativeToken(t *testing.T) {

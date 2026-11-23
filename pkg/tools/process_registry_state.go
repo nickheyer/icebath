@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -840,19 +841,6 @@ func waitPolicyCountUnchanged(s *ProcessSession) int {
 	return count
 }
 
-// Gate env read with per profile isolation under multiplexing, the process env otherwise
-func platformGateEnv(ctx context.Context, env *Env, name string) string {
-	if name == "" {
-		return ""
-	}
-	if ProfileSecrets != nil && isMultiplexActive(env) {
-		if scope := profileSecrets().CurrentSecretScope(ctx); scope != nil {
-			return strings.TrimSpace(scope[name])
-		}
-	}
-	return strings.TrimSpace(os.Getenv(name))
-}
-
 // Whether a completion notice for this session can reach the agent that is waiting
 func canDeliverCompletion(ctx context.Context, env *Env) bool {
 	finite, known := false, false
@@ -865,19 +853,7 @@ func canDeliverCompletion(ctx context.Context, env *Env) bool {
 	if !asyncDeliverySupported(env) || isDelegatedChildProcessContext(env) {
 		return false
 	}
-	modes := []any{platformGateEnv(ctx, env, "ICEBATH_BACKGROUND_NOTIFICATIONS")}
-	if v, ok := cfgTree(env).Lookup("display.background_process_notifications"); ok {
-		modes = append(modes, v)
-	}
-	for _, m := range modes {
-		if b, ok := m.(bool); ok && !b {
-			return false
-		}
-		if strings.ToLower(strings.TrimSpace(asStr(m))) == "off" {
-			return false
-		}
-	}
-	return true
+	return settings.DisplayBackgroundProcessNotifications.Get(envHomeCtx(ctx, env)) != "off"
 }
 
 // Whether the completion this process would publish is routed to the caller

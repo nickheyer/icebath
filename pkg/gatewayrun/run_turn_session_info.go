@@ -6,11 +6,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // One time note a fresh session after an automatic reset carries to the agent, by reset reason
@@ -53,9 +52,7 @@ func (r *GatewayRunner) formatSessionInfo(ctx context.Context) string {
 		i18n.T(ctx, "gateway.session.info_context", "", map[string]any{"tokens": display, "source": ctxSource}),
 	}
 	if resolved.provider == "moa" {
-		cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
-		presets, _ := provider.NormalizeMoAConfig(cfg["moa"])["presets"].(map[string]any)
-		preset, _ := presets[resolved.model].(map[string]any)
+		preset, _ := settings.MoaPresets.Get(ctx)[resolved.model].(map[string]any)
 		if agg, _ := preset["aggregator"].(map[string]any); len(agg) > 0 {
 			lines = append(lines, i18n.T(ctx, "gateway.session.info_acting_model", "",
 				map[string]any{"provider": pyrepr.Str(agg["provider"]), "model": pyrepr.Str(agg["model"])}))

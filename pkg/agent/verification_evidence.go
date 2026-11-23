@@ -170,7 +170,7 @@ func verifyLedgerPath(ctx context.Context) string {
 
 // Whether verify on stop is on, the only consumer the ledger records for
 func verifyLedgerEnabled(ctx context.Context, env *tools.Env) bool {
-	return verifyOnStopEnabled(ctx, env, nil)
+	return verifyOnStopEnabled(ctx, env)
 }
 
 // Opens the ledger database with its schema applied

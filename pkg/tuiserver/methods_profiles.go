@@ -22,7 +22,6 @@ var assetExts = [][2]string{{"png", "image/png"}, {"jpg", "image/jpeg"}, {"webp"
 var profilesRegistry = &handlerRegistry{}
 
 func init() {
-	profileHandler("profiles.list", 5061, profilesList)
 	profilesRegistry.method("profiles.create", profilesCreate)
 	profilesRegistry.install()
 }

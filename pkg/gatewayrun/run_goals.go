@@ -10,25 +10,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Configured goal turn budget from the top level goals block, twenty when unset or malformed
+// Configured goal turn budget of the profile in ctx
 func (r *GatewayRunner) goalMaxTurnsFromConfig(ctx context.Context) int64 {
-	goalsCfg, _ := r.readUserConfig(ctx)["goals"].(map[string]any)
-	value := goalsCfg["max_turns"]
-	if !pyrepr.Truthy(value) {
-		return 20
-	}
-	n, err := pyint.Of(value)
-	if err != nil || !n.IsInt64() {
-		return 20
-	}
-	return n.Int64()
+	return int64(settings.GoalsMaxTurns.Get(ctx))
 }
 
 // Warms the goals session database cache off the loop, a failed warm up logged and never raised

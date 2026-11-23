@@ -37,7 +37,7 @@ func newGrantFleet(t *testing.T) *grantFleet {
 	root := newTestHome(t)
 	f := &grantFleet{t: t, root: root, valid: map[string]bool{"sk-ant-ort-RT0": true}, spent: map[string]bool{}}
 	writeJSONPath(t, filepath.Join(root, "auth.json"), map[string]any{
-		"version": 1, "providers": map[string]any{},
+		"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{
 			"anthropic": []any{map[string]any{
 				"id": "abc123", "label": "team-grant", "auth_type": "oauth", "priority": 0, "source": "manual:icebath_pkce",
@@ -691,13 +691,13 @@ func TestHealPreservesIndependentGrantsForSameAccount(t *testing.T) {
 				store := func(tag string) map[string]any {
 					tokens := pair(tag)
 					if shape == "provider" {
-						return map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens}}}
+						return map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens}}}
 					}
 					rowMap := map[string]any{"id": tag, "auth_type": "oauth", "source": "manual:device_code"}
 					for k, v := range tokens {
 						rowMap[k] = v
 					}
-					return map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{"openai-codex": []any{rowMap}}}
+					return map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{"openai-codex": []any{rowMap}}}
 				}
 				rootFile := filepath.Join(f.root, "auth.json")
 				kid := f.profile("independent")
@@ -736,7 +736,7 @@ func TestHealRotatedForkMovesProviderBlockWithThePoolRow(t *testing.T) {
 	f := newGrantFleet(t)
 	store := func(tag string, expOff float64) map[string]any {
 		tokens := map[string]any{"access_token": "at-" + tag, "refresh_token": "rt-" + tag}
-		return map[string]any{"version": 1,
+		return map[string]any{"version": 2,
 			"providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens, "last_refresh": utcStamp(expOff - 3600)}},
 			"credential_pool": map[string]any{"openai-codex": []any{map[string]any{"id": "shared-id", "auth_type": "oauth", "source": "device_code",
 				"access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"], "expires_at_ms": msFromNow(expOff)}}}}
@@ -776,7 +776,7 @@ func TestHealKeepsTheLaterIssuedForkEvenWhenItExpiresSooner(t *testing.T) {
 	store := func(tag string, issuedOff, ttl float64) map[string]any {
 		tokens := map[string]any{"access_token": "at-" + tag, "refresh_token": "rt-" + tag}
 		issued := utcStamp(issuedOff)
-		return map[string]any{"version": 1,
+		return map[string]any{"version": 2,
 			"providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens, "last_refresh": issued}},
 			"credential_pool": map[string]any{"openai-codex": []any{map[string]any{"id": "shared-id", "auth_type": "oauth", "source": "device_code",
 				"access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"], "last_refresh": issued, "expires_at_ms": msFromNow(issuedOff + ttl)}}}}
@@ -805,7 +805,7 @@ func TestHealLeavesADifferentAccountAlone(t *testing.T) {
 		"source": "manual:device_code", "access_token": jwt("alice"), "refresh_token": "xr-alice"}}
 	writeJSONPath(t, filepath.Join(f.root, "auth.json"), rootStore)
 	kid := f.profile("kid")
-	writeJSONPath(t, filepath.Join(kid, "auth.json"), map[string]any{"version": 1, "providers": map[string]any{},
+	writeJSONPath(t, filepath.Join(kid, "auth.json"), map[string]any{"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"xai-oauth": []any{
 			map[string]any{"id": "kidx", "auth_type": "oauth", "priority": 0, "source": "manual:device_code", "access_token": jwt("bob"), "refresh_token": "xr-bob"},
 			map[string]any{"id": "kidk", "auth_type": "api_key", "priority": 1, "source": "manual", "access_token": "xai-static"},
@@ -932,7 +932,7 @@ func TestHealPersistedMarkStillReHealsWhenTheRootStoreGainsAGrant(t *testing.T) 
 	delete(store["credential_pool"].(map[string]any), "anthropic")
 	writeJSONPath(t, rootFile, store)
 	kid := f.profile("kid2")
-	writeJSONPath(t, filepath.Join(kid, "auth.json"), map[string]any{"version": 1, "providers": map[string]any{},
+	writeJSONPath(t, filepath.Join(kid, "auth.json"), map[string]any{"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai": []any{map[string]any{"id": "k1", "label": "static", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-local"}}}})
 	fork := func() map[string]any {
 		return map[string]any{"id": "abc123", "label": "team-grant", "auth_type": "oauth", "priority": 0, "source": "manual:icebath_pkce",

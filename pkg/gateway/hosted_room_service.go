@@ -10,12 +10,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -54,63 +54,24 @@ func AttemptAction(kind string, task map[string]any) map[string]any {
 	return action
 }
 
-// Room owner's discussion ceilings, defaults kept and logged for a malformed value
-func hostedDiscussionLimits(root string) (DiscussionLimits, error) {
-	cfg, err := config.LoadUserEffective(filepath.Join(root, "config.yaml"), config.NewSecrets(root).Lookup())
+// Room owner's discussion ceilings, the defaults kept and logged for a value that is not a positive whole number
+func hostedDiscussionLimits(ctx context.Context, root string) DiscussionLimits {
+	sctx := home.WithOverride(ctx, root)
+	limits, err := NewDiscussionLimits(int64(settings.HostedRoomsDiscussionMaxRounds.Get(sctx)), int64(settings.HostedRoomsDiscussionMaxMessages.Get(sctx)))
 	if err != nil {
-		return DiscussionLimits{}, err
-	}
-	limits, err := hostedDiscussionLimitsFrom(cfg)
-	var invalid *DiscussionValidationError
-	if errors.As(err, &invalid) {
 		pkgLog().Warn(fmt.Sprintf("ignoring hosted_rooms.discussion in %s/config.yaml: %s", root, err.Error()))
-		return DefaultDiscussionLimits(), nil
+		return DefaultDiscussionLimits()
 	}
-	return limits, err
+	return limits
 }
 
-func hostedDiscussionLimitsFrom(cfg map[string]any) (DiscussionLimits, error) {
-	roomsValue, ok := cfg["hosted_rooms"]
-	if !ok {
-		roomsValue = map[string]any{}
+// Agent turn timeout of the room owner plus the terminal grace a room turn waits
+func hostedRoomTurnTimeoutSeconds(ctx context.Context, root string) float64 {
+	agentTimeout := settings.AgentGatewayTimeout.Get(home.WithOverride(ctx, root))
+	if agentTimeout <= 0 {
+		agentTimeout = settings.AgentGatewayTimeout.Default
 	}
-	rooms, isMap := hostedMapping(roomsValue)
-	if !isMap {
-		return DiscussionLimits{}, &DiscussionValidationError{&DiscussionPolicyError{"hosted_rooms must be a mapping"}}
-	}
-	settingsValue, ok := rooms["discussion"]
-	if !ok {
-		settingsValue = map[string]any{}
-	}
-	settings, isMap := hostedMapping(settingsValue)
-	if !isMap {
-		return DiscussionLimits{}, &DiscussionValidationError{&DiscussionPolicyError{"hosted_rooms.discussion must be a mapping"}}
-	}
-	maxRounds, ok := settings["max_rounds"]
-	if !ok {
-		maxRounds = int64(MaxDiscussionRounds)
-	}
-	maxMessages, ok := settings["max_messages"]
-	if !ok {
-		maxMessages = int64(MaxDiscussionMessages)
-	}
-	return NewDiscussionLimits(maxRounds, maxMessages)
-}
-
-// Agent turn timeout plus the terminal grace a room turn waits
-func hostedRoomTurnTimeoutSeconds() float64 {
-	raw, ok := os.LookupEnv("ICEBATH_AGENT_TIMEOUT")
-	if !ok {
-		raw = "1800"
-	}
-	agentTimeout, err := pyint.ParseFloat(raw)
-	if err != nil {
-		agentTimeout = 0
-	}
-	if !(agentTimeout > 0) {
-		agentTimeout = 1800
-	}
-	return agentTimeout + hostedRoomTerminalGraceSeconds
+	return agentTimeout.Seconds() + hostedRoomTerminalGraceSeconds
 }
 
 // Whether the peer proves the scoped grant is already unusable
@@ -179,12 +140,10 @@ func (s *HostedRoomService) init(ctx context.Context, self hostedRoomServiceHook
 	if s.DBPath == "" {
 		s.DBPath = HostedRoomsDefaultDBPath(ctx)
 	}
-	limits, err := hostedDiscussionLimits(s.Root())
-	if err != nil {
-		return err
-	}
+	limits := hostedDiscussionLimits(ctx, s.Root())
 	s.DiscussionLimits = limits
-	if _, err := PruneDisbandedRooms(ctx, s.DBPath, nil); err != nil {
+	var err error
+	if _, err = PruneDisbandedRooms(ctx, s.DBPath, nil); err != nil {
 		return err
 	}
 	s.pendingActions = map[[2]string]map[string]any{}
@@ -218,7 +177,7 @@ func (s *HostedRoomService) init(ctx context.Context, self hostedRoomServiceHook
 	opts.PublishTerminal = s.PublishTerminal
 	opts.PendingAction = s.setPendingAction
 	opts.PollIntervalSeconds, opts.ActivePollIntervalSeconds = hostedRoomIdleFallbackSeconds, hostedRoomActivePollSeconds
-	opts.TurnTimeoutSeconds = hostedRoomTurnTimeoutSeconds()
+	opts.TurnTimeoutSeconds = hostedRoomTurnTimeoutSeconds(ctx, s.Root())
 	s.runtime, err = NewHostedRoomRuntime(ctx, opts)
 	return err
 }

@@ -381,7 +381,7 @@ func leftCoreRouteSlots(h string) []map[string]any {
 	for _, route := range delegationBackendRoutes(delegation) {
 		slots = append(slots, withChain(route)...)
 	}
-	for _, entry := range CompatibleCustomProviders(cfg) {
+	for _, entry := range ProviderEntries(cfg) {
 		slots = append(slots, map[string]any{"base_url": entry["base_url"]})
 	}
 	if data, err := os.ReadFile(filepath.Join(home.CronDir(h), "jobs.json")); err == nil {
@@ -1021,10 +1021,7 @@ func leftCoreTurnOffReplaced(cfg map[string]any, f *LeftCoreFeature) {
 
 // Keeps the core era toolset scope once and marks the plugin installed once present, in one config write
 func leftCoreRecordMigration(ctx context.Context, h string, f *LeftCoreFeature) error {
-	path := home.ConfigPath(h)
-	_, statErr := os.Stat(path)
-	created := statErr != nil
-	cfg, err := leftCoreReadUserConfigRaw(path)
+	cfg, err := leftCoreReadUserConfigRaw(home.ConfigPath(h))
 	if err != nil {
 		return err
 	}
@@ -1091,9 +1088,6 @@ func leftCoreRecordMigration(ctx context.Context, h string, f *LeftCoreFeature) 
 		}
 		leftCoreMark(cfg, leftCoreScopedKey, f)
 	}
-	if created {
-		leftCoreStampCreated(h, cfg)
-	}
 	return config.SaveUser(ctx, h, cfg)
 }
 
@@ -1138,12 +1132,6 @@ func leftCorePending(ctx context.Context, h string, say func(string), processEnv
 		out = append(out, f)
 	}
 	return out
-}
-
-// Stamps the config.yaml the conversion creates as current with its rows in use noted
-func leftCoreStampCreated(h string, cfg map[string]any) {
-	leftCorePut(cfg, "_config_version", config.Version)
-	noteFirstStamp(h, map[string]any{}, cfg)
 }
 
 // Tells a home that uses a feature its stamp says it never ran in core where the feature went

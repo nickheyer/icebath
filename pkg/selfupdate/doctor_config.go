@@ -46,7 +46,6 @@ var doctorDeprecatedConfigKeys = [][3]string{
 // Deprecated variables looked up in the .env file, each with its replacement
 var doctorDeprecatedEnvVars = [][2]string{
 	{"ICEBATH_TOOL_PROGRESS", "display.tool_progress in config.yaml — ignored/unsupported since config floor v12"},
-	{"ICEBATH_TOOL_PROGRESS_MODE", "display.tool_progress in config.yaml"},
 	{"TERMINAL_CWD", "terminal.cwd in config.yaml"},
 	{"MESSAGING_CWD", "terminal.cwd in config.yaml"},
 	{"QQ_HOME_CHANNEL", "QQBOT_HOME_CHANNEL"},
@@ -306,7 +305,7 @@ func doctorKnownProviderIDs(ctx context.Context, cfg map[string]any) (map[string
 	for _, key := range provider.RegistryKeys(ctx) {
 		known[key] = true
 	}
-	customProviders := provider.CompatibleCustomProviders(cfg)
+	customProviders := provider.ProviderEntries(cfg)
 	if userProviders, ok := cfg["providers"].(map[string]any); ok {
 		for name, provCfg := range userProviders {
 			if stripped := pystr.Strip(name); stripped != "" && provider.IsProviderEnabled(provCfg) {
@@ -656,112 +655,6 @@ func doctorCheckConfigBackend(ctx context.Context, d *Doctor, backend config.Con
 	return true, nil
 }
 
-// Reports the config version and migrates an outdated config when fixing
-func doctorDriftConfigVersion(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error {
-	currentVer, latestVer, err := config.CheckConfigVersion(ctx, d.Home, false)
-	if err != nil {
-		return err
-	}
-	if doctorCheckBool(d.W, currentVer >= latestVer,
-		doctorRow{Text: fmt.Sprintf("Config version up to date (v%d)", currentVer)},
-		doctorRow{Text: fmt.Sprintf("Config version outdated (v%d → v%d)", currentVer, latestVer), Detail: "(new settings available)"}, false) {
-		return nil
-	}
-	if !shouldFix {
-		f.Issues = append(f.Issues, "Run 'icebath doctor --fix' to migrate config")
-		return nil
-	}
-	if _, merr := config.MigrateConfig(ctx, d.Home, false, false); merr != nil {
-		doctorCheckWarn(d.W, "Auto-migration failed: "+merr.Error(), "")
-		f.Issues = append(f.Issues, "Start 'icebath' and type '/setup' to rewrite config.yaml at the latest version")
-		return nil
-	}
-	doctorCheckOK(d.W, "Config migrated to latest version", "")
-	f.Fixed++
-	return nil
-}
-
-// Warns about root level provider and base_url keys and moves them under model when fixing
-func doctorDriftStaleRootKeys(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error {
-	rawConfig, err := config.ReadUserConfigRaw(ctx, configPath)
-	if err != nil {
-		return err
-	}
-	var staleRootKeys []string
-	for _, k := range []string{"provider", "base_url"} {
-		if _, isStr := rawConfig[k].(string); isStr {
-			staleRootKeys = append(staleRootKeys, k)
-		}
-	}
-	if len(staleRootKeys) == 0 {
-		return nil
-	}
-	doctorCheckWarn(d.W, "Stale root-level config keys: "+strings.Join(staleRootKeys, ", "), "(should be under 'model:' section)")
-	if !shouldFix {
-		f.Issues = append(f.Issues, "Stale root-level provider/base_url in config.yaml — run 'icebath doctor --fix'")
-		return nil
-	}
-	rawModel, isMap := rawConfig["model"].(map[string]any)
-	if !isMap {
-		rawModel = map[string]any{}
-		if s, isStr := rawConfig["model"].(string); isStr && pystr.Strip(s) != "" {
-			rawModel["default"] = pystr.Strip(s)
-		}
-		rawConfig["model"] = rawModel
-	}
-	for _, k := range staleRootKeys {
-		value := rawConfig[k]
-		delete(rawConfig, k)
-		if !pyrepr.Truthy(rawModel[k]) {
-			rawModel[k] = value
-		}
-	}
-	if err := config.AtomicConfigReplace(ctx, d.Home, configPath, rawConfig, ""); err != nil {
-		return err
-	}
-	doctorCheckOK(d.W, "Migrated stale root-level keys into model section", "")
-	f.Fixed++
-	return nil
-}
-
-// Warns when a stale ICEBATH_MAX_ITERATIONS in .env shadows agent.max_turns and removes it when fixing
-func doctorDriftMaxIterationsGhost(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error {
-	rawConfig, err := config.ReadUserConfigRaw(ctx, configPath)
-	if err != nil {
-		return err
-	}
-	var cfgMaxTurns any
-	if agentCfg, ok := rawConfig["agent"].(map[string]any); ok {
-		cfgMaxTurns = agentCfg["max_turns"]
-	}
-	if cfgMaxTurns == nil {
-		cfgMaxTurns = rawConfig["max_turns"]
-	}
-	envGhost, hasGhost := config.LoadEnv(d.Home)["ICEBATH_MAX_ITERATIONS"]
-	if cfgMaxTurns == nil || !hasGhost || pystr.Strip(pyrepr.Str(cfgMaxTurns)) == pystr.Strip(envGhost) {
-		return nil
-	}
-	turns := pyrepr.Str(cfgMaxTurns)
-	doctorCheckWarn(d.W, "ICEBATH_MAX_ITERATIONS="+envGhost+" in .env shadows agent.max_turns="+turns+" in config.yaml",
-		"(stale ghost from an earlier setup run)")
-	if !shouldFix {
-		f.Issues = append(f.Issues, "Stale ICEBATH_MAX_ITERATIONS in .env shadows config.yaml — run 'icebath doctor --fix'")
-		return nil
-	}
-	removed, err := config.RemoveHomeEnvValue(ctx, d.Home, "ICEBATH_MAX_ITERATIONS")
-	if err != nil {
-		return err
-	}
-	if removed {
-		doctorCheckOK(d.W, "Removed stale ICEBATH_MAX_ITERATIONS from .env (config.yaml agent.max_turns="+turns+" is now authoritative)", "")
-		f.Fixed++
-		return nil
-	}
-	doctorCheckWarn(d.W, "Could not remove ICEBATH_MAX_ITERATIONS from .env", "")
-	f.ManualIssues = append(f.ManualIssues, "Manually delete the ICEBATH_MAX_ITERATIONS line from "+d.DisplayHome+"/.env — config.yaml agent.max_turns is authoritative.")
-	return nil
-}
-
 // Runs the warn only deprecation sweep over the raw config file and the .env file on disk
 func doctorDriftDeprecations(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error {
 	raw := map[string]any{}
@@ -811,51 +704,11 @@ func doctorEndpointURL(entry map[string]any) string {
 	return ""
 }
 
-// Warns about legacy custom_providers list entries with no providers twin for the same endpoint
-func doctorDriftLegacyCustomProviders(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error {
-	rawConfig, err := config.ReadUserConfigRaw(ctx, configPath)
-	if err != nil {
-		return err
-	}
-	legacy, ok := rawConfig["custom_providers"].([]any)
-	if !ok {
-		return nil
-	}
-	twins := map[string]bool{}
-	if providers, isMap := rawConfig["providers"].(map[string]any); isMap {
-		for _, e := range providers {
-			if entry, isEntry := e.(map[string]any); isEntry {
-				twins[doctorEndpointURL(entry)] = true
-			}
-		}
-	}
-	for _, e := range legacy {
-		entry, isEntry := e.(map[string]any)
-		if !isEntry || doctorEndpointURL(entry) == "" || twins[doctorEndpointURL(entry)] {
-			continue
-		}
-		label := ""
-		if pyrepr.Truthy(entry["name"]) {
-			label = pystr.Strip(pyrepr.Str(entry["name"]))
-		}
-		if label == "" {
-			label = doctorEndpointURL(entry)
-		}
-		doctorCheckWarn(d.W, "Legacy custom_providers entry '"+label+"' has no providers: twin",
-			"(still read from the retired list store; every other surface edits providers:)")
-		f.ManualIssues = append(f.ManualIssues,
-			"Move custom_providers entry '"+label+"' into config.yaml providers: as `providers.<key>.api: "+
-				doctorEndpointURL(entry)+"` and delete it from the list — the v12 list migration ran once and does not re-fire")
-	}
-	return nil
-}
-
 // One config drift step, it prints its rows and records what it found in the shared finding
 type doctorDriftStep func(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error
 
 var doctorConfigDriftSteps = []doctorDriftStep{
-	doctorDriftConfigVersion, doctorDriftStaleRootKeys, doctorDriftMaxIterationsGhost, doctorDriftDeprecations, doctorDriftStructure,
-	doctorDriftLegacyCustomProviders,
+	doctorDriftDeprecations, doctorDriftStructure,
 }
 
 // Warns about stale per install channel records, naming the config key the user removes

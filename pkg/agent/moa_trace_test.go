@@ -23,16 +23,14 @@ type moaAcctFake struct {
 }
 
 func TestSaveMoATurnAppendsOneRecordPerTurn(t *testing.T) {
-	dir := t.TempDir()
-	orig := loadMoAConfig
-	t.Cleanup(func() { loadMoAConfig = orig })
-	loadMoAConfig = func(context.Context) (map[string]any, error) { return map[string]any{"save_traces": false}, nil }
+	dir, h := t.TempDir(), t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
 	SaveMoATurn(context.Background(), MoATurn{SessionID: "s"})
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatal("tracing off writes nothing")
 	}
-	loadMoAConfig = func(context.Context) (map[string]any, error) {
-		return map[string]any{"save_traces": true, "trace_dir": filepath.Join(dir, "traces")}, nil
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("moa:\n  save_traces: true\n  trace_dir: "+filepath.Join(dir, "traces")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	acct := &moaAcctFake{Model: "ref-a", Messages: []any{"q"}, Output: "full answer", Usage: &moaUsageFake{InputTokens: 7, OutputTokens: 3}, CostUSD: 0.5}
 	out := "agg ✓"

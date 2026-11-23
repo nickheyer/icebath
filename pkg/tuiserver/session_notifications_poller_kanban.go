@@ -265,7 +265,7 @@ func notifPollKanbanScoped(ctx context.Context, sid string, session *tuihost.Ses
 		_, _ = config.RenderNotification(ctx, func() error {
 			tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "process", "text": text})
 			return nil
-		}, "tui", diagnostic, nil)
+		}, "tui", diagnostic)
 	}
 	if len(texts) > 0 {
 		pending, _ := session.SetDefault("_kanban_pending", []any{}).([]any)
@@ -276,7 +276,7 @@ func notifPollKanbanScoped(ctx context.Context, sid string, session *tuihost.Ses
 	}
 	unlock := lockHistory(session)
 	pending, _ := session.Get("_kanban_pending").([]any)
-	split := !config.WarningNotificationsEnabled(ctx, "tui", nil)
+	split := !config.WarningNotificationsEnabled(ctx, "tui")
 	_, firstDiagnostic := splitDiagnostic(pending[0])
 	diagnostic := split && firstDiagnostic
 	var batch []string

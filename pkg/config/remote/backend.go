@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -37,11 +36,9 @@ var (
 	maxRetryWait              = 20.0
 	sleep                     = func(seconds float64) { time.Sleep(time.Duration(seconds * float64(time.Second))) }
 	request                   = Request
-	runMigrations             = config.RunConfigOnlyMigrations
 	complete                  = (*remoteBackend).completed
 	stderr          io.Writer = os.Stderr
 	profileIDRE               = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}\n?$`)
-	privateSerial   atomic.Int64
 )
 
 func pollInterval() float64 { return max(pollSeconds, minPollSeconds) }
@@ -92,24 +89,6 @@ type profileState struct {
 	fetchedAt      time.Time
 	lastError      string
 	nextPoll       time.Time
-}
-
-// Private working copy of one profile document a migration reads and writes on its own context
-type private struct {
-	st     *profileState
-	doc    map[string]any
-	serial int64
-	gen    int
-}
-
-type privateKey struct{}
-
-func privateFor(ctx context.Context, st *profileState) *private {
-	m, _ := ctx.Value(privateKey{}).(*private)
-	if m != nil && m.st == st {
-		return m
-	}
-	return nil
 }
 
 // Diff base each profile had when one goroutine last read it, the map replaced and never mutated so a held one stays as it was
@@ -206,14 +185,12 @@ type remoteBackend struct {
 	stop          chan struct{}
 	stopOnce      sync.Once
 	managedWarned bool
-	unknownWarned map[string]bool
 	scopes        pythread.Local
 }
 
 func newRemoteBackend() config.ConfigBackend {
 	return &remoteBackend{
 		states: map[string]*profileState{}, fetchLocks: map[string]*sync.Mutex{}, stop: make(chan struct{}),
-		unknownWarned: map[string]bool{},
 	}
 }
 
@@ -398,20 +375,6 @@ func (b *remoteBackend) install(st *profileState, body map[string]any, etag stri
 	var notes []string
 	cfg := body["config"].(map[string]any)
 	doc := cloneDoc(cfg)
-	delete(doc, "_config_version")
-	var writers []int
-	for _, raw := range levels(body) {
-		if lv, ok := raw.(map[string]any); ok {
-			if n, ok := pyInt(lv["writerConfigVersion"]); ok {
-				writers = append(writers, n)
-			}
-		}
-	}
-	if len(writers) > 0 {
-		setKey(doc, "_config_version", slices.Min(writers))
-	} else {
-		setKey(doc, "_config_version", config.LatestConfigVersion())
-	}
 	var locks []Lock
 	rawLocks, _ := body["locks"].([]any)
 	for _, entry := range rawLocks {
@@ -471,9 +434,6 @@ func decodeLock(entry any) (Lock, bool) {
 
 // Brings the published doc to its completed postprocess output
 func (b *remoteBackend) completed(ctx context.Context, st *profileState) error {
-	if privateFor(ctx, st) != nil {
-		return nil
-	}
 	for range maxPostprocess {
 		b.postprocess(ctx, st)
 		st.mu.Lock()
@@ -486,82 +446,11 @@ func (b *remoteBackend) completed(ctx context.Context, st *profileState) error {
 	return config.NewConfigWriteError("Remote Config: the profile's config kept changing while it was migrated in memory", "config_version_conflict")
 }
 
-// First read after a change warns on unknown keys and migrates the doc in memory
+// Marks the published doc completed
 func (b *remoteBackend) postprocess(ctx context.Context, st *profileState) {
-	if privateFor(ctx, st) != nil {
-		return
-	}
 	st.mu.Lock()
-	if st.postprocessed {
-		st.mu.Unlock()
-		return
-	}
-	seen := st.installed
-	current, _ := pyInt(st.doc["_config_version"])
-	doc := cloneDoc(st.doc)
-	st.mu.Unlock()
-	known := config.KnownTopLevelKeys()
-	var unknown []string
-	for k := range doc {
-		if !known[k] && k != "_config_version" {
-			unknown = append(unknown, k)
-		}
-	}
-	sort.Strings(unknown)
-	for _, key := range unknown {
-		b.mu.Lock()
-		first := !b.unknownWarned[key]
-		b.unknownWarned[key] = true
-		b.mu.Unlock()
-		if first {
-			slog.Warn(fmt.Sprintf("Remote Config: unknown config key %s is ignored by this Icebath version", pyrepr.StrRepr(key)))
-		}
-	}
-	latest := config.LatestConfigVersion()
-	if config.SupportFloorVersion <= current && current < latest {
-		b.migrateInMemory(ctx, st, seen, current, doc)
-		return
-	}
-	if current < config.SupportFloorVersion {
-		slog.Warn(fmt.Sprintf("Remote Config: profile %s was written by config version %d, below the "+
-			"migration floor %d; not migrated", pyrepr.StrRepr(st.profile), current, config.SupportFloorVersion))
-	}
-	st.mu.Lock()
-	if st.installed == seen {
-		st.postprocessed = true
-	}
-	st.mu.Unlock()
-}
-
-// Runs the migrations from schema current over a private copy of doc that only this context sees
-func (b *remoteBackend) runPrivate(ctx context.Context, st *profileState, doc map[string]any, current int) map[string]any {
-	m := &private{st: st, doc: cloneDoc(doc), serial: privateSerial.Add(1)}
-	setKey(m.doc, "_config_version", current)
-	runMigrations(context.WithValue(home.WithOverride(ctx, st.home), privateKey{}, m), st.home, current)
-	return m.doc
-}
-
-// Migrates generation started in memory and publishes it with its diff base while that generation is current
-func (b *remoteBackend) migrateInMemory(ctx context.Context, st *profileState, started, current int, doc map[string]any) {
-	st.mu.Lock()
-	stale := st.installed != started || st.postprocessed
-	st.mu.Unlock()
-	if stale {
-		return
-	}
-	migrated := b.runPrivate(ctx, st, doc, current)
-	setKey(migrated, "_config_version", config.LatestConfigVersion())
-	base := cloneDoc(migrated)
-	delete(base, "_config_version")
-	st.mu.Lock()
-	if st.installed != started || st.postprocessed {
-		st.mu.Unlock()
-		return
-	}
-	publishLocked(st, migrated, base)
 	st.postprocessed = true
 	st.mu.Unlock()
-	slog.Info(fmt.Sprintf("Remote Config: migrated profile %s in memory from config version %d", pyrepr.StrRepr(st.profile), current))
 }
 
 func publishLocked(st *profileState, doc, base map[string]any) {
@@ -578,7 +467,7 @@ func (b *remoteBackend) snapshot(ctx context.Context, st *profileState, take fun
 			return err
 		}
 		st.mu.Lock()
-		if st.postprocessed || privateFor(ctx, st) != nil {
+		if st.postprocessed {
 			take()
 			st.mu.Unlock()
 			return nil
@@ -620,7 +509,6 @@ func (b *remoteBackend) readBaseFor(st *profileState) map[string]any {
 		return nil
 	}
 	base := cloneDoc(held)
-	delete(base, "_config_version")
 	return base
 }
 
@@ -632,13 +520,8 @@ func (b *remoteBackend) ReadUserLayer(ctx context.Context, h string) (config.Use
 	}
 	var out config.UserLayer
 	err = b.snapshot(ctx, st, func() {
-		m := privateFor(ctx, st)
 		doc := st.doc
-		if m == nil {
-			b.rememberRead(st)
-		} else {
-			doc = m.doc
-		}
+		b.rememberRead(st)
 		out.Doc = cloneDoc(doc)
 		out.Version = versionOf(ctx, st)
 		out.Locks = make(map[string]string, len(st.locks))
@@ -674,10 +557,6 @@ func (b *remoteBackend) ReadUserDocReadonly(ctx context.Context, h string) (any,
 	}
 	var doc map[string]any
 	err = b.snapshot(ctx, st, func() {
-		if m := privateFor(ctx, st); m != nil {
-			doc = m.doc
-			return
-		}
 		b.rememberRead(st)
 		doc = st.doc
 	})
@@ -689,9 +568,6 @@ func (b *remoteBackend) ReadUserDocReadonly(ctx context.Context, h string) (any,
 
 // Version leading with a nanosecond time, a migration copy getting a negative serial lead of its own
 func versionOf(ctx context.Context, st *profileState) []any {
-	if m := privateFor(ctx, st); m != nil {
-		return []any{-m.serial, m.gen, st.changedNS, st.etag, st.gen}
-	}
 	return []any{st.changedNS, st.etag, st.gen}
 }
 
@@ -703,7 +579,7 @@ func (b *remoteBackend) Version(ctx context.Context, h string) ([]any, error) {
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if privateFor(ctx, st) == nil && st.postprocessed {
+	if st.postprocessed {
 		b.rememberRead(st)
 	}
 	return versionOf(ctx, st), nil
@@ -780,19 +656,11 @@ func (b *remoteBackend) sendChanges(ctx context.Context, st *profileState, chang
 					return err
 				}
 			}
-			body, sets, unsets, err := b.patchBody(st, in)
+			body, _, unsets, err := b.patchBody(st, in)
 			if err != nil || body == nil {
 				st.mu.Unlock()
 				return err
 			}
-			check := migrationCheckInput(st, body, sets, unsets)
-			st.mu.Unlock()
-			if check != nil {
-				if err := b.checkMigrationKeeps(ctx, st, sets, check); err != nil {
-					return err
-				}
-			}
-			st.mu.Lock()
 			if st.installed != seen {
 				st.mu.Unlock()
 				continue
@@ -844,7 +712,6 @@ func diffBase(st *profileState) map[string]any {
 		base = st.serverConfig
 	}
 	out := cloneDoc(base)
-	delete(out, "_config_version")
 	return out
 }
 
@@ -858,10 +725,8 @@ func (b *remoteBackend) intent(ctx context.Context, st *profileState, changes co
 	base := diffBase(st)
 	var next map[string]any
 	if changes.Document != nil {
-		if privateFor(ctx, st) == nil {
-			if read := b.readBaseFor(st); read != nil {
-				base = read
-			}
+		if read := b.readBaseFor(st); read != nil {
+			base = read
 		}
 		wire, err := ToWire(config.Clone(changes.Document), nil)
 		if err != nil {
@@ -882,7 +747,6 @@ func (b *remoteBackend) intent(ctx context.Context, st *profileState, changes co
 	for _, key := range changes.Unset {
 		popPath(next, FromDotted(key))
 	}
-	delete(next, "_config_version")
 	if changes.Document != nil {
 		var dropped []Path
 		base, next, dropped = StripLocked(base, next, st.locks)
@@ -977,10 +841,6 @@ func (b *remoteBackend) patchBody(st *profileState, in *intent) (*pyjson.Object,
 	setBody, unsetBody := EncodeChanges(sets, unsets)
 	body := pyjson.NewObject()
 	body.Set("expectedVersion", st.profileVersion)
-	latest := config.LatestConfigVersion()
-	if st.profileWriter == nil || st.profileWriter == any(latest) {
-		body.Set("writerConfigVersion", latest)
-	}
 	if setBody.Len() > 0 {
 		body.Set("set", setBody)
 	}
@@ -992,62 +852,6 @@ func (b *remoteBackend) patchBody(st *profileState, in *intent) (*pyjson.Object,
 		body.Set("unset", unsetList)
 	}
 	return body, sets, unsets, nil
-}
-
-// Stored doc after a write and its schema version when readers will migrate it in memory
-type migrationCheck struct {
-	stored map[string]any
-	after  int
-}
-
-// Input of the migration keep check under st.mu, nil when readers will not migrate the written doc
-func migrationCheckInput(st *profileState, body *pyjson.Object, sets *PathMap, unsets []Path) *migrationCheck {
-	if sets.Len() == 0 {
-		return nil
-	}
-	latest := config.LatestConfigVersion()
-	profile := st.profileWriter
-	if _, stamped := body.Get("writerConfigVersion"); stamped {
-		profile = latest
-	}
-	stamps := slices.Clone(st.otherWriters)
-	if n, ok := profile.(int); ok {
-		stamps = append(stamps, n)
-	}
-	after := latest
-	if len(stamps) > 0 {
-		after = slices.Min(stamps)
-	}
-	if !(config.SupportFloorVersion <= after && after < latest) {
-		return nil
-	}
-	stored := cloneDoc(st.serverConfig)
-	delete(stored, "_config_version")
-	for _, e := range sets.Entries() {
-		setPath(stored, e.Path, config.Clone(e.Value))
-	}
-	for _, p := range unsets {
-		popPath(stored, p)
-	}
-	return &migrationCheck{stored: stored, after: after}
-}
-
-// Refuses a write whose values every later read would migrate away
-func (b *remoteBackend) checkMigrationKeeps(ctx context.Context, st *profileState, sets *PathMap, check *migrationCheck) error {
-	migrated := b.runPrivate(ctx, st, check.stored, check.after)
-	latest := config.LatestConfigVersion()
-	for _, e := range sets.Entries() {
-		got, found := getPath(migrated, e.Path)
-		if changed := firstChange(e.Path, e.Value, found, got); changed != nil {
-			return config.NewConfigValueError(fmt.Sprintf("Remote Config: %s cannot be saved with that value. This profile's remote "+
-				"settings are stored at config schema v%d, and every read migrates them to "+
-				"v%d in memory, which rewrites that value (migrations are never written back, "+
-				"D12), so it would never be read back. Nothing was sent; choose another value, or "+
-				"have the profile level re-saved at the current schema on the config plane.", Encode(changed), check.after, latest),
-				"config_migration_conflict")
-		}
-	}
-	return nil
 }
 
 // Write refusal for a plane answer, a lock or value refusal keeping the plane code
@@ -1094,16 +898,10 @@ func (b *remoteBackend) ApplyInMemory(ctx context.Context, h string, doc map[str
 	if err != nil {
 		return err
 	}
-	if m := privateFor(ctx, st); m != nil {
-		m.doc = cloneDoc(doc)
-		m.gen++
-		return nil
-	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	d := cloneDoc(doc)
 	base := cloneDoc(d)
-	delete(base, "_config_version")
 	publishLocked(st, d, base)
 	return nil
 }

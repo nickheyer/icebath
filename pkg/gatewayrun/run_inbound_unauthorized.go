@@ -110,7 +110,7 @@ func (n *UnauthorizedOwnerNotifier) Notify(ctx context.Context, runner *GatewayR
 			runner.sendHomeChannelMessage(ctx, target.platform, target.home, target.transport,
 				"⚠️ "+hint, "unauthorized-sender notice failed for %s:%s: %s")
 			return nil
-		}, string(target.platform), true, nil)
+		}, string(target.platform), true)
 		return err
 	}
 	return nil

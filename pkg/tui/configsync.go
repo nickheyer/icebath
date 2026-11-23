@@ -2,9 +2,9 @@ package tui
 
 import (
 	"context"
+	"maps"
 	"math"
 	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -23,40 +23,22 @@ const (
 )
 
 var (
-	falsyToggle       = regexp.MustCompile(`(?i)^(?:0|false|no|off)$`)
 	defaultIndicator  = "unicode"
 	defaultBusyMode   = "queue"
 	defaultPasteLines = 5
 	defaultPasteChars = 2000
 )
 
-// Toggle of an environment value, nil when empty or neither truthy nor falsy
-func parseToggle(v string) *bool {
-	raw := strings.TrimFunc(v, isJSSpace)
-	on := truthyToggle.MatchString(raw)
-	if raw == "" || (!on && !falsyToggle.MatchString(raw)) {
-		return nil
-	}
-	return &on
-}
-
-// Mouse tracking of the first frame from the native mode, the override, Termux and the legacy disable flag
+// Mouse tracking of the first frame, as the launcher read it from the home's settings and handed it on; off under Termux or the native
+// terminal mode. The config the background service sends replaces it once it arrives
 func bootMouseTracking() string {
-	env := func(name string) string { return strings.TrimFunc(os.Getenv(name), isJSSpace) }
-	enabled := !truthyToggle.MatchString(env("ICEBATH_TUI_DISABLE_MOUSE"))
-	if termuxTUIMode {
-		enabled = false
+	if termuxTUIMode || os.Getenv("ICEBATH_TUI_NATIVE") == "1" {
+		return "off"
 	}
-	if override := parseToggle(os.Getenv("ICEBATH_TUI_MOUSE_TRACKING")); override != nil {
-		enabled = *override
+	if mode := os.Getenv("ICEBATH_TUI_MOUSE"); mode != "" {
+		return mode
 	}
-	if truthyToggle.MatchString(env("ICEBATH_TUI_NATIVE")) {
-		enabled = false
-	}
-	if enabled {
-		return "all"
-	}
-	return "off"
+	return "all"
 }
 
 // Status bar fields as a set of trimmed lower case names, nil for every field
@@ -107,6 +89,7 @@ type configApp interface {
 	setVoiceRecordKey(k voiceRecordKey)
 	inlineImageRetry()
 	languageChanged()
+	configChanged()
 }
 
 // Refused MCP revision and when it may be retried
@@ -146,9 +129,9 @@ func newConfigSync(store *tuiStore, turn *turnController, gw turnGateway, app co
 // Whether the session generation is still the one in view
 func (c *configSync) current(gen int, sid string) bool { return gen == c.gen && c.store.ui.Sid == sid }
 
-// Applies the settings of a config to the UI state, the defaults when the read failed, the busy mode only when applyBusy
-func (c *configSync) applyDisplay(cfg *tuigateway.ClientConfig, applyBusy bool) tea.Cmd {
-	settings := tuigateway.ClientConfigOf(nil)
+// Applies the settings of a config to the UI state, the defaults when the read failed
+func (c *configSync) applyDisplay(cfg *tuigateway.ClientConfig) tea.Cmd {
+	settings := tuigateway.DefaultClientConfig()
 	if cfg != nil {
 		settings = *cfg
 	}
@@ -166,16 +149,19 @@ func (c *configSync) applyDisplay(cfg *tuigateway.ClientConfig, applyBusy bool) 
 		ui.DestructiveSlashConfirm = settings.Approvals.DestructiveSlashConfirm
 	}
 	ui.Battery = d.Battery
-	if applyBusy {
-		ui.BusyInputMode = string(d.BusyInputMode)
-	}
 	ui.Compact = d.Compact
-	ui.DetailsMode, ui.DetailsModeCommandOverride, ui.FocusView = string(d.DetailsMode), false, d.FocusView
+	// A detail level picked by a command stands until the config names another one
+	sections := sectionModes(d.Sections)
+	if !ui.DetailsModeCommandOverride || string(d.DetailsMode) != ui.configuredDetailsMode || !maps.Equal(sections, ui.configuredSections) {
+		ui.DetailsMode, ui.DetailsModeCommandOverride, ui.Sections = string(d.DetailsMode), false, sections
+	}
+	ui.configuredDetailsMode, ui.configuredSections = string(d.DetailsMode), sections
+	ui.FocusView = d.FocusView
 	ui.IndicatorStyle, ui.InlineDiffs, ui.MouseTracking = string(d.Indicator), d.InlineDiffs, string(d.MouseTracking)
 	ui.InlineImages = d.InlineImages
 	c.app.inlineImageRetry()
 	ui.PasteCollapseLines, ui.PasteCollapseChars = int(settings.PasteCollapseThreshold), int(settings.PasteCollapseCharThreshold)
-	ui.Sections, ui.ShowReasoning = sectionModes(d.Sections), d.ShowReasoning
+	ui.ShowReasoning = d.ShowReasoning
 	ui.StatusBar, ui.StatusBarFields = string(d.StatusBarPlace), statusBarFieldSet(d.StatusBar.Fields)
 	ui.Streaming, ui.Timestamps = d.Streaming, d.Timestamps
 	ui.Arena, ui.PetRenderMode = d.Arena, d.Pet.RenderMode
@@ -183,33 +169,39 @@ func (c *configSync) applyDisplay(cfg *tuigateway.ClientConfig, applyBusy bool) 
 	return cmd
 }
 
-// Fetches the full config and the owner's busy mode for the session and applies them while it stays current
-func (c *configSync) hydrateFullConfig(gen int, sid string) tea.Cmd {
-	gw, canonical := c.gw, c.gw.canonical()
+// Fetches the owner's busy mode and yolo state for the session and, with display set, the full config whose display preferences every
+// session card shares, and applies them while the session stays current
+func (c *configSync) hydrateFullConfig(gen int, sid string, display bool) tea.Cmd {
+	gw := c.gw
 	return func() tea.Msg {
-		var full, busy *tuigateway.ConfigGetResult
+		var full, busy, yolo *tuigateway.ConfigGetResult
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			full = quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "full", SessionID: sid})
-		}()
-		if canonical {
-			busy = quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "busy", SessionID: sid})
+		if display {
+			wg.Go(func() {
+				full = quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "full", SessionID: sid})
+			})
 		}
+		busy = quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "busy", SessionID: sid})
+		yolo = quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "yolo", SessionID: sid})
 		wg.Wait()
 		return asyncDoneMsg{run: func() tea.Cmd {
 			if !c.current(gen, sid) {
+				return nil
+			}
+			if mode := configWord(busy); slices.Contains(tuigateway.BusyInputMode("").Values(), mode) {
+				c.store.ui.BusyInputMode = mode
+			}
+			if yolo != nil {
+				c.store.ui.Yolo = configWord(yolo) == "1"
+			}
+			if !display {
 				return nil
 			}
 			var cfg *tuigateway.ClientConfig
 			if full != nil {
 				cfg = full.Config
 			}
-			cmd := c.applyDisplay(cfg, !canonical)
-			if mode := configWord(busy); canonical && slices.Contains(tuigateway.BusyInputMode("").Values(), mode) {
-				c.store.ui.BusyInputMode = mode
-			}
+			cmd := c.applyDisplay(cfg)
 			if cfg == nil {
 				return cmd
 			}
@@ -239,11 +231,8 @@ func configWord(r *tuigateway.ConfigGetResult) string {
 	return r.Value.Text
 }
 
-// Voice mode of a canonical session, enabled for voice_only and all and speaking its replies for all
+// Voice mode of the session, enabled for voice_only and all and speaking its replies for all
 func (c *configSync) hydrateVoiceMode(gen int, sid string) tea.Cmd {
-	if !c.gw.canonical() {
-		return nil
-	}
 	gw := c.gw
 	return func() tea.Msg {
 		r := quietAsk(gw, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "voice", SessionID: sid})
@@ -275,14 +264,15 @@ func (c *configSync) readMtime(sid string, then func(mtime float64, rev string) 
 func (c *configSync) syncSession(sid string) tea.Cmd {
 	c.gen++
 	c.sid = sid
+	c.store.ui.Yolo = false
+	c.app.configChanged()
 	if sid == "" {
 		return nil
 	}
+	c.store.ui.SetupRequired = false
 	gen := c.gen
-	c.app.setVoiceEnabled(os.Getenv("ICEBATH_VOICE") == "1")
-	if c.gw.canonical() {
-		c.app.setVoiceTTS(false)
-	}
+	c.app.setVoiceEnabled(false)
+	c.app.setVoiceTTS(false)
 	return tea.Batch(
 		c.hydrateVoiceMode(gen, sid),
 		c.readMtime(sid, func(mtime float64, rev string) tea.Cmd {
@@ -290,9 +280,12 @@ func (c *configSync) syncSession(sid string) tea.Cmd {
 				return nil
 			}
 			c.mtime, c.mcp.accepted = mtime, rev
+			if mtime != 0 && !math.IsNaN(mtime) {
+				c.store.ui.configMtime = mtime
+			}
 			return nil
 		}),
-		c.hydrateFullConfig(gen, sid),
+		c.hydrateFullConfig(gen, sid, true),
 		c.schedulePoll(gen),
 	)
 }
@@ -325,6 +318,10 @@ func (c *configSync) onPoll(m configPollMsg) tea.Cmd {
 			return tea.Batch(cmds...)
 		}
 		c.mtime = next
+		c.app.configChanged()
+		// The first session card to see the changed config reads the display preferences for all of them
+		display := c.store.ui.configMtime != next
+		c.store.ui.configMtime = next
 		if nextMcpRev == "" {
 			gw := c.gw
 			cmds = append(cmds, func() tea.Msg {
@@ -337,7 +334,7 @@ func (c *configSync) onPoll(m configPollMsg) tea.Cmd {
 				}}
 			})
 		}
-		return tea.Batch(append(cmds, c.hydrateFullConfig(gen, sid))...)
+		return tea.Batch(append(cmds, c.hydrateFullConfig(gen, sid, display))...)
 	})
 	return tea.Batch(poll, c.schedulePoll(gen))
 }

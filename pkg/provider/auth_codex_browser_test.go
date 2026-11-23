@@ -72,7 +72,7 @@ func pointCodexBrowserAt(t *testing.T, f *fakeOpenAI) {
 
 func TestBrowserFlagRunsLoopbackPKCEAndStoresLoopbackSource(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	fake := newFakeOpenAI(t)
 	pointCodexBrowserAt(t, fake)
 	scriptBrowserEnv(t, map[string]string{"BROWSER": "firefox", "DISPLAY": ":0"})
@@ -121,7 +121,7 @@ func TestBrowserFlagRunsLoopbackPKCEAndStoresLoopbackSource(t *testing.T) {
 
 func TestDefaultIsDeviceCodeAndBusyCallbackPortFallsBack(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	fake := newFakeOpenAI(t)
 	pointCodexBrowserAt(t, fake)
 	deviceLogins := 0
@@ -154,13 +154,12 @@ func TestDefaultIsDeviceCodeAndBusyCallbackPortFallsBack(t *testing.T) {
 	}
 	writeConfigYAML(t, h, "auth:\n  codex_login_flow: carrier-pigeon\n")
 	env = testEnv(t, h)
-	out.Reset()
-	if flow := codexLoginFlow(env, &out, CodexLoginArgs{}); flow != "device_code" || !strings.Contains(out.String(), "Ignoring unknown auth.codex_login_flow 'carrier-pigeon'") {
-		t.Fatalf("unknown flow %q output %q", flow, out.String())
+	if flow := codexLoginFlow(env, CodexLoginArgs{}); flow != "device_code" {
+		t.Fatalf("unknown flow %q", flow)
 	}
 	writeConfigYAML(t, h, "auth:\n  codex_login_flow: browser\n")
 	env = testEnv(t, h)
-	if flow := codexLoginFlow(env, &out, CodexLoginArgs{}); flow != "browser" {
+	if flow := codexLoginFlow(env, CodexLoginArgs{}); flow != "browser" {
 		t.Fatalf("configured flow %q", flow)
 	}
 }

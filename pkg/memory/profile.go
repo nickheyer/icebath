@@ -11,31 +11,28 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Bare directory or file stem a provider name must be so a hand edited config cannot aim the copy elsewhere
 var providerNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
-// External memory.provider named in a parsed config, empty for the built in store or an unsafe name
-func ExternalMemoryProvider(cfg map[string]any) string {
-	memory, ok := cfg["memory"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	name, ok := memory["provider"].(string)
-	if !ok || IsCoreMemoryProvider(name) {
-		return ""
-	}
+// Name of an external memory provider, empty for none, a core provider or an unsafe name
+func externalProviderName(name string) string {
 	name = pyStrip(name)
-	if name == "." || name == ".." || !providerNameRe.MatchString(name) {
+	if name == "" || IsCoreMemoryProvider(name) || name == "." || name == ".." || !providerNameRe.MatchString(name) {
 		return ""
 	}
 	return name
+}
+
+// External memory provider a profile's settings name, empty when it names none
+func ProfileMemoryProvider(ctx context.Context, profileDir string) string {
+	return externalProviderName(settings.MemoryProvider.Get(home.WithOverride(ctx, profileDir)))
 }
 
 // Copies the provider directory and json file from source into the profile owner only, true when anything copied
@@ -153,22 +150,9 @@ func copyFileWithStat(src, dst string) error {
 	return os.Chtimes(dst, st.ModTime(), st.ModTime())
 }
 
-// Mapping of a profile config.yaml, nil when absent, unreadable, or not a mapping
-func loadProfileConfigDict(profileDir string) map[string]any {
-	path := filepath.Join(profileDir, "config.yaml")
-	if _, err := os.Stat(path); err != nil {
-		return nil
-	}
-	doc, err := config.ReadDocument(path)
-	if err != nil {
-		return nil
-	}
-	return doc
-}
-
 // External provider whose config the profile now carries, empty when nothing was cloned for it
-func ClonedMemoryProvider(profileDir string) string {
-	provider := ExternalMemoryProvider(loadProfileConfigDict(profileDir))
+func ClonedMemoryProvider(ctx context.Context, profileDir string) string {
+	provider := ProfileMemoryProvider(ctx, profileDir)
 	if provider == "" {
 		return ""
 	}
@@ -179,17 +163,6 @@ func ClonedMemoryProvider(profileDir string) string {
 		return provider
 	}
 	return ""
-}
-
-// Whether the config.yaml of a profile or the managed overlay names a memory provider outside the core, the cheap check before its secrets are bound
-func namesExternalProvider(profileDir string) bool {
-	for _, cfg := range []map[string]any{loadProfileConfigDict(profileDir), config.LoadManagedConfig()} {
-		memory, _ := cfg["memory"].(map[string]any)
-		if name, ok := memory["provider"].(string); ok && pyStrip(name) != "" && !IsCoreMemoryProvider(name) {
-			return true
-		}
-	}
-	return false
 }
 
 // NotifyMemoryProvider runs call on the memory provider the config of a profile selects with that profile's home and its own secrets bound, best effort so a failing provider never fails the create or rename that called it
@@ -203,13 +176,13 @@ func NotifyMemoryProvider(ctx context.Context, profileDir string, call func(ctx 
 			failed(r)
 		}
 	}()
-	if !namesExternalProvider(profileDir) {
+	if ProfileMemoryProvider(ctx, profileDir) == "" {
 		return
 	}
 	provider.HydrateProfileSecretSources(profileDir)
 	scoped := provider.BindProfileSecretScope(home.WithOverride(ctx, profileDir), profileDir)
 	env := &tools.Env{Home: profileDir}
-	if name = ExternalMemoryProvider(map[string]any{"memory": map[string]any{"provider": ActiveMemoryProvider(scoped, env)}}); name == "" {
+	if name = externalProviderName(ActiveMemoryProvider(scoped, env)); name == "" {
 		return
 	}
 	p := LoadMemoryProviderWithSkills(scoped, env, name, false)

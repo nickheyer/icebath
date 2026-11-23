@@ -14,15 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Declares the one shot, handoff and usage methods on the session module registry
-func registerSessionUsageHandlers() {
-	sessionMethod("handoff.request", false, handoffRequest)
-	sessionRegistry.method("handoff.state", withSession(withSessionDB(5007, handoffState)))
-	sessionRegistry.method("handoff.fail", handoffFail)
-	sessionMethod("session.usage", false, sessionUsage)
-	sessionMethod("session.context_breakdown", false, sessionContextBreakdown)
-}
-
 // Value of a param, the default when it is falsy
 func truthyParam(params map[string]any, key string, def any) any {
 	if value := params[key]; truthy(value) {

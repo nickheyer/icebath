@@ -46,7 +46,8 @@ var _ submitGateway = (*gatewayClient)(nil)
 type submitDeps interface {
 	appendMessage(m msg)
 	enqueue(text, display string, destination submissionDestination)
-	expand(text string) string
+	// Expansion of the chips the draft holds right now, kept for a submit that settles later
+	expander() func(string) string
 	setLastUserMsg(text string)
 	sys(text string)
 	uncaught(err error)
@@ -59,6 +60,8 @@ type submitOpts struct {
 	Destination    *submissionDestination
 	QueueItem      *queueItem
 	BehindTurn     bool
+	// Turns the text shown into the text sent, the chips of the draft at submit time when unset
+	Expand func(string) string
 }
 
 // Prompt admission over the gateway, steering, redirects, legacy delivery and the durable queue journal
@@ -72,12 +75,15 @@ type promptSubmitter struct {
 }
 
 // Marks the session busy at the choke point every submit funnels through
-func (s *tuiStore) markSubmitting() { s.ui.Busy, s.ui.Status = true, "running…" }
+func (s *tuiStore) markSubmitting() {
+	s.setBusy(true)
+	s.ui.Status = "running…"
+}
 
 // Ends the busy state of a submission that began a turn of its own and was not taken, a turn that runs after all marks the session busy again through its events
 func (s *tuiStore) releaseUntaken(ownsTurn func() bool) {
 	if ownsTurn() {
-		s.ui.Busy = false
+		s.setBusy(false)
 	}
 }
 
@@ -100,7 +106,8 @@ func (p *promptSubmitter) beginOwnedTurn(text, displayOverride, displayText stri
 		}
 		p.deps.appendMessage(row)
 	}
-	p.store.ui.Busy, p.store.ui.Status = true, "running…"
+	p.store.setBusy(true)
+	p.store.ui.Status = "running…"
 	p.turn.bufRef = ""
 	p.turn.interrupted = false
 }
@@ -110,9 +117,10 @@ func (p *promptSubmitter) prepareQueueItem(item *queueItem, submitText string, o
 	if item.PreparedText == nil {
 		item.PreparedText = &submitText
 	}
+	// A correction carries no input id the owner could tell a second delivery by, so it is sent once and never again
 	if item.ControlMethod != "" {
 		attempted := true
-		item.LegacyAttempted = &attempted
+		item.SentOnce = &attempted
 	}
 	if item.Attachments == nil && opts.Attachments != nil {
 		item.Attachments = slices.Clone(opts.Attachments)
@@ -147,7 +155,7 @@ func submissionBody(item *queueItem, submitText string, attachments []imageAttac
 func readmitAsPrompt(item *queueItem) error {
 	item.ControlMethod, item.ExecutionGeneration = "", nil
 	attempted, queued := false, true
-	item.LegacyAttempted, item.Queued = &attempted, &queued
+	item.SentOnce, item.Queued = &attempted, &queued
 	return pendingJournal.save(*item)
 }
 
@@ -168,11 +176,9 @@ func (p *promptSubmitter) settleCorrection(item *queueItem, status tuigateway.Co
 	return true
 }
 
-// Ends the voice chat a typed stop phrase closed, the canonical owner's transcript event raised here
+// Ends the voice chat a typed stop phrase closed, the transcript event of the background service raised here
 func (p *promptSubmitter) voiceStopped(sid string) {
-	if p.gw.canonical() {
-		p.gw.publishLocalEvent(gatewayEventMsg{Type: "voice.transcript", SessionID: sid, Payload: map[string]any{"stop_phrase": true, "typed": true}})
-	}
+	p.gw.publishLocalEvent(gatewayEventMsg{Type: "voice.transcript", SessionID: sid, Payload: map[string]any{"stop_phrase": true, "typed": true}})
 }
 
 // Settles an admission receipt against the destination it was sent for
@@ -181,7 +187,7 @@ func (p *promptSubmitter) settleAdmissionReply(item *queueItem, receipt *tuigate
 	item.settle(accepted)
 	var cmd tea.Cmd
 	if accepted && focused() && (receipt.Status == "terminal" || receipt.Status == "unknown") {
-		cmd = p.refreshExecutionStatus(focused, owner, sid)
+		cmd = p.refreshExecutionStatus(focused, sid)
 	}
 	if !accepted && focused() {
 		p.deps.sys(tr(txt.CanonicalSubmitAdmissionNotConfirmed))
@@ -194,9 +200,9 @@ func (p *promptSubmitter) settleAdmissionReply(item *queueItem, receipt *tuigate
 }
 
 // Reads the owner's running state after an admission that settled at once, applied while nothing newer arrived
-func (p *promptSubmitter) refreshExecutionStatus(focused func() bool, owner submissionDestination, sid string) tea.Cmd {
+func (p *promptSubmitter) refreshExecutionStatus(focused func() bool, sid string) tea.Cmd {
 	observed := p.store.ui.Info
-	settle := func(a *attachment, err error) tea.Cmd {
+	return call(p.gw, tuigateway.CanonicalSessionRevision, tuigateway.SessionRevisionParams{SessionID: sid}, func(fence *tuigateway.SessionRevisionResult, err error) tea.Cmd {
 		if err != nil {
 			if focused() {
 				p.deps.sys(tr(txt.CanonicalSubmitExecutionUnconfirmed, err.Error()))
@@ -204,80 +210,21 @@ func (p *promptSubmitter) refreshExecutionStatus(focused func() bool, owner subm
 			return nil
 		}
 		current := p.store.ui.Info
-		stale := !focused() || current != observed || a.SessionID != sid || a.StoredSID != owner.StoredSid
+		stale := !focused() || current != observed || fence.SessionID != sid
 		if held := infoOf(current).ExecutionGeneration; !stale && held != nil {
-			answered := a.Info.ExecutionGeneration
-			stale = !sameStamp(a.Info.AuthorityEpoch, current.AuthorityEpoch) || answered == nil || *answered < *held
+			stale = !sameStamp(&fence.AuthorityEpoch, current.AuthorityEpoch) || fence.ExecutionGeneration < *held
 		}
 		if stale {
 			return nil
 		}
-		p.store.ui.Busy, p.store.ui.Status = a.Running, "ready"
-		if a.Running {
+		p.store.setBusy(fence.Running)
+		p.store.ui.Status = "ready"
+		if fence.Running {
 			p.store.ui.Status = "running…"
 		}
 		if current != nil {
-			running := a.Running
-			p.store.ui.Info = patchedInfo(current, tuigateway.SessionInfo{AuthorityEpoch: a.Info.AuthorityEpoch, ExecutionGeneration: a.Info.ExecutionGeneration, Running: &running})
-		}
-		return nil
-	}
-	if p.gw.canonical() {
-		return call(p.gw, tuigateway.CanonicalSessionResume, tuigateway.CanonicalResumeParams{SessionID: sid, OmitMessages: true}, func(r *tuigateway.CanonicalSnapshot, err error) tea.Cmd {
-			if err != nil {
-				return settle(nil, err)
-			}
-			a := snapshotAttachment(r)
-			return settle(&a, nil)
-		})
-	}
-	return call(p.gw, tuigateway.SessionActivate, tuigateway.SessionActivateParams{SessionID: sid, OmitMessages: true}, func(r *tuigateway.SessionActivateResult, err error) tea.Cmd {
-		if err != nil {
-			return settle(nil, err)
-		}
-		a := resumedAttachment(r, firstText(val(r.SessionKey), val(r.Info.StoredSessionID)))
-		return settle(&a, nil)
-	})
-}
-
-// Delivers a queue entry on the method table route, which takes no submission id so the entry is never resent
-func (p *promptSubmitter) submitLegacy(item *queueItem, sid, submitText string, focused, ownsTurn func() bool) tea.Cmd {
-	if focused() {
-		p.deps.sys(tr(txt.CanonicalSubmitLegacyDelivery))
-	}
-	unconfirmed := func(err error) tea.Cmd {
-		item.settle(false)
-		if focused() {
-			p.deps.sys(tr(txt.CanonicalSubmitLegacyUnconfirmedWith, err.Error()))
-			p.store.ui.Status = tr(txt.CanonicalSubmitStatusDeliveryUnconfirmed)
-		}
-		p.store.releaseUntaken(ownsTurn)
-		return nil
-	}
-	attempted := true
-	item.LegacyAttempted = &attempted
-	if err := pendingJournal.save(*item); err != nil {
-		return resolved(func() tea.Cmd { return unconfirmed(err) })
-	}
-	text, _ := submissionBody(item, submitText, nil)
-	queued := item.Queued == nil || *item.Queued
-	return call(p.gw, tuigateway.PromptSubmit, tuigateway.PromptSubmitParams{SessionID: sid, Text: text, Queued: &queued}, func(r *tuigateway.PromptSubmitResult, err error) tea.Cmd {
-		if err != nil {
-			return unconfirmed(err)
-		}
-		stopped := val(r.VoiceStopped)
-		accepted := stopped || r.Status != nil
-		item.settle(accepted)
-		if focused() {
-			if stopped {
-				p.store.ui.Busy, p.store.ui.Status = false, "ready"
-			} else if !accepted {
-				p.deps.sys(tr(txt.CanonicalSubmitLegacyUnconfirmed))
-				p.store.ui.Status = tr(txt.CanonicalSubmitStatusDeliveryUnconfirmed)
-			}
-		}
-		if !accepted {
-			p.store.releaseUntaken(ownsTurn)
+			running := fence.Running
+			p.store.ui.Info = patchedInfo(current, tuigateway.SessionInfo{AuthorityEpoch: &fence.AuthorityEpoch, ExecutionGeneration: &fence.ExecutionGeneration, Running: &running})
 		}
 		return nil
 	})
@@ -286,6 +233,10 @@ func (p *promptSubmitter) submitLegacy(item *queueItem, sid, submitText string, 
 // Submits a prompt or queued correction to the owning session, handling drops, images, refusals and busy sessions
 func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displayOverride string, opts submitOpts) tea.Cmd {
 	voiceTranscript := p.store.takeVoiceTranscript()
+	expand := opts.Expand
+	if expand == nil {
+		expand = p.deps.expander()
+	}
 	destination := opts.Destination
 	if destination == nil {
 		captured, err := p.store.captureDestination()
@@ -307,7 +258,7 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 		p.deps.sys(tr(txt.SessionNoticesNotReady))
 		return nil
 	}
-	if item := opts.QueueItem; item != nil && item.LegacyAttempted != nil && *item.LegacyAttempted {
+	if item := opts.QueueItem; item != nil && item.SentOnce != nil && *item.SentOnce {
 		item.settle(false)
 		if focused() {
 			p.deps.sys(tr(txt.CanonicalSubmitDeliveryNotResent))
@@ -373,7 +324,8 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 				if !focused() {
 					return nil
 				}
-				p.store.ui.Busy, p.store.ui.Status = true, tr(txt.StatusQueuedForNextTurn)
+				p.store.setBusy(true)
+				p.store.ui.Status = tr(txt.StatusQueuedForNextTurn)
 				ellipsis := ""
 				if len(units(submitText)) > 50 {
 					ellipsis = "…"
@@ -384,7 +336,8 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 				return nil
 			}
 			p.deps.sys(errorLine(err.Error()))
-			p.store.ui.Busy, p.store.ui.Status = false, "ready"
+			p.store.setBusy(false)
+			p.store.ui.Status = "ready"
 			return nil
 		}
 		readmitOr := func(settled bool) tea.Cmd {
@@ -403,14 +356,13 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 			}
 			p.voiceStopped(sid)
 			if ownsTurn() {
-				p.store.ui.Busy, p.store.ui.Status = false, "ready"
+				p.store.setBusy(false)
+				p.store.ui.Status = "ready"
 			}
 			return nil
 		}
 		text, attachments := submissionBody(item, submitText, opts.Attachments)
-		canonical := p.gw.canonical()
-		switch {
-		case item != nil && item.ControlMethod != "" && canonical:
+		if item != nil && item.ControlMethod != "" {
 			if item.ExecutionGeneration == nil {
 				return resolved(func() tea.Cmd { return fail(tuigateway.MissingParam(item.ControlMethod, "execution_generation")) }), nil
 			}
@@ -432,48 +384,19 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 				current := ack.ExecutionGeneration == generation
 				return readmitOr(p.settleCorrection(item, ack.Status, current, current && ack.Status == "rejected" && ack.Delivered != nil && !*ack.Delivered, focused))
 			}), nil
-		case item != nil && item.ControlMethod != "":
-			correction := tuigateway.SessionSteer
-			if item.ControlMethod == tuigateway.SessionRedirect.Name() {
-				correction = tuigateway.SessionRedirect
-			}
-			return call(p.gw, correction, tuigateway.SessionCorrectionParams{SessionID: sid, Text: text}, func(r *tuigateway.SessionCorrectionResult, err error) tea.Cmd {
-				if err != nil {
-					return fail(err)
-				}
-				return readmitOr(p.settleCorrection(item, r.Status, true, false, focused))
-			}), nil
-		case canonical:
-			params := tuigateway.CanonicalSubmitParams{SessionID: sid, Text: text, Attachments: attachments, VoiceTurn: voice, Interrupted: speech.takeInterrupted(), ClarifyBatch: p.gw.clarifyBatch()}
-			if item != nil {
-				params.InputID, params.Queued = &item.SubmissionID, item.Queued == nil || *item.Queued
-			}
-			return call(p.gw, tuigateway.CanonicalPromptSubmit, params, func(r *tuigateway.SubmitAnswer, err error) tea.Cmd {
-				switch {
-				case err != nil:
-					return fail(err)
-				case r.VoiceStopped:
-					return stopped()
-				case item != nil:
-					return p.settleAdmissionReply(item, r.AdmissionReceipt, *destination, focused, ownsTurn, owner, sid)
-				}
-				return nil
-			}), nil
-		case len(attachments) > 0:
-			return resolved(func() tea.Cmd { return fail(tuigateway.UnknownParam(tuigateway.PromptSubmit.Name(), "attachments")) }), nil
-		case item != nil:
-			return p.submitLegacy(item, sid, submitText, focused, ownsTurn), nil
 		}
-		params := tuigateway.PromptSubmitParams{SessionID: sid, Text: text}
-		if voice {
-			params.VoiceTurn = &voice
+		params := tuigateway.CanonicalSubmitParams{SessionID: sid, Text: text, Attachments: attachments, VoiceTurn: voice, Interrupted: speech.takeInterrupted(), ClarifyBatch: p.gw.clarifyBatch()}
+		if item != nil {
+			params.InputID, params.Queued = &item.SubmissionID, item.Queued == nil || *item.Queued
 		}
-		return call(p.gw, tuigateway.PromptSubmit, params, func(r *tuigateway.PromptSubmitResult, err error) tea.Cmd {
+		return call(p.gw, tuigateway.CanonicalPromptSubmit, params, func(r *tuigateway.SubmitAnswer, err error) tea.Cmd {
 			switch {
 			case err != nil:
 				return fail(err)
-			case val(r.VoiceStopped):
+			case r.VoiceStopped:
 				return stopped()
+			case item != nil:
+				return p.settleAdmissionReply(item, r.AdmissionReceipt, *destination, focused, ownsTurn, owner, sid)
 			}
 			return nil
 		}), nil
@@ -489,51 +412,34 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 		return direct(text, *item.PreparedText)
 	}
 	if opts.SkipDetectDrop {
-		return direct(text, p.deps.expand(text))
+		return direct(text, expand(text))
 	}
-	if p.gw.canonical() {
-		if imagePathLeadRe.MatchString(text) && imagePathExtensionRe.MatchString(text) {
-			return p.store.stageImagePath(text, p.gw, *destination, func(image *stagedImage, err error) tea.Cmd {
-				var cmd tea.Cmd
-				if err == nil {
-					opts.Attachments = []imageAttachment{image.imageAttachment}
-					question := image.Remainder
-					if question == "" {
-						question = "What do you see in this image?"
-					}
-					cmd, err = startSubmit(text, question, showUserMessage)
+	if imagePathLeadRe.MatchString(text) && imagePathExtensionRe.MatchString(text) {
+		return p.store.stageImagePath(text, p.gw, *destination, func(image *stagedImage, err error) tea.Cmd {
+			var cmd tea.Cmd
+			if err == nil {
+				opts.Attachments = []imageAttachment{image.imageAttachment}
+				question := image.Remainder
+				if question == "" {
+					question = "What do you see in this image?"
 				}
-				if err == nil {
-					return cmd
-				}
-				if opts.QueueItem != nil {
-					opts.QueueItem.settle(false)
-				}
-				if focused() {
-					p.deps.sys(tr(txt.CanonicalSubmitImageNotSubmitted, err.Error()))
-					if ownsTurn() {
-						p.store.ui.Busy, p.store.ui.Status = false, tr(txt.CanonicalSubmitStatusImageNotSubmitted)
-					}
-				}
-				return nil
-			})
-		}
-		return direct(text, p.deps.expand(text))
-	}
-	return call(p.gw, tuigateway.InputDetectDrop, tuigateway.InputDetectDropParams{SessionID: sid, Text: text}, func(r *tuigateway.InputDetectDropResult, err error) tea.Cmd {
-		var cmd tea.Cmd
-		if err == nil && r.Matched {
-			dropped := text
-			if r.Text != "" {
-				dropped = r.Text
+				cmd, err = startSubmit(text, question, showUserMessage)
 			}
-			cmd, err = startSubmit(dropped, p.deps.expand(dropped), showUserMessage)
-		} else if err == nil {
-			cmd, err = startSubmit(text, p.deps.expand(text), showUserMessage)
-		}
-		if err == nil {
-			return cmd
-		}
-		return direct(text, p.deps.expand(text))
-	})
+			if err == nil {
+				return cmd
+			}
+			if opts.QueueItem != nil {
+				opts.QueueItem.settle(false)
+			}
+			if focused() {
+				p.deps.sys(tr(txt.CanonicalSubmitImageNotSubmitted, err.Error()))
+				if ownsTurn() {
+					p.store.setBusy(false)
+					p.store.ui.Status = tr(txt.CanonicalSubmitStatusImageNotSubmitted)
+				}
+			}
+			return nil
+		})
+	}
+	return direct(text, expand(text))
 }

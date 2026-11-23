@@ -208,7 +208,7 @@ func TestAuxAuthFailureOnEntryNeverRotatesBuiltinPool(t *testing.T) {
 	const endpoint, entryKey, builtinKey = "http://127.0.0.1:18080/v1", "entry-key-A-0123456789", "builtin-key-B-0123456789"
 	ctx := auxRecoveryHome(t, "model:\n  default: m\n  provider: custom:deepseek\nproviders:\n  deepseek:\n    name: deepseek\n    api: "+endpoint+"\n    transport: chat_completions\n    default_model: m\n    key_env: ENTRY_KEY_VAR\n")
 	h := os.Getenv("ICEBATH_HOME")
-	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte(`{"version": 1, "providers": {}, "credential_pool": {}}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte(`{"version": 2, "providers": {}, "credential_pool": {}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DEEPSEEK_API_KEY", builtinKey)

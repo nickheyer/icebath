@@ -127,13 +127,6 @@ type stdioEntry struct {
 	recovery []float64
 }
 
-// Runs the stdio gateway when the binary was re-executed as it, ending the process through exit
-func DispatchTUIGatewayEntry(ctx context.Context, exit func(int)) {
-	if len(os.Args) < 2 || os.Args[1] != tuihost.TUIGatewayEntry {
-		return
-	}
-	runStdioEntry(ctx, exit)
-}
 
 // Keeps stray prints off the RPC stdout, loads the server module, installs the signals and runs main
 func runStdioEntry(ctx context.Context, exit func(int)) {

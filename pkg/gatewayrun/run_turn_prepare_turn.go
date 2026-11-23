@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -74,13 +75,7 @@ func (r *GatewayRunner) hmwaPrepareTurn(ctx context.Context, event *gateway.Mess
 		return nil, nil, nil, err
 	}
 	persistUserDisplayKind := gateway.DisplayKindForEvent(ctx, gateway.DisplayEventOf(event))
-	redactPII := false
-	func() {
-		defer func() { _ = recover() }()
-		if privacy, ok := gateway.LoadGatewayConfigMap(ctx, "")["privacy"].(map[string]any); ok {
-			redactPII = pyrepr.Truthy(privacy["redact_pii"])
-		}
-	}()
+	redactPII := settings.RedactPII.Get(ctx)
 	reusePins := event.Internal || event.InheritChannelPin
 	if source.Platform != gateway.PlatformLocal && reusePins && sessionKey != "" {
 		sid := entry.SessionID

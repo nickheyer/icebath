@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func msgObj(kv ...any) *pyjson.Object {
@@ -194,5 +195,5 @@ func TestResolveDefaultDBPathFollowsRepointedPath(t *testing.T) {
 
 // Resume refusal with the default limit and scope of the Python constructor
 func NewSessionResumeTooLargeError(messageCount int) *SessionResumeTooLargeError {
-	return &SessionResumeTooLargeError{MessageCount: messageCount, Limit: maxSafeMessages, Scope: "across its lineage"}
+	return &SessionResumeTooLargeError{MessageCount: messageCount, Limit: settings.SessionsMaxResumeMessages.Default, Scope: "across its lineage"}
 }

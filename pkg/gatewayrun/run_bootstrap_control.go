@@ -12,7 +12,7 @@ import (
 
 // Descriptor keys the identify verb copies from the session runtime descriptor
 var identifyDescriptorKeys = []string{"instance_id", "runtime_protocol", "authority_epoch", "state", "api_origin",
-	"served_profiles", "parked_profiles", "capabilities"}
+	"served_profiles", "parked_profiles"}
 
 // Identify payload of this runtime, its descriptor facts over the process identity
 func identifyRuntime(r *GatewayRunner) *pyjson.Object {
@@ -25,9 +25,6 @@ func identifyRuntime(r *GatewayRunner) *pyjson.Object {
 	}
 	if r.draining.Load() {
 		payload.Set("state", "draining")
-		if reason, _ := descriptor["drain_reason"].(string); reason != gateway.RestartWaitReason {
-			payload.Set("capabilities", []any{})
-		}
 	}
 	if state, _ := payload.Get("state"); state == "draining" {
 		if reason := descriptor["drain_reason"]; pyrepr.Truthy(reason) {

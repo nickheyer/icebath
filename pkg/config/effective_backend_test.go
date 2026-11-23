@@ -130,7 +130,7 @@ func TestPipelinesConsultTheBackendEffectiveLoader(t *testing.T) {
 func TestPipelineSaveConfigWritesOnceThroughTheBackend(t *testing.T) {
 	h, backend := recordingHome(t, "recording_writers")
 	ctx := context.Background()
-	stamped := fmt.Sprintf("_config_version: %d\n# hand-tuned\nmodel:\n  default: my-model\nsecrets:\n  sources: []\n", latestConfigVersion())
+	stamped := "# hand-tuned\nmodel:\n  default: my-model\nsecrets:\n  sources: []\n"
 	os.WriteFile(filepath.Join(h, "config.yaml"), []byte(stamped), 0o600)
 	tree, err := LoadContext(ctx, h, processLookup)
 	if err != nil {
@@ -281,9 +281,6 @@ func TestBackupCallersPropagateAnUnavailableBackend(t *testing.T) {
 	}
 	if _, err := lastKnownGoodFallback(context.Background(), path, nil, fmt.Errorf("bad yaml"), processLookup); !errors.As(err, &unavailable) {
 		t.Fatalf("last known good %v", err)
-	}
-	if _, err := dockerBackupExisting(context.Background(), path); !errors.As(err, &unavailable) {
-		t.Fatalf("docker backups %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(h, "backups")); !os.IsNotExist(err) {
 		t.Fatal("no copy is written when no backend serves config")

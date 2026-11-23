@@ -80,7 +80,7 @@ func diagnosticOnlyWakeMuted(ctx context.Context, events []map[string]any) bool 
 			return false
 		}
 	}
-	return !config.WarningNotificationsEnabled(ctx, "cli", nil)
+	return !config.WarningNotificationsEnabled(ctx, "cli")
 }
 
 // Returns the one linger budget a quiet run shares between the drain loop and the finalize pass

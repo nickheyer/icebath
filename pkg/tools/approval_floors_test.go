@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -8,18 +9,21 @@ import (
 
 func denyEnv(t *testing.T, patterns ...string) *Env {
 	t.Helper()
-	list := make([]any, len(patterns))
-	for i, p := range patterns {
-		list[i] = p
+	text := "approvals:\n  mode: manual\n  deny:\n"
+	for _, p := range patterns {
+		text += "    - " + strconv.Quote(p) + "\n"
 	}
-	return &Env{Home: t.TempDir(), Config: config.Tree{"approvals": map[string]any{"mode": "manual", "deny": list}}}
+	if len(patterns) == 0 {
+		text = "approvals:\n  mode: manual\n  deny: []\n"
+	}
+	return approvalYAMLEnv(t, text)
 }
 
 func TestMatchUserDenyRuleBasics(t *testing.T) {
 	if got := matchUserDenyRule(denyEnv(t), "git push --force origin main"); got != "" {
 		t.Fatalf("empty deny list matched %q", got)
 	}
-	noKey := &Env{Home: t.TempDir(), Config: config.Tree{"approvals": map[string]any{"mode": "manual"}}}
+	noKey := approvalYAMLEnv(t, "approvals:\n  mode: manual\n")
 	if got := matchUserDenyRule(noKey, "rm -rf build/"); got != "" {
 		t.Fatalf("missing deny key matched %q", got)
 	}

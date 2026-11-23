@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // One fast argument as its service tier, persisted value and label key, an empty label key showing the argument upper cased
@@ -45,7 +46,8 @@ func (r *GatewayRunner) handleReasoningCommand(ctx context.Context, event *gatew
 	}
 	r.showReasoning = loadShowReasoning(ctx)
 	if live := gateway.LocalLive(r, event.Source); live != nil {
-		r.showReasoning = live.ShowReasoning != nil && *live.ShowReasoning
+		shown, _ := gateway.SessionOwnSetting(ctx, live, settings.ShowThinking.Key)
+		r.showReasoning = shown == true
 	}
 	sessionRoute, _ := r.sessionModelOverrides().Get(sessionKey)
 	sessionModel := ""

@@ -37,7 +37,7 @@ func (t *anthBedrockTransport) region(ctx context.Context) string {
 	if isBedrockRuntimeEndpoint(t.route.BaseURL) {
 		return bedrockRegionFromRuntimeURL(t.route.BaseURL)
 	}
-	return resolveBedrockRuntimeRegionCtx(ctx)
+	return resolveBedrockRuntimeRegion(ctx)
 }
 
 // ANTHROPIC_BEDROCK_BASE_URL read through the routed profile's scope under a home override

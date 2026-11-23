@@ -18,7 +18,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
@@ -27,18 +26,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const (
-	curatorDefaultIntervalHours    = 24 * 7
-	curatorDefaultMinIdleHours     = 2.0
-	curatorDefaultStaleAfterDays   = 14
-	curatorDefaultArchiveAfterDays = 30
-	curatorDefaultConsolidate      = false
-	curatorClaimStaleSeconds       = 3600.0
-)
+const curatorClaimStaleSeconds = 3600.0
 
 // CuratorCronRewrite is one cron job whose skill references a curator pass rewrote
 type CuratorCronRewrite struct {
@@ -205,19 +198,6 @@ func curatorConfigSection(ctx context.Context, label string, log *slog.Logger, p
 	return curatorSubdict(map[string]any(cfg), path...)
 }
 
-// curator section of the config, replaced by tests
-var curatorConfig = func(ctx context.Context) map[string]any {
-	return curatorConfigSection(ctx, "curator", pkgLog(), "curator")
-}
-
-func curatorConfigGet(ctx context.Context, key string, def any) any {
-	cfg := curatorConfig(ctx)
-	if v, ok := cfg[key]; ok {
-		return v
-	}
-	return def
-}
-
 func curatorBigToInt(n *big.Int) int {
 	if !n.IsInt64() {
 		if n.Sign() < 0 {
@@ -228,23 +208,19 @@ func curatorBigToInt(n *big.Int) int {
 	return int(n.Int64())
 }
 
-// Curator enabled flag, on unless the config says otherwise
+// Curator enabled flag, on unless the settings say otherwise
 func CuratorIsEnabled(ctx context.Context) bool {
-	return pyrepr.Truthy(curatorConfigGet(ctx, "enabled", true))
+	return settings.CuratorEnabled.Get(ctx)
 }
 
 // Hours between automatic passes, floored at one
 func CuratorIntervalHours(ctx context.Context) int {
-	return curatorBoundedCount(ctx, "interval_hours", curatorDefaultIntervalHours)
+	return curatorBoundedCount(ctx, settings.CuratorIntervalHours, time.Hour)
 }
 
-// Idle hours a session needs before an automatic pass, the default when the value is not a number
+// Idle hours a session needs before an automatic pass
 func CuratorMinIdleHours(ctx context.Context) float64 {
-	f, err := pyint.Float(curatorConfigGet(ctx, "min_idle_hours", curatorDefaultMinIdleHours))
-	if err != nil {
-		return curatorDefaultMinIdleHours
-	}
-	return f
+	return settings.CuratorMinIdleHours.Get(ctx).Hours()
 }
 
 var curatorWarned = struct {
@@ -252,20 +228,18 @@ var curatorWarned = struct {
 	seen map[string]bool
 }{seen: map[string]bool{}}
 
-// Day or hour count from config, the default with one warning per bad value when below one
-func curatorBoundedCount(ctx context.Context, key string, def int) int {
-	value := def
-	if n, err := pyint.Of(curatorConfigGet(ctx, key, def)); err == nil {
-		value = curatorBigToInt(n)
-	}
+// Whole day or hour count of a duration setting, the default with one warning per bad value when below one unit
+func curatorBoundedCount(ctx context.Context, e *settings.Duration, unit time.Duration) int {
+	value := int(e.Get(ctx) / unit)
+	def := int(e.Default / unit)
 	if value < 1 {
-		mark := fmt.Sprintf("%s\x00%d", key, value)
+		mark := fmt.Sprintf("%s\x00%d", e.Key, value)
 		curatorWarned.Lock()
 		first := !curatorWarned.seen[mark]
 		curatorWarned.seen[mark] = true
 		curatorWarned.Unlock()
 		if first {
-			pkgLog().Warn(fmt.Sprintf("curator.%s must be >= 1 (got %d); using the default of %d", key, value, def))
+			pkgLog().Warn(fmt.Sprintf("%s must be >= 1 (got %d); using the default of %d", e.Key, value, def))
 		}
 		return def
 	}
@@ -274,17 +248,17 @@ func curatorBoundedCount(ctx context.Context, key string, def int) int {
 
 // Days of inactivity before a skill turns stale
 func CuratorStaleAfterDays(ctx context.Context) int {
-	return curatorBoundedCount(ctx, "stale_after_days", curatorDefaultStaleAfterDays)
+	return curatorBoundedCount(ctx, settings.CuratorStaleAfterDays, 24*time.Hour)
 }
 
 // Days of inactivity before a skill is archived
 func CuratorArchiveAfterDays(ctx context.Context) int {
-	return curatorBoundedCount(ctx, "archive_after_days", curatorDefaultArchiveAfterDays)
+	return curatorBoundedCount(ctx, settings.CuratorArchiveAfterDays, 24*time.Hour)
 }
 
 // Whether the LLM consolidation pass runs, off by default
 func CuratorConsolidate(ctx context.Context) bool {
-	return pyrepr.Truthy(curatorConfigGet(ctx, "consolidate", curatorDefaultConsolidate))
+	return settings.CuratorConsolidate.Get(ctx)
 }
 
 // datetime.fromisoformat of a truthy string, false for anything unparseable
@@ -1434,91 +1408,39 @@ func curatorMergeRequestOverrides(runtime map[string]any, slotExtra any) map[str
 	return merged
 }
 
-func curatorStripOrEmpty(v any) (string, error) {
-	if !pyrepr.Truthy(v) {
-		return "", nil
-	}
-	s, ok := v.(string)
-	if !ok {
-		return "", fmt.Errorf("expected text, got %s", errchain.Kind(v))
-	}
-	return pyStrip(s), nil
-}
-
-// Provider and model for the review fork from auxiliary.curator, the legacy curator.auxiliary, then the main model
-func curatorResolveReviewRuntime(cfg any) (curatorReviewBinding, error) {
-	slot := func(provider, model string, s map[string]any) curatorReviewBinding {
-		b := curatorReviewBinding{provider: provider, model: model}
-		if v, ok := s["api_key"]; ok && v != nil {
-			b.apiKey = pyStrip(pyStr(v))
-		}
-		if v, ok := s["base_url"]; ok && v != nil {
-			b.baseURL = pyStrip(pyStr(v))
-		}
-		b.requestOverrides = curatorMergeRequestOverrides(nil, s["extra_body"])
-		return b
-	}
-	task := curatorSubdict(cfg, "auxiliary", "curator")
-	tp, err := curatorStripOrEmpty(task["provider"])
-	if err != nil {
-		return curatorReviewBinding{}, err
-	}
-	tm, err := curatorStripOrEmpty(task["model"])
-	if err != nil {
-		return curatorReviewBinding{}, err
-	}
+// Provider and model for the review fork from the curator helper model, else the main model
+func curatorResolveReviewRuntime(ctx context.Context) curatorReviewBinding {
+	tp, tm := strings.TrimSpace(settings.AuxiliaryCuratorProvider.Get(ctx)), strings.TrimSpace(settings.AuxiliaryCuratorModel.Get(ctx))
 	if tp != "" && tp != "auto" && tm != "" {
-		return slot(tp, tm, task), nil
+		return curatorReviewBinding{provider: tp, model: tm, apiKey: strings.TrimSpace(settings.AuxiliaryCuratorApiKey.Get(ctx)),
+			baseURL:          strings.TrimSpace(settings.AuxiliaryCuratorBaseUrl.Get(ctx)),
+			requestOverrides: curatorMergeRequestOverrides(nil, settings.AuxiliaryCuratorExtraBody.Get(ctx))}
 	}
-	legacy := curatorSubdict(cfg, "curator", "auxiliary")
-	if pyrepr.Truthy(legacy["provider"]) && pyrepr.Truthy(legacy["model"]) {
-		pkgLog().Info("curator: using deprecated curator.auxiliary.{provider,model} config — please migrate to auxiliary.curator.{provider,model}")
-		return slot(pyStr(legacy["provider"]), pyStr(legacy["model"]), legacy), nil
-	}
-	main := curatorSubdict(cfg, "model")
-	provider, model := main["provider"], main["default"]
-	if !pyrepr.Truthy(provider) {
+	provider := settings.ModelProvider.Get(ctx)
+	if provider == "" {
 		provider = "auto"
 	}
-	if !pyrepr.Truthy(model) {
-		if model = main["model"]; !pyrepr.Truthy(model) {
-			model = ""
-		}
-	}
-	ps, okP := provider.(string)
-	ms, okM := model.(string)
-	if !okP || !okM {
-		return curatorReviewBinding{}, fmt.Errorf("model.provider and model.default must be strings")
-	}
-	return curatorReviewBinding{provider: ps, model: ms, requestOverrides: map[string]any{}}, nil
+	return curatorReviewBinding{provider: provider, model: settings.Model.Get(ctx), requestOverrides: map[string]any{}}
 }
 
 // Runtime of the review fork, model, provider and request overrides, logging and falling back to the main model on failure
 func curatorResolveReviewProvider(ctx context.Context) (*provider.Runtime, string, string, map[string]any) {
 	h := home.Dir(ctx)
-	overrides, prov, model := map[string]any{}, "", ""
-	bindingProvider := "None"
-	cfg, err := config.LoadReadonly(ctx, h, configLookup(&tools.Env{Home: h}))
-	var rt *provider.Runtime
+	overrides, prov := map[string]any{}, ""
+	b := curatorResolveReviewRuntime(ctx)
+	bindingProvider, model := b.provider, b.model
+	rt, err := curatorResolveRuntime(ctx, h, b)
 	if err == nil {
-		var b curatorReviewBinding
-		if b, err = curatorResolveReviewRuntime(map[string]any(cfg)); err == nil {
-			bindingProvider, model = b.provider, b.model
-			if rt, err = curatorResolveRuntime(ctx, h, b); err == nil {
-				prov = rt.Provider
-				if prov == "" {
-					prov = b.provider
-				}
-				overrides = curatorMergeRequestOverrides(rt.RequestOverrides, b.requestOverrides["extra_body"])
-				if m := pyStrip(rt.Model); m != "" {
-					model = m
-				}
-			} else {
-				rt = nil
-			}
+		prov = rt.Provider
+		if prov == "" {
+			prov = b.provider
 		}
-	}
-	if err != nil {
+		overrides = curatorMergeRequestOverrides(rt.RequestOverrides, b.requestOverrides["extra_body"])
+		if m := pyStrip(rt.Model); m != "" {
+			model = m
+		}
+	} else {
+		rt = nil
 		pkgLog().Warn(fmt.Sprintf("curator: auxiliary.curator.provider '%s' (model '%s') could not be resolved: %v — the review runs on the main model instead", bindingProvider, model, err))
 	}
 	return rt, model, prov, overrides
@@ -1541,12 +1463,11 @@ func curatorRunLLMReview(ctx context.Context, prompt string) *pyjson.Object {
 	var res *CuratorReviewResult
 	if err == nil {
 		// A curation run can compact, so under compression.checkpoint_required it keeps the provider it checkpoints with, scoped as a fork
-		compression, _ := cfg["compression"].(map[string]any)
 		req := CuratorReviewRequest{
 			Prompt: prompt, Model: model, Provider: prov, RequestOverrides: overrides,
 			ReasoningConfig: config.ResolveReasoningConfig(map[string]any(cfg), model), EnabledToolsets: []string{"skills"},
 			MaxIterations: 9999, Platform: "curator", WriteOrigin: backgroundReviewOrigin, QuietMode: true, SkipContextFiles: true,
-			SkipMemory: !isTruthyValue(compression["checkpoint_required"], false), MemoryAgentContext: "subagent",
+			SkipMemory: !settings.CompressionCheckpointRequired.Get(ctx), MemoryAgentContext: "subagent",
 		}
 		if rt != nil {
 			route := rt.Route()

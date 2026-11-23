@@ -42,10 +42,10 @@ func TestNormalizeEntryShapes(t *testing.T) {
 	if NormalizeCustomProviderEntry(map[string]any{"base_url": "nonsense"}, "k") != nil {
 		t.Fatal("invalid url is dropped")
 	}
-	n := NormalizeCustomProviderEntry(map[string]any{"base_url": "https://{region}.example/v1", "transport": "responses",
+	n := NormalizeCustomProviderEntry(map[string]any{"base_url": "https://{region}.example/v1", "api_mode": "responses",
 		"models": []any{"a", map[string]any{"id": "b", "context_length": 1000}}, "capabilities": map[string]any{"vision": true, "bad": "yes"},
-		"context_length": 4096, "ssl_verify": "false", "apiKey": "camel"}, "proxy")
-	if n == nil || n["name"] != "proxy" || n["api_mode"] != "codex_responses" || n["api_key"] != "camel" {
+		"context_length": 4096, "ssl_verify": "false", "api_key": "plain"}, "proxy")
+	if n == nil || n["name"] != "proxy" || n["api_mode"] != "codex_responses" || n["api_key"] != "plain" {
 		t.Fatalf("got %v", n)
 	}
 	if !reflect.DeepEqual(n["models"], map[string]any{"a": map[string]any{}, "b": map[string]any{"context_length": 1000}}) {
@@ -53,10 +53,6 @@ func TestNormalizeEntryShapes(t *testing.T) {
 	}
 	if !reflect.DeepEqual(n["capabilities"], map[string]bool{"vision": true}) || n["context_length"] != 4096 || n["ssl_verify"] != "false" {
 		t.Fatalf("fields: %v", n)
-	}
-	v12 := customProviderEntryToProviderConfig(map[string]any{"name": "l", "base_url": "http://h/v1", "api_mode": "anthropic", "model": "m"}, "")
-	if v12["api"] != "http://h/v1" || v12["transport"] != "anthropic_messages" || v12["default_model"] != "m" {
-		t.Fatalf("v12: %v", v12)
 	}
 }
 
@@ -73,7 +69,7 @@ func TestCompatibleCustomProvidersDedupes(t *testing.T) {
 			"nourl":    map[string]any{"stale_timeout_seconds": 600},
 		},
 	}
-	got := CompatibleCustomProviders(cfg)
+	got := ProviderEntries(cfg)
 	var names []string
 	for _, e := range got {
 		names = append(names, cfgString(e["name"]))

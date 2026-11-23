@@ -36,7 +36,7 @@ type ProviderDef struct {
 	Source       string
 }
 
-// Shared user-config definition for providers and custom_providers entries
+// Provider definition of a providers entry
 func userPdef(pid, name, baseURL, keyEnv, transport string) *ProviderDef {
 	if transport == "" {
 		transport = "openai_chat"
@@ -68,7 +68,7 @@ func resolveUserProvider(name string, userConfig map[string]any) *ProviderDef {
 	if !ok {
 		return nil
 	}
-	baseURL := firstTruthyString(entry["api"], entry["url"], entry["base_url"])
+	baseURL := cfgString(entry["base_url"])
 	if baseURL == "" {
 		return nil
 	}
@@ -76,8 +76,8 @@ func resolveUserProvider(name string, userConfig map[string]any) *ProviderDef {
 	if display == "" {
 		display = name
 	}
-	keyEnv := firstTruthyString(entry["key_env"], entry["api_key_env"])
-	transport := cfgString(entry["transport"])
+	keyEnv := cfgString(entry["key_env"])
+	transport := cfgString(entry["api_mode"])
 	if transport == "" {
 		transport = "openai_chat"
 	}
@@ -129,7 +129,7 @@ func CustomProviderAliases(displayName, providerKey string) map[string]bool {
 	return aliases
 }
 
-// Provider definition from the legacy custom_providers list, bare custom healing onto the first entry
+// Provider definition a name selects from the normalized providers list, bare custom taking the first entry
 func resolveCustomProvider(name string, customProviders []any) *ProviderDef {
 	requested := strings.ToLower(strings.TrimSpace(name))
 	if requested == "" || len(customProviders) == 0 {
@@ -142,7 +142,7 @@ func resolveCustomProvider(name string, customProviders []any) *ProviderDef {
 			continue
 		}
 		displayName := strings.TrimSpace(cfgString(entry["name"]))
-		apiURL := strings.TrimSpace(firstTruthyString(entry["base_url"], entry["url"], entry["api"]))
+		apiURL := strings.TrimSpace(cfgString(entry["base_url"]))
 		if displayName == "" || apiURL == "" {
 			continue
 		}
@@ -161,14 +161,14 @@ func resolveCustomProvider(name string, customProviders []any) *ProviderDef {
 	return nil
 }
 
-// Provider definition a name selects from the legacy custom_providers list
+// Provider definition a name selects from the normalized providers list
 func ResolveCustomProvider(name string, customProviders []any) *ProviderDef {
 	return resolveCustomProvider(name, customProviders)
 }
 
 // ---- credential ownership of custom entries (agent/custom_entry_pool.py) ----
 
-var declaredCredentialKeys = []string{"api_key", "key_env", "api_key_env", "key_cmd"}
+var declaredCredentialKeys = []string{"api_key", "key_env", "key_cmd"}
 
 // EntryDeclaresCredential reports whether a custom entry names its own credential
 func EntryDeclaresCredential(entry map[string]any) bool {
@@ -201,7 +201,7 @@ type namedEntry struct {
 // Normalized name and entry pairs from the merged custom provider config view
 func iterCustomProviders(cfg map[string]any) []namedEntry {
 	var out []namedEntry
-	for _, entry := range CompatibleCustomProviders(cfg) {
+	for _, entry := range ProviderEntries(cfg) {
 		if name, ok := entry["name"].(string); ok {
 			out = append(out, namedEntry{normalizeCustomPoolName(name), entry})
 		}
@@ -509,7 +509,7 @@ func declaredKeyEnv(entry map[string]any) string {
 	if entry == nil {
 		return ""
 	}
-	return strings.TrimSpace(firstTruthyString(entry["key_env"], entry["api_key_env"]))
+	return strings.TrimSpace(cfgString(entry["key_env"]))
 }
 
 // Label and key_env of the config block that declared a key variable for this custom endpoint
@@ -627,9 +627,9 @@ func RouteKey(value any) string { return routeKey(value) }
 
 func clean(value any) string { return strings.TrimSpace(cfgString(value)) }
 
-// Credential named by key_env or api_key_env on a config block, warning when it resolves to nothing
+// Credential named by key_env on a config block, warning when it resolves to nothing
 func (r *resolver) keyEnvSecret(entry map[string]any, label string) string {
-	keyEnv := clean(firstTruthyString(entry["key_env"], entry["api_key_env"]))
+	keyEnv := clean(cfgString(entry["key_env"]))
 	if keyEnv == "" {
 		return ""
 	}
@@ -651,7 +651,7 @@ func (r *resolver) modelCfgKeyEnvFor(modelCfg map[string]any, baseURL string) st
 }
 
 func entryURL(entry map[string]any) string {
-	return firstTruthyString(entry["api"], entry["url"], entry["base_url"])
+	return cfgString(entry["base_url"])
 }
 
 // Exported entry URL read, api before url before base_url
@@ -679,7 +679,7 @@ func liftExtraHeaders(entry map[string]any, result map[string]any) {
 	}
 }
 
-// Copies the optional fields shared by providers and legacy custom_providers entries
+// Copies the optional fields of a providers entry
 func liftCommonCustomFields(entry map[string]any, result map[string]any, providerKey, keyEnv string, apiMode APIMode) {
 	if keyEnv != "" {
 		result["key_env"] = keyEnv
@@ -770,7 +770,7 @@ func (r *resolver) matchNewStyleProvider(requestedNorm string, providers map[str
 		if baseURL == "" {
 			continue
 		}
-		keyEnv := clean(firstTruthyString(entry["key_env"], entry["api_key_env"]))
+		keyEnv := clean(cfgString(entry["key_env"]))
 		apiKey := ""
 		if keyEnv != "" && resolveCredentials {
 			apiKey = strings.TrimSpace(r.secret(keyEnv))
@@ -782,32 +782,10 @@ func (r *resolver) matchNewStyleProvider(requestedNorm string, providers map[str
 		if keyCmd := clean(entry["key_cmd"]); keyCmd != "" {
 			result["key_cmd"] = keyCmd
 		}
-		liftCommonCustomFields(entry, result, clean(epName), keyEnv, r.parseAPIMode(firstTruthyString(entry["api_mode"], entry["transport"])))
+		liftCommonCustomFields(entry, result, clean(epName), keyEnv, r.parseAPIMode(cfgString(entry["api_mode"])))
 		return result, epName, true
 	}
 	return nil, "", false
-}
-
-// Scans the legacy custom_providers list for the requested name and returns the resolved entry and raw entry
-func (r *resolver) matchLegacyCustomProvider(requestedNorm string, customProviders []map[string]any) (map[string]any, map[string]any, bool) {
-	for _, entry := range customProviders {
-		name, nameOK := entry["name"].(string)
-		baseURL, urlOK := entry["base_url"].(string)
-		if !nameOK || !urlOK {
-			continue
-		}
-		providerKey := clean(entry["provider_key"])
-		if !CustomProviderAliases(name, providerKey)[requestedNorm] {
-			continue
-		}
-		result := map[string]any{"name": strings.TrimSpace(name), "base_url": strings.TrimSpace(baseURL), "api_key": clean(entry["api_key"])}
-		if modelName := clean(entry["model"]); modelName != "" {
-			result["model"] = modelName
-		}
-		liftCommonCustomFields(entry, result, providerKey, clean(entry["key_env"]), r.parseAPIMode(entry["api_mode"]))
-		return result, entry, true
-	}
-	return nil, nil, false
 }
 
 // ConfigPath names where one custom entry lives in config
@@ -817,7 +795,7 @@ type ConfigPath struct {
 	Index   int
 }
 
-// Resolved entry and config path for the first usable match, providers first then the legacy list
+// Resolved entry and config path of the providers entry a name selects
 func (r *resolver) selectNamedCustomProvider(requestedProvider string, cfg map[string]any, resolveCredentials bool) (map[string]any, *ConfigPath) {
 	requestedNorm := normalizeCustomProviderName(requestedProvider)
 	if requestedNorm == "" || requestedNorm == "auto" {
@@ -837,22 +815,7 @@ func (r *resolver) selectNamedCustomProvider(requestedProvider string, cfg map[s
 			return found, &ConfigPath{Section: "providers", Key: key}
 		}
 	}
-	if shadowed {
-		return nil, nil
-	}
-	if _, isDict := cfg["custom_providers"].(map[string]any); isDict {
-		pkgLog().Warn("custom_providers in config.yaml is a dict, not a list. Each entry must be prefixed with '-' in YAML. Run 'icebath doctor' for details.")
-		return nil, nil
-	}
-	customProviders := CompatibleCustomProviders(cfg)
-	if len(customProviders) == 0 {
-		return nil, nil
-	}
-	found, raw, ok := r.matchLegacyCustomProvider(requestedNorm, customProviders)
-	if !ok {
-		return nil, nil
-	}
-	return found, compatibleEntryPath(cfg, raw)
+	return nil, nil
 }
 
 // Where a compatible view entry lives in config, the first raw entry normalizing to it
@@ -865,13 +828,6 @@ func compatibleEntryPath(cfg map[string]any, entry map[string]any) *ConfigPath {
 				}
 			}
 			return nil
-		}
-	}
-	if legacy, ok := asList(cfg["custom_providers"]); ok {
-		for i, raw := range legacy {
-			if sameAnyMap(NormalizeCustomProviderEntry(raw, ""), entry) {
-				return &ConfigPath{Section: "custom_providers", Index: i}
-			}
 		}
 	}
 	return nil
@@ -929,10 +885,7 @@ func CustomProviderConfigPathForURL(baseURL any, cfg map[string]any) *ConfigPath
 	if u == "" {
 		return nil
 	}
-	if _, isDict := cfg["custom_providers"].(map[string]any); isDict {
-		return nil
-	}
-	for _, entry := range CompatibleCustomProviders(cfg) {
+	for _, entry := range ProviderEntries(cfg) {
 		if strings.TrimRight(strings.TrimSpace(cfgString(entry["base_url"])), "/") == u {
 			return compatibleEntryPath(cfg, entry)
 		}
@@ -989,7 +942,7 @@ func findCustomIdentity(matches func(map[string]any) bool, cfg map[string]any, p
 			}
 		}
 	}
-	for _, entry := range CompatibleCustomProviders(cfg) {
+	for _, entry := range ProviderEntries(cfg) {
 		name, ok := entry["name"].(string)
 		if !ok || strings.TrimSpace(name) == "" || !matches(entry) {
 			continue
@@ -1104,7 +1057,7 @@ func (r *resolver) IsRoutableProvider(provider string) bool {
 		return true
 	}
 	var customList []any
-	for _, e := range CompatibleCustomProviders(r.cfg) {
+	for _, e := range ProviderEntries(r.cfg) {
 		customList = append(customList, e)
 	}
 	if resolveCustomProvider(name, customList) != nil {
@@ -1426,6 +1379,11 @@ func (r *resolver) resolveNamedCustomRuntime(requestedProvider, explicitAPIKey, 
 			applyCustomProviderExtras(customProvider, targetModel, pooled)
 			pooled.RequestedProvider = requestedProvider
 			return pooled, nil
+		}
+		for _, poolKey := range customProviderPoolKeyCandidates(baseURL, providerName, r.cfg) {
+			if err := r.selectedLoginUnavailable(poolKey, requestedProvider, nil, explicitKey, explicitBaseURL, targetModel); err != nil {
+				return nil, err
+			}
 		}
 	}
 	name := cfgString(customProvider["name"])

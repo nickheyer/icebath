@@ -3,15 +3,17 @@ package monitoring
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
+// Mapping view of a config value, false for anything else
 func asConfigMap(v any) (map[string]any, bool) {
 	switch m := v.(type) {
 	case map[string]any:
@@ -22,50 +24,23 @@ func asConfigMap(v any) (map[string]any, bool) {
 	return nil, false
 }
 
-// Stable install id of the monitoring section, a fresh uuid minted and persisted to config.yaml when empty
-func EnsureInstallID(ctx context.Context, cfg map[string]any) string {
-	if mon, ok := asConfigMap(cfg["monitoring"]); ok {
-		if existing, isStr := mon["install_id"].(string); isStr && pystr.Strip(existing) != "" {
-			return existing
-		}
+// Install ids minted where the profile could not store one, keyed by home
+var ephemeralInstallIDs sync.Map
+
+// Stable install id of the profile, a fresh uuid minted and saved when empty
+func EnsureInstallID(ctx context.Context) string {
+	if existing := strings.TrimSpace(settings.MonitoringInstallId.Get(ctx)); existing != "" {
+		return existing
+	}
+	h := home.Dir(ctx)
+	if id, ok := ephemeralInstallIDs.Load(h); ok {
+		return id.(string)
 	}
 	minted := uuid.NewString()
-	if err := persistInstallID(ctx, minted); err != nil {
-		pkgLog().Debug(fmt.Sprintf("install_id persist failed; using ephemeral id: %v", err))
-	}
-	if cfg != nil {
-		if _, ok := cfg["monitoring"]; !ok {
-			cfg["monitoring"] = map[string]any{}
-		}
-		if mon, ok := asConfigMap(cfg["monitoring"]); ok {
-			mon["install_id"] = minted
-		}
+	if _, err := settings.Set(ctx, settings.MonitoringInstallId.Key, minted, settings.Global); err != nil {
+		pkgLog().Debug(fmt.Sprintf("install_id persist failed; using an id for this process: %v", err))
+		id, _ := ephemeralInstallIDs.LoadOrStore(h, minted)
+		return id.(string)
 	}
 	return minted
-}
-
-// Writes the minted id into the loaded config unless another process already stored one
-func persistInstallID(ctx context.Context, minted string) error {
-	h := home.Dir(ctx)
-	fresh, err := config.Load(h, nil)
-	if err != nil {
-		return err
-	}
-	if _, ok := fresh["monitoring"]; !ok {
-		fresh["monitoring"] = map[string]any{}
-	}
-	slot, ok := asConfigMap(fresh["monitoring"])
-	if !ok || pystr.Strip(pyrepr.Str(orEmpty(slot["install_id"]))) != "" {
-		return nil
-	}
-	slot["install_id"] = minted
-	return config.Save(h, fresh)
-}
-
-// Python value or empty string, the falsy default of str(x or "")
-func orEmpty(v any) any {
-	if pyrepr.Truthy(v) {
-		return v
-	}
-	return ""
 }

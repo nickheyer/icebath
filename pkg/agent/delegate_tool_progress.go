@@ -470,22 +470,22 @@ func (r *childProgressRelay) onComplete(preview string, kwargs map[string]any) {
 	if subagentFailureStatuses[status] {
 		parent := r.parentScope
 		platform := "cli"
-		var userConfig map[string]any
+		ctx := context.Background()
 		if parent != nil {
 			platform = parent.platform
 			if parent.notificationPlatform != nil {
 				platform = *parent.notificationPlatform
 			}
-			userConfig = parent.notificationConfig
+			ctx = parent.homeContext()
 		}
 		errText := kwargs["summary"]
 		if !pyrepr.Truthy(errText) {
 			errText = preview
 		}
-		_, _ = config.RenderNotification(context.Background(), func() error {
+		_, _ = config.RenderNotification(ctx, func() error {
 			r.treeLine(formatSubagentFailureLine(r.goalLabel, status, errText, kwargs["duration_seconds"], kwargs["failure_reason"]))
 			return nil
-		}, platform, true, userConfig)
+		}, platform, true)
 	}
 	r.relay("subagent.complete", "", preview, nil, kwargs)
 }

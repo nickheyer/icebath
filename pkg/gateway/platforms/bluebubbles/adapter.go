@@ -25,18 +25,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const (
-	defaultWebhookHost  = "127.0.0.1"
 	webhookMaxBodyBytes = 1_048_576
-	defaultWebhookPort  = 8645
-	defaultWebhookPath  = "/bluebubbles-webhook"
 	maxTextLength       = 4000
 	guidCacheSize       = 500
 	requestTimeout      = 30 * time.Second
-	missingSecret       = "\x00bluebubbles-missing"
 )
 
 // Icebath wake words for require_mention groups, iMessage having no stable bot mention identity
@@ -58,8 +55,6 @@ var audioExtOverrides = map[string]string{
 var messageEvents = map[string]bool{"new-message": true, "message": true, "updated-message": true}
 
 var localHosts = map[string]bool{"0.0.0.0": true, "127.0.0.1": true, "localhost": true, "::": true}
-
-var truthyStrings = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 
 var (
 	phoneRE            = pyre.MustCompile(`\+?\d{7,15}`)
@@ -260,53 +255,19 @@ func NewBlueBubblesAdapter(ctx context.Context, config *gateway.PlatformConfig) 
 	} else if a.password, err = gateway.GetScopedSecret(ctx, "BLUEBUBBLES_PASSWORD", "", false); err != nil {
 		return nil, err
 	}
-	host, err := gateway.ExtraOrSecret(ctx, extra, "webhook_host", "BLUEBUBBLES_WEBHOOK_HOST", defaultWebhookHost, true)
-	if err != nil {
-		return nil, err
-	}
-	a.webhookHost = pyrepr.Str(host)
-	port, err := gateway.ExtraOrSecret(ctx, extra, "webhook_port", "BLUEBUBBLES_WEBHOOK_PORT", fmt.Sprint(defaultWebhookPort), true)
-	if err != nil {
-		return nil, err
-	}
-	portN, err := pyint.Int64(port)
-	if err != nil {
-		return nil, err
-	}
-	a.webhookPort = int(portN)
-	path, err := gateway.ExtraOrSecret(ctx, extra, "webhook_path", "BLUEBUBBLES_WEBHOOK_PATH", defaultWebhookPath, true)
-	if err != nil {
-		return nil, err
-	}
-	a.webhookPath = pyrepr.Str(path)
+	a.webhookHost = settings.BluebubblesWebhookHost.Get(gateway.SettingsContext(ctx))
+	a.webhookPort = settings.BluebubblesWebhookPort.Get(gateway.SettingsContext(ctx))
+	a.webhookPath = settings.BluebubblesWebhookPath.Get(gateway.SettingsContext(ctx))
 	if !strings.HasPrefix(a.webhookPath, "/") {
 		a.webhookPath = "/" + a.webhookPath
 	}
-	a.sendReadReceipts = pyrepr.Truthy(getOr(extra, "send_read_receipts", true))
-	requireMention := extra["require_mention"]
-	if requireMention == nil {
-		secret, err := gateway.GetScopedSecret(ctx, "BLUEBUBBLES_REQUIRE_MENTION", missingSecret, false)
-		if err != nil {
-			return nil, err
-		}
-		if secret != missingSecret {
-			requireMention = secret
-		}
+	a.sendReadReceipts = settings.BluebubblesSendReadReceipts.Get(gateway.SettingsContext(ctx))
+	a.requireMention = settings.BluebubblesRequireMention.Get(gateway.SettingsContext(ctx))
+	patterns, err := settings.Resolve(gateway.SettingsContext(ctx), settings.BluebubblesMentionPatterns.Key)
+	if err != nil {
+		return nil, err
 	}
-	a.requireMention = truthyStrings[pystr.Lower(pystr.Strip(pyrepr.Str(requireMention)))]
-	var patterns any
-	if v, ok := extra["mention_patterns"]; ok {
-		patterns = v
-	} else {
-		secret, err := gateway.GetScopedSecret(ctx, "BLUEBUBBLES_MENTION_PATTERNS", missingSecret, false)
-		if err != nil {
-			return nil, err
-		}
-		if secret != missingSecret {
-			patterns = secret
-		}
-	}
-	a.mentionPatterns = compileMentionPatterns(patterns)
+	a.mentionPatterns = compileMentionPatterns(patterns.Value)
 	return a, nil
 }
 

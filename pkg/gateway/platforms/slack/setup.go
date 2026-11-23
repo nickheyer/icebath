@@ -218,7 +218,7 @@ func InteractiveSetup(ctx context.Context) error {
 		cli.PrintSuccess("Slack allowlist configured")
 	} else {
 		cli.PrintWarning("⚠️  No Slack allowlist set - unpaired users will be denied by default.")
-		cli.PrintInfo("   Set SLACK_ALLOW_ALL_USERS=true or GATEWAY_ALLOW_ALL_USERS=true only if you intentionally want open workspace access.")
+		cli.PrintInfo("   Set SLACK_ALLOW_ALL_USERS=true, or turn on Allow all users in /settings → Chat apps, only if you want open workspace access.")
 	}
 	gateway.WizardPrintln("")
 	for _, line := range setupHomeChannelHelp {

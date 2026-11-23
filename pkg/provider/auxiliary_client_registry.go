@@ -77,15 +77,9 @@ func auxResolveMinimaxOAuthArm(ctx context.Context, req auxResolveRequest) (auxR
 		return auxNormalizeResolvedModel(ctx, model, req.Provider)
 	}
 	if auxProbeActive(ctx) {
-		state, err := auxProviderAuthStateFn(env, "minimax-oauth")
-		if err != nil {
-			return auxResolveResult{}, err
-		}
-		baseURL := ""
-		if v := state["inference_base_url"]; pyrepr.Truthy(v) {
-			baseURL = strings.TrimRight(pystr.Strip(pyrepr.Str(v)), "/")
-		}
-		if !pyrepr.Truthy(state["access_token"]) || baseURL == "" {
+		entry, ok := LoadSelectedPool(env, "minimax-oauth").Peek()
+		baseURL := strings.TrimRight(strings.TrimSpace(entry.BaseURL), "/")
+		if !ok || entry.AccessToken == "" || baseURL == "" {
 			auxLogOnceDebug(auxLoggedMinimaxAbsentKeys, "minimax-oauth", "resolve_provider_client: minimax-oauth not logged in")
 			return auxResolveResult{}, nil
 		}

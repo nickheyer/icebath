@@ -289,7 +289,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 			return err
 		}
 		if other {
-			pkgLog().Warn(fmt.Sprintf("Another Icebath home's gateway owns this host (%s); starting this home's gateway beside it.",
+			pkgLog().Info(fmt.Sprintf("Another icebath home already runs a background service on this computer (%s); this home gets its own.",
 				gateway.DescribeHostRecord(owner)))
 			return nil
 		}

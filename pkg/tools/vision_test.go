@@ -203,30 +203,23 @@ func TestImageToBase64DataURL(t *testing.T) {
 	}
 }
 
-func TestConfiguredAuxModelResolution(t *testing.T) {
+func TestVideoModelFallsBackToTheVisionModel(t *testing.T) {
 	env := isrcEnv(t, "local")
-	t.Setenv("AUXILIARY_VISION_MODEL", "custom/model-v1")
-	if got := configuredAuxModel(env, []string{"vision"}, []string{"AUXILIARY_VISION_MODEL"}); got != "custom/model-v1" {
-		t.Fatalf("env model %q", got)
-	}
-	t.Setenv("AUXILIARY_VISION_MODEL", "")
-	if got := configuredAuxModel(env, []string{"vision"}, []string{"AUXILIARY_VISION_MODEL"}); got != "" {
+	if got := videoAuxModel(env); got != "" {
 		t.Fatalf("no model %q", got)
 	}
-	env.Config.Set("auxiliary.vision.model", "qwen3.7-plus")
-	t.Setenv("AUXILIARY_VISION_MODEL", "env-model")
-	if got := configuredAuxModel(env, []string{"vision"}, []string{"AUXILIARY_VISION_MODEL"}); got != "qwen3.7-plus" {
-		t.Fatalf("config model %q", got)
+	write := func(text string) {
+		if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	env.Config.Set("auxiliary.vision.model", "")
-	t.Setenv("AUXILIARY_VISION_MODEL", "fallback-model")
-	if got := configuredAuxModel(env, []string{"vision"}, []string{"AUXILIARY_VISION_MODEL"}); got != "fallback-model" {
-		t.Fatalf("fallback model %q", got)
+	write("auxiliary:\n  vision:\n    model: google/gemini-flash\n")
+	if got := videoAuxModel(env); got != "google/gemini-flash" {
+		t.Fatalf("video falls back to the vision model %q", got)
 	}
-	t.Setenv("AUXILIARY_VIDEO_MODEL", "")
-	t.Setenv("AUXILIARY_VISION_MODEL", "google/gemini-flash")
-	if got := configuredAuxModel(env, []string{"video", "vision"}, []string{"AUXILIARY_VIDEO_MODEL", "AUXILIARY_VISION_MODEL"}); got != "google/gemini-flash" {
-		t.Fatalf("video falls back to the vision env %q", got)
+	write("auxiliary:\n  vision:\n    model: google/gemini-flash\n  video:\n    model: qwen3.7-plus\n")
+	if got := videoAuxModel(env); got != "qwen3.7-plus" {
+		t.Fatalf("video model %q", got)
 	}
 }
 
@@ -234,7 +227,9 @@ func TestVisionHandlerPassesConfiguredModel(t *testing.T) {
 	aux := &fakeVisionAux{}
 	env := visionEnv(t, aux)
 	img := writeSolidPNG(t, filepath.Join(t.TempDir(), "x.png"), 4, 4, red)
-	env.Config.Set("auxiliary.vision.model", "qwen3.7-plus")
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("terminal:\n  backend: local\nauxiliary:\n  vision:\n    model: qwen3.7-plus\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	result := handleVisionAnalyze(context.Background(), &Call{Name: "vision_analyze", Args: map[string]any{"image_url": img, "question": "test"}, Env: env})
 	if decodeResult(t, result)["success"] != true || aux.count() != 1 || aux.calls[0].opts.Model != "qwen3.7-plus" {
 		t.Fatalf("result %q calls %d", result, aux.count())
@@ -249,8 +244,12 @@ func TestVisionTemperatureAndTimeoutFromConfig(t *testing.T) {
 	aux := &fakeVisionAux{}
 	env := visionEnv(t, aux)
 	img := writeSolidPNG(t, filepath.Join(t.TempDir(), "x.png"), 4, 4, red)
-	env.Config.Set("auxiliary.vision.temperature", 1)
-	env.Config.Set("auxiliary.vision.timeout", 77)
+	writeConfig := func(text string) {
+		if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("terminal:\n  backend: local\n"+text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeConfig("auxiliary:\n  vision:\n    temperature: 1\n    timeout: 77\n")
 	if decodeResult(t, visionAnalyzeTool(context.Background(), env, img, "describe", "test/model", "", nil))["success"] != true {
 		t.Fatal("analysis failed")
 	}
@@ -258,21 +257,19 @@ func TestVisionTemperatureAndTimeoutFromConfig(t *testing.T) {
 	if *o.Temperature != 1.0 || o.Timeout != 77*time.Second || o.MaxTokens != 0 || o.Task != "vision" || o.Model != "test/model" {
 		t.Fatalf("configured options %+v", o)
 	}
-	env.Config.Set("auxiliary.vision", map[string]any{"max_tokens": 8000})
+	writeConfig("auxiliary:\n  vision:\n    max_tokens: 8000\n")
 	visionAnalyzeTool(context.Background(), env, img, "describe", "", "", nil)
 	o = aux.calls[1].opts
 	if *o.Temperature != 0.1 || o.Timeout != 120*time.Second || o.MaxTokens != 0 || o.Model != "" {
 		t.Fatalf("default options %+v", o)
 	}
-	floor := 180.0
-	env.Config.Set("auxiliary.vision.timeout", 30)
-	if got := auxCallOptions(env, "", 180, &floor); got.Timeout != 180*time.Second {
+	writeConfig("auxiliary:\n  vision:\n    timeout: 30\n")
+	if got := auxCallOptions(env, "", 180*time.Second); got.Timeout != 180*time.Second {
 		t.Fatalf("video floor %v", got.Timeout)
 	}
-	env.Config.Set("auxiliary.vision.timeout", "bad")
-	env.Config.Set("auxiliary.vision.temperature", 0.7)
-	if got := auxCallOptions(env, "", 120, nil); got.Timeout != 120*time.Second || *got.Temperature != 0.1 {
-		t.Fatalf("a bad timeout keeps every default %+v", got)
+	writeConfig("auxiliary:\n  vision:\n    timeout: bad\n    temperature: 0.7\n")
+	if got := auxCallOptions(env, "", 0); got.Timeout != 120*time.Second || *got.Temperature != 0.7 {
+		t.Fatalf("a bad timeout falls back to the default %+v", got)
 	}
 }
 
@@ -886,7 +883,13 @@ func TestVisionCPUBurstCap(t *testing.T) {
 		want int
 	}{{64, "", 64}, {2, "", 2}, {2, "16", 16}, {2, "0", 2}} {
 		detectHostCPUs = func() int { return c.cpus }
-		t.Setenv("ICEBATH_VISION_MAX_CONCURRENCY", c.env)
+		text := "terminal:\n  backend: local\n"
+		if c.env != "" {
+			text += "auxiliary:\n  vision:\n    max_concurrency: " + c.env + "\n"
+		}
+		if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		if got := resolveVisionCPUWorkers(env); got != c.want {
 			t.Errorf("cpus %d env %q: got %d", c.cpus, c.env, got)
 		}

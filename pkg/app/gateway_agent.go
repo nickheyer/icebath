@@ -133,7 +133,6 @@ type GatewayAgent struct {
 	reasoningConfig       map[string]any
 	moaPreset             string
 	usageListener         *gatewaycli.SessionListener
-	notificationConfig    map[string]any
 	muteNotificationReply bool
 }
 

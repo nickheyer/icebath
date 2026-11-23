@@ -717,25 +717,6 @@ func TestBuiltinMemoryToolPresentByDefault(t *testing.T) {
 	}
 }
 
-func TestBuiltinMemoryFlagsFailOpenAndQuotedFalseDisables(t *testing.T) {
-	if m, u := builtinMemoryStoreFlags(builtinMemoryConfig(config.Tree{"memory": map[string]any{}})); !m || !u {
-		t.Fatal(m, u)
-	}
-	if m, u := builtinMemoryStoreFlags(builtinMemoryConfig(config.Tree{})); !m || !u {
-		t.Fatal(m, u)
-	}
-	if m, u := builtinMemoryStoreFlags(builtinMemoryConfig(config.Tree{"memory": map[string]any{"memory_enabled": "false", "user_profile_enabled": "false"}})); m || u {
-		t.Fatal(m, u)
-	}
-	section := builtinMemoryConfig(config.Tree{"memory": "not-a-mapping"})
-	if len(section) != 0 {
-		t.Fatal(section)
-	}
-	if m, u := builtinMemoryStoreFlags(section); !m || !u {
-		t.Fatal(m, u)
-	}
-}
-
 func TestBuiltinMemorySchemaReusesAvailabilityFlagSnapshot(t *testing.T) {
 	env := testEnv(t)
 	writeMemoryConfig(t, env, false, true)

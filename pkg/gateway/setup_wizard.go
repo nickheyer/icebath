@@ -49,13 +49,8 @@ var gatewayFacade = gatewayFacadeFns{
 	promptChoice: func(question string, choices []string, def int) int {
 		return provider.PromptChoice(question, choices, def, "")
 	},
-	getEnvValue: func(ctx context.Context, key string) (string, error) {
-		v, _, err := config.GetEnvValue(ctx, home.Dir(ctx), key)
-		return v, err
-	},
-	saveEnvValue: func(ctx context.Context, key, value string) error {
-		return config.SaveEnvValueContext(ctx, home.Dir(ctx), key, value)
-	},
+	getEnvValue:  setupValue,
+	saveEnvValue: saveSetupValue,
 	writePlatformConfigField: func(ctx context.Context, platformKey, fieldKey string, value any, raw bool) error {
 		return config.WritePlatformConfigField(ctx, home.Dir(ctx), platformKey, fieldKey, value, raw)
 	},
@@ -211,9 +206,15 @@ func offerHomeChannel(ctx context.Context, homeVar, userID, what string) error {
 // One env assignment of a multi value save, kept in call order like Python keyword arguments
 type EnvAssignment struct{ Name, Value string }
 
-// Saves each env assignment in order to the home .env
+// Saves each env assignment in order, a name that moved to a setting going to that setting and the rest to the home .env
 func saveEnvValues(ctx context.Context, values ...EnvAssignment) error {
 	for _, v := range values {
+		if envSetting(v.Name) != nil {
+			if err := saveSetupValue(ctx, v.Name, v.Value); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := gatewayFacade.saveEnvValue(ctx, v.Name, v.Value); err != nil {
 			return err
 		}

@@ -242,7 +242,7 @@ func (p *openAIImageGenProvider) Generate(ctx context.Context, env *tools.Env, r
 	}
 	if apiKey == "" {
 		return errorFactory("openai", aspect, "", "")("OPENAI_API_KEY not set (or the variable named by image_gen.openai.key_env is empty). "+
-			"Run `icebath tools` → Image Generation → OpenAI to configure, or start `icebath` and type `/setup tools` to add the key.", "auth_required"), nil
+			"Add the key with /setup tools, or pick another image service in /settings → Images & media.", "auth_required"), nil
 	}
 	newClient := newOpenAIClientHook
 	tierID, meta := resolveOpenAIImageModel(env)

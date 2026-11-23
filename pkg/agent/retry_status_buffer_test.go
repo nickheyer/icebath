@@ -12,8 +12,7 @@ type statusRecorder struct {
 
 func bareStatusAgent(r *statusRecorder) *AIAgent {
 	return &AIAgent{
-		notificationConfig: map[string]any{},
-		printFn:            func(s string) { r.prints = append(r.prints, s) },
+		printFn: func(s string) { r.prints = append(r.prints, s) },
 		statusCallback: func(kind string, message any) {
 			text := statusText(message)
 			r.attempted = append(r.attempted, text)

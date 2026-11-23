@@ -34,17 +34,11 @@ func newCfgSetHome(t *testing.T, data map[string]any) (*cfgSetHome, *strings.Bui
 }
 
 func pathCommandSources() ConfigCommandSources {
-	src := testCommandSources()
-	src.RuntimeKeyOwners = RuntimeKeyOwners{
-		IsPresetFieldPath:   func([]string) bool { return false },
-		SelectionConfigKeys: func() map[string]bool { return nil },
-		ActiveManifests:     func() []PluginConfigKeys { return nil },
-	}
-	return src
+	return testCommandSources()
 }
 
 func (s *cfgSetHome) set(key, value string) error {
-	return SetConfigValue(context.Background(), s.h, key, value, false, pathCommandSources())
+	return SetConfigValue(context.Background(), s.h, key, value, pathCommandSources())
 }
 
 func (s *cfgSetHome) mustSet(key, value string) {

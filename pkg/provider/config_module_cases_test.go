@@ -61,15 +61,6 @@ func configModuleRaw(t *testing.T, path string) config.Tree {
 	return config.Tree(m)
 }
 
-func configModuleMigrate(t *testing.T, h string, quiet bool) *config.MigrationResults {
-	t.Helper()
-	res, err := config.MigrateConfig(t.Context(), h, false, quiet)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return res
-}
-
 func configModuleLoad(t *testing.T, h string) config.Tree {
 	t.Helper()
 	config.ResetCache()
@@ -78,119 +69,6 @@ func configModuleLoad(t *testing.T, h string) config.Tree {
 		t.Fatal(err)
 	}
 	return cfg
-}
-
-// Drives the migration ladder from one version with the production collaborators
-func runConfigLadder(t *testing.T, h string, from int) *config.MigrationResults {
-	t.Helper()
-	res := &config.MigrationResults{}
-	config.RunMigrations(h, from, res, true, config.MigrationOptions{}, config.MigrationFacadeSources(t.Context(), h))
-	return res
-}
-
-func configNumber(v any) float64 {
-	switch n := v.(type) {
-	case int:
-		return float64(n)
-	case int64:
-		return float64(n)
-	case float64:
-		return n
-	}
-	return -1
-}
-
-func TestCustomProviderCompatibilityV11UpgradeMovesCustomProvidersIntoProviders(t *testing.T) {
-	h, path, _ := configModuleCase(t, "")
-	configModuleDump(t, path, map[string]any{
-		"_config_version": 11,
-		"model":           map[string]any{"default": "openai/gpt-5.4", "provider": "openrouter"},
-		"custom_providers": []any{map[string]any{
-			"name": "OpenAI Direct", "base_url": "https://api.openai.com/v1", "api_key": "test-key",
-			"api_mode": "codex_responses", "model": "gpt-5-mini",
-		}},
-		"fallback_providers": []any{map[string]any{"provider": "openai-direct", "model": "gpt-5-mini"}},
-	})
-	runConfigLadder(t, h, 11)
-	raw := configModuleRaw(t, path)
-	want := map[string]any{
-		"api": "https://api.openai.com/v1", "api_key": "test-key", "default_model": "gpt-5-mini",
-		"name": "OpenAI Direct", "transport": "codex_responses",
-	}
-	if got := raw.Get("providers.openai-direct"); !reflect.DeepEqual(got, want) {
-		t.Fatalf("providers.openai-direct %v", got)
-	}
-	if _, has := raw["custom_providers"]; has {
-		t.Fatal("custom_providers kept")
-	}
-}
-
-func TestCustomProviderCompatibilityV11UpgradePreservesCustomProviderModelMetadata(t *testing.T) {
-	h, path, _ := configModuleCase(t, "")
-	modelMap := func() map[string]any {
-		return map[string]any{
-			"kimi-k2.6":                 map[string]any{"context_length": 262144},
-			"moonshotai/Kimi-K2.6-ACED": map[string]any{"context_length": 131072},
-		}
-	}
-	configModuleDump(t, path, map[string]any{
-		"_config_version": 11,
-		"custom_providers": []any{
-			map[string]any{
-				"name": "Kimi Coding Plan", "base_url": "https://api.kimi.example.com/coding",
-				"api_key_env": "KIMI_CODING_API_KEY", "api_mode": "anthropic_messages", "model": "kimi-k2.6",
-				"models": modelMap(), "context_length": 262144, "rate_limit_delay": 0.25, "discover_models": false,
-				"extra_body": map[string]any{"chat_template_kwargs": map[string]any{"enable_thinking": false}},
-			},
-			map[string]any{"name": "List Models", "base_url": "https://list.example.com/v1", "models": []any{"alpha", "beta"}},
-		},
-	})
-	runConfigLadder(t, h, 11)
-	raw := configModuleRaw(t, path)
-	compatible := CompatibleCustomProviders(raw)
-	if _, has := raw["custom_providers"]; has {
-		t.Fatal("custom_providers kept")
-	}
-	provider, _ := raw.Get("providers.kimi-coding-plan").(map[string]any)
-	sameModels := func(got any) bool {
-		m, ok := got.(map[string]any)
-		if !ok || len(m) != 2 {
-			return false
-		}
-		for name, want := range map[string]float64{"kimi-k2.6": 262144, "moonshotai/Kimi-K2.6-ACED": 131072} {
-			entry, ok := m[name].(map[string]any)
-			if !ok || len(entry) != 1 || configNumber(entry["context_length"]) != want {
-				return false
-			}
-		}
-		return true
-	}
-	if provider["api"] != "https://api.kimi.example.com/coding" || provider["key_env"] != "KIMI_CODING_API_KEY" ||
-		provider["transport"] != "anthropic_messages" || provider["default_model"] != "kimi-k2.6" {
-		t.Fatalf("provider %v", provider)
-	}
-	if !sameModels(provider["models"]) || configNumber(provider["context_length"]) != 262144 || configNumber(provider["rate_limit_delay"]) != 0.25 {
-		t.Fatalf("provider metadata %v", provider)
-	}
-	if provider["discover_models"] != false {
-		t.Fatalf("discover_models %v", provider["discover_models"])
-	}
-	if !reflect.DeepEqual(provider["extra_body"], map[string]any{"chat_template_kwargs": map[string]any{"enable_thinking": false}}) {
-		t.Fatalf("extra_body %v", provider["extra_body"])
-	}
-	if got := raw.Get("providers.list-models.models"); !reflect.DeepEqual(got, map[string]any{"alpha": map[string]any{}, "beta": map[string]any{}}) {
-		t.Fatalf("list models %v", got)
-	}
-	var kimi map[string]any
-	for _, entry := range compatible {
-		if entry["provider_key"] == "kimi-coding-plan" {
-			kimi = entry
-			break
-		}
-	}
-	if kimi == nil || !sameModels(kimi["models"]) || kimi["key_env"] != "KIMI_CODING_API_KEY" {
-		t.Fatalf("compatible entry %v", kimi)
-	}
 }
 
 func TestCustomProviderCompatibilityProvidersDictResolvesAtRuntime(t *testing.T) {
@@ -202,7 +80,7 @@ func TestCustomProviderCompatibilityProvidersDictResolvesAtRuntime(t *testing.T)
 			"name": "OpenAI Direct", "transport": "codex_responses",
 		}},
 	})
-	compatible := CompatibleCustomProviders(configModuleLoad(t, h))
+	compatible := ProviderEntries(configModuleLoad(t, h))
 	if len(compatible) != 1 {
 		t.Fatalf("compatible %v", compatible)
 	}
@@ -221,62 +99,10 @@ func TestCustomProviderCompatibilityCompatibleCustomProvidersPrefersBaseUrlThenU
 			"base_url": "https://base.example.com/v1",
 		}},
 	})
-	compatible := CompatibleCustomProviders(configModuleLoad(t, h))
+	compatible := ProviderEntries(configModuleLoad(t, h))
 	want := []map[string]any{{"name": "My Provider", "base_url": "https://base.example.com/v1", "provider_key": "my-provider"}}
 	if !reflect.DeepEqual(compatible, want) {
 		t.Fatalf("compatible %v", compatible)
-	}
-}
-
-func TestInterimAssistantMessageConfigMigrateToV15SuppliesInterimMessageGateAtReadTime(t *testing.T) {
-	h, path, out := configModuleCase(t, "")
-	configModuleDump(t, path, map[string]any{"_config_version": 14, "display": map[string]any{"tool_progress": "off"}})
-	results := configModuleMigrate(t, h, false)
-	raw := configModuleRaw(t, path)
-	loaded := configModuleLoad(t, h)
-	if configNumber(raw["_config_version"]) != configNumber(config.Defaults()["_config_version"]) {
-		t.Fatalf("version %v", raw["_config_version"])
-	}
-	if raw.Get("display.tool_progress") != "off" {
-		t.Fatalf("tool_progress %v", raw.Get("display.tool_progress"))
-	}
-	if _, has := raw.Map("display")["interim_assistant_messages"]; has {
-		t.Fatal("interim_assistant_messages written to disk")
-	}
-	if loaded.Get("display.interim_assistant_messages") != true {
-		t.Fatalf("loaded gate %v", loaded.Get("display.interim_assistant_messages"))
-	}
-	for _, item := range results.ConfigAdded {
-		if strings.Contains(item, "interim_assistant_messages") {
-			t.Fatalf("config_added %v", results.ConfigAdded)
-		}
-	}
-	if strings.Contains(out.String(), "Added display.interim_assistant_messages") {
-		t.Fatalf("stdout %q", out.String())
-	}
-}
-
-func TestDiscordChannelPromptsConfigMigratePreservesCustomProvidersAndNoDefaultsDump(t *testing.T) {
-	h, path, _ := configModuleCase(t, "")
-	configModuleDump(t, path, map[string]any{
-		"_config_version": 11,
-		"model":           map[string]any{"default": "test-model", "provider": "openrouter"},
-		"custom_providers": []any{map[string]any{
-			"name": "local-llm", "base_url": "http://localhost:8080/v1", "models": map[string]any{"test": map[string]any{}},
-		}},
-	})
-	runConfigLadder(t, h, 11)
-	raw := configModuleRaw(t, path)
-	if _, has := raw["custom_providers"]; has {
-		t.Fatal("custom_providers kept")
-	}
-	if raw.Get("providers.local-llm.api") != "http://localhost:8080/v1" {
-		t.Fatalf("providers %v", raw["providers"])
-	}
-	for _, key := range []string{"tts", "compression", "security", "whatsapp", "bedrock"} {
-		if _, has := raw[key]; has {
-			t.Fatalf("%s written into the migrated config", key)
-		}
 	}
 }
 
@@ -386,35 +212,6 @@ func TestEnvWriteDenylistSaveEnvValueSecureInheritsDenylist(t *testing.T) {
 	}
 }
 
-func TestWriteApprovalMigrationApproveMapsToTrue(t *testing.T) {
-	h, path, _ := configModuleCase(t, "_config_version: 28\nmemory:\n  write_mode: approve\nskills:\n  write_mode: approve\n")
-	configModuleMigrate(t, h, true)
-	raw := configModuleRaw(t, path)
-	for _, section := range []string{"memory", "skills"} {
-		if raw.Get(section+".write_approval") != true {
-			t.Fatalf("%s.write_approval %v", section, raw.Get(section+".write_approval"))
-		}
-		if _, has := raw.Map(section)["write_mode"]; has {
-			t.Fatalf("%s.write_mode kept", section)
-		}
-	}
-}
-
-func TestWriteApprovalMigrationOnAndOffMapToFalse(t *testing.T) {
-	h, path, _ := configModuleCase(t, "_config_version: 28\nmemory:\n  write_mode: 'on'\nskills:\n  write_mode: 'off'\n")
-	configModuleMigrate(t, h, true)
-	raw := configModuleRaw(t, path)
-	loaded := configModuleLoad(t, h)
-	for _, section := range []string{"memory", "skills"} {
-		if _, has := raw.Map(section)["write_mode"]; has {
-			t.Fatalf("%s.write_mode kept", section)
-		}
-		if loaded.Get(section+".write_approval") != false {
-			t.Fatalf("%s.write_approval %v", section, loaded.Get(section+".write_approval"))
-		}
-	}
-}
-
 const feishuV30Body = "_config_version: 30\nmodel:\n  default: deepseek-v4-pro\n  provider: deepseek\nagent:\n  max_turns: 60\n" +
 	"platforms:\n  feishu:\n    enabled: true\n    extra:\n      app_id: cli_xxx\n      app_secret: xxx\nfeishu:\n  require_mention: true\n"
 
@@ -438,64 +235,6 @@ func TestSaveConfigPartialWritePreservationMergeExistingPreservesPlatformsOnPart
 	}
 	if merged.Get("agent.verify_on_stop") != false {
 		t.Fatalf("merged verify_on_stop %v", merged.Get("agent.verify_on_stop"))
-	}
-}
-
-func TestSaveConfigPartialWritePreservationV30ToLatestMigrationKeepsPlatforms(t *testing.T) {
-	h, path, _ := configModuleCase(t, feishuV30Body)
-	configModuleMigrate(t, h, true)
-	raw := configModuleRaw(t, path)
-	if raw.Get("platforms.feishu.extra.app_id") != "cli_xxx" || raw.Get("feishu.require_mention") != true {
-		t.Fatalf("raw %v", raw)
-	}
-}
-
-func TestDelegationCapUnificationMigrationNoDelegationSectionIsNoop(t *testing.T) {
-	h, path, _ := configModuleCase(t, "_config_version: 32\nmodel:\n  provider: openrouter\n")
-	configModuleMigrate(t, h, true)
-	if _, has := configModuleRaw(t, path)["delegation"]; has {
-		t.Fatal("delegation section created")
-	}
-}
-
-func TestBackgroundNotificationsConciseMigrationAllBecomesConcise(t *testing.T) {
-	h, path, _ := configModuleCase(t, "_config_version: 34\ndisplay:\n  background_process_notifications: all\n")
-	configModuleMigrate(t, h, true)
-	if got := configModuleRaw(t, path).Get("display.background_process_notifications"); got != "concise" {
-		t.Fatalf("notifications %v", got)
-	}
-}
-
-func TestBackgroundNotificationsConciseMigrationExplicitChoicesPreserved(t *testing.T) {
-	h, path, _ := configModuleCase(t, "")
-	for _, tc := range []struct {
-		written string
-		want    any
-	}{{"off", false}, {"result", "result"}, {"error", "error"}, {"concise", "concise"}} {
-		if err := os.WriteFile(path, []byte("_config_version: 34\ndisplay:\n  background_process_notifications: "+tc.written+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		config.ResetCache()
-		configModuleMigrate(t, h, true)
-		if got := configModuleRaw(t, path).Get("display.background_process_notifications"); got != tc.want {
-			t.Fatalf("%s migrated to %v, want %v", tc.written, got, tc.want)
-		}
-	}
-}
-
-func TestBackgroundNotificationsConciseMigrationUnsetKeyIsNotMaterialized(t *testing.T) {
-	h, path, _ := configModuleCase(t, "_config_version: 34\nmodel:\n  provider: openrouter\n")
-	configModuleMigrate(t, h, true)
-	if _, has := configModuleRaw(t, path).Map("display")["background_process_notifications"]; has {
-		t.Fatal("background_process_notifications written")
-	}
-}
-
-func TestCodexAppServerAutoConfigPreservesExistingCodexAppServerAutoValue(t *testing.T) {
-	h, path, _ := configModuleCase(t, "_config_version: 31\ncompression:\n  codex_app_server_auto: icebath\n")
-	configModuleMigrate(t, h, true)
-	if got := configModuleRaw(t, path).Get("compression.codex_app_server_auto"); got != "icebath" {
-		t.Fatalf("codex_app_server_auto %v", got)
 	}
 }
 
@@ -552,7 +291,7 @@ func captureDefaultLog(t *testing.T) *bytes.Buffer {
 
 func compatibleNames(cfg map[string]any) []any {
 	names := []any{}
-	for _, e := range CompatibleCustomProviders(cfg) {
+	for _, e := range ProviderEntries(cfg) {
 		names = append(names, e["name"])
 	}
 	return names

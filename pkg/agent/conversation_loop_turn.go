@@ -249,9 +249,6 @@ func runConversationTurn(ctx context.Context, a *AIAgent, userMessage any, o Run
 	a.lastCompactionInPlace, a.lastCompressionAttemptRecorded = false, false
 	a.lastCompressionAttemptInPlace = nil
 	beginFastModeTurn(a, o.ConversationHistory)
-	if _, err := a.tryRefreshEnvClientCredentials(ctx); err != nil {
-		pkgLog().Debug("per-turn env credential refresh failed", "error", err)
-	}
 	held := plugins.HeldStreamTransforms(ctx)
 	a.heldTransforms, a.holdStream = nil, len(held) > 0
 	if len(held) > 0 {

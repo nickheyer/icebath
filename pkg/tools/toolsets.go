@@ -141,7 +141,7 @@ var Toolsets = map[string]Toolset{
 		corePrefixed("browser_")),
 	"cronjob":        ts("Cronjob management tool - create, list, update, pause, resume, remove, and trigger scheduled tasks", []string{"cronjob_manage"}),
 	"file":           ts("File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)", []string{"read_file", "write_file", "patch", "search_files"}),
-	"tts":            ts("Text-to-speech: convert text to audio with Edge TTS (free), ElevenLabs, OpenAI, or xAI", []string{"text_to_speech"}),
+	"tts":            ts("Audio clips: turn text into an audio file with the speech service chosen in /settings → Voice", []string{"text_to_speech"}),
 	"todo":           ts("Task planning and tracking for multi-step work", []string{"todo_list"}),
 	"memory":         ts("Persistent memory across sessions (personal notes + user profile)", []string{"memory"}),
 	"context_engine": ts("Runtime tools exposed by the active context engine", nil),

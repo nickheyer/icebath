@@ -48,7 +48,6 @@ func completedFalHandle(result map[string]any) *falRequestHandle {
 // Runs the FAL path with a native result and a recording upscaler
 func runUpscaleOptIn(t *testing.T, model string, upscale any, upscaled any) (map[string]any, []string) {
 	t.Helper()
-	t.Setenv("FAL_IMAGE_MODEL", model)
 	t.Setenv("FAL_KEY", "test-key")
 	prevSubmit, prevUp := submitFalRequestHook, upscaleImageHook
 	t.Cleanup(func() {
@@ -65,7 +64,7 @@ func runUpscaleOptIn(t *testing.T, model string, upscale any, upscaled any) (map
 		}
 		return upscaled.(map[string]any), nil
 	}
-	out := decodeResult(t, imageGenerateTool(context.Background(), imageGenEnv(t, nil), imageToolArgs{Prompt: "a cat", Upscale: upscale}))
+	out := decodeResult(t, imageGenerateTool(context.Background(), imageGenEnv(t, map[string]any{"model": model}), imageToolArgs{Prompt: "a cat", Upscale: upscale}))
 	return out, calls
 }
 

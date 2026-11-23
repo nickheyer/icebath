@@ -15,6 +15,8 @@ import (
 
 // Pet card of the session window, its sprite laid over the transcript corner
 type petCard interface {
+	// Moves the pet to the card of the session, the one in view
+	host(a *app)
 	start() tea.Cmd
 	update(m tea.Msg) (bool, tea.Cmd)
 	observe(ev gatewayEventMsg) tea.Cmd
@@ -58,7 +60,7 @@ func localCommandLinked(name string) bool {
 }
 
 // Setup sections whose configuration lives in a tier above the core, text to speech and messaging in plugins, agent import in extras
-var setupSectionTiers = map[string]string{"tts": linktier.Plugins, "gateway": linktier.Plugins, "import": linktier.Extras}
+var setupSectionTiers = map[string]string{"voice": linktier.Plugins, "chat-apps": linktier.Plugins, "import": linktier.Extras}
 
 // Line naming the build that carries a setup section this binary leaves out, false for a linked or unknown section
 func setupSectionRefusal(key string) (string, bool) {
@@ -92,6 +94,7 @@ func arenaViewFor(a *app) arenaView {
 // Pet card of a build without pets, drawing nothing and taking no room
 type noPet struct{}
 
+func (noPet) host(*app)                        {}
 func (noPet) start() tea.Cmd                   { return nil }
 func (noPet) update(tea.Msg) (bool, tea.Cmd)   { return false, nil }
 func (noPet) observe(gatewayEventMsg) tea.Cmd  { return nil }
@@ -159,5 +162,5 @@ func setupHelpLine() string {
 	if len(flows) > 1 {
 		last = tr(txt.CommonListOr, strings.Join(flows[:len(flows)-1], ", "), last)
 	}
-	return tr(txt.SetupFlowHelpLine, strings.Join(keep("model", "aux", "agent", "tts", "terminal", "tools", "gateway"), ", "), last)
+	return tr(txt.SetupFlowHelpLine, strings.Join(keep("model", "helpers", "agent", "voice", "terminal", "tools", "chat-apps"), ", "), last)
 }

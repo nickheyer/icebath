@@ -9,24 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
-// YAML key, env var and encoding kind of every slack block key bridged into the environment
-var yamlBridge = []gateway.YAMLBridgeRow{
-	{Key: "require_mention", Env: "SLACK_REQUIRE_MENTION", Kind: "lower"}, {Key: "strict_mention", Env: "SLACK_STRICT_MENTION", Kind: "lower"},
-	{Key: "ignore_other_user_mentions", Env: "SLACK_IGNORE_OTHER_USER_MENTIONS", Kind: "lower"},
-	{Key: "thread_require_mention", Env: "SLACK_THREAD_REQUIRE_MENTION", Kind: "lower"}, {Key: "allow_bots", Env: "SLACK_ALLOW_BOTS", Kind: "lower"},
-	{Key: "thread_followup_silence", Env: "SLACK_THREAD_FOLLOWUP_SILENCE", Kind: "lower"},
-	{Key: "reactions", Env: "SLACK_REACTIONS", Kind: "lower"}, {Key: "disable_dms", Env: "SLACK_DISABLE_DMS", Kind: "lower"},
-	{Key: "free_response_channels", Env: "SLACK_FREE_RESPONSE_CHANNELS", Kind: "csv"},
-	{Key: "require_mention_channels", Env: "SLACK_REQUIRE_MENTION_CHANNELS", Kind: "csv"},
-	{Key: "reaction_triggers", Env: "SLACK_REACTION_TRIGGERS", Kind: "csv"}, {Key: "reaction_trigger_target", Env: "SLACK_REACTION_TRIGGER_TARGET", Kind: "str"},
-	{Key: "allowed_channels", Env: "SLACK_ALLOWED_CHANNELS", Kind: "csv"}, {Key: "ignored_channels", Env: "SLACK_IGNORED_CHANNELS", Kind: "csv"},
-}
-
-// Bridges slack YAML keys into SLACK env vars, explicit env winning, and returns the extra they seed
-func applyYAMLConfig(ctx context.Context, _ map[string]any, slackCfg map[string]any) (map[string]any, error) {
-	return gateway.ApplyYAMLBridge(ctx, slackCfg, yamlBridge)
-}
-
 // Slack conversation, user, mention and handle target forms, the thread form ahead of the bare id
 var sendForms = []struct {
 	re        string
@@ -96,7 +78,6 @@ func (slackPlatformPlugin) Register(ctx *plugins.Context) error {
 		"ensure_deps_fn":         checkSlackRequirements,
 		"is_connected":           gateway.EnvIsConnected("SLACK_BOT_TOKEN"),
 		"setup_fn":               InteractiveSetup,
-		"apply_yaml_config_fn":   applyYAMLConfig,
 		"cron_deliver_env_var":   "SLACK_HOME_CHANNEL",
 		"standalone_sender_fn":   standaloneSend,
 		"max_message_length":     maxMessageLength,
@@ -118,7 +99,7 @@ func (slackPlatformPlugin) Register(ctx *plugins.Context) error {
 		}),
 		Check:       slackDepsPresent,
 		RequiredEnv: []string{"SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"},
-		InstallHint: "Start `icebath` and type `/setup gateway` to install Slack support.",
+		InstallHint: "Start `icebath` and type `/setup chat-apps` to install Slack support.",
 		Extra:       extra,
 	})
 	return err

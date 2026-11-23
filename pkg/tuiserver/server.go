@@ -23,8 +23,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -169,13 +171,12 @@ func responseProfileName(ctx context.Context, profile string) string {
 	return name
 }
 
-// Absolute existing terminal cwd of a config mapping, empty for stand in, missing or invalid paths
-func configuredCwdFromCfg(cfg map[string]any) string {
-	terminalCfg, _ := cfg["terminal"].(map[string]any)
-	raw := ""
-	if terminalCfg != nil {
-		raw = strings.TrimSpace(strOr(terminalCfg["cwd"]))
+// Working folder setting of a profile home as a host directory, empty when unset, a stand in or missing on this host
+func profileConfiguredCwd(ctx context.Context, profileHome string) string {
+	if profileHome == "" {
+		return ""
 	}
+	raw := strings.TrimSpace(settings.WorkingFolder.Get(home.WithOverride(ctx, profileHome)))
 	if raw == "" || cwdPlaceholders[raw] {
 		return ""
 	}
@@ -184,34 +185,6 @@ func configuredCwdFromCfg(cfg map[string]any) string {
 		return ""
 	}
 	return resolved
-}
-
-// Terminal cwd from the config.yaml of a profile home, empty when unset, invalid or unreadable
-func profileConfiguredCwd(ctx context.Context, profileHome string) string {
-	if profileHome == "" {
-		return ""
-	}
-	p := filepath.Join(profileHome, "config.yaml")
-	exists, err := config.ConfigExists(ctx, p)
-	if err != nil {
-		var unavailable *config.ConfigBackendUnavailable
-		if errors.As(err, &unavailable) {
-			pkgLog().Warn(fmt.Sprintf("terminal.cwd of %s unavailable: %s", profileHome, unavailable.SystemExitCode()))
-		}
-		return ""
-	}
-	if !exists {
-		return ""
-	}
-	cfg, err := config.LoadUserEffective(p, config.EnvRefLookupContext(ctx))
-	if err != nil {
-		var unavailable *config.ConfigBackendUnavailable
-		if errors.As(err, &unavailable) {
-			pkgLog().Warn(fmt.Sprintf("terminal.cwd of %s unavailable: %s", profileHome, unavailable.SystemExitCode()))
-		}
-		return ""
-	}
-	return configuredCwdFromCfg(cfg)
 }
 
 // Launch profile terminal cwd read by path, never through the active home override
@@ -479,6 +452,12 @@ func sessionInfo(ctx context.Context, a *agent.AIAgent, session *tuihost.Session
 		info["profile_name"] = currentProfileName(ctx)
 	}
 	info["redact_secrets"] = tools.RedactEnabled(ctx)
+	if poolKey, login := sessionInfoLogin(ctx, session); poolKey != "" {
+		info["pool_key"] = poolKey
+		if login != nil {
+			info["login"] = tuigateway.Plain(*login)
+		}
+	}
 	if versionInfo, err := updaterecord.GetVersionInfo(); err == nil {
 		info["version"], info["release_date"] = versionInfo.BaseVersion, Banner.ReleaseDate
 	}
@@ -676,14 +655,8 @@ func liveSessionIdentity(ctx context.Context, session *tuihost.Session) (string,
 	return model, providerName
 }
 
-// Busy input mode of the display config, interrupt unless queue or steer is configured
-func loadBusyInputMode(ctx context.Context) string {
-	raw := strings.ToLower(strings.TrimSpace(strOr(displayCfg(ctx)["busy_input_mode"])))
-	if raw == "queue" || raw == "steer" || raw == "interrupt" {
-		return raw
-	}
-	return "interrupt"
-}
+// What Enter does while the agent works, queue unless the profile sets steer or interrupt
+func loadBusyInputMode(ctx context.Context) string { return settings.BusyMode.Get(ctx) }
 
 // Whether interim assistant commentary reaches the client, display interim_assistant_messages defaulting on
 func loadInterimAssistantMessages(ctx context.Context) bool {

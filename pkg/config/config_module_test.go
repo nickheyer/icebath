@@ -605,11 +605,3 @@ func TestOptionalEnvVarsRegistryMaxIterationsNotOfferedAsEnvVar(t *testing.T) {
 		t.Fatal("ICEBATH_MAX_ITERATIONS is offered as an editable env var")
 	}
 }
-
-func TestConfigSupportFloorFloorMessageUsesDisplayIcebathHome(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	if msg := SupportFloorMessage(h); !strings.Contains(msg, home.Display(h)+"/config.yaml") {
-		t.Fatalf("message %q", msg)
-	}
-}

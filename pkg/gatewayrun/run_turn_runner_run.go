@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -96,7 +97,7 @@ func (t *TurnRunner) loadTurnHistory(ctx context.Context, a *agent.AIAgent, reus
 		media, err := gateway.CollectHistoryMediaPaths(ctx, rowsAsAny(history))
 		return history, nil, media, err
 	}
-	agentHistory, observed, err := buildGatewayAgentHistory(ctx, tc.history, tc.channelPrompt, messageTimestampsEnabled(tc.userConfig))
+	agentHistory, observed, err := buildGatewayAgentHistory(ctx, tc.history, tc.channelPrompt, settings.GatewayMessageTimestampsEnabled.Get(ctx))
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -155,7 +156,7 @@ func (t *TurnRunner) prepareTurnMessage(ctx context.Context, agentHistory []map[
 		tc.message = pyrepr.Str(apiText)
 	}
 	t.prependPendingNote(&r.pendingModelNotes)
-	window := gateway.AutoContinueFreshnessWindow()
+	window := gateway.AutoContinueFreshnessWindow(ctx)
 	interruptionIsFresh := isFreshGatewayInterruption(lastTranscriptTimestamp(tc.history), nil, window)
 	var entry *gateway.SessionEntry
 	if tc.sessionKey != "" && r.sessionStore != nil {

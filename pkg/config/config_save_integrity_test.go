@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strconv"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -124,34 +122,6 @@ func TestNoSingleTransientReadErrorReachesTheFile(t *testing.T) {
 					}
 				}
 			})
-		}
-	}
-}
-
-func TestAuthoredNullsSurviveAMigration(t *testing.T) {
-	seed := "_config_version: " + strconv.Itoa(latestConfigVersion()-1) + "\nprompt_caching:\n  cache_ttl: null\nruntime:\n  nofile_soft_limit: null\nx_null_preservation:\n  keep: value\n  nested:\n    optional: null\n"
-	h, path := facadeHome(t, seed)
-	captureFacade(t)
-	if _, err := MigrateConfig(context.Background(), h, false, true); err != nil {
-		t.Fatal(err)
-	}
-	raw, err := ReadDocument(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rt := Tree(raw)
-	for _, key := range []string{"runtime.nofile_soft_limit", "prompt_caching.cache_ttl", "x_null_preservation.nested.optional"} {
-		if v, ok := rt.Lookup(key); !ok || v != nil {
-			t.Fatalf("%s null lost: %v", key, raw)
-		}
-	}
-	if rt.String("x_null_preservation.keep", "") != "value" || !pyEq(raw["_config_version"], latestConfigVersion()) {
-		t.Fatalf("migrated %v", raw)
-	}
-	for _, section := range []string{"terminal", "agent"} {
-		if _, has := raw[section]; has {
-			text, _ := os.ReadFile(path)
-			t.Fatalf("a %s section the user never wrote\n%s", section, strings.TrimSpace(string(text)))
 		}
 	}
 }

@@ -33,7 +33,7 @@ func installSpeechEngine(ctx context.Context, extra string, out io.Writer) bool 
 		case pypath.IsOSError(err):
 			detail = pypath.OSErrorText(err)
 		}
-		fmt.Fprintf(out, "Failed to install %s: %s\nRetry with /setup tts\n", extra, detail)
+		fmt.Fprintf(out, "Failed to install %s: %s\nRetry with /setup voice\n", extra, detail)
 		return false
 	}
 	fmt.Fprintf(out, "%s installed and ready to speak.\n", extra)

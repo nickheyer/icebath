@@ -143,8 +143,8 @@ func (p *deepInfraImageGenProvider) Generate(ctx context.Context, env *tools.Env
 	}
 	apiKey := strings.TrimSpace(mustSecret(ctx, "DEEPINFRA_API_KEY"))
 	if apiKey == "" {
-		return fail("DEEPINFRA_API_KEY not set. Run `icebath tools` → Image "+
-			"Generation → DeepInfra to configure, or start `icebath` and type `/setup tools` to add the key.", "auth_required"), nil
+		return fail("DEEPINFRA_API_KEY not set. Add it with /setup tools, "+
+			"or pick another image service in /settings → Images & media.", "auth_required"), nil
 	}
 	diCfg := loadImageGenConfig(env, "deepinfra")
 	modelID := resolveDeepInfraImageModel(env, deepInfraImageLiveModels(ctx, env), diCfg)

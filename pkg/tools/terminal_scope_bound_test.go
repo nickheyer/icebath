@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -73,19 +72,6 @@ func writeScopeManaged(t *testing.T, md, body string) {
 	config.InvalidateManagedCache()
 }
 
-// Makes every read of path fail with a permission error as a sandbox denial does
-func denyProfileEnvReads(t *testing.T, path string) {
-	t.Helper()
-	orig := readProfileEnvBytes
-	readProfileEnvBytes = func(p string) ([]byte, error) {
-		if p == path {
-			return nil, &fs.PathError{Op: "open", Path: p, Err: fs.ErrPermission}
-		}
-		return orig(p)
-	}
-	t.Cleanup(func() { readProfileEnvBytes = orig })
-}
-
 // Policy a routed turn reads through the env bound from ctx
 func scopedPolicy(t *testing.T, ctx context.Context, h string) TerminalPolicy {
 	t.Helper()
@@ -152,52 +138,13 @@ func TestNullManagedValuesPinNothing(t *testing.T) {
 	}
 }
 
-func TestUnreadableEnvReadsAsEmptyUnderAPinnedBackend(t *testing.T) {
-	md := scopeManagedDir(t)
-	writeScopeManaged(t, md, "terminal:\n  backend: busybox\n")
-	h := scopeProfile(t, t.TempDir(), "work", "", "TERMINAL_ENV=docker\nTERMINAL_TIMEOUT=999\n")
-	denyProfileEnvReads(t, filepath.Join(h, ".env"))
-	scope, err := BuildProfileTerminalScope(context.Background(), h, map[string]string{"TERMINAL_TIMEOUT": "42"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if scope["TERMINAL_ENV"] != "busybox" || scope["TERMINAL_TIMEOUT"] != "42" {
-		t.Fatalf("scope = %v", scope)
-	}
-}
-
-func TestUnreadableEnvFailsClosedWithoutAPinnedBackend(t *testing.T) {
-	cases := map[string]*string{"none": nil}
-	for name, body := range map[string]string{
-		"timeout": "terminal:\n  timeout: 5\n", "null": "terminal:\n  backend:\n",
-		"empty": "terminal:\n  backend: ''\n", "blank": "terminal:\n  backend: '   '\n",
-	} {
-		cases[name] = &body
-	}
-	for name, body := range cases {
-		t.Run(name, func(t *testing.T) {
-			md := scopeManagedDir(t)
-			if body != nil {
-				writeScopeManaged(t, md, *body)
-			}
-			h := scopeProfile(t, t.TempDir(), "work", "terminal:\n  backend: local\n", "TERMINAL_ENV=docker\n")
-			denyProfileEnvReads(t, filepath.Join(h, ".env"))
-			_, err := BuildProfileTerminalScope(context.Background(), h, nil)
-			var unavailable *TerminalPolicyUnavailable
-			if !errors.As(err, &unavailable) {
-				t.Fatalf("err = %v", err)
-			}
-		})
-	}
-}
-
-func TestNoScopeKeepsProcessEnvBehavior(t *testing.T) {
+func TestNoScopeTakesOnlyTheLaunchFolderFromTheProcessEnv(t *testing.T) {
 	tmp := pollutedLaunchEnv(t)
 	policy, err := terminalPolicy(&Env{Home: filepath.Join(tmp, ".icebath")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if policy.Get("TERMINAL_ENV", "") != "docker" || policy.Get("TERMINAL_SSH_HOST", "") != "10.10.0.103" {
+	if policy.Setting("backend") != "local" || policy.Setting("ssh_host") != "" || policy.Setting("cwd") != scopeLaunchCwd {
 		t.Fatalf("policy = %v", policy)
 	}
 }

@@ -57,10 +57,7 @@ func TestP6NullSectionSurvivesTheCLIAndTUIWriters(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			text, err := roundtrip.BeforeVersion(gen.Text, section+": null\n")
-			if err != nil {
-				t.Fatal(err)
-			}
+			text := gen.Text + section + ": null\n"
 			for k, v := range gen.Env {
 				t.Setenv(k, v)
 			}
@@ -86,13 +83,8 @@ func TestP6NullSectionSurvivesTheCLIAndTUIWriters(t *testing.T) {
 			if _, err := config.LoadUserEffective(cfg, config.EnvRefLookup); err != nil {
 				t.Fatalf("[%s] load_user_config_effective: %v", ctxName, err)
 			}
-			raw, err := config.ReadUserConfigRaw(ctx, cfg)
-			if err != nil {
+			if _, err := config.ReadUserConfigRaw(ctx, cfg); err != nil {
 				t.Fatalf("[%s] read_user_config_raw: %v", ctxName, err)
-			}
-			for _, platform := range []string{"telegram", "discord", "cli"} {
-				config.ResolveDisplaySetting(ctx, raw, platform, "tool_progress", nil)
-				config.ResolveToolProgress(ctx, raw, platform, "")
 			}
 
 			loaded, err := config.Load(h, config.EnvRefLookup)
@@ -118,7 +110,7 @@ func TestP6NullSectionSurvivesTheCLIAndTUIWriters(t *testing.T) {
 				target []string
 			}{
 				{"cli_set", func(t *testing.T) {
-					if err := config.SetConfigValue(ctx, h, "terminal.timeout", "4242", false, commands.ConfigCommandSources(h)); err != nil {
+					if err := config.SetConfigValue(ctx, h, "terminal.timeout", "4242", commands.ConfigCommandSources(h)); err != nil {
 						t.Fatalf("[%s] cli_set: %v", ctxName, err)
 					}
 				}, []string{"terminal", "timeout"}},

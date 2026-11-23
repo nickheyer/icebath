@@ -1,10 +1,15 @@
 package wm
 
 import (
+	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/nickheyer/icebath/pkg/ui/clip"
+	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
@@ -51,16 +56,85 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) tea.Cmd {
 	if target == nil {
 		target = m.focused()
 	}
+	if m.leader {
+		m.leader = false
+		return m.leaderKey(target, msg)
+	}
+	if m.startsLeader(target, msg) {
+		m.leader = true
+		return m.wake()
+	}
 	if target == nil {
 		if cmd, ok := m.dispatch(&entry{card: blank{}}, msg); ok {
 			return cmd
 		}
 		return nil
 	}
-	if cmd, ok := m.dispatch(target, msg); ok {
-		return cmd
+	var guard tea.Cmd
+	switch s := showing(target); {
+	case target == m.overlay:
+		if held, tick := m.overlayHeld(target); held {
+			return tick
+		}
+	case s != nil && m.armed(s):
+		target = s
+	case s != nil:
+		// Keys typed as the sheet appears go on to the card they were meant for, each one holding the sheet back a while longer
+		s.lastKey = m.now()
+		guard = tea.Batch(sheetTick(sheetBurstGap), m.wake())
 	}
-	return m.send(target, msg)
+	if cmd, ok := m.dispatch(target, msg); ok {
+		return tea.Batch(guard, cmd)
+	}
+	return tea.Batch(guard, m.send(target, msg))
+}
+
+// Whether the key is the leader, which every window takes except the keybind editor while it records a key
+func (m *Model) startsLeader(target *entry, msg tea.KeyPressMsg) bool {
+	if target != nil && slices.Contains(contextsOf(target.card), keys.Capture) {
+		return false
+	}
+	return slices.Contains(m.keys.Lookup([]string{keys.Global}, msg), "leader")
+}
+
+// Key after the leader: the leader again goes to the window as itself, for programs that use it, any other the action or command it names, a key
+// naming none doing nothing
+func (m *Model) leaderKey(target *entry, msg tea.KeyPressMsg) tea.Cmd {
+	if slices.Contains(m.keys.Lookup([]string{keys.Global}, msg), "leader") {
+		if target == nil {
+			return nil
+		}
+		return m.send(target, msg)
+	}
+	for _, id := range m.keys.Lookup([]string{keys.Leader}, msg) {
+		action, isLeader := strings.CutPrefix(id, "leader.")
+		if !isLeader || action == "literal" {
+			continue
+		}
+		if action == "cancel" {
+			return nil
+		}
+		return m.Fire(action)
+	}
+	return nil
+}
+
+// Whether a key of the leader strip does something for the focused window: its command is ready, or its action belongs to a context the window
+// answers; a key naming neither is for any window
+func (m *Model) leaderApplies(a keys.Action) bool {
+	target := strings.TrimPrefix(a.ID, "leader.")
+	if c, ok := m.command(target); ok {
+		return c.Ready()
+	}
+	act, ok := m.keys.Action(target)
+	if !ok {
+		return true
+	}
+	var ctxs []string
+	if e := m.focused(); e != nil {
+		ctxs = contextsOf(e.card)
+	}
+	return slices.Contains(ctxs, act.Context)
 }
 
 // Card standing in for an empty stage so global binds still fire
@@ -73,6 +147,9 @@ func (blank) View(int, int) string           { return "" }
 
 // Routes the mouse to the bar, the overlay, or the card under the pointer
 func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
+	if _, click := msg.(tea.MouseClickMsg); click {
+		m.leader = false
+	}
 	mo := msg.Mouse()
 	sx, sy := mo.X, mo.Y-barHeight
 	if m.overlay != nil {
@@ -97,6 +174,9 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 		}
 		if ws := m.Active(); ws != nil {
 			if e := ws.at(sx, sy); e != nil {
+				if cmd, on := m.sheetWheel(e, msg, sx, sy); on {
+					return cmd
+				}
 				return m.forward(e, msg)
 			}
 		}
@@ -116,7 +196,7 @@ func (m *Model) overlayMouse(msg tea.MouseMsg, sx, sy int) tea.Cmd {
 	}
 	f := m.overlay.frame()
 	if !f.contains(sx, sy) {
-		if _, click := msg.(tea.MouseClickMsg); click {
+		if _, click := msg.(tea.MouseClickMsg); click && !sticky(m.overlay) {
 			return m.Dismiss()
 		}
 		wheel, turned := msg.(tea.MouseWheelMsg)
@@ -133,6 +213,10 @@ func (m *Model) overlayMouse(msg tea.MouseMsg, sx, sy int) tea.Cmd {
 		if id := m.hintAt(m.overlay, sx); id != "" {
 			return m.fireAt(m.overlay, id)
 		}
+	}
+	// A click as a guarded overlay appears was meant for what was under it
+	if _, click := msg.(tea.MouseClickMsg); click && m.guards(m.overlay) && m.now().Sub(m.overlay.shownAt) < sheetArmDelay {
+		return nil
 	}
 	return m.forward(m.overlay, msg)
 }
@@ -183,10 +267,12 @@ func (m *Model) motion_(mo tea.Mouse, sx, sy int) tea.Cmd {
 		return tea.Batch(m.forward(h, tea.MouseReleaseMsg(mo)), m.wake())
 	}
 	if m.sel != nil && mo.Button == tea.MouseLeft {
-		if m.extendSelection(sx, sy) {
-			return m.wake()
+		moved := m.extendSelection(sx, sy)
+		cmd := m.sweepRepeat()
+		if moved {
+			return tea.Batch(cmd, m.wake())
 		}
-		return nil
+		return cmd
 	}
 	hot := barSpot{}
 	if mo.Y < barHeight {
@@ -260,6 +346,11 @@ func (m *Model) press(msg tea.MouseClickMsg, sx, sy int) tea.Cmd {
 			return m.nudge()
 		}
 		return m.closeEntry(e)
+	}
+	if reg == rContent {
+		if cmd, on := m.sheetPress(e, msg, sx, sy); on {
+			return cmd
+		}
 	}
 	var cmds []tea.Cmd
 	if reg == rContent {
@@ -464,30 +555,47 @@ func (m *Model) release(msg tea.MouseReleaseMsg, sx, sy int) tea.Cmd {
 	return nil
 }
 
-// Shows a card above everything with first claim on input, replacing any overlay up
+// Overlay that only its answer or an explicit dismissal closes, held beneath the palette or a later overlay instead of dropped
+type Sticky interface {
+	Sticky() bool
+}
+
+// Whether the entry holds a sticky card
+func sticky(e *entry) bool {
+	s, ok := e.card.(Sticky)
+	return ok && s.Sticky()
+}
+
+// Shows a card above everything with first claim on input, replacing any overlay up, a sticky one held beneath until this one closes
 func (m *Model) ShowOverlay(c Card) tea.Cmd {
 	if c == nil {
 		return nil
 	}
 	var cmds []tea.Cmd
+	m.covered = slices.DeleteFunc(m.covered, func(h *entry) bool { return h.card == c })
 	if m.overlay != nil {
-		cmds = append(cmds, m.send(m.overlay, FocusMsg{}))
-		m.part(m.overlay)
+		if sticky(m.overlay) {
+			m.covered = append(m.covered, m.overlay)
+		} else {
+			cmds = append(cmds, m.send(m.overlay, FocusMsg{}))
+			m.part(m.overlay)
+		}
 	}
 	m.letGo()
-	m.sel = nil
+	m.sel, m.leader = nil, false
 	e := m.newEntry(c, nil)
+	e.shownAt = m.now()
 	m.overlay = e
 	m.veil.Set(1)
 	if m.motion == 0 {
 		m.veil.Snap()
 	}
 	m.placeOverlay()
-	cmds = append(cmds, c.Init(), m.send(e, FocusMsg{Focused: true}), m.wake())
+	cmds = append(cmds, m.routed(e, c.Init()), m.send(e, FocusMsg{Focused: true}), m.wake())
 	return tea.Batch(cmds...)
 }
 
-// Drops the overlay and hands input back to the focused card, the sheet fading out behind the veil
+// Drops the overlay and hands input back to the overlay it covered, else to the focused card, the sheet fading out behind the veil
 func (m *Model) Dismiss() tea.Cmd {
 	if m.overlay == nil {
 		return nil
@@ -495,11 +603,49 @@ func (m *Model) Dismiss() tea.Cmd {
 	e := m.overlay
 	m.overlay = nil
 	m.part(e)
+	cmds := []tea.Cmd{m.send(e, FocusMsg{}), m.wake()}
+	for n := len(m.covered); n > 0; n = len(m.covered) {
+		back := m.covered[n-1]
+		m.covered = m.covered[:n-1]
+		// One that stopped being sticky while covered was answered meanwhile
+		if !sticky(back) {
+			cmds = append(cmds, m.send(back, FocusMsg{}))
+			continue
+		}
+		m.overlay = back
+		m.placeOverlay()
+		return tea.Batch(append(cmds, m.send(back, FocusMsg{Focused: true}))...)
+	}
 	m.veil.Set(0)
 	if m.motion == 0 {
 		m.veil.Snap()
 	}
-	return tea.Batch(m.send(e, FocusMsg{}), m.wake())
+	return tea.Batch(cmds...)
+}
+
+// Closes the card wherever it waits, on top, held beneath another overlay or as a sheet in a card's frame
+func (m *Model) DismissCard(c Card) tea.Cmd {
+	if m.overlay != nil && m.overlay.card == c {
+		return m.Dismiss()
+	}
+	if m.Attached(c) {
+		return m.Detach(c)
+	}
+	for i, h := range m.covered {
+		if h.card == c {
+			m.covered = slices.Delete(m.covered, i, i+1)
+			return m.send(h, FocusMsg{})
+		}
+	}
+	return nil
+}
+
+// Whether the card is the overlay on top or one held beneath it
+func (m *Model) ShowsOverlay(c Card) bool {
+	if m.overlay != nil && m.overlay.card == c {
+		return true
+	}
+	return slices.ContainsFunc(m.covered, func(h *entry) bool { return h.card == c })
 }
 
 // Keeps a dropped overlay on screen while it shrinks away, no longer taking input
@@ -586,6 +732,46 @@ type selection struct {
 	x0, y0, x1, y1 int
 	moved          bool
 	mod            tea.KeyMod
+	// Stage point of the pointer at the last motion, and the tick that scrolls while it rests past the edge
+	px, py int
+	tick   int
+	// Card text the sweep scrolls, set when the sweep started on it
+	scroller SweepScroller
+}
+
+// Pause between the scroll steps of a sweep resting past the edge of a card's text
+const sweepRepeatEvery = 60 * time.Millisecond
+
+// Scroll step of a sweep resting past the edge, of the sweep's tick
+type sweepTickMsg struct{ tick int }
+
+// Next scroll step while the pointer rests past the edge of the text the sweep scrolls, none otherwise
+func (m *Model) sweepRepeat() tea.Cmd {
+	s := m.sel
+	if s == nil {
+		return nil
+	}
+	sc := s.scroller
+	if sc == nil {
+		return nil
+	}
+	c := m.contentRect(s.e.frame())
+	top, bottom := sc.SweepArea()
+	if y := s.py - c.Y; y >= top && y < bottom {
+		return nil
+	}
+	s.tick++
+	tick := s.tick
+	return tea.Tick(sweepRepeatEvery, func(time.Time) tea.Msg { return sweepTickMsg{tick: tick} })
+}
+
+// Scroll step of a sweep resting past the edge, ignored once the sweep ended or moved on
+func (m *Model) sweepStep(t sweepTickMsg) tea.Cmd {
+	if m.sel == nil || m.sel.tick != t.tick {
+		return nil
+	}
+	m.extendSelection(m.sel.px, m.sel.py)
+	return tea.Batch(m.sweepRepeat(), m.wake())
 }
 
 // Sent to a card whose text can be swept when a left press and its release fall on one cell of its content with no sweep between, in content coordinates with the modifier keys held and the hyperlink painted on the cell
@@ -620,13 +806,27 @@ func (s *selection) covers(x, y int) bool {
 	return true
 }
 
-// Plain text under the sweep, one line per row with trailing blanks trimmed
+// Plain text under the sweep, one line per row with trailing blanks trimmed, rows scrolled out of the window read from the card
 func (s *selection) text() string {
 	raw := s.e.raw
 	if raw.Buffer == nil {
 		return ""
 	}
 	x0, y0, x1, y1 := s.span()
+	if sc := s.scroller; sc != nil && (y0 < 0 || y1 >= raw.Height()) {
+		rows := sc.SweepRows(y0, y1)
+		for i := range rows {
+			from, to := 0, ansi.StringWidth(rows[i])
+			if i == 0 {
+				from = x0
+			}
+			if i == len(rows)-1 {
+				to = x1 + 1
+			}
+			rows[i] = strings.TrimRight(ansi.Cut(rows[i], from, to), " ")
+		}
+		return strings.Join(rows, "\n")
+	}
 	var lines []string
 	for y := max(y0, 0); y <= y1 && y < raw.Height(); y++ {
 		from, to := 0, raw.Width()-1
@@ -656,19 +856,42 @@ func (m *Model) beginSelection(e *entry, x, y int) {
 		return
 	}
 	c := m.contentRect(e.frame())
-	m.sel = &selection{e: e, x0: x - c.X, y0: y - c.Y}
+	m.sel = &selection{e: e, x0: x - c.X, y0: y - c.Y, px: x, py: y}
 	m.sel.x1, m.sel.y1 = m.sel.x0, m.sel.y0
+	if sc, ok := e.card.(SweepScroller); ok {
+		if top, bottom := sc.SweepArea(); m.sel.y0 >= top && m.sel.y0 < bottom {
+			m.sel.scroller = sc
+		}
+	}
 }
 
-// Extends the sweep to the stage point, clamped to the card content
+// Extends the sweep to the stage point, clamped to the card content; past the edge of text that scrolls under a sweep the text scrolls a row
+// per step toward the pointer and the start of the sweep moves with it
 func (m *Model) extendSelection(x, y int) bool {
 	s := m.sel
 	if s == nil {
 		return false
 	}
+	s.px, s.py = x, y
 	c := m.contentRect(s.e.frame())
 	nx := min(max(x-c.X, 0), max(c.W-1, 0))
 	ny := min(max(y-c.Y, 0), max(c.H-1, 0))
+	if sc := s.scroller; sc != nil {
+		top, bottom := sc.SweepArea()
+		step := 0
+		switch {
+		case y-c.Y < top:
+			step, ny = -1, top
+		case y-c.Y >= bottom:
+			step, ny = 1, max(bottom-1, top)
+		}
+		if step != 0 {
+			if moved := sc.SweepScroll(step); moved != 0 {
+				s.y0 -= moved
+				s.moved = true
+			}
+		}
+	}
 	if nx == s.x1 && ny == s.y1 && s.moved {
 		return false
 	}
@@ -691,6 +914,7 @@ func (m *Model) endSelection() tea.Cmd {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
+	m.lastSel = text
 	n := strings.Count(text, "\n") + 1
 	label := lang.T(txt.KitWmCopiedLine)
 	if n > 1 {
@@ -699,10 +923,10 @@ func (m *Model) endSelection() tea.Cmd {
 	return tea.Batch(clip.Copy(text), m.Toast(label, Success, 0))
 }
 
-// Text currently swept, empty when nothing is selected
+// Text currently swept, else the text the last sweep copied, empty when nothing was swept
 func (m *Model) Selected() string {
 	if m.sel == nil || !m.sel.moved {
-		return ""
+		return m.lastSel
 	}
 	return m.sel.text()
 }

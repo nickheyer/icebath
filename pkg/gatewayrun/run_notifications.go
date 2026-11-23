@@ -783,7 +783,7 @@ func (r *GatewayRunner) sendSessionDBWarningNotifications(ctx context.Context, d
 		_, err := config.PresentNotification(ctx, func(ctx context.Context) error {
 			r.sendHomeChannelMessage(ctx, target.platform, target.home, target.transport, message, "state.db warning notification failed for %s:%s: %s")
 			return nil
-		}, string(target.platform), true, nil)
+		}, string(target.platform), true)
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("state.db warning presenter failed: %s", err))
 		}

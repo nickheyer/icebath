@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"gopkg.in/yaml.v3"
 )
 
@@ -128,12 +129,9 @@ var approvalState = struct {
 
 const denialTallyMaxSessions = 256
 
-// Threshold from approvals.denial_breaker_threshold, default 3, zero or negative disables
+// Denial limit of the session, zero or negative disables
 func getDenialBreakerThreshold(env *Env) int {
-	if v, ok := config.AsInt(getApprovalConfig(env)["denial_breaker_threshold"]); ok {
-		return v
-	}
-	return 3
+	return settings.ApprovalsDenialBreakerThreshold.Get(approvalCtx(env))
 }
 
 // Increments and returns the consecutive guardian denial count, evicting idle sessions past the cap
@@ -614,21 +612,16 @@ func configLookup(env *Env) config.Lookup {
 	return func(string) (string, bool) { return "", false }
 }
 
-// Effective config document of the environment's home
-func loadHomeConfig(env *Env) (config.Tree, error) {
-	if env == nil || env.Home == "" {
-		return config.Tree{}, nil
-	}
-	return config.Load(env.Home, configLookup(env))
-}
-
-// command_allowlist of the active profile as a set, empty on malformed input
+// Allowed commands of the active profile as a set, empty on malformed input
 func readPermanentAllowlist(env *Env) (map[string]bool, error) {
-	doc, err := loadHomeConfig(env)
+	if env == nil || env.Home == "" {
+		return map[string]bool{}, nil
+	}
+	stored, err := settings.Resolve(envHomeCtx(context.Background(), env), settings.AllowedCommands.Key)
 	if err != nil {
 		return nil, err
 	}
-	raw, _ := doc.Lookup("command_allowlist")
+	raw := stored.Value
 	legacy := false
 	if s, ok := raw.(string); ok {
 		legacy = true
@@ -644,20 +637,20 @@ func readPermanentAllowlist(env *Env) (map[string]bool, error) {
 	}
 	items, ok := raw.([]any)
 	if !ok {
-		envLog(env).Warn("Ignoring malformed command_allowlist; configure a list of strings.")
+		envLog(env).Warn("Ignoring malformed allowed commands; configure a list of strings.")
 		return map[string]bool{}, nil
 	}
 	out := map[string]bool{}
 	for _, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			envLog(env).Warn("Ignoring malformed command_allowlist; configure a list of strings.")
+			envLog(env).Warn("Ignoring malformed allowed commands; configure a list of strings.")
 			return map[string]bool{}, nil
 		}
 		out[s] = true
 	}
 	if legacy {
-		envLog(env).Warn("Recovered legacy string command_allowlist; re-save it as a list of strings.")
+		envLog(env).Warn("Recovered allowed commands saved as one string; save them as a list of strings.")
 	}
 	return out, nil
 }
@@ -701,13 +694,9 @@ func SavePermanentAllowlist(env *Env, patterns map[string]bool) {
 	if env == nil || env.Home == "" {
 		return
 	}
-	doc, err := loadHomeConfig(env)
-	if err != nil {
-		envLog(env).Warn("Could not save allowlist", "error", err)
-		return
-	}
+	ctx := envHomeCtx(context.Background(), env)
 	onDisk := map[string]bool{}
-	for _, s := range config.AsStrings(doc.Get("command_allowlist")) {
+	for _, s := range settings.AllowedCommands.Strings(ctx) {
 		onDisk[s] = true
 	}
 	approvalState.Lock()
@@ -725,11 +714,7 @@ func SavePermanentAllowlist(env *Env, patterns map[string]bool) {
 		sorted = append(sorted, p)
 	}
 	sort.Strings(sorted)
-	if err := doc.Set("command_allowlist", sorted); err != nil {
-		envLog(env).Warn("Could not save allowlist", "error", err)
-		return
-	}
-	if err := config.Save(env.Home, doc); err != nil {
+	if _, err := settings.Set(ctx, settings.AllowedCommands.Key, sorted, settings.Global); err != nil {
 		envLog(env).Warn("Could not save allowlist", "error", err)
 		return
 	}

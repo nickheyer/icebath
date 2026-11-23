@@ -219,7 +219,7 @@ func delegationDisplayMetadata(ctx context.Context, evt map[string]any) *pyjson.
 		}
 		metadata.Set("delivery_notice", "task_failure:"+index)
 		metadata.Set("notification_category", "diagnostic")
-		if !config.WarningNotificationsEnabled(ctx, "api_server", nil) {
+		if !config.WarningNotificationsEnabled(ctx, "api_server") {
 			metadata.Set("presentation_suppressed", true)
 		}
 	}

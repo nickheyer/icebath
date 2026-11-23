@@ -2,10 +2,8 @@ package tui
 
 import (
 	"os"
-	"reflect"
 	"strings"
 	"time"
-	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -21,6 +19,8 @@ const (
 // App surface the gateway event handler drives, the main model in production
 type eventApp interface {
 	sys(text string)
+	// No model is set up yet: the get started screen opens
+	offerGetStarted() tea.Cmd
 	appendMessage(m msg)
 	panel(title string, sections []panelSection)
 	setHistoryItems(update func([]msg) []msg)
@@ -35,10 +35,14 @@ type eventApp interface {
 	setVoiceProcessing(on bool)
 	interruptTurn() tea.Cmd
 	recoverSidRef() *string
+	reattach(id string, then func(err error) tea.Cmd) tea.Cmd
 	onGatewayReady()
+	offerOwnerRestart()
+	primary() bool
 	bellOnComplete() bool
 	bellOnPrompt() bool
 	uncaught(err error)
+	loginExhausted(ev tuigateway.LoginExhaustedPayload) tea.Cmd
 }
 
 // Slash command catalog of commands.catalog
@@ -86,7 +90,6 @@ type eventHandler struct {
 	agentsNudgeEnabled        bool
 	agentsNudgeConfigFetched  bool
 	agentsNudgedThisTurn      bool
-	view                      mainView
 	// Gateway build the other build line was told for, nil while the gateway runs this build
 	toldBuild *string
 
@@ -189,7 +192,7 @@ func (h *eventHandler) withFullConfig(fn func(tuigateway.ClientConfig) tea.Cmd) 
 	}
 	f.started = true
 	h.queue(ask(h.rpc, h.app.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "full"}, func(r *tuigateway.ConfigGetResult) tea.Cmd {
-		cfg := tuigateway.ClientConfigOf(nil)
+		cfg := tuigateway.DefaultClientConfig()
 		if r != nil && r.Config != nil {
 			cfg = *r.Config
 		}
@@ -299,35 +302,10 @@ func (h *eventHandler) persistSpawnTree(snap spawnSnapshot) tea.Cmd {
 	return ask(h.rpc, h.app.sys, tuigateway.SpawnTreeSave, params, done)
 }
 
-// State the main view of the reference redraws on, its event handler built anew at each redraw
-type mainView struct {
-	status       string
-	info, usage  unsafe.Pointer
-	busy, agents bool
-	activity     int
-	transcript   int
-}
-
-// Main view state as it stands
-func (h *eventHandler) mainView() mainView {
-	v := mainView{status: h.store.ui.Status, info: reflect.ValueOf(h.store.ui.Info).UnsafePointer(), usage: reflect.ValueOf(h.store.ui.Usage).UnsafePointer(),
-		busy: h.store.ui.Busy, agents: h.store.overlay.Agents, transcript: h.store.transcriptGen}
-	if n := len(h.store.turn.Activity); n > 0 {
-		v.activity = h.store.turn.Activity[n-1].ID
-	}
-	return v
-}
-
-// Starts the per handler state over when the main view changed since the last event, the delegation fetch clock, the full config read and the agents nudge
-func (h *eventHandler) renewOnRedraw() {
-	v := h.mainView()
-	if v == h.view {
-		return
-	}
-	h.view = v
-	h.lastDelegationFetchAt = 0
+// Forgets the full config read and what it decided, after the session or its config changed
+func (h *eventHandler) invalidateConfig() {
 	h.config = &fullConfigFlight{}
-	h.agentsNudgeEnabled, h.agentsNudgeConfigFetched, h.agentsNudgedThisTurn = true, false, false
+	h.agentsNudgeEnabled, h.agentsNudgeConfigFetched = true, false
 }
 
 // Reads display.tui_agents_nudge once, a false turning the agents nudge off
@@ -415,7 +393,7 @@ func (h *eventHandler) noteGatewayBuild(ready tuigateway.GatewayReadyPayload) fu
 	}
 	h.toldBuild = &ready.Build
 	return func() tea.Cmd {
-		h.app.sys(tr(txt.GatewayMsgOtherBuildLine))
+		h.app.offerOwnerRestart()
 		return nil
 	}
 }
@@ -428,7 +406,7 @@ func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
 		h.queue(h.store.applySkin(skin))
 	}
 	h.ensureAgentsNudgeConfig()
-	if !h.store.wakeUserDisabled && linktier.Linked(linktier.Extras) {
+	if !h.store.wakeUserDisabled && linktier.Linked(linktier.Extras) && h.app.primary() {
 		h.queue(ask(h.rpc, h.app.sys, tuigateway.WakeStart, tuigateway.WakeStartParams{Surface: "tui"}, done[tuigateway.WakeStartResult]))
 	}
 	if h.store.ui.Sid == "" {
@@ -436,7 +414,7 @@ func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
 	}
 	if ref := h.app.recoverSidRef(); ref != nil && *ref != "" {
 		recoverSid := *ref
-		h.queue(h.app.resumeByID(recoverSid, func(err error) tea.Cmd {
+		h.queue(h.app.reattach(recoverSid, func(err error) tea.Cmd {
 			if err != nil {
 				h.app.uncaught(err)
 				return tell()
@@ -452,7 +430,13 @@ func (h *eventHandler) handleReady(ready tuigateway.GatewayReadyPayload) {
 	resumed := func(error) tea.Cmd { return tell() }
 	if h.startupResumeID != "" {
 		h.store.ui.Status = tr(txt.SessionStatusResuming)
-		h.queue(h.app.resumeByID(h.startupResumeID, resumed))
+		h.queue(h.app.resumeByID(h.startupResumeID, func(error) tea.Cmd {
+			// A saved session that is gone leaves the card with a new one, not an empty one
+			if h.store.ui.Sid == "" && !h.store.ui.SetupRequired {
+				return h.forgeSession(tell)
+			}
+			return tell()
+		}))
 		return
 	}
 	h.withFullConfig(func(cfg tuigateway.ClientConfig) tea.Cmd {

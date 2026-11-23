@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -41,8 +42,8 @@ var (
 func isModern(c *CLI) bool { return c != nil && c.modernLayout }
 
 // Reports the glyph layout, the default, with classic keeping the boxed transcript
-func layoutFromConfig(display map[string]any) bool {
-	return strings.ToLower(strings.TrimSpace(cliStr(display["cli_layout"], "modern"))) != "classic"
+func layoutFromConfig(ctx context.Context) bool {
+	return settings.DisplayCliLayout.Get(ctx) != "classic"
 }
 
 // Color of the active skin for the key, the fallback when the skin holds none

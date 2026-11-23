@@ -23,7 +23,7 @@ Walkthrough:
   8. Install the bot in a space (fires ADDED_TO_SPACE and resolves its user_id).
 
 Full guide:
-  /setup gateway in the terminal UI (or icebath gateway setup) runs this setup again
+  /setup chat-apps in the terminal UI (or icebath gateway setup) runs this setup again
   icebath google_chat oauth --check reports the token for native attachments
   .env.example, section GOOGLE CHAT INTEGRATION, lists every setting
 `

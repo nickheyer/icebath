@@ -169,7 +169,7 @@ func (s *inlineImages) cellRows(key imageKey) []string {
 	if !slices.Contains(s.wanted, key) {
 		s.wanted = append(s.wanted, key)
 	}
-	if !s.scheduled && s.a.post != nil {
+	if !s.scheduled && s.a.posts() {
 		s.scheduled = true
 		s.a.post(asyncDoneMsg{run: s.flush})
 	}

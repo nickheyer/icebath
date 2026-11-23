@@ -285,7 +285,7 @@ func doctorRenderStateDBStats(stats any, holders *int, hostNote string) []doctor
 
 // Memory and user profile store flags the home config enables
 func doctorMemoryStoreFlags(ctx context.Context, icebathHome string) (bool, bool) {
-	return memory.BuiltinMemoryStoreFlags(doctorMemoryConfig(ctx, icebathHome))
+	return memory.BuiltinMemoryStoreFlags(home.WithOverride(ctx, icebathHome))
 }
 
 // Text of a file decoded as UTF-8 with an optional signature

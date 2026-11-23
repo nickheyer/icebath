@@ -11,7 +11,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
@@ -63,15 +64,14 @@ func (wz *whatsAppWizard) yesNo(prompt string) (bool, error) {
 	return response == "y" || response == "yes", nil
 }
 
-// Profile env value, empty when unset
+// Profile value of a name, the setting a folded name moved to, empty when unset
 func (wz *whatsAppWizard) envValue(key string) (string, error) {
-	value, _, err := config.GetEnvValue(wz.ctx, wz.home, key)
-	return value, err
+	return gateway.WizardConfig.GetEnvValue(home.WithOverride(wz.ctx, wz.home), key)
 }
 
-// Saves one profile env value
+// Saves one profile value of a name, into the setting a folded name moved to
 func (wz *whatsAppWizard) saveEnv(key, value string) error {
-	return config.SaveEnvValueContext(wz.ctx, wz.home, key, value)
+	return gateway.WizardConfig.SaveEnvValue(home.WithOverride(wz.ctx, wz.home), key, value)
 }
 
 // Step one, the bot or self chat mode, empty when cancelled

@@ -51,7 +51,7 @@ func (a *app) outputGone(err error) tea.Cmd {
 }
 
 // Reason the gateway client is told the UI ends for, the one the quit named or what the end of the program shows
-func (a *app) exitReasonOf(err error, panicked bool) string {
+func (sh *shell) exitReasonOf(err error, panicked bool) string {
 	switch {
 	case errors.Is(err, tea.ErrProgramPanic):
 		// A panic in the model was recorded as it passed, one in a command is known only by how the program ended
@@ -59,8 +59,8 @@ func (a *app) exitReasonOf(err error, panicked bool) string {
 			recordParentLifecycle("uncaughtException: panic in a command of the UI, its report is on stderr")
 		}
 		return "uncaughtException"
-	case a.exitReason != "":
-		return a.exitReason
+	case sh.exitReason != "":
+		return sh.exitReason
 	case errors.Is(err, tty.ErrTerminalGone):
 		recordParentLifecycle(fmt.Sprintf("dead output stream (%v) → exiting", err))
 		return "dead-output-stream"
@@ -70,13 +70,13 @@ func (a *app) exitReasonOf(err error, panicked bool) string {
 	return "terminal UI exit"
 }
 
-// Exit status of the UI, printing what it leaves on the terminal it gave back, the session summary and the lines of a failure
-func (a *app) exitStatus(err error, signal syscall.Signal) int {
-	gone := a.exitReason == "dead-output-stream" || errors.Is(err, tty.ErrTerminalGone)
+// Exit status of the UI, printing what it leaves on the terminal it gave back, the summary of its sessions and the lines of a failure
+func (sh *shell) exitStatus(err error, signal syscall.Signal) int {
+	gone := sh.exitReason == "dead-output-stream" || errors.Is(err, tty.ErrTerminalGone)
 	if !gone {
-		err = errors.Join(err, a.printExitSummary(os.Stdout))
+		err = errors.Join(err, sh.printExitSummary(os.Stdout))
 	}
-	code := a.exitCode
+	code := sh.exitCode
 	switch {
 	case errors.Is(err, tea.ErrProgramPanic):
 		code = 2
@@ -89,8 +89,8 @@ func (a *app) exitStatus(err error, signal syscall.Signal) int {
 	if signal != 0 {
 		code = signalExitCode(signal)
 	}
-	if a.lastWords != nil {
-		a.lastWords()
+	if sh.lastWords != nil {
+		sh.lastWords()
 		code = memoryExitStatus
 	}
 	return code
@@ -121,16 +121,50 @@ func resumeCommand(storedSid string, info *tuigateway.SessionInfo) string {
 	return cmd
 }
 
-// Summary of the session left on screen, its title, id, turns, duration and resume command
-func (a *app) exitSummary() string {
-	ui := a.store.ui
-	if ui.StoredSid == "" {
+// Title of the session for the summary, a word for one that has none
+func (a *app) summaryTitle() string {
+	if title := strings.TrimSpace(a.store.ui.SessionTitle); title != "" {
+		return title
+	}
+	return tr(txt.ExitSummaryUntitled)
+}
+
+// Summary of the sessions left open: the one in view with its title, id, turns, duration and resume command, then the resume command of each
+// other session card
+func (sh *shell) exitSummary() string {
+	cur := sh.active()
+	if cur == nil || cur.store.ui.StoredSid == "" {
+		cur = nil
+		for _, s := range sh.sessions {
+			if s.store.ui.StoredSid != "" {
+				cur = s
+				break
+			}
+		}
+	}
+	if cur == nil {
 		return "\n" + tr(txt.ExitSummaryNoSession) + "\n"
 	}
-	title := strings.TrimSpace(ui.SessionTitle)
-	if title == "" {
-		title = tr(txt.ExitSummaryUntitled)
+	var sb strings.Builder
+	sb.WriteString(cur.exitSummary())
+	others := false
+	for _, s := range sh.sessions {
+		if s == cur || s.store.ui.StoredSid == "" {
+			continue
+		}
+		if !others {
+			others = true
+			fmt.Fprintf(&sb, "\n%s\n", tr(txt.ExitSummaryAlsoOpen))
+		}
+		fmt.Fprintf(&sb, "  %s  %s\n", resumeCommand(s.store.ui.StoredSid, s.store.ui.Info), s.summaryTitle())
 	}
+	return sb.String()
+}
+
+// Summary of one session, its title, id, turns, duration and resume command
+func (a *app) exitSummary() string {
+	ui := a.store.ui
+	title := a.summaryTitle()
 	rows := [][2]string{
 		{tr(txt.ExitSummaryTitle), title},
 		{tr(txt.ExitSummaryId), ui.StoredSid},
@@ -150,8 +184,8 @@ func (a *app) exitSummary() string {
 	return sb.String()
 }
 
-// Writes the summary of the session left after the terminal is given back
-func (a *app) printExitSummary(w io.Writer) error {
-	_, err := io.WriteString(w, a.exitSummary())
+// Writes the summary of the sessions left open after the terminal is given back
+func (sh *shell) printExitSummary(w io.Writer) error {
+	_, err := io.WriteString(w, sh.exitSummary())
 	return err
 }

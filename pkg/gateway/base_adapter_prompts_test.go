@@ -206,8 +206,7 @@ func TestRejectedPathAppearsInLog(t *testing.T) {
 	if err := os.WriteFile(outside, []byte("OggS"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "1")
-	t.Setenv("ICEBATH_MEDIA_TRUST_RECENT_FILES", "0")
+	writeMediaPolicy(t, filepath.Join(dir, "home"), "gateway:\n  strict: true\n  trust_recent_files: false\n")
 	saved := mediaDeliverySafeRoots
 	mediaDeliverySafeRoots = func() []string { return nil }
 	t.Cleanup(func() { mediaDeliverySafeRoots = saved })
@@ -237,7 +236,6 @@ func TestMissingFileIsLoggedAsNotFoundNotUnsafe(t *testing.T) {
 func TestCraftedNullPathDoesNotAbortBatch(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(dir, "home"))
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "0")
 	good := filepath.Join(dir, "good.png")
 	if err := os.WriteFile(good, []byte("\x89PNG"), 0o644); err != nil {
 		t.Fatal(err)

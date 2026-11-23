@@ -112,9 +112,9 @@ func TestExplicitUserDenyDoesNotEmitCancelled(t *testing.T) {
 
 func TestBroadcastFailureStillDenyResolves(t *testing.T) {
 	session := loudDenySession(t)
-	prev := broadcastGlobalEvent
-	broadcastGlobalEvent = func(string, map[string]any) { panic("transport gone") }
-	t.Cleanup(func() { broadcastGlobalEvent = prev })
+	prev := broadcastSessionEvent
+	broadcastSessionEvent = func(string, string, map[string]any) { panic("transport gone") }
+	t.Cleanup(func() { broadcastSessionEvent = prev })
 	entry := loudDenyPending(t)
 	interruptSessionTurn(context.Background(), loudDenySID, session, true)
 	if entry.Result != "deny" || !entryWoken(entry) {

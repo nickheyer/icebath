@@ -225,7 +225,7 @@ func (a *APIServerAdapter) runAgent(ctx context.Context, o runAgentOptions) (map
 		}
 		bindAPIServerSession(env, o.sessionID, sessionKey, o.sessionID, requestProfileName, o.sessionHistoryDelivery)
 		defer tools.ClearSessionVars(env)
-		muted := config.DiagnosticTurnMuted(scoped, map[string]any{"notification_category": o.notificationCategory}, "api_server", nil)
+		muted := config.DiagnosticTurnMuted(scoped, map[string]any{"notification_category": o.notificationCategory}, "api_server")
 		var ag *agent.AIAgent
 		defer func() {
 			if o.activeRunID != "" {

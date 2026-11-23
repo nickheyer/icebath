@@ -240,7 +240,8 @@ func TestDisabledViaConfigAdmitsEverything(t *testing.T) {
 	settings := guardSettings()
 	r := guardRunner(t, &guardClock{1_000_000}, settings)
 	incidentConfig(t)
-	*settings = gateway.BotLoopGuardSettingsFromConfig(map[string]any{"gateway": map[string]any{"bot_loop_guard": map[string]any{"enabled": false}}})
+	*settings = gateway.DefaultBotLoopGuardSettings()
+	settings.Enabled = false
 	for i, ok := range guardPingPong(t, r, 40, guardGroupChat) {
 		if !ok {
 			t.Fatalf("disabled guard refused turn %d", i)

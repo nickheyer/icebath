@@ -5,9 +5,7 @@ import "github.com/nickheyer/icebath/pkg/gateway"
 var envEnableCredentials = []string{"MATTERMOST_TOKEN"}
 
 var envOverrides = []gateway.EnvStep{
-	&gateway.EnvCred{Platform: gateway.PlatformMattermost, Creds: [][]string{{"MATTERMOST_TOKEN"}}, Token: "MATTERMOST_TOKEN",
-		WarnMissingEnv: "MATTERMOST_URL", WarnMissingMsg: "MATTERMOST_TOKEN set but MATTERMOST_URL is missing",
-		Fixed: []gateway.EnvSpec{{Key: "url", Env: "MATTERMOST_URL"}}},
+	&gateway.EnvCred{Platform: gateway.PlatformMattermost, Creds: [][]string{{"MATTERMOST_TOKEN"}}, Token: "MATTERMOST_TOKEN"},
 	gateway.HomeStep{Platform: gateway.PlatformMattermost, EnvBase: "MATTERMOST_HOME_CHANNEL"},
 }
 

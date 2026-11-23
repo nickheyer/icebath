@@ -223,7 +223,7 @@ func (m *Model) barStatus() Status {
 
 // Fits chips, field and dials on the row, the field narrowing first and the mode dial leaving last
 func (m *Model) layoutBar() {
-	st := m.barStatus()
+	st := m.withSheets(m.barStatus())
 	m.notice = st.Notice
 	var dials []Segment
 	for _, d := range st.Dials {
@@ -231,17 +231,64 @@ func (m *Model) layoutBar() {
 			dials = append(dials, d)
 		}
 	}
-	want := m.fieldWant()
-	floor, level, fw := min(want, fieldEase), 0, 0
-fit:
-	for {
-		need := m.barNeed(level, st.Lanes, dials)
-		if rest := m.width - need - barGap - 2; floor > 0 && rest >= floor {
-			fw = min(want, rest)
-			break
+	dials = m.steadyDials(dials)
+	level, kept, fw := m.fitBar(m.width, st.Lanes, dials)
+	// The bar gives room back only once it fits with some to spare, so a clock or a counter growing a cell never makes it shuffle
+	if compact := level*len(st.Dials) + len(dials) - kept; compact < m.barCompact {
+		if l, k, f := m.fitBar(m.width-barSlack, st.Lanes, dials); l*len(st.Dials)+len(dials)-k < m.barCompact {
+			level, kept, fw = l, k, f
+		} else {
+			level, kept, fw = m.barLevel, min(m.barKept, len(dials)), m.barField
 		}
-		if floor == 0 && need <= m.width {
-			break
+	}
+	m.barLevel, m.barKept, m.barField = level, kept, fw
+	m.barCompact = level*len(st.Dials) + len(dials) - kept
+	m.placeChips(level, st.Lanes)
+	m.placeDials(dials[len(dials)-kept:])
+	m.placeField(fw)
+}
+
+// Columns the bar keeps free before it gives room back
+const barSlack = 4
+
+// Dials padded to the widest each has been while shown, so their texts changing width never moves what stands beside them
+func (m *Model) steadyDials(dials []Segment) []Segment {
+	if m.dialWidths == nil {
+		m.dialWidths = map[string]int{}
+	}
+	seen := map[string]bool{}
+	out := make([]Segment, len(dials))
+	for i, d := range dials {
+		key := d.Action
+		if key == "" {
+			key = strconv.Itoa(int(d.Style)) + ":" + strconv.Itoa(len(dials)-i)
+		}
+		seen[key] = true
+		w := max(ansi.StringWidth(d.Text), m.dialWidths[key])
+		m.dialWidths[key] = w
+		d.Text += strings.Repeat(" ", w-ansi.StringWidth(d.Text))
+		out[i] = d
+	}
+	for key := range m.dialWidths {
+		if !seen[key] {
+			delete(m.dialWidths, key)
+		}
+	}
+	return out
+}
+
+// Detail level of the chips, the dials kept from the most important and the width of the field when the bar fits into width columns, the field
+// narrowing first and the least important dials going before the chips lose their names
+func (m *Model) fitBar(width int, lanes map[*Workspace]Lane, dials []Segment) (level, kept, fw int) {
+	want := m.fieldWant()
+	floor := min(want, fieldEase)
+	for {
+		need := m.barNeed(level, lanes, dials)
+		if rest := width - need - barGap - 2; floor > 0 && rest >= floor {
+			return level, len(dials), min(want, rest)
+		}
+		if floor == 0 && need <= width {
+			return level, len(dials), 0
 		}
 		switch {
 		case level == 0:
@@ -257,12 +304,9 @@ fit:
 		case len(dials) > 0:
 			dials = nil
 		default:
-			break fit
+			return level, len(dials), 0
 		}
 	}
-	m.placeChips(level, st.Lanes)
-	m.placeDials(dials)
-	m.placeField(fw)
 }
 
 // Columns the chips at a level and the dials take with the margins and the new chip
@@ -582,7 +626,12 @@ func (m *Model) paintDials(buf screen) {
 	t := m.theme
 	sep := m.dialSep()
 	sw := ansi.StringWidth(sep)
+	fx, fw := m.openField()
 	for i, d := range m.dials {
+		// An open field hides the dials it would cut through rather than leaving pieces of them beside it
+		if m.docked() != nil && d.x-sw < fx+fw+1 && d.x+d.w > fx-1 {
+			continue
+		}
 		if i > 0 {
 			m.write(buf, d.x-sw, 0, sep, flat(uv.Style{Fg: t.Steel, Bg: t.Bg}))
 		}

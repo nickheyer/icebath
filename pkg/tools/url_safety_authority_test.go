@@ -6,10 +6,13 @@ import (
 	"errors"
 	"log/slog"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"gopkg.in/yaml.v3"
 )
 
 var errAuthorityNoDNS = errors.New("Name or service not known")
@@ -49,12 +52,19 @@ func authorityProxy(t *testing.T, proxy string) {
 }
 
 func authorityEnv(t *testing.T, security map[string]any) *Env {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "")
 	tree := config.Tree{}
 	if security != nil {
 		tree["security"] = security
 	}
-	return &Env{Home: t.TempDir(), Config: tree}
+	env := &Env{Home: t.TempDir(), Config: tree}
+	doc, err := yaml.Marshal(map[string]any(tree))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return env
 }
 
 var authorityAmbiguous = []string{
@@ -258,8 +268,7 @@ func TestProxyEnvironmentDNSDelegation(t *testing.T) {
 }
 
 func TestAllowPrivateURLsIntegration(t *testing.T) {
-	env := authorityEnv(t, nil)
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
+	env := authorityEnv(t, map[string]any{"allow_private_urls": true})
 	for _, c := range [][2]string{{"192.168.1.1", "http://router.local"}, {"198.18.23.183", "https://example.com"}} {
 		authorityResolvesTo(t, c[0])
 		if !isSafeURL(env, c[1]) {
@@ -303,7 +312,7 @@ func TestIsAlwaysBlockedURLCases(t *testing.T) {
 			t.Errorf("floor blocked %q", raw)
 		}
 	}
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
+	env = authorityEnv(t, map[string]any{"allow_private_urls": true})
 	if !isAlwaysBlockedURL(env, "http://169.254.169.254/") {
 		t.Error("toggle opened the floor")
 	}

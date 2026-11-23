@@ -224,7 +224,7 @@ var (
 		return provider.ResolveFallbackEntryAPIKey(ctx, home.Dir(ctx), entry)
 	}
 	initLoadPool = func(ctx context.Context, providerName string) initCredentialPool {
-		if pool := provider.LoadPool(agentPoolEnv(ctx), providerName); pool != nil {
+		if pool := provider.LoadSelectedPool(agentPoolEnv(ctx), providerName); pool != nil {
 			return pool
 		}
 		return nil
@@ -337,7 +337,7 @@ func applyOpenAIHeaderPolicy(ctx context.Context, a *AIAgent, kwargs map[string]
 	}
 	a.applyUserDefaultHeaders(ctx)
 	cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
-	entries := provider.CompatibleCustomProviders(cfg)
+	entries := provider.ProviderEntries(cfg)
 	cpBaseURL, _ := kwargs["base_url"].(string)
 	if cpBaseURL == "" {
 		cpBaseURL = a.baseURL
@@ -408,7 +408,7 @@ func initOpenAIClient(ctx context.Context, a *AIAgent, apiKey any, baseURL strin
 		if k, present := kwargs["api_key"]; present {
 			key = k
 		}
-		printKeyBanner(key, "API key", config.WarningNotificationsEnabled(ctx, a.platform, nil))
+		printKeyBanner(key, "API key", config.WarningNotificationsEnabled(ctx, a.platform))
 	}
 	return nil
 }
@@ -442,7 +442,7 @@ type hostDefaultHeaders struct {
 // Host matched default header factories for the routes whose servers require identifying headers
 var hostDefaultHeadersTable = []hostDefaultHeaders{
 	{"openrouter.ai", func(ctx context.Context, _, _ string) (map[string]string, error) {
-		return provider.BuildORHeaders(ctx, nil)
+		return provider.BuildORHeaders(ctx), nil
 	}},
 	{"integrate.api.nvidia.com", func(_ context.Context, _, base string) (map[string]string, error) {
 		return provider.BuildNvidiaNIMHeaders(base), nil

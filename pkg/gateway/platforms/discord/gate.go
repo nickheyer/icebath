@@ -3,26 +3,21 @@ package discord
 import (
 	"context"
 	"fmt"
-	"math"
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
-
-// Authorization and gate env names snapshotted per adapter at connect time
-var gateEnvKeys = []string{
-	"DISCORD_ALLOWED_USERS", "DISCORD_ALLOWED_ROLES", "DISCORD_ALLOWED_CHANNELS",
-	"DISCORD_IGNORED_CHANNELS", "DISCORD_NO_THREAD_CHANNELS", "DISCORD_FREE_RESPONSE_CHANNELS",
-	"DISCORD_MISSED_MESSAGE_BACKFILL_CHANNELS", "DISCORD_ALLOW_ALL_USERS", "DISCORD_ALLOW_BOTS",
-	"GATEWAY_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS",
-}
 
 var rawUserMentionRE = regexp.MustCompile(`<@!?(\d+)>`)
 
@@ -52,58 +47,30 @@ func (s strSet) intersects(o strSet) bool {
 	return false
 }
 
-// Boolean from scoped env then config extra then the default, parsed by the flag's truthy shape
-func (a *DiscordAdapter) extraOrEnvFlag(ctx context.Context, key, envKey, envDefault string, truthy bool) bool {
-	configured, err := gateway.ExtraOrSecret(ctx, a.Config.Extra, key, envKey, nil, false)
-	if err != nil || configured == nil {
-		configured = envDefault
+// Context whose settings reads resolve in the profile this adapter serves
+func (a *DiscordAdapter) sctx(ctx context.Context) context.Context {
+	a.mu.Lock()
+	h := a.settingsHome
+	a.mu.Unlock()
+	if h != "" {
+		return home.WithOverride(ctx, h)
 	}
-	if b, ok := configured.(bool); ok {
-		return b
-	}
-	text := strings.ToLower(pystr.Strip(pyrepr.Str(configured)))
-	if truthy {
-		return text == "true" || text == "1" || text == "yes" || text == "on"
-	}
-	return !(text == "false" || text == "0" || text == "no" || text == "off")
+	return gateway.SettingsContext(ctx)
 }
 
 // Whether Discord channel messages require a bot mention
 func (a *DiscordAdapter) discordRequireMention(ctx context.Context) bool {
-	return a.extraOrEnvFlag(ctx, "require_mention", "DISCORD_REQUIRE_MENTION", "true", false)
+	return settings.DiscordRequireMention.Get(a.sctx(ctx))
 }
 
 // Whether free response channels also auto thread, off by default
 func (a *DiscordAdapter) discordFreeResponseAutoThread(ctx context.Context) bool {
-	return a.extraOrEnvFlag(ctx, "free_response_auto_thread", "DISCORD_FREE_RESPONSE_AUTO_THREAD", "false", true)
+	return settings.DiscordFreeResponseAutoThread.Get(a.sctx(ctx))
 }
 
-// Per attachment byte cap, zero unlimited, 32 MiB by default or on an invalid value
+// Per attachment byte cap, zero unlimited
 func (a *DiscordAdapter) discordMaxAttachmentBytes(ctx context.Context) int64 {
-	const def = 32 * 1024 * 1024
-	configured, present := a.Config.Extra["max_attachment_bytes"]
-	if !present || configured == nil {
-		if env := gateway.PlatformGateEnv(ctx, "DISCORD_MAX_ATTACHMENT_BYTES", ""); env != "" {
-			configured = env
-		} else {
-			configured = nil
-		}
-	}
-	if configured == nil || configured == "" {
-		return def
-	}
-	n, err := pyint.Of(configured)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[Discord] Invalid max_attachment_bytes value %s, falling back to 32 MiB", pyrepr.Repr(configured)))
-		return def
-	}
-	if n.Sign() <= 0 {
-		return 0
-	}
-	if !n.IsInt64() {
-		return math.MaxInt64
-	}
-	return n.Int64()
+	return max(int64(settings.DiscordMaxAttachmentBytes.Get(a.sctx(ctx))), 0)
 }
 
 // Whether a Discord audio attachment is a native voice note
@@ -111,51 +78,21 @@ func isDiscordVoiceMessageAttachment(att *discordgo.MessageAttachment) bool {
 	return att != nil && att.Waveform != ""
 }
 
-// Snapshots every gate env value inside the owning profile's scope
-func (a *DiscordAdapter) snapshotGateEnv(ctx context.Context) {
-	snap := make(map[string]string, len(gateEnvKeys))
-	for _, key := range gateEnvKeys {
-		snap[key] = gateway.PlatformGateEnv(ctx, key, "")
-	}
+// Binds the adapter to the home of the profile the connecting context serves, so later reads use that profile's settings
+func (a *DiscordAdapter) bindProfile(ctx context.Context) {
+	h := home.Dir(gateway.SettingsContext(ctx))
 	a.mu.Lock()
-	a.gateEnvSnapshot = snap
+	a.settingsHome = h
 	a.mu.Unlock()
 }
 
-// Gate env value from this adapter's snapshot, the scoped env when not snapshotted
-func (a *DiscordAdapter) gateEnv(ctx context.Context, name, def string) string {
-	a.mu.Lock()
-	snap := a.gateEnvSnapshot
-	a.mu.Unlock()
-	if snap != nil {
-		if v, ok := snap[name]; ok {
-			if v == "" {
-				return def
-			}
-			return v
-		}
+// Items of a list setting of this adapter's profile as a set
+func (a *DiscordAdapter) settingSet(ctx context.Context, e settings.Entry) strSet {
+	out := strSet{}
+	for _, item := range gateway.SettingList(a.sctx(ctx), e) {
+		out[item] = struct{}{}
 	}
-	return gateway.PlatformGateEnv(ctx, name, def)
-}
-
-// One gate value, the env or snapshot first then the extra of the given or own config
-func (a *DiscordAdapter) gateRaw(ctx context.Context, extraKey, envKey string, cfg *gateway.PlatformConfig) any {
-	var val string
-	if cfg == nil {
-		val = a.gateEnv(ctx, envKey, "")
-	} else {
-		val = gateway.PlatformGateEnv(ctx, envKey, "")
-	}
-	if val != "" {
-		return val
-	}
-	if cfg == nil {
-		cfg = a.Config
-	}
-	if cfg != nil && cfg.Extra != nil {
-		return cfg.Extra[extraKey]
-	}
-	return nil
+	return out
 }
 
 // Comma separated or list gate value as a set of stripped non empty strings
@@ -189,29 +126,25 @@ func gateCSVSet(raw any) strSet {
 	return out
 }
 
-// This adapter's DISCORD_ALLOWED_CHANNELS gate
+// Channels this adapter answers in, empty for every channel
 func (a *DiscordAdapter) getAllowedChannels(ctx context.Context) strSet {
-	return gateCSVSet(a.gateRaw(ctx, "allowed_channels", "DISCORD_ALLOWED_CHANNELS", nil))
+	return a.settingSet(ctx, settings.DiscordAllowedChannels)
 }
 
-// This adapter's DISCORD_IGNORED_CHANNELS gate
+// Channels this adapter never reads
 func (a *DiscordAdapter) getIgnoredChannels(ctx context.Context) strSet {
-	return gateCSVSet(a.gateRaw(ctx, "ignored_channels", "DISCORD_IGNORED_CHANNELS", nil))
+	return a.settingSet(ctx, settings.DiscordIgnoredChannels)
 }
 
-// This adapter's DISCORD_NO_THREAD_CHANNELS list
+// Channels this adapter answers in without opening a thread
 func (a *DiscordAdapter) getNoThreadChannels(ctx context.Context) strSet {
-	return gateCSVSet(a.gateRaw(ctx, "no_thread_channels", "DISCORD_NO_THREAD_CHANNELS", nil))
+	return a.settingSet(ctx, settings.DiscordNoThreadChannels)
 }
 
-// This adapter's cleaned DISCORD_ALLOWED_USERS entries with the allowed_users extra as fallback
+// Cleaned allowed people entries of this adapter's profile
 func (a *DiscordAdapter) getAllowedUsers(ctx context.Context) strSet {
-	raw := a.gateRaw(ctx, "allow_from", "DISCORD_ALLOWED_USERS", nil)
-	if raw == nil && a.Config != nil && a.Config.Extra != nil {
-		raw = a.Config.Extra["allowed_users"]
-	}
 	out := strSet{}
-	for entry := range gateCSVSet(raw) {
+	for entry := range a.settingSet(ctx, settings.DiscordAllowFrom) {
 		if cleaned := cleanDiscordID(entry); cleaned != "" {
 			out[cleaned] = struct{}{}
 		}
@@ -219,10 +152,15 @@ func (a *DiscordAdapter) getAllowedUsers(ctx context.Context) strSet {
 	return out
 }
 
-// This adapter's DISCORD_ALLOWED_ROLES ids in canonical decimal form
+// Allowed role ids of this adapter's profile in canonical decimal form
 func (a *DiscordAdapter) getAllowedRoles(ctx context.Context) (strSet, error) {
+	return canonicalRoleIDs(a.settingSet(ctx, settings.DiscordAllowedRoles))
+}
+
+// Role ids of a set in canonical decimal form, entries that are not ids skipped
+func canonicalRoleIDs(entries strSet) (strSet, error) {
 	out := strSet{}
-	for entry := range gateCSVSet(a.gateRaw(ctx, "allowed_roles", "DISCORD_ALLOWED_ROLES", nil)) {
+	for entry := range entries {
 		entry = pystr.Strip(entry)
 		if !isDigitString(entry) {
 			continue
@@ -236,51 +174,26 @@ func (a *DiscordAdapter) getAllowedRoles(ctx context.Context) (strSet, error) {
 	return out, nil
 }
 
-// Numeric ids resolved from username allowlist entries at connect time
-func (a *DiscordAdapter) ResolvedAllowlistUserIDs() map[string]struct{} {
+// Numeric ids resolved from username allowlist entries at connect time, read by the access checks
+func (a *DiscordAdapter) ResolvedAllowlistUserIDs() (any, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	out := make(map[string]struct{}, len(a.usernameResolvedIDs))
-	for k := range a.usernameResolvedIDs {
-		out[k] = struct{}{}
-	}
-	return out
+	return slices.Sorted(maps.Keys(a.usernameResolvedIDs)), nil
 }
 
-// Per profile DISCORD_ALLOW_ALL_USERS flag
+// Whether this adapter's profile lets everyone talk to it on Discord
 func (a *DiscordAdapter) discordAllowAllUsers(ctx context.Context) bool {
-	raw := a.gateRaw(ctx, "allow_all_users", "DISCORD_ALLOW_ALL_USERS", nil)
-	text := ""
-	if pyrepr.Truthy(raw) {
-		text = pyrepr.Str(raw)
-	}
-	switch strings.ToLower(pystr.Strip(text)) {
-	case "true", "1", "yes":
-		return true
-	}
-	return false
+	return settings.DiscordAllowAllUsers.Get(a.sctx(ctx))
 }
 
-// Per profile GATEWAY_ALLOW_ALL_USERS flag
+// Whether this adapter's profile lets everyone talk to it on every chat app
 func (a *DiscordAdapter) gatewayAllowAllUsers(ctx context.Context) bool {
-	switch strings.ToLower(pystr.Strip(a.gateEnv(ctx, "GATEWAY_ALLOW_ALL_USERS", ""))) {
-	case "true", "1", "yes":
-		return true
-	}
-	return false
+	return settings.GatewayAllowAllUsers.Get(a.sctx(ctx))
 }
 
-// Per profile DISCORD_ALLOW_BOTS mode of none mentions or all
+// Which messages from other bots this adapter's profile answers, none, mentions or all
 func (a *DiscordAdapter) getAllowBots(ctx context.Context) string {
-	raw := a.gateRaw(ctx, "allow_bots", "DISCORD_ALLOW_BOTS", nil)
-	text := "none"
-	if pyrepr.Truthy(raw) {
-		text = pyrepr.Str(raw)
-	}
-	if mode := pystr.Strip(strings.ToLower(text)); mode != "" {
-		return mode
-	}
-	return "none"
+	return settings.DiscordAllowBots.Get(a.sctx(ctx))
 }
 
 // Channel and author pair keying a bot tag continuation window
@@ -331,11 +244,7 @@ func (a *DiscordAdapter) isBotTagDebounceContinuation(m *inboundMessage) bool {
 
 // Channel ids or names needing no mention, a lone star kept for the wildcard check
 func (a *DiscordAdapter) discordFreeResponseChannels(ctx context.Context) strSet {
-	raw, present := a.Config.Extra["free_response_channels"]
-	if !present || raw == nil {
-		raw = a.gateEnv(ctx, "DISCORD_FREE_RESPONSE_CHANNELS", "")
-	}
-	return gateCSVSet(raw)
+	return a.settingSet(ctx, settings.DiscordFreeResponseChannels)
 }
 
 // User mention ids typed in the raw content, plain and legacy nickname forms
@@ -381,16 +290,9 @@ func (a *DiscordAdapter) selfIsRawMentioned(m *inboundMessage) bool {
 	return rawMentionedUserIDs(m).has(me.ID)
 }
 
-// Whether another bot must type an inline mention to trigger this bot, on by default
+// Whether another bot must type an inline mention to trigger this bot
 func (a *DiscordAdapter) discordBotsRequireInlineMention(ctx context.Context) bool {
-	if configured, ok := a.Config.Extra["bots_require_inline_mention"].(string); ok {
-		switch strings.ToLower(configured) {
-		case "true", "1", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return a.extraOrEnvFlag(ctx, "bots_require_inline_mention", "DISCORD_BOTS_REQUIRE_INLINE_MENTION", "true", true)
+	return settings.DiscordBotsRequireInlineMention.Get(a.sctx(ctx))
 }
 
 // Channel keys of a message accepted by channel gates
@@ -427,26 +329,17 @@ func (a *DiscordAdapter) discordChannelKeysFromChannel(ch *discordgo.Channel, pa
 	return keys
 }
 
-// Whether threads still require a mention after the bot participated, off by default
+// Whether threads still require a mention after the bot participated
 func (a *DiscordAdapter) discordThreadRequireMention(ctx context.Context) bool {
-	return a.extraOrEnvFlag(ctx, "thread_require_mention", "DISCORD_THREAD_REQUIRE_MENTION", "false", true)
+	return settings.DiscordThreadRequireMention.Get(a.sctx(ctx))
 }
 
 // Whether history backfill is enabled for shared sessions
 func (a *DiscordAdapter) discordHistoryBackfill(ctx context.Context) bool {
-	return a.extraOrEnvFlag(ctx, "history_backfill", "DISCORD_HISTORY_BACKFILL", "true", true)
+	return settings.DiscordHistoryBackfill.Get(a.sctx(ctx))
 }
 
-// Most messages scanned backwards by history backfill, 50 by default
+// Most messages scanned backwards by history backfill
 func (a *DiscordAdapter) discordHistoryBackfillLimit(ctx context.Context) int {
-	if configured, ok := a.Config.Extra["history_backfill_limit"]; ok && configured != nil {
-		if n, err := pyint.Of(configured); err == nil && n.IsInt64() {
-			return int(n.Int64())
-		}
-	}
-	raw := gateway.PlatformGateEnv(ctx, "DISCORD_HISTORY_BACKFILL_LIMIT", "50")
-	if n, ok := pyint.Parse(raw); ok && n.IsInt64() {
-		return int(n.Int64())
-	}
-	return 50
+	return settings.DiscordHistoryBackfillLimit.Get(a.sctx(ctx))
 }

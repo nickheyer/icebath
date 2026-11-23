@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Paths of the media_files argument, a dict item read through its path key
@@ -83,7 +84,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	baseURL, token := pystr.RstripChars(urlText, "/"), pystr.Strip(tokenText)
 	if baseURL == "" || token == "" {
-		return gateway.SendError("Mattermost standalone send: MATTERMOST_URL and MATTERMOST_TOKEN must both be set"), nil
+		return gateway.SendError("Mattermost standalone send: the server address and MATTERMOST_TOKEN must both be set"), nil
 	}
 	uploadHeaders := map[string]string{"Authorization": "Bearer " + token}
 	headers := map[string]string{"Authorization": "Bearer " + token, "Content-Type": "application/json"}
@@ -189,24 +190,20 @@ func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message stri
 	return map[string]any{"success": true, "platform": "mattermost", "chat_id": chatID, "message_id": messageID}, nil
 }
 
-// YAML keys of the mattermost block bridged to env vars, the allowed channels a whitelist
-var yamlBridge = []gateway.YAMLBridgeRow{
-	{Key: "require_mention", Env: "MATTERMOST_REQUIRE_MENTION", Kind: "lower"},
-	{Key: "free_response_channels", Env: "MATTERMOST_FREE_RESPONSE_CHANNELS", Kind: "csv"},
-	{Key: "allowed_channels", Env: "MATTERMOST_ALLOWED_CHANNELS", Kind: "csv"},
-}
-
-// Bridges the mattermost YAML keys to env vars and seeds them into the platform extra
-func applyYAMLConfig(ctx context.Context, _ map[string]any, mattermostCfg map[string]any) (map[string]any, error) {
-	return gateway.ApplyYAMLBridge(ctx, mattermostCfg, yamlBridge)
-}
-
 // Model facing description of Mattermost markdown and media delivery, kept byte stable for the cached prompt
 const platformHint = "You are in a Mattermost workspace communicating with your user. Mattermost renders standard " +
 	"Markdown — headings, bold, italic, code blocks, and tables all work. You can send media files " +
 	"natively: include MEDIA:/absolute/path/to/file in your response. Images (.jpg, .png, .webp) are " +
 	"uploaded as photo attachments, audio and video as file attachments. Image URLs in markdown format " +
 	"![alt](url) are rendered as inline previews automatically."
+
+// Whether a bot token is in the env and a server address is set
+func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error) {
+	if ok, err := gateway.EnvIsConnected("MATTERMOST_TOKEN")(ctx, cfg); err != nil || !ok {
+		return false, err
+	}
+	return settings.MattermostURL.Get(gateway.SettingsContext(ctx)) != "", nil
+}
 
 // Mattermost platform plugin compiled into the binary under the bundled platforms/mattermost key
 type mattermostPlatformPlugin struct{}
@@ -219,7 +216,6 @@ func (mattermostPlatformPlugin) Manifest() plugins.Manifest {
 			"agent. Supports thread-mode replies, native file uploads, channel-scoped allowlists, and home-channel cron " +
 			"delivery.\n",
 		RequiresEnv: []plugins.EnvSpec{
-			{Name: "MATTERMOST_URL", Description: "Mattermost server URL (e.g. https://mm.example.com)"},
 			{Name: "MATTERMOST_TOKEN", Description: "Bot account token or personal-access token", Secret: true}}}
 }
 
@@ -233,9 +229,8 @@ var mattermostAdapterClass = &gateway.AdapterClass{Name: "MattermostAdapter", Tr
 func (mattermostPlatformPlugin) Register(ctx *plugins.Context) error {
 	extra := map[string]any{
 		"scoped_validate_config": validateMattermostConfig,
-		"is_connected":           gateway.EnvIsConnected("MATTERMOST_TOKEN", "MATTERMOST_URL"),
+		"is_connected":           isConnected,
 		"setup_fn":               InteractiveSetup,
-		"apply_yaml_config_fn":   applyYAMLConfig,
 		"cron_deliver_env_var":   "MATTERMOST_HOME_CHANNEL",
 		"standalone_sender_fn":   standaloneSend,
 		"max_message_length":     maxPostLength,
@@ -255,7 +250,7 @@ func (mattermostPlatformPlugin) Register(ctx *plugins.Context) error {
 			return NewMattermostAdapter(fctx, cfg)
 		}),
 		Check:       checkMattermostRequirements,
-		RequiredEnv: []string{"MATTERMOST_URL", "MATTERMOST_TOKEN"},
+		RequiredEnv: []string{"MATTERMOST_TOKEN"},
 		Extra:       extra,
 	})
 	return err

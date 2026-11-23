@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -137,43 +138,7 @@ func resolveConcurrency(extra map[string]any) (int, error) {
 	return int(n.Int64()), nil
 }
 
-// Access policy and allowlist of DMs or groups from the extra, then the scoped env, pairing when neither names one
-func policySetting(ctx context.Context, extra map[string]any, kind string) (string, []string, error) {
-	prefix := "YUANBAO_" + pystr.Upper(kind)
-	policy := extra[kind+"_policy"]
-	if !pyrepr.Truthy(policy) {
-		scoped, err := gateway.GetScopedSecret(ctx, prefix+"_POLICY", "", false)
-		if err != nil {
-			return "", nil, err
-		}
-		policy = scoped
-	}
-	policyText, err := strMethod(pyrepr.Or(policy, "pairing"), kind+"_policy")
-	if err != nil {
-		return "", nil, err
-	}
-	raw := extra[kind+"_allow_from"]
-	if !pyrepr.Truthy(raw) {
-		scoped, err := gateway.GetScopedSecret(ctx, prefix+"_ALLOW_FROM", "", false)
-		if err != nil {
-			return "", nil, err
-		}
-		raw = scoped
-	}
-	rawText, err := strMethod(raw, kind+"_allow_from")
-	if err != nil {
-		return "", nil, err
-	}
-	allowFrom := []string{}
-	for _, entry := range strings.Split(rawText, ",") {
-		if entry = pystr.Strip(entry); entry != "" {
-			allowFrom = append(allowFrom, entry)
-		}
-	}
-	return pystr.Lower(pystr.Strip(policyText)), allowFrom, nil
-}
-
-// Adapter for a platform config reading credentials, endpoints, access policies and the home channel from extra then env
+// Adapter for a platform config reading credentials from extra then env, endpoints and access policies from settings
 func NewYuanbaoAdapter(ctx context.Context, config *gateway.PlatformConfig) (*YuanbaoAdapter, error) {
 	if config == nil {
 		config = gateway.NewPlatformConfig()
@@ -200,15 +165,7 @@ func NewYuanbaoAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Yu
 	if botID := extra["bot_id"]; pyrepr.Truthy(botID) {
 		a.botID = botID
 	}
-	if a.wsURL, err = setting("ws_url", defaultWSGatewayURL); err != nil {
-		return nil, err
-	}
-	if a.apiDomain, err = setting("api_domain", defaultBotAPIDomain); err != nil {
-		return nil, err
-	}
-	if a.routeEnv, err = setting("route_env", ""); err != nil {
-		return nil, err
-	}
+	a.wsURL, a.apiDomain, a.routeEnv = settings.YuanbaoWsURL.Get(gateway.SettingsContext(ctx)), settings.YuanbaoAPIDomain.Get(gateway.SettingsContext(ctx)), settings.YuanbaoRouteEnv.Get(gateway.SettingsContext(ctx))
 	a.appKey, a.appSecret, a.wsURL, a.routeEnv = pystr.Strip(a.appKey), pystr.Strip(a.appSecret), pystr.Strip(a.wsURL), pystr.Strip(a.routeEnv)
 	a.apiDomain = pystr.RstripChars(a.apiDomain, "/")
 	if a.MediaResolveConcurrency, err = resolveConcurrency(extra); err != nil {
@@ -216,15 +173,9 @@ func NewYuanbaoAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Yu
 	}
 	a.connection = newConnectionManager(a)
 	a.outbound = newOutboundManager(a)
-	dmPolicy, dmAllowFrom, err := policySetting(ctx, extra, "dm")
-	if err != nil {
-		return nil, err
-	}
-	groupPolicy, groupAllowFrom, err := policySetting(ctx, extra, "group")
-	if err != nil {
-		return nil, err
-	}
-	if a.accessPolicy, err = NewAccessPolicy(dmPolicy, dmAllowFrom, groupPolicy, groupAllowFrom); err != nil {
+	sctx := gateway.SettingsContext(ctx)
+	if a.accessPolicy, err = NewAccessPolicy(pystr.Lower(settings.YuanbaoDmPolicy.Get(sctx)), gateway.SettingList(ctx, settings.YuanbaoDmAllowFrom),
+		pystr.Lower(settings.YuanbaoGroupPolicy.Get(sctx)), gateway.SettingList(ctx, settings.YuanbaoGroupAllowFrom)); err != nil {
 		return nil, err
 	}
 	a.inboundPipeline = BuildInboundPipeline()

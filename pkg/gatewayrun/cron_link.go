@@ -157,7 +157,7 @@ func (r *GatewayRunner) noticeInterruptedCronJobs(ctx context.Context, jobIDs []
 						notified[dedupKey] = true
 					}
 					return nil
-				}, string(platform), false, nil)
+				}, string(platform), false)
 				if err != nil {
 					pkgLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %s", platform, chatID, pyrepr.ExceptionMessage(err)))
 				}

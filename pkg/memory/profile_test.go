@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,7 +32,7 @@ func TestClonedMemoryProviderUnreadableConfigMeansNoNotice(t *testing.T) {
 				t.Fatal(err)
 			}
 			writeTestFile(t, filepath.Join(dir, "config.yaml"), body)
-			if got := ClonedMemoryProvider(dir); got != "" {
+			if got := ClonedMemoryProvider(context.Background(), dir); got != "" {
 				t.Fatalf("ClonedMemoryProvider = %q, want none", got)
 			}
 		})
@@ -39,7 +40,7 @@ func TestClonedMemoryProviderUnreadableConfigMeansNoNotice(t *testing.T) {
 }
 
 func TestClonedMemoryProviderMissingConfigMeansNoNotice(t *testing.T) {
-	if got := ClonedMemoryProvider(t.TempDir()); got != "" {
+	if got := ClonedMemoryProvider(context.Background(), t.TempDir()); got != "" {
 		t.Fatalf("ClonedMemoryProvider = %q, want none", got)
 	}
 }
@@ -50,14 +51,14 @@ func TestClonedMemoryProviderConfiguredWithCopiedStateIsNamed(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestFile(t, filepath.Join(dir, "config.yaml"), []byte("memory:\n  provider: honcho\n"))
-	if got := ClonedMemoryProvider(dir); got != "honcho" {
+	if got := ClonedMemoryProvider(context.Background(), dir); got != "honcho" {
 		t.Fatalf("ClonedMemoryProvider = %q, want honcho", got)
 	}
 }
 
 func cloneActiveProviderConfig(t *testing.T, source, profile string) {
 	t.Helper()
-	provider := ExternalMemoryProvider(loadProfileConfigDict(source))
+	provider := ProfileMemoryProvider(context.Background(), source)
 	if _, err := CloneMemoryProviderConfig(source, profile, provider); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +98,7 @@ func TestCloneCopiesFlatProviderJSONOwnerOnly(t *testing.T) {
 	source, profile := t.TempDir(), t.TempDir()
 	writeTestFile(t, filepath.Join(source, "config.yaml"), []byte("memory:\n  provider: mem0\n"))
 	writeTestFile(t, filepath.Join(source, "mem0.json"), []byte(`{"agent_id": "icebath"}`))
-	copied, err := CloneMemoryProviderConfig(source, profile, ExternalMemoryProvider(loadProfileConfigDict(source)))
+	copied, err := CloneMemoryProviderConfig(source, profile, ProfileMemoryProvider(context.Background(), source))
 	if err != nil || !copied {
 		t.Fatalf("copied = %v, %v", copied, err)
 	}
@@ -139,15 +140,11 @@ func TestCloneIgnoresUnsafeMemoryProviderNames(t *testing.T) {
 
 func TestExternalMemoryProviderSkipsCoreSentinels(t *testing.T) {
 	for _, name := range []string{"", "default", "builtin", "built-in", "none", " None "} {
-		cfg := map[string]any{"memory": map[string]any{"provider": name}}
-		if got := ExternalMemoryProvider(cfg); got != "" {
-			t.Fatalf("ExternalMemoryProvider(%q) = %q, want none", name, got)
+		if got := externalProviderName(name); got != "" {
+			t.Fatalf("externalProviderName(%q) = %q, want none", name, got)
 		}
 	}
-	if got := ExternalMemoryProvider(map[string]any{"memory": map[string]any{"provider": " honcho "}}); got != "honcho" {
-		t.Fatalf("ExternalMemoryProvider = %q, want honcho", got)
-	}
-	if got := ExternalMemoryProvider(map[string]any{"memory": "honcho"}); got != "" {
-		t.Fatalf("non mapping memory section gave %q", got)
+	if got := externalProviderName(" honcho "); got != "honcho" {
+		t.Fatalf("externalProviderName = %q, want honcho", got)
 	}
 }

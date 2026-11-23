@@ -9,11 +9,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var (
@@ -207,10 +209,7 @@ func (s *statusRun) renderAPIKeyProviders() error {
 	if label != "LM Studio" {
 		return nil
 	}
-	var base any
-	if m, ok := statusDict(s.config["model"]); ok {
-		base = m["base_url"]
-	}
+	var base any = settings.ModelBaseURL.Get(home.WithOverride(s.ctx, s.h))
 	if !pyrepr.Truthy(base) {
 		envBase, err := statusGetEnvValue(s.ctx, s.h, "LM_BASE_URL")
 		if err != nil {

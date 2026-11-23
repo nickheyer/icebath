@@ -15,18 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-func TestCoerceListNone(t *testing.T) {
-	if got := CoerceList(nil); len(got) != 0 || got == nil {
-		t.Fatalf("got %#v", got)
-	}
-}
-
-func TestCoerceListString(t *testing.T) {
-	if got := CoerceList("a, b ,c"); !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
-		t.Fatalf("got %#v", got)
-	}
-}
-
 func TestReadChunkShortReadRaises(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "x.bin")
 	if err := os.WriteFile(f, []byte("hi"), 0o644); err != nil {

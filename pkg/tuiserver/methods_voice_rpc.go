@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/media"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -252,26 +252,9 @@ func wakeStatus(ctx context.Context, rid any, _ map[string]any) (response map[st
 		"audio_silent": silent, "local_input_available": reqs.LocalInputAvailable})
 }
 
-// Voice cfg value when numeric and not a bool, else the default
-func voiceCfgNumber(value any, def float64) float64 {
-	switch v := value.(type) {
-	case int:
-		return float64(v)
-	case int64:
-		return float64(v)
-	case float64:
-		return v
-	}
-	return def
-}
-
 // Enabled, record key and TTS flags every voice.toggle branch answers with
 func voiceStatusPayload(ctx context.Context, extra map[string]any) map[string]any {
-	recordKey, isText := voiceCfgDict(ctx)["record_key"].(string)
-	if !isText || recordKey == "" {
-		recordKey = "ctrl+b"
-	}
-	out := map[string]any{"enabled": voiceModeEnabled(), "record_key": recordKey, "tts": voiceTTSEnabled()}
+	out := map[string]any{"enabled": voiceModeEnabled(), "record_key": settings.RecordKey.Get(ctx), "tts": voiceTTSEnabled()}
 	for key, value := range extra {
 		out[key] = value
 	}
@@ -298,11 +281,7 @@ func ttsLeaseAsync(ctx context.Context, lease string, active bool) {
 
 // Flips spoken replies, off silencing live speech, the lease warming or releasing the engine
 func setVoiceTTS(ctx context.Context, on bool) {
-	flag := "0"
-	if on {
-		flag = "1"
-	}
-	_ = os.Setenv("ICEBATH_VOICE_TTS", flag)
+	setVoiceFlag(ctx, settings.SpeakReplies.Key, on)
 	if !on {
 		ttsStreamStop(false)
 	}
@@ -355,11 +334,7 @@ func voiceToggle(ctx context.Context, rid any, params map[string]any) map[string
 		return ok(rid, payload)
 	case isText && (text == "on" || text == "off"):
 		enabled := text == "on"
-		flag := "0"
-		if enabled {
-			flag = "1"
-		}
-		_ = os.Setenv("ICEBATH_VOICE", flag)
+		setVoiceFlag(ctx, settings.VoiceInput.Key, enabled)
 		stopHint := ""
 		if enabled {
 			suppress(func() { stopHint = media.VoiceStopHint() })
@@ -470,8 +445,7 @@ func voiceRecord(ctx context.Context, rid any, params map[string]any) (response 
 	}
 	ttsStreamStop(true)
 	suppress(func() { media.SetVoiceBusyProbe(anySessionRunning) })
-	voiceCfg := voiceCfgDict(ctx)
-	maxRec := voiceCfgNumber(voiceCfg["max_recording_seconds"], 120.0)
+	maxRec := settings.VoiceMaxRecordingSeconds.Get(ctx).Seconds()
 	suppress(func() { wakePaused = media.PauseListening(transport) })
 	if wakePaused {
 		voiceSidMu.Lock()
@@ -507,7 +481,7 @@ func voiceRecord(ctx context.Context, rid any, params map[string]any) (response 
 				voiceRecordTranscript(detached, map[string]any{"stop_phrase": true, "text": text})
 			}),
 		},
-		SilenceThreshold: voiceCfgNumber(voiceCfg["silence_threshold"], 200), SilenceDuration: voiceCfgNumber(voiceCfg["silence_duration"], 3.0),
+		SilenceThreshold: float64(settings.VoiceSilenceThreshold.Get(ctx)), SilenceDuration: settings.VoiceSilenceDuration.Get(ctx),
 		AutoRestart: false, MaxRecordingSeconds: maxRecording,
 		OnPartial: voiceCaptureCallback(func(text string) { voiceEmit(detached, "voice.partial", map[string]any{"text": text}) }),
 	})

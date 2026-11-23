@@ -48,6 +48,16 @@ type Selectable interface {
 	Selectable() bool
 }
 
+// Card whose text scrolls under a sweep held past its edge, so one sweep can cover more than a window of it
+type SweepScroller interface {
+	// Window rows the scrolling text fills, the first and one past the last
+	SweepArea() (top, bottom int)
+	// Scrolls the text by rows, negative toward its start, returning the rows it moved
+	SweepScroll(rows int) int
+	// Plain text of window rows counted from the first row of the window, rows outside the window included
+	SweepRows(from, to int) []string
+}
+
 // Card with controls a press takes hold of, such as a scrollbar, the drag then following the pointer instead of sweeping text
 type Grabber interface {
 	Grabs(x, y int) bool

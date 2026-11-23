@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
@@ -56,5 +58,31 @@ func (c *turnController) reportGatewayStartTimeout(stderrTail string, setStatus 
 	}
 	for _, line := range lines[max(0, len(lines)-stderrLinesMax):] {
 		c.pushActivity(jsSlice(line, 0, stderrLineCap), "error", "")
+	}
+}
+
+// Offers to restart a background service of another build, once for the window, or names it where the launcher cannot restart it
+func (a *app) offerOwnerRestart() {
+	switch {
+	case a.host.ReplaceOwner == nil:
+		a.sys(tr(txt.GatewayMsgOtherBuildLine))
+	case a.primary():
+		a.store.overlay.Confirm = &confirmReq{Title: tr(txt.GatewayMsgOtherBuildTitle), Detail: tr(txt.GatewayMsgOtherBuildDetail),
+			ConfirmLabel: tr(txt.GatewayMsgOtherBuildRestart), CancelLabel: tr(txt.GatewayMsgOtherBuildKeep), OnConfirm: a.restartOwner}
+	}
+}
+
+// Stops the background service of another build off the update loop; losing the connection then brings up one of this build
+func (a *app) restartOwner() tea.Cmd {
+	a.sys(tr(txt.GatewayMsgOtherBuildRestarting))
+	replace, ctx := a.host.ReplaceOwner, a.ctx
+	return func() tea.Msg {
+		err := replace(ctx)
+		return asyncDoneMsg{run: func() tea.Cmd {
+			if err != nil {
+				a.sys(tr(txt.GatewayMsgOtherBuildRestartFailed, err.Error()))
+			}
+			return nil
+		}}
 	}
 }

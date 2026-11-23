@@ -520,10 +520,8 @@ func (c *journeyCard) snap(i int) int {
 	return c.step(i, -1)
 }
 
-// Key names of the palette actions the window manager fires at an overlay in place of the keys
-var journeyActionKeys = map[string]string{"palette.pick": "enter", "palette.up": "up", "palette.down": "down",
-	"palette.page.up": "pgup", "palette.page.down": "pgdown", "palette.left": "left", "palette.right": "right",
-	"palette.home": "g", "palette.end": "G", "palette.clear": "ctrl+u", "tui.journey.back": "esc"}
+// Key names of the actions the window manager fires at the journey in place of the keys
+var journeyActionKeys = map[string]string{"tui.journey.back": "esc"}
 
 // Keymap context of the journey window, its Esc stepping back from a memory before it closes the window
 const journeyContext = "tui.journey"
@@ -985,7 +983,7 @@ func (a *app) journeyEdit(r *slashRun, nodeID string) tea.Cmd {
 // Slash command of the learning journey, the timeline window, the node list, and delete and edit by node id
 func (a *app) journeyCommands() []slashCommand {
 	return []slashCommand{
-		{name: "journey", aliases: []string{"learning", "memory-graph"}, help: "open the learning journey timeline",
+		{name: "journey", help: "open the learning journey timeline",
 			usage: "[list|delete <id>|edit <id>]", suggest: func(string) []string { return []string{"list", "delete", "edit"} },
 			run: func(r *slashRun) tea.Cmd {
 				parsed := parseJourneyArgs(r.arg)

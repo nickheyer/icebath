@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )

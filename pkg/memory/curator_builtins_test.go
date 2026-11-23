@@ -272,7 +272,7 @@ func TestCuratorCLIPinRefusesBundledSkill(t *testing.T) {
 }
 
 func TestCuratorReviewRuntimeAuxiliaryCredentials(t *testing.T) {
-	curTestHome(t, nil)
+	ctx, h := curTestHome(t, nil)
 	main := map[string]any{"provider": "openrouter", "default": "openai/gpt-5.5"}
 	for _, tc := range []struct {
 		name                       string
@@ -286,10 +286,8 @@ func TestCuratorReviewRuntimeAuxiliaryCredentials(t *testing.T) {
 		{"provider only falls back", map[string]any{"model": main, "auxiliary": map[string]any{"curator": map[string]any{"provider": "openrouter", "model": ""}}}, "openrouter", "openai/gpt-5.5", "", ""},
 		{"model only falls back", map[string]any{"model": main, "auxiliary": map[string]any{"curator": map[string]any{"provider": "auto", "model": "gpt-5.4-mini"}}}, "openrouter", "openai/gpt-5.5", "", ""},
 	} {
-		b, err := curatorResolveReviewRuntime(tc.cfg)
-		if err != nil {
-			t.Fatalf("%s: %v", tc.name, err)
-		}
+		curWriteConfigDoc(t, h, tc.cfg)
+		b := curatorResolveReviewRuntime(ctx)
 		if b.provider != tc.provider || b.model != tc.model || b.apiKey != tc.key || b.baseURL != tc.base {
 			t.Fatalf("%s: %+v", tc.name, b)
 		}

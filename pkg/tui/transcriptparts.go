@@ -10,7 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
-// Parts of a block that take a click, the three trail sections named as the details sections are and a paste section by its place after the prefix
+// Parts of a block that take a click, the three trail sections named as the details sections are, and a paste section and a tool row by their
+// place after the prefix
 const (
 	partThinking = "thinking"
 	partTools    = "tools"
@@ -19,6 +20,7 @@ const (
 	partSystem   = "system"
 	partPrompt   = "prompt"
 	partPaste    = "paste:"
+	partTool     = "tool:"
 )
 
 // Identity of the rows of the turn in flight that belong to no transcript row, the running tools, the activity and the task list

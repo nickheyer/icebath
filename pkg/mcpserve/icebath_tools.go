@@ -232,11 +232,10 @@ func registerIcebathTools(ctx context.Context, server *provider.MCPToolServer, r
 
 // Process setup for --tools, quiet banners and redacted output, the profile shell hooks and outbound webhooks registered
 func prepareToolProcess(ctx context.Context, acceptHooks bool) error {
-	for _, kv := range [][2]string{{"ICEBATH_QUIET", "1"}, {"ICEBATH_REDACT_SECRETS", "true"}} {
-		if _, set := os.LookupEnv(kv[0]); !set {
-			os.Setenv(kv[0], kv[1])
-		}
+	if _, set := os.LookupEnv("ICEBATH_QUIET"); !set {
+		os.Setenv("ICEBATH_QUIET", "1")
 	}
+	tools.ForceSecretRedaction()
 	cfg, err := config.Load(home.Dir(ctx), nil)
 	if err != nil {
 		return err

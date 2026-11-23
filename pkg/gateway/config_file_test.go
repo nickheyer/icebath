@@ -349,26 +349,16 @@ func TestLoadGatewayConfigPlatformLayers(t *testing.T) {
 	}
 }
 
-func TestMultiplexProfilesEnvAndConfigPrecedence(t *testing.T) {
+func TestMultiplexProfilesConfigSpellings(t *testing.T) {
 	multiplexed := func(cfg *GatewayConfig) any {
 		if cfg.MultiplexProfiles == nil {
 			return nil
 		}
 		return *cfg.MultiplexProfiles
 	}
-	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "1")
-	if got := multiplexed(loadYAML(t, "multiplex_profiles: false\n")); got != true {
-		t.Fatalf("env true over config false: %v", got)
-	}
-	clearEnv(t, "GATEWAY_MULTIPLEX_PROFILES")
 	if got := multiplexed(loadYAML(t, "multiplex_profiles: true\n")); got != true {
-		t.Fatalf("config true with env unset: %v", got)
+		t.Fatalf("config true: %v", got)
 	}
-	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "")
-	if got := multiplexed(loadYAML(t, "multiplex_profiles: true\n")); got != true {
-		t.Fatalf("empty env shadows config: %v", got)
-	}
-	clearEnv(t, "GATEWAY_MULTIPLEX_PROFILES")
 	if got := multiplexed(loadYAML(t, "gateway:\n  multiplex_profiles: true\n")); got != true {
 		t.Fatalf("nested under gateway: %v", got)
 	}
@@ -378,7 +368,6 @@ func TestMultiplexProfilesEnvAndConfigPrecedence(t *testing.T) {
 }
 
 func TestOnAllAdaptersDown(t *testing.T) {
-	clearEnv(t, "GATEWAY_ON_ALL_ADAPTERS_DOWN")
 	if got := mustGatewayConfig(t, map[string]any{}).OnAllAdaptersDown; got != "exit" {
 		t.Fatalf("default %s", got)
 	}
@@ -388,19 +377,6 @@ func TestOnAllAdaptersDown(t *testing.T) {
 	}
 	if got := mustGatewayConfig(t, map[string]any{"gateway": map[string]any{"on_all_adapters_down": "yolo"}}).OnAllAdaptersDown; got != "exit" {
 		t.Fatalf("unrecognized %s", got)
-	}
-	exitYAML := map[string]any{"gateway": map[string]any{"on_all_adapters_down": "exit"}}
-	t.Setenv("GATEWAY_ON_ALL_ADAPTERS_DOWN", "stay_alive")
-	if got := mustGatewayConfig(t, exitYAML).OnAllAdaptersDown; got != "stay_alive" {
-		t.Fatalf("env wins %s", got)
-	}
-	t.Setenv("GATEWAY_ON_ALL_ADAPTERS_DOWN", "whatever")
-	if got := mustGatewayConfig(t, exitYAML).OnAllAdaptersDown; got != "exit" {
-		t.Fatalf("invalid env %s", got)
-	}
-	clearEnv(t, "GATEWAY_ON_ALL_ADAPTERS_DOWN")
-	if got := mustGatewayConfig(t, map[string]any{}).OnAllAdaptersDown; got != "exit" {
-		t.Fatalf("env removed %s", got)
 	}
 }
 

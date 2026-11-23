@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Accounts and open platform hosts of the scan to create onboarding per domain
@@ -536,8 +537,13 @@ func InteractiveSetup(ctx context.Context) error {
 		creds = &Registration{AppID: appID, AppSecret: appSecret, Domain: domain, BotName: botName}
 	}
 	domain := creds.Domain
-	for _, kv := range [][2]string{{"FEISHU_APP_ID", pyrepr.Str(creds.AppID)}, {"FEISHU_APP_SECRET", pyrepr.Str(creds.AppSecret)}, {"FEISHU_DOMAIN", domain}} {
+	for _, kv := range [][2]string{{"FEISHU_APP_ID", pyrepr.Str(creds.AppID)}, {"FEISHU_APP_SECRET", pyrepr.Str(creds.AppSecret)}} {
 		if err := cfg.SaveEnvValue(ctx, kv[0], kv[1]); err != nil {
+			return err
+		}
+	}
+	if domain != "" {
+		if _, err := settings.Set(gateway.SettingsContext(ctx), settings.FeishuDomain.Key, domain, settings.Global); err != nil {
 			return err
 		}
 	}
@@ -548,7 +554,7 @@ func InteractiveSetup(ctx context.Context) error {
 		cli.PrintInfo("Override with FEISHU_WEBHOOK_HOST / FEISHU_WEBHOOK_PORT / FEISHU_WEBHOOK_PATH")
 		cli.PrintInfo("For signature verification, set FEISHU_ENCRYPT_KEY and FEISHU_VERIFICATION_TOKEN")
 	}
-	if err := cfg.SaveEnvValue(ctx, "FEISHU_CONNECTION_MODE", mode); err != nil {
+	if _, err := settings.Set(gateway.SettingsContext(ctx), settings.FeishuConnectionMode.Key, mode, settings.Global); err != nil {
 		return err
 	}
 	if pyrepr.Truthy(creds.BotName) {

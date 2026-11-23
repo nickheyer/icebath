@@ -70,10 +70,10 @@ func (a *app) restoreSnapshot(snapID string) tea.Cmd {
 	if stored == "" {
 		stored = ui.Sid
 	}
-	connected, status := ui.GatewayConnected, ui.Status
+	wasOffline, status := ui.offline(), ui.Status
 	if handoff {
-		off := false
-		ui.GatewayConnected, ui.Status = &off, "restoring snapshot"
+		ui.setConnected(false)
+		ui.Status = "restoring snapshot"
 	}
 	return func() tea.Msg {
 		var reopen func()
@@ -81,13 +81,15 @@ func (a *app) restoreSnapshot(snapID string) tea.Cmd {
 		return asyncDoneMsg{run: func() tea.Cmd {
 			if !res.Released {
 				if handoff {
-					ui.GatewayConnected, ui.Status = connected, status
+					ui.setConnected(!wasOffline)
+					ui.Status = status
 				}
 				return a.snapshotOutput(res.Lines, nil)
 			}
 			previous := ui.Sid
 			a.turn.reset()
-			ui.Busy, ui.Compacting, ui.Status = false, false, tr(txt.SessionStatusReconnecting)
+			a.store.setBusy(false)
+			ui.Compacting, ui.Status = false, tr(txt.SessionStatusReconnecting)
 			a.recoverSid = stored
 			if !res.SessionKept {
 				a.recoverSid, a.events.startupResumeID = "", ""
@@ -114,7 +116,7 @@ func (a *app) afterReopen(previous string, resumed bool, deadline time.Time, the
 // Slash command for quick state snapshots, list, create, prune and restore behind the confirm dialog
 func (a *app) snapshotCommands() []slashCommand {
 	return []slashCommand{
-		{name: "snapshot", aliases: []string{"snap"}, help: "create, list, restore or prune state snapshots",
+		{name: "snapshot", help: "create, list, restore or prune state snapshots",
 			usage: "[list|create [label]|restore <id>|prune [N]]", suggest: snapshotSuggestions, run: func(r *slashRun) tea.Cmd {
 				words := strings.Fields(r.arg)
 				sub := "list"

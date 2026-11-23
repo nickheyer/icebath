@@ -318,7 +318,7 @@ func plines(a *AIAgent, lines ...string) {
 			recoveryPrint(a.stdout(), a.logPrefix+line)
 		}
 		return nil
-	}, platform, false, a.notificationConfig)
+	}, platform, false)
 }
 
 // Provider reported image side ceiling in pixels, a patch budget read as its square side, nil outside 512 to 8000

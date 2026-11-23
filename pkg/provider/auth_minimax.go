@@ -218,23 +218,6 @@ func minimaxPollToken(ctx context.Context, client *http.Client, portalBaseURL, c
 	return nil, minimaxErr("MiniMax OAuth timed out before authorization completed.", "timeout", false)
 }
 
-// Persists MiniMax OAuth state, making minimax-oauth the active provider only when asked
-func minimaxSaveAuthState(env PoolEnv, authState map[string]any, setActive bool) error {
-	unlock, err := env.Store.Lock(AuthLockTimeout)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	data, err := env.Store.Load()
-	if err != nil {
-		return err
-	}
-	if err := env.Store.StoreProviderState(data, "minimax-oauth", authState, setActive); err != nil {
-		return err
-	}
-	return env.Store.Save(data)
-}
-
 // Runs the MiniMax OAuth user code flow, persists the tokens and returns the auth state
 func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bool, timeout time.Duration) (map[string]any, error) {
 	if region == "" {
@@ -309,9 +292,6 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	for k, v := range expiry {
 		authState[k] = v
 	}
-	if err := minimaxSaveAuthState(env, authState, true); err != nil {
-		return nil, err
-	}
 	fmt.Fprintln(out, "✓ MiniMax OAuth login successful.")
 	if msg := pyOrStr(tokenData["notification_message"]); msg != "" {
 		fmt.Fprintf(out, "Note from MiniMax: %s\n", msg)
@@ -319,23 +299,85 @@ func minimaxOAuthLogin(env PoolEnv, out io.Writer, region string, openBrowser bo
 	return authState, nil
 }
 
-// Refreshes the MiniMax access token when forced or within the refresh skew of expiry
-func refreshMinimaxOAuthState(env PoolEnv, state map[string]any, timeout time.Duration, force bool) (map[string]any, error) {
-	if !pyTruthy(state["refresh_token"]) {
-		return nil, minimaxErr("MiniMax OAuth state has no refresh_token; please re-login.", "no_refresh_token", true)
-	}
-	if timeout <= 0 {
-		timeout = 15 * time.Second
-	}
-	expiresAt, ok := ParseISOTimestamp(state["expires_at"])
+// Selected MiniMax login, refreshed through its pool when close to expiry
+func minimaxLoginEntry(env PoolEnv) (PooledCredential, error) {
+	pool := LoadSelectedPool(env, "minimax-oauth")
+	entry, ok := pool.Peek()
 	if !ok {
-		expiresAt = 0
+		return PooledCredential{}, minimaxErr("No MiniMax login. Sign in with `icebath auth add minimax-oauth`.", "not_logged_in", true)
 	}
-	if !force && expiresAt-nowEpoch() > MinimaxOAuthRefreshSkew.Seconds() {
-		return state, nil
+	if pool.entryNeedsRefresh(entry) {
+		refreshed, ok := pool.TryRefreshMatching(entry.AccessToken, entry.ID)
+		if !ok {
+			return PooledCredential{}, minimaxErr("The MiniMax login could not be refreshed; sign in again.", "refresh_failed", true)
+		}
+		entry = refreshed
 	}
-	resp, err := minimaxPostForm(env.ctx(), minimaxHTTPClientFn(timeout), pyStr(state["portal_base_url"])+"/oauth/token", url.Values{
-		"grant_type": {"refresh_token"}, "client_id": {pyStr(state["client_id"])}, "refresh_token": {pyStr(state["refresh_token"])},
+	return entry, nil
+}
+
+// BuildMinimaxOAuthTokenProvider mints a fresh MiniMax access token per call, tagged as the MiniMax OAuth source
+func BuildMinimaxOAuthTokenProvider(env PoolEnv) *TaggedTokenSource {
+	return TagCredentialSource(func(ctx context.Context) (string, error) {
+		if ctx != nil {
+			env.Ctx = ctx
+		}
+		entry, err := minimaxLoginEntry(env)
+		if err != nil {
+			return "", err
+		}
+		if entry.AccessToken == "" {
+			return "", minimaxErr("The MiniMax login has no access token.", "no_access_token", true)
+		}
+		return entry.AccessToken, nil
+	}, CredentialSourceMinimaxOAuth)
+}
+
+// Runtime MiniMax OAuth credentials with a string bearer, or a refreshing token source when asked
+func resolveMinimaxOAuthRuntimeCredentialsWith(env PoolEnv, asTokenProvider bool) (map[string]any, error) {
+	entry, err := minimaxLoginEntry(env)
+	if err != nil {
+		return nil, err
+	}
+	var apiKey any = entry.AccessToken
+	if asTokenProvider {
+		apiKey = BuildMinimaxOAuthTokenProvider(env)
+	}
+	return map[string]any{
+		"provider": "minimax-oauth", "api_key": apiKey, "base_url": strings.TrimRight(entry.BaseURL, "/"), "source": "credential_pool",
+	}, nil
+}
+
+// Runtime MiniMax OAuth credentials with the access token as a string
+func resolveMinimaxOAuthRuntimeCredentials(env PoolEnv) (map[string]any, error) {
+	return resolveMinimaxOAuthRuntimeCredentialsWith(env, false)
+}
+
+// MinimaxLoginArgs are the MiniMax login flags
+type MinimaxLoginArgs struct {
+	Region    string
+	NoBrowser bool
+	Timeout   time.Duration
+}
+
+// LoginMinimaxOAuth runs the MiniMax OAuth sign in stored as an owned login made the default, printing the formatted auth error and exiting 1 on failure
+func LoginMinimaxOAuth(env PoolEnv, out io.Writer, args MinimaxLoginArgs) error {
+	_, err := SignInOAuthLogin(env, out, "minimax-oauth", OAuthSignIn{NoBrowser: args.NoBrowser, Region: args.Region, Timeout: args.Timeout, MakeDefault: true})
+	var authErr *AuthError
+	if errors.As(err, &authErr) {
+		fmt.Fprintln(out, formatAuthError(authErr))
+		return &OAuthLoginExitError{Code: 1, Err: err}
+	}
+	return err
+}
+
+// Token POST of a MiniMax login row at the portal and client id its sign in stored on the row
+func refreshMinimaxLogin(ctx context.Context, entry PooledCredential, timeout time.Duration) (map[string]any, error) {
+	if entry.RefreshToken == "" {
+		return nil, minimaxErr("The MiniMax login has no refresh token; sign in again.", "no_refresh_token", true)
+	}
+	resp, err := minimaxPostForm(ctx, minimaxHTTPClientFn(timeout), entry.ExtraString("portal_base_url")+"/oauth/token", url.Values{
+		"grant_type": {"refresh_token"}, "client_id": {entry.ExtraString("client_id")}, "refresh_token": {entry.RefreshToken},
 	}, formJSONHeaders)
 	if err != nil {
 		return nil, err
@@ -359,116 +401,23 @@ func refreshMinimaxOAuthState(env PoolEnv, state map[string]any, timeout time.Du
 	if payload["status"] != "success" {
 		return nil, minimaxErr("MiniMax OAuth refresh did not return success.", "refresh_failed", true)
 	}
-	newState := cloneMap(state)
-	newState["access_token"] = payload["access_token"]
-	if v, has := payload["refresh_token"]; has {
-		newState["refresh_token"] = v
-	}
 	expiry, err := minimaxExpiryFields(payload["expired_in"])
 	if err != nil {
 		return nil, err
 	}
-	for k, v := range expiry {
-		newState[k] = v
+	refresh := pyOrStr(payload["refresh_token"])
+	if refresh == "" {
+		refresh = entry.RefreshToken
 	}
-	if err := minimaxSaveAuthState(env, newState, false); err != nil {
-		return nil, err
+	out := map[string]any{"access_token": pyOrStr(payload["access_token"]), "refresh_token": refresh}
+	if epoch, ok := ParseISOTimestamp(expiry["expires_at"]); ok {
+		out["expires_at_ms"] = epoch * 1000
 	}
-	return newState, nil
+	return out, nil
 }
 
-// Wipes dead MiniMax tokens from auth.json after a terminal refresh failure
-func minimaxOAuthQuarantineOnTerminalRefresh(env PoolEnv, state map[string]any, authErr *AuthError) {
-	if !(authErr.ReloginRequired && pyTruthy(state["refresh_token"])) {
-		return
-	}
-	quarantineFlatOAuthState(state, "minimax-oauth", authErr)
-	if err := minimaxSaveAuthState(env, state, false); err != nil {
-		env.log().Debug(fmt.Sprintf("MiniMax OAuth: failed to persist quarantined state: %s", err))
-	}
-}
-
-// MiniMax OAuth state refreshed near expiry under the store lock, quarantined on terminal failure
-func minimaxFreshState(env PoolEnv) (map[string]any, error) {
-	lockTimeout := AuthLockTimeout
-	if lockTimeout < 20*time.Second {
-		lockTimeout = 20 * time.Second
-	}
-	unlock, err := env.Store.Lock(lockTimeout)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	state, err := env.Store.GetProviderAuthState("minimax-oauth")
-	if err != nil {
-		return nil, err
-	}
-	if len(state) == 0 || !pyTruthy(state["access_token"]) {
-		return nil, minimaxErr("Not logged into MiniMax OAuth. Run `icebath model` and select MiniMax (OAuth).", "not_logged_in", true)
-	}
-	fresh, err := refreshMinimaxOAuthState(env, state, 15*time.Second, false)
-	if err != nil {
-		var authErr *AuthError
-		if errors.As(err, &authErr) {
-			minimaxOAuthQuarantineOnTerminalRefresh(env, state, authErr)
-		}
-		return nil, err
-	}
-	return fresh, nil
-}
-
-// BuildMinimaxOAuthTokenProvider mints a fresh MiniMax access token per call, tagged as the MiniMax OAuth source
-func BuildMinimaxOAuthTokenProvider(env PoolEnv) *TaggedTokenSource {
-	return TagCredentialSource(func(ctx context.Context) (string, error) {
-		if ctx != nil {
-			env.Ctx = ctx
-		}
-		state, err := minimaxFreshState(env)
-		if err != nil {
-			return "", err
-		}
-		token := pyOrStr(state["access_token"])
-		if token == "" {
-			return "", minimaxErr("MiniMax OAuth state has no access_token after refresh.", "no_access_token", true)
-		}
-		return token, nil
-	}, CredentialSourceMinimaxOAuth)
-}
-
-// Runtime MiniMax OAuth credentials with a string bearer, or a refreshing token source when asked
-func resolveMinimaxOAuthRuntimeCredentialsWith(env PoolEnv, asTokenProvider bool) (map[string]any, error) {
-	state, err := minimaxFreshState(env)
-	if err != nil {
-		return nil, err
-	}
-	var apiKey any = state["access_token"]
-	if asTokenProvider {
-		apiKey = BuildMinimaxOAuthTokenProvider(env)
-	}
-	return map[string]any{
-		"provider": "minimax-oauth", "api_key": apiKey, "base_url": strings.TrimRight(pyStr(state["inference_base_url"]), "/"), "source": "oauth",
-	}, nil
-}
-
-// Runtime MiniMax OAuth credentials with the access token as a string
-func resolveMinimaxOAuthRuntimeCredentials(env PoolEnv) (map[string]any, error) {
-	return resolveMinimaxOAuthRuntimeCredentialsWith(env, false)
-}
-
-// MinimaxLoginArgs are the MiniMax login flags
-type MinimaxLoginArgs struct {
-	Region    string
-	NoBrowser bool
-	Timeout   time.Duration
-}
-
-// LoginMinimaxOAuth runs the MiniMax OAuth login, printing the formatted auth error and exiting 1 on failure
-func LoginMinimaxOAuth(env PoolEnv, out io.Writer, args MinimaxLoginArgs) error {
-	_, err := minimaxOAuthLogin(env, out, args.Region, !args.NoBrowser, args.Timeout)
+// Whether a failed MiniMax refresh ended the grant so only a new sign in helps
+func isTerminalMinimaxOAuthRefreshError(err error) bool {
 	var authErr *AuthError
-	if errors.As(err, &authErr) {
-		fmt.Fprintln(out, formatAuthError(authErr))
-		return &OAuthLoginExitError{Code: 1, Err: err}
-	}
-	return err
+	return errors.As(err, &authErr) && authErr.ReloginRequired
 }

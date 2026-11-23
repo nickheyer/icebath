@@ -106,7 +106,7 @@ func TestConfigCommandFailClosedSurfaceConfigCommandSetExitsCleanlyOnBrokenYaml(
 	c := newConfigHome(t)
 	original := "model:\n  default: keep\nbroken: [unterminated\n"
 	c.write(original)
-	err := c.command(config.ConfigArgs{Command: "set", Key: "model.default", Value: strPtr("gpt-4o"), Force: false})
+	err := c.command(config.ConfigArgs{Command: "set", Key: "model.default", Value: strPtr("gpt-4o")})
 	if exitStatus(err) != 1 {
 		t.Fatalf("exit %v", err)
 	}

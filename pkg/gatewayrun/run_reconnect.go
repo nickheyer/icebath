@@ -6,13 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Max seconds between platform reconnect retries, shared by the primary watcher and secondary profiles
@@ -23,22 +22,9 @@ func reconnectBackoff(attempt int) float64 {
 	return math.Min(30*math.Pow(2, float64(attempt-1)), reconnectBackoffCap)
 }
 
-// Seconds of continuous reconnect failure before attention is needed, read from the bound profile's config
+// Seconds of continuous reconnect failure before attention is needed, read from the bound profile's settings
 func reconnectAttentionAfterSecs(ctx context.Context) float64 {
-	fallback, _ := pyint.Float(config.Defaults()["agent"].(map[string]any)["reconnect_attention_after"])
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return fallback
-	}
-	agentCfg, ok := tree["agent"].(map[string]any)
-	if !ok {
-		return fallback
-	}
-	value, err := pyint.Float(agentCfg["reconnect_attention_after"])
-	if err != nil {
-		return fallback
-	}
-	return value
+	return settings.AgentReconnectAttentionAfter.Get(ctx).Seconds()
 }
 
 // Whether a reconnect queue entry waited long enough for attention, stamping a missing queued time

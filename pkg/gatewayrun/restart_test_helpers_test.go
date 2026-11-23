@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
@@ -67,7 +66,6 @@ func makeRestartRunner(t *testing.T) (*GatewayRunner, *restartTestAdapter) {
 	r.running.Store(true)
 	r.shutdownEvent = &pythread.Event{}
 	r.sessions = map[string]*SessionState{}
-	r.voiceMode = pydict.New[string, string]()
 	r.backgroundTasks = map[*gatewayTask]struct{}{}
 	adapter := newRestartTestAdapter()
 	r.adapters = adapterDict(gateway.PlatformTelegram, adapter)

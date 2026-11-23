@@ -13,21 +13,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
-)
-
-const (
-	MediaDeliveryAllowDirsEnv          = mediaAllowDirsEnv
-	MediaDeliveryTrustRecentEnv        = "ICEBATH_MEDIA_TRUST_RECENT_FILES"
-	MediaDeliveryTrustRecentSecondsEnv = mediaTrustRecentSecondsEnv
-	MediaDeliveryStrictEnv             = "ICEBATH_MEDIA_DELIVERY_STRICT"
-
-	mediaDeliveryTrustRecentDefaultSeconds = 600
 )
 
 var (
@@ -221,15 +212,7 @@ func mediaDeliveryRecencySeconds(ctx context.Context) float64 {
 	if !MediaDeliveryTrustRecent(ctx) {
 		return 0
 	}
-	custom := pystr.Strip(MediaDeliveryTrustRecentSeconds(ctx))
-	if custom == "" {
-		return mediaDeliveryTrustRecentDefaultSeconds
-	}
-	v, err := pyint.ParseFloat(custom)
-	if err != nil {
-		return mediaDeliveryTrustRecentDefaultSeconds
-	}
-	return math.Max(0, v)
+	return math.Max(0, settings.GatewayTrustRecentFilesSeconds.Get(ctx).Seconds())
 }
 
 // Named board kanban stores with sidecars beside the allowlisted attachments
@@ -376,6 +359,9 @@ func dockerEnvActive(ctx context.Context) (bool, error) {
 	v, err := tenv(ctx, "TERMINAL_ENV", "")
 	return pystr.Lower(pystr.Strip(v)) == "docker", err
 }
+
+// Words a terminal policy value turns a switch on with
+var mediaTruthy = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 
 // Whether the Docker backend runs persistent containers
 func dockerPersistentActive(ctx context.Context) (bool, error) {

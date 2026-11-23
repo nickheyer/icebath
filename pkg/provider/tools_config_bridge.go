@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -20,8 +21,10 @@ func init() {
 	tools.XAIOAuthTokensReader = func(ctx context.Context, h string) error {
 		env := homePoolEnv(h)
 		env.Ctx = ctx
-		_, err := readXAIOAuthTokens(env, true)
-		return err
+		if !LoadSelectedPool(env, "xai-oauth").HasCredentials() {
+			return errors.New("no xAI login")
+		}
+		return nil
 	}
 	tools.ProcessAux = AuxAdapter{}
 	tools.ModelNotFoundPatterns = func() []string { return append([]string(nil), modelNotFoundPatterns...) }
@@ -51,8 +54,8 @@ func installToolsConfigHooks() {
 	hooks.CodexDeviceCodeLogin = func(ctx context.Context, h string, out io.Writer) (map[string]any, error) {
 		return codexDeviceCodeLogin(credentialLifecycleEnv(ctx, h), out)
 	}
-	hooks.SaveCodexTokens = func(ctx context.Context, h string, tokens map[string]any, lastRefresh string, setActive bool) error {
-		return saveCodexTokens(credentialLifecycleEnv(ctx, h), tokens, lastRefresh, "", setActive, false)
+	hooks.SaveCodexTokens = func(ctx context.Context, h string, tokens map[string]any, lastRefresh string, _ bool) error {
+		return saveCodexLogin(credentialLifecycleEnv(ctx, h), tokens, lastRefresh)
 	}
 	hooks.XAIOAuthLoginFromSetup = func(ctx context.Context, h string) bool {
 		return runXAIOAuthLoginFromSetup(credentialLifecycleEnv(ctx, h))
@@ -66,3 +69,15 @@ func installToolsConfigHooks() {
 
 // Bool like config value through the tools_config parser
 func parseEnabledFlag(v any, def bool) bool { return tools.ParseEnabledFlag(v, def) }
+
+// Stores the tokens of a Codex device code sign in as a new owned login, made the default when the provider has none
+func saveCodexLogin(env PoolEnv, tokens map[string]any, lastRefresh string) error {
+	previous := currentLoginID(env, "openai-codex")
+	c := &authCLI{ctx: env.ctx(), env: env, ns: map[string]any{}, out: io.Discard, errw: io.Discard}
+	entry, err := c.storeOAuthCredential("openai-codex", LoadPool(env, "openai-codex"), map[string]any{"tokens": tokens, "last_refresh": lastRefresh})
+	if err != nil {
+		return err
+	}
+	_, err = NameNewLogin(env, "openai-codex", entry.ID, "", false, previous)
+	return err
+}

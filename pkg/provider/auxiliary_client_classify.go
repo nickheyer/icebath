@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Billing and quota body markers, the main classifier table plus broader phrasings and daily or weekly quota wording
@@ -155,31 +155,12 @@ func auxIsTransientTransportError(err error) bool {
 	return status == 408 || (status >= 500 && status < 600)
 }
 
-const auxDefaultTransientRetries = 2
-
 // Backoff base in seconds between same provider transient retries, zeroed by tests
 var auxTransientRetryBackoffBase = 1.0
 
 // Same provider retries for a transient blip from auxiliary transient_retries clamped to 0 through 6
-func auxTransientRetryCount(ctx context.Context) (count int) {
-	defer func() {
-		if r := recover(); r != nil {
-			count = auxDefaultTransientRetries
-		}
-	}()
-	tree, err := auxLoadConfigFn(ctx)
-	if err != nil {
-		return auxDefaultTransientRetries
-	}
-	val, _ := config.CfgGet(tree, "auxiliary", "transient_retries")
-	if val == nil {
-		return auxDefaultTransientRetries
-	}
-	n, err := auxPyIntCall(val)
-	if err != nil {
-		return auxDefaultTransientRetries
-	}
-	return max(0, min(n, 6))
+func auxTransientRetryCount(ctx context.Context) int {
+	return max(0, min(settings.AuxiliaryTransientRetries.Get(ctx), 6))
 }
 
 // Auth failure that triggers a provider credential refresh, xAI bad credentials 403 included

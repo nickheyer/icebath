@@ -201,7 +201,7 @@ func writeExhaustedCodexPool(t *testing.T, h string, resetIn float64) {
 		"access_token": "token", "refresh_token": "refresh", "base_url": codexRestoreURL, "last_status": "exhausted",
 		"last_status_at": now, "last_error_code": 429, "last_error_reason": "usage_limit_reached",
 		"last_error_message": "The usage limit has been reached", "last_error_reset_at": now + resetIn}
-	raw, err := json.Marshal(map[string]any{"version": 1, "credential_pool": map[string]any{"openai-codex": []any{entry}}})
+	raw, err := json.Marshal(map[string]any{"version": 2, "credential_pool": map[string]any{"openai-codex": []any{entry}}})
 	if err != nil {
 		t.Fatal(err)
 	}

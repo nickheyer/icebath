@@ -18,8 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	pyfnmatch "github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -1062,12 +1064,7 @@ func (s *Scope) registrationEnv() *tools.Env {
 // Required env vars and credential files resolved with secret capture and sandbox registration
 func (s *Scope) skillReadiness(ctx context.Context, fm map[string]any, skillName string) *pyjson.Object {
 	required := getRequiredEnvironmentVariables(fm)
-	backend := "local"
-	if policy, err := tools.BuildTerminalScope(s.Home, s.Secrets); err == nil {
-		if b := strings.ToLower(strings.TrimSpace(policy.Get("TERMINAL_ENV", "local"))); b != "" {
-			backend = b
-		}
-	}
+	backend := settings.WhereCommandsRun.Get(home.WithOverride(ctx, s.Home))
 	snapshot := s.loadEnvSnapshot()
 	var missingReq []map[string]any
 	for _, e := range required {

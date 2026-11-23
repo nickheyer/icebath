@@ -2,18 +2,18 @@ package gatewayrun
 
 import (
 	"context"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Installs this message's callbacks, reasoning, tier, voice route and notes on the agent, never baked into the cache
 func (t *TurnRunner) wireTurnAgentCallbacks(ctx context.Context, a *agent.AIAgent, route turnRoute, reasoningConfig map[string]any, streams turnStreamCallbacks) error {
 	tc := t.ctx
 	r := t.runner
-	a.SetNotificationPresentation(string(tc.source.Platform), tc.userConfig)
+	a.SetNotificationPresentation(string(tc.source.Platform))
 	a.SetToolProgressCallback(t.progressCallback)
 	var toolStart, toolComplete any
 	if tc.voiceAckGuild != nil || tc.nativeSlackTaskCards {
@@ -30,6 +30,11 @@ func (t *TurnRunner) wireTurnAgentCallbacks(ctx context.Context, a *agent.AIAgen
 	}
 	a.SetToolStartCallback(toolStart)
 	a.SetToolCompleteCallback(toolComplete)
+	if t.approvalOwner != nil && localViewerTurn(t) {
+		a.SetToolResultMetadataCallback(t.localToolResultMetadata)
+	} else {
+		a.SetToolResultMetadataCallback(nil)
+	}
 	loaded, err := tc.hooksRef.LoadedHooks(ctx)
 	if err != nil {
 		return err
@@ -78,21 +83,7 @@ func (t *TurnRunner) wireTurnAgentCallbacks(ctx context.Context, a *agent.AIAgen
 			base.RegisterPostDeliveryCallback(tc.sessionKey, bgRelease, tc.runGeneration)
 		}
 	}
-	var memNotif any
-	if display, ok := tc.userConfig["display"].(map[string]any); ok {
-		memNotif = display["memory_notifications"]
-	}
-	if flag, isBool := memNotif.(bool); isBool {
-		memNotif = "off"
-		if flag {
-			memNotif = "on"
-		}
-	}
-	if pyrepr.Truthy(memNotif) {
-		a.SetMemoryNotifications(strings.ToLower(pyrepr.Str(memNotif)))
-	} else {
-		a.SetMemoryNotifications("on")
-	}
+	a.SetMemoryNotifications(settings.DisplayMemoryNotifications.Get(ctx))
 	a.SetClarifyCallback(t.clarifyCallbackSync)
 	if tc.muteNotificationReply {
 		a.SetToolProgressCallback(nil)

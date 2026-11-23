@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -125,13 +126,6 @@ var toolsRPCRegistry = &handlerRegistry{}
 
 func init() {
 	toolsRPCRegistry.method("system.battery", systemBattery)
-	guardedRPC(toolsRPCRegistry, "process.stop", 5010, rpcShape{}, processStop)
-	guardedRPC(toolsRPCRegistry, "reload.env", 5015, rpcShape{}, reloadEnv)
-	guardedRPC(toolsRPCRegistry, "plugins.list", 5032, rpcShape{}, pluginsList)
-	guardedRPC(toolsRPCRegistry, "process.list", 5010, rpcShape{liveSession: true}, processList)
-	guardedRPC(toolsRPCRegistry, "process.kill", 5010, rpcShape{liveSession: true}, processKill)
-	guardedRPC(toolsRPCRegistry, "reload.mcp", 5015, rpcShape{}, reloadMCP)
-	guardedRPC(toolsRPCRegistry, "commands.catalog", 5020, rpcShape{}, commandsCatalog)
 	toolsRPCRegistry.install()
 }
 
@@ -215,22 +209,8 @@ func processKill(ctx context.Context, rid any, params map[string]any, session *t
 }
 
 // The approvals mcp_reload_confirm flag of the disk config, true on any failure
-func mcpReloadConfirmRequired(ctx context.Context) (required bool) {
-	required = true
-	catchPanic(func() {
-		cfg, err := loadConfig(ctx)
-		panicIf(err)
-		approvals, isDict := map[string]any(cfg)["approvals"].(map[string]any)
-		if !isDict {
-			return
-		}
-		flag, present := approvals["mcp_reload_confirm"]
-		if !present {
-			return
-		}
-		required = truthy(flag)
-	})
-	return required
+func mcpReloadConfirmRequired(ctx context.Context) bool {
+	return settings.ApprovalsMcpReloadConfirm.Get(ctx)
 }
 
 // MCP shutdown, discovery and revision hash a reload drives, swapped by tests

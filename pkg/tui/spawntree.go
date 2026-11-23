@@ -41,11 +41,8 @@ var (
 	spawnStatusRank  = map[string]int{"error": 0, "failed": 0, "interrupted": 1, "timeout": 1, "running": 2, "queued": 3, "completed": 4}
 )
 
-// Key names of the palette actions the window manager fires at an overlay in place of the keys
-var spawnActionKeys = map[string]string{"palette.pick": "enter", "palette.up": "up", "palette.down": "down", "palette.page.up": "pgup",
-	"palette.page.down": "pgdown", "palette.left": "left", "palette.right": "right", "palette.home": "home", "palette.end": "end",
-	"palette.clear": "ctrl+u", "palette.delete.back": "backspace", "palette.delete.forward": "delete", "palette.delete.word": "ctrl+w",
-	"tui.spawntree.back": "esc"}
+// Key names of the actions the window manager fires at the spawn tree in place of the keys
+var spawnActionKeys = map[string]string{"tui.spawntree.back": "esc"}
 
 // Back key of the spawn tree and load key of the saved trees, registered with the keymap of the app
 func registerSpawnTreeKeys(km *keys.Map) {
@@ -56,7 +53,7 @@ func registerSpawnTreeKeys(km *keys.Map) {
 			}
 		}
 	}
-	km.Register(keys.Action{ID: "tui.agents.dock", Context: tuiContext, Label: "agents dock", Doc: "fold or unfold the dock of working agents and background processes", Default: []string{"f7", "ctrl+r"}})
+	km.Register(keys.Action{ID: "tui.agents.dock", Context: tuiContext, Label: "agents dock", Doc: "show or hide the dock of working agents", Default: []string{"f7"}})
 	km.Register(keys.Action{ID: "tui.spawntree.back", Context: spawnTreeContext, Label: "back", Doc: "step back from a node to the tree, or close the spawn tree", Default: []string{"esc"}})
 	km.Register(keys.Action{ID: "tui.spawntrees.load", Context: spawnTreesContext, Label: "load", Doc: "replay the saved spawn tree", Default: []string{"enter"}})
 	registerProcessKeys(km)
@@ -930,7 +927,7 @@ func (c *spawnTreeCard) killSubtree(v spawnView, node *spawnNode) tea.Cmd {
 		} else {
 			c.flash = tr(txt.HubsAgentsFlashKillingSubtreeOther, len(ids))
 		}
-		return tea.Sequence(cmds...)
+		return c.a.sequence(cmds...)
 	})
 }
 
@@ -1605,20 +1602,6 @@ func (a *app) dockRows(width int, rc renderCtx) []string {
 		}
 	}
 	return out
-}
-
-// Repaints the dock every second while it shows agents or processes, the clock stopping once it empties
-func (a *app) armDockClock() tea.Cmd {
-	if a.dockClockArmed || !a.dockLive(a.store.nowMillis()) {
-		return nil
-	}
-	a.dockClockArmed = true
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return asyncDoneMsg{run: func() tea.Cmd {
-			a.dockClockArmed = false
-			return a.armDockClock()
-		}}
-	})
 }
 
 // Scrolled pane of the node detail or its live transcript, a scrollbar beside it when it overflows

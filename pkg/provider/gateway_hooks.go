@@ -9,7 +9,6 @@ import (
 // Gateway functions provider reads, installed by the gateway package at init, each answering for no gateway while unset
 var GatewayHooks struct {
 	LegacyJSON            func(h string) map[string]any
-	BridgedAllowAllUsers  func() (string, bool)
 	MergePlatformSections func(yamlCfg map[string]any, gatewayBlock any, gwData map[string]any, also []string) map[string]any
 	PlatformEnabled       func(block map[string]any) (bool, string)
 	ServesHome            func(h string) bool
@@ -21,14 +20,6 @@ func gatewayLegacyJSON(h string) map[string]any {
 		return nil
 	}
 	return GatewayHooks.LegacyJSON(h)
-}
-
-// Allow all users value the gateway copied from its config into the environment, unset without a gateway
-func gatewayBridgedAllowAllUsers() (string, bool) {
-	if GatewayHooks.BridgedAllowAllUsers == nil {
-		return "", false
-	}
-	return GatewayHooks.BridgedAllowAllUsers()
 }
 
 // Platform blocks of config.yaml merged into the gateway platforms mapping, unchanged without a gateway

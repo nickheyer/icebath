@@ -82,7 +82,7 @@ func TestStalledInlineCallIsAbortedAndRaisesRetryableTimeout(t *testing.T) {
 }
 
 func TestInlineCronOpenaiCodexKeepsLargeContextStaleFloor(t *testing.T) {
-	unsetEnvForTest(t, APICallStaleTimeoutEnv, StreamStaleTimeoutEnv, CodexHardTimeoutEnv)
+	unsetEnvForTest(t, CodexHardTimeoutEnv)
 	hosted := &fakeChatAgent{provider: "openai-codex", apiMode: "codex_responses", baseURL: "https://chatgpt.com/backend-api/codex", plat: "cron", model: "gpt-5.5",
 		resolve: func(map[string]any) (any, error) { return 90.0, nil }}
 	kw := map[string]any{"model": "gpt-5.5", "input": []any{map[string]any{"role": "user", "content": strings.Repeat("x ", 60000)}}}
@@ -96,7 +96,7 @@ func TestInlineCronOpenaiCodexKeepsLargeContextStaleFloor(t *testing.T) {
 
 func TestInlineLocalResponsesEndpointKeepsItsConfiguredStaleBudget(t *testing.T) {
 	unsetEnvForTest(t, CodexHardTimeoutEnv)
-	t.Setenv(APICallStaleTimeoutEnv, "3000")
+	setSettingsForTest(t, map[string]any{"agent.api_call_stale_timeout": 3000})
 	local := &fakeChatAgent{provider: "custom", apiMode: "codex_responses", baseURL: "http://127.0.0.1:8080/v1", plat: "cron", model: "local-model",
 		resolve: func(map[string]any) (any, error) { return 3000.0, nil }}
 	kw := map[string]any{"model": "local-model", "input": []any{map[string]any{"role": "user", "content": strings.Repeat("x ", 60000)}}}

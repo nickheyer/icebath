@@ -34,9 +34,16 @@ func auxCodexJWT(exp int64) string {
 	return header + "." + payload + ".fakesig"
 }
 
-// Swaps the read only config seam for a fixed tree
+// Writes a fixed tree as the test home's config.yaml and swaps the read only config seam for it
 func auxFixedConfig(t *testing.T, tree map[string]any) {
 	t.Helper()
+	data, err := config.SafeDump(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	old := auxLoadConfigReadonlyFn
 	t.Cleanup(func() { auxLoadConfigReadonlyFn = old })
 	auxLoadConfigReadonlyFn = func(context.Context) (config.Tree, error) { return config.Tree(tree), nil }
@@ -71,7 +78,7 @@ func TestResolveCodexCredentialTokenFromAuthStore(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := auxMainTestHome(t, "")
-			auxWriteAuthJSON(t, ctx, map[string]any{"version": 1, "providers": map[string]any{
+			auxWriteAuthJSON(t, ctx, map[string]any{"version": 2, "providers": map[string]any{
 				"openai-codex": map[string]any{"tokens": map[string]any{"access_token": tc.token, "refresh_token": "r-456"}}}})
 			auxFixedPoolEntry(t, false, nil)
 			token, base, err := auxResolveCodexCredentialAndBase(ctx)
@@ -86,7 +93,7 @@ func TestResolveCodexCredentialTokenFromAuthStore(t *testing.T) {
 func auxXaiPoolOnlyCase(t *testing.T, envBase, want string) {
 	t.Helper()
 	ctx := auxMainTestHome(t, "")
-	auxWriteAuthJSON(t, ctx, map[string]any{"version": 1, "providers": map[string]any{}})
+	auxWriteAuthJSON(t, ctx, map[string]any{"version": 2, "providers": map[string]any{}})
 	t.Setenv("ICEBATH_XAI_BASE_URL", envBase)
 	t.Setenv("XAI_BASE_URL", "")
 	pool := LoadPool(modelsPoolEnv(ctx), "xai-oauth")
@@ -241,7 +248,7 @@ func TestUnhealthyCacheExpiresAndLogsSkipOncePerMinute(t *testing.T) {
 
 func TestResolveCodexCredentialAndBaseReadsTheAuthStore(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
-	auxWriteAuthJSON(t, ctx, map[string]any{"version": 1, "providers": map[string]any{
+	auxWriteAuthJSON(t, ctx, map[string]any{"version": 2, "providers": map[string]any{
 		"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "tok-123", "refresh_token": "r-456"}}}})
 	auxFixedPoolEntry(t, false, nil)
 	token, base, err := ResolveCodexCredentialAndBase(ctx)

@@ -95,8 +95,8 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 	t.Helper()
 	wsTestNoOrphanGrace(t)
 	log, release := &wsTestLog{}, make(chan struct{})
-	prevDispatch, prevClose := wsServerDispatch, wsCloseSessionsForTransport
-	wsServerDispatch = func(_ context.Context, req any, _ tuihost.Transport) map[string]any {
+	prevDispatch, prevClose := wsDispatchRequestFn, wsCloseSessionsForTransport
+	wsDispatchRequestFn = func(_ context.Context, _ authorityConn, req any, _ *tuihost.WSTransport) (any, error) {
 		frame, _ := plainRequest(req).(map[string]any)
 		method, _ := frame["method"].(string)
 		log.add("dispatch:" + method)
@@ -107,13 +107,13 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 			}
 		}
 		log.add("done:" + method)
-		return map[string]any{"jsonrpc": "2.0", "id": frame["id"], "result": map[string]any{"method": method}}
+		return map[string]any{"jsonrpc": "2.0", "id": frame["id"], "result": map[string]any{"method": method}}, nil
 	}
 	wsCloseSessionsForTransport = func(context.Context, tuihost.Transport, string) (int, int) {
 		log.add("teardown")
 		return 0, 0
 	}
-	t.Cleanup(func() { wsServerDispatch, wsCloseSessionsForTransport = prevDispatch, prevClose })
+	t.Cleanup(func() { wsDispatchRequestFn, wsCloseSessionsForTransport = prevDispatch, prevClose })
 	return newWSTestSocket(), log, release
 }
 

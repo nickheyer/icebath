@@ -96,7 +96,7 @@ func writeExhaustedCodexPoolEntries(t *testing.T, h string, count int, resetAt f
 			"last_status": "exhausted", "last_status_at": float64(time.Now().Unix()) - 60, "last_error_code": 429,
 			"last_error_reason": "usage_limit_reached", "last_error_reset_at": resetAt})
 	}
-	raw, err := json.Marshal(map[string]any{"version": 1, "credential_pool": map[string]any{"openai-codex": entries}})
+	raw, err := json.Marshal(map[string]any{"version": 2, "credential_pool": map[string]any{"openai-codex": entries}})
 	if err != nil {
 		t.Fatal(err)
 	}

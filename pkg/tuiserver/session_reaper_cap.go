@@ -4,30 +4,14 @@ import (
 	"context"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Configured live session cap, top level else under gateway, zero when unset or unusable
-func maxLiveSessions(ctx context.Context) (limit int) {
-	defer func() {
-		if recover() != nil {
-			limit = 0
-		}
-	}()
-	cfg := loadCfg(ctx)
-	raw, present := cfg["max_live_sessions"]
-	if !present || raw == nil {
-		if gatewayCfg, isDict := cfg["gateway"].(map[string]any); isDict {
-			raw = gatewayCfg["max_live_sessions"]
-		}
-	}
-	coerced := activesessions.CoerceMaxConcurrentSessions(raw, "max_live_sessions")
-	if coerced == nil || coerced.Sign() == 0 || !coerced.IsInt64() {
-		return 0
-	}
-	return int(coerced.Int64())
+// Configured live session cap, zero or less meaning no cap
+func maxLiveSessions(ctx context.Context) int {
+	return settings.MaxLiveSessions.Get(ctx)
 }
 
 // Evicts the least recently touched reapable sessions until the live count fits the cap

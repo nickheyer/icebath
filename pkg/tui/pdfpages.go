@@ -126,7 +126,7 @@ func (a *app) attachPDFPages(path, pages string) tea.Cmd {
 			if pages == "" && rendered.last < rendered.total {
 				a.sys(tr(txt.PdfMorePages, path, strconv.Itoa(rendered.last+1), strconv.Itoa(min(rendered.total, rendered.last+pdfMaxPages))))
 			}
-			return tea.Sequence(cmds...)
+			return a.sequence(cmds...)
 		}}
 	}
 }

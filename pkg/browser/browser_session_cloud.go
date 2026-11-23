@@ -169,7 +169,7 @@ func isLocalBackend(env *tools.Env) bool {
 	if p != nil {
 		return false
 	}
-	backend, err := tools.TerminalEnvRead(env, "TERMINAL_ENV", "local")
+	backend, err := tools.TerminalSetting(env, "backend")
 	if err != nil {
 		panic(err)
 	}

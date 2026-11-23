@@ -238,47 +238,6 @@ func TestDoctorStaleMaxIterationsDriftNoDriftWhenGhostAbsent(t *testing.T) {
 	}
 }
 
-// Runs the legacy custom providers drift step over a standalone config file
-func doctorRunLegacyResidue(t *testing.T, yamlText string) (string, *Finding) {
-	t.Helper()
-	d, out := doctorRawHome(t, "", "")
-	cfg := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(cfg, []byte(yamlText), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	f := &Finding{}
-	if err := doctorDriftLegacyCustomProviders(context.Background(), d, f, false, cfg); err != nil {
-		t.Fatal(err)
-	}
-	return out.String(), f
-}
-
-func TestDoctorLegacyCustomProvidersResidueOrphanEntryIsFlaggedWithRepairInstruction(t *testing.T) {
-	out, f := doctorRunLegacyResidue(t, "custom_providers:\n  - name: Local (8283)\n    base_url: http://127.0.0.1:8283/v1\n"+
-		"providers:\n  other:\n    api: http://127.0.0.1:8290/v1\n")
-	if !strings.Contains(out, "Local (8283)") {
-		t.Fatalf("out = %q", out)
-	}
-	if len(f.ManualIssues) == 0 || !strings.Contains(f.ManualIssues[0], "providers.<key>.api: http://127.0.0.1:8283/v1") {
-		t.Fatalf("manual issues = %q", f.ManualIssues)
-	}
-	if f.Fixed != 0 || len(f.Issues) != 0 {
-		t.Fatalf("finding = %#v", f)
-	}
-}
-
-func TestDoctorLegacyCustomProvidersResidueTwinAndScalarAreSilent(t *testing.T) {
-	out, f := doctorRunLegacyResidue(t, "custom_providers:\n  - name: Local\n    base_url: http://127.0.0.1:8283/V1/\n"+
-		"providers:\n  local:\n    api: http://127.0.0.1:8283/v1\n")
-	if out != "" || len(f.ManualIssues) != 0 {
-		t.Fatalf("out = %q finding = %#v", out, f)
-	}
-	out, f = doctorRunLegacyResidue(t, "custom_providers: oops\n")
-	if out != "" || len(f.ManualIssues) != 0 {
-		t.Fatalf("out = %q finding = %#v", out, f)
-	}
-}
-
 func TestDoctorDeprecatedConfigAndEnvCollectDeprecatedEnvVarsIgnoresEmpty(t *testing.T) {
 	for _, env := range []map[string]any{{"TERMINAL_CWD": "  "}, {}, nil} {
 		if got := doctorCollectDeprecatedEnvVars(env); len(got) != 0 {

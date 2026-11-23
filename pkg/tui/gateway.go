@@ -194,11 +194,6 @@ type describeFlight struct {
 	err  error
 }
 
-type unsettledCreate struct {
-	key       string
-	requestID any
-}
-
 // Shared gateway client with bootstrap, attach, readiness, heartbeat and reconnect
 type gatewayClient struct {
 	bootstrap func(ctx context.Context, start, recover bool) (Grant, error)
@@ -233,7 +228,6 @@ type gatewayClient struct {
 	localGeneration int
 	recoveries      []time.Time
 
-	isCanonical   bool
 	contract      *tuigateway.SessionCreateDescriptor
 	describedSkin map[string]any
 	// Go build ID and contract version the owner's runtime.describe reported
@@ -241,10 +235,13 @@ type gatewayClient struct {
 	describedContract int64
 	capabilities      []string
 	describing        *describeFlight
-	hold              *attachHold
-	unsettled         *unsettledCreate
-	countsDeclines    bool
-	clarifyBatchAck   bool
+	// Sessions whose frames are held while their resume is in flight, each session card resuming its own
+	holds map[string]*attachHold
+	// Request ids of creates that failed with no clear answer, by what was asked for, so the next create asking for the same adopts the session
+	// the owner may have made instead of making a second one
+	unsettled       map[string][]any
+	countsDeclines  bool
+	clarifyBatchAck bool
 
 	heartbeatToken *int
 	heartbeatStop  func() bool
@@ -269,20 +266,13 @@ func (c *gatewayClient) attached() bool {
 	return c.attachURL != ""
 }
 
-// Whether the client speaks the canonical wire, a local grant or a negotiated explicit attach
-func (c *gatewayClient) canonical() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.isCanonical
-}
-
 var _ turnGateway = (*gatewayClient)(nil)
 
 // Whether the owner takes batched clarify prompts, advertised as clarify-batch-v1 by runtime.describe
 func (c *gatewayClient) clarifyBatch() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.isCanonical && slices.Contains(c.capabilities, "clarify-batch-v1")
+	return slices.Contains(c.capabilities, "clarify-batch-v1")
 }
 
 // Hands every message to send in order, the buffered ones first, never inside this call
@@ -396,40 +386,22 @@ func frameStamp(frame *int64, payload map[string]any, key string) *int64 {
 	return nil
 }
 
-// Event off the socket, stamped with the owner's execution epoch on a canonical gateway and held for a pending attach
+// Event off the socket, stamped with the owner's execution epoch and held for a pending attach. The listener's own ready starts the
+// heartbeat; the readiness the UI hears is published once the runtime was described
 func (c *gatewayClient) publishWireLocked(conn *gatewayConn, ev gatewayEventMsg) {
-	if !c.isCanonical && ev.Type == "gateway.ready" && c.attachURL != "" && val(readyOf(ev).SessionAuthority) {
-		c.adoptCanonicalAttachLocked(conn, ev)
-		return
-	}
-	if c.isCanonical && ev.Type == "gateway.ready" {
+	if ev.Type == "gateway.ready" {
 		if val(readyOf(ev).Heartbeat) && conn.open {
 			c.startHeartbeatLocked()
 		}
 		return
 	}
-	if c.isCanonical {
-		ev.Epoch = frameStamp(ev.Frame.AuthorityEpoch, ev.Payload, "authority_epoch")
-		ev.Generation = frameStamp(ev.Frame.ExecutionGeneration, ev.Payload, "execution_generation")
-		if c.hold != nil && ev.Frame.SessionID == c.hold.sid {
-			c.hold.frames = append(c.hold.frames, ev)
-			return
-		}
+	ev.Epoch = frameStamp(ev.Frame.AuthorityEpoch, ev.Payload, "authority_epoch")
+	ev.Generation = frameStamp(ev.Frame.ExecutionGeneration, ev.Payload, "execution_generation")
+	if hold := c.holds[ev.Frame.SessionID]; hold != nil {
+		hold.frames = append(hold.frames, ev)
+		return
 	}
 	c.publishLocked(ev)
-}
-
-// Negotiates the canonical wire on an explicit listener whose ready advertises a session authority
-func (c *gatewayClient) adoptCanonicalAttachLocked(conn *gatewayConn, ev gatewayEventMsg) {
-	c.isCanonical = true
-	if val(readyOf(ev).Heartbeat) && conn.open {
-		c.startHeartbeatLocked()
-	}
-	ready := map[string]any{}
-	if skin, has := ev.Payload["skin"]; has {
-		ready["skin"] = skin
-	}
-	c.describeThenReadyLocked(conn, ready)
 }
 
 // Text of a failure as JavaScript String renders an Error
@@ -631,24 +603,30 @@ func (c *gatewayClient) handleTransportExitLocked(code int, reason string) {
 	c.pendingExit = &code
 }
 
-// Starts holding a session's canonical frames while its resume is in flight, nil off the canonical wire
+// Starts holding a session's frames while its resume is in flight. A newer resume of the same session takes over the frames the older
+// one held, so none is lost when the older one settles
 func (c *gatewayClient) holdAttach(sessionID string) *attachHold {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.isCanonical {
-		return nil
+	hold := &attachHold{sid: sessionID}
+	if older := c.holds[sessionID]; older != nil {
+		hold.frames = older.frames
 	}
-	c.hold = &attachHold{sid: sessionID}
-	return c.hold
+	if c.holds == nil {
+		c.holds = map[string]*attachHold{}
+	}
+	c.holds[sessionID] = hold
+	return hold
 }
 
-// Ends a hold, replaying only the frames past the applied snapshot's fence, or all of them without one
+// Ends a hold, replaying only the frames past the applied snapshot's fence, or all of them without one; a hold a newer resume took over
+// ends with nothing to replay
 func (c *gatewayClient) settleAttach(hold *attachHold, snapshot *tuigateway.CanonicalSnapshot) {
 	c.lockedOnLoop(func() {
-		if hold == nil || c.hold != hold {
+		if hold == nil || c.holds[hold.sid] != hold {
 			return
 		}
-		c.hold = nil
+		delete(c.holds, hold.sid)
 		for _, ev := range hold.frames {
 			if snapshot == nil {
 				c.publishLocked(ev)
@@ -666,7 +644,7 @@ func (c *gatewayClient) settleAttach(hold *attachHold, snapshot *tuigateway.Cano
 // the copy that came with the attach answer arrived while the view still showed the session it was leaving, and the reset of the view dropped it
 func (c *gatewayClient) hydrateSharedPrompts(snapshot *tuigateway.CanonicalSnapshot, open []tuigateway.OpenRequestEntry) {
 	c.lockedOnLoop(func() {
-		if c.isCanonical && snapshot != nil {
+		if snapshot != nil {
 			for _, prompt := range snapshot.Prompts {
 				generation := prompt.ExecutionGeneration
 				c.publishLocalEventLocked(gatewayEventMsg{Type: string(prompt.Kind) + ".request", SessionID: snapshot.SessionID,
@@ -722,7 +700,6 @@ func (c *gatewayClient) startLocalGatewayLocked() {
 			}
 			if err == nil {
 				c.attachURL = grant.URL
-				c.isCanonical = true
 				mode := "discover"
 				if start {
 					mode = "start"
@@ -806,9 +783,7 @@ func (c *gatewayClient) startAttachedGatewayLocked(target string, protocols []st
 			link := newWireLink(sock, func(frame map[string]any) { c.inbound(conn, frame) }, func(raw string) { c.malformed(conn, raw) })
 			conn.sock, conn.link, conn.open = sock, link.start(), true
 			go c.pump(conn)
-			if c.isCanonical {
-				c.describeThenReadyLocked(conn, map[string]any{})
-			}
+			c.describeThenReadyLocked(conn, map[string]any{})
 		})
 	}()
 }
@@ -1007,7 +982,6 @@ func (c *gatewayClient) startLocked() {
 	c.resetStartupStateLocked()
 	c.closeGatewaySocketLocked()
 	if c.attachURL != "" {
-		c.isCanonical = false
 		c.contract = nil
 		c.capabilities = nil
 		c.startAttachedGatewayLocked(c.attachURL, nil)
@@ -1202,18 +1176,13 @@ func (c *gatewayClient) request(ctx context.Context, method string, params map[s
 		params = map[string]any{}
 	}
 	if attach := attachURLEnv(); attach != "" {
-		var canonical bool
 		c.locked(func() {
 			if c.attachURL != attach {
 				c.detachLocked(errors.New(tr(txt.LibTextGatewayAttachUrlChanged)))
 				c.startLocked()
 			}
-			canonical = c.isCanonical
 		})
-		if canonical {
-			return c.requestCanonical(ctx, method, params, timeout)
-		}
-		return c.requestOverWebSocket(ctx, method, params, timeout)
+		return c.requestCanonical(ctx, method, params, timeout)
 	}
 	var flight chan struct{}
 	c.locked(func() {
@@ -1284,12 +1253,17 @@ func (c *gatewayClient) createCanonical(ctx context.Context, prepared map[string
 	}
 	key := string(rawKey)
 	c.mu.Lock()
-	retry := c.unsettled
-	c.unsettled = nil
+	var retry any
+	if waiting := c.unsettled[key]; len(waiting) > 0 {
+		retry = waiting[0]
+		if c.unsettled[key] = waiting[1:]; len(waiting) == 1 {
+			delete(c.unsettled, key)
+		}
+	}
 	c.mu.Unlock()
 	params := prepared
-	if retry != nil && retry.key == key {
-		params = withKeys(prepared, "request_id", retry.requestID)
+	if retry != nil {
+		params = withKeys(prepared, "request_id", retry)
 	}
 	acknowledged := false
 	value, err := c.requestOverWebSocket(ctx, "session.create", params, timeout)
@@ -1297,15 +1271,19 @@ func (c *gatewayClient) createCanonical(ctx context.Context, prepared map[string
 		acknowledged = true
 		if toolProgress != "" {
 			sid, _ := value.(map[string]any)["session_id"].(string)
-			pin := tuigateway.ConfigSetParams{Key: "verbose", SessionID: sid, Value: tuigateway.TextValue(toolProgress)}
-			_, err = c.requestOverWebSocket(ctx, tuigateway.ConfigSet.Name(), wireParams(pin), 0)
+			scope := "session"
+			pin := tuigateway.SettingsSetParams{Key: "display.tool_progress", SessionID: &sid, Value: toolProgress, Scope: &scope}
+			_, err = c.requestOverWebSocket(ctx, tuigateway.SettingsSet.Name(), wireParams(pin), 0)
 		}
 	}
 	if err != nil {
 		var refusal *rpcError
 		if acknowledged || !errors.As(err, &refusal) {
 			c.mu.Lock()
-			c.unsettled = &unsettledCreate{key: key, requestID: params["request_id"]}
+			if c.unsettled == nil {
+				c.unsettled = map[string][]any{}
+			}
+			c.unsettled[key] = append(c.unsettled[key], params["request_id"])
 			c.mu.Unlock()
 		}
 		return nil, err

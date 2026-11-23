@@ -533,16 +533,21 @@ var argparseTree = map[string]*apParser{
 	}},
 	"logout": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
+		{Kind: 'p', Dest: "logout_provider", Metavar: []string{"provider"}, Nargs: "?", Help: "Provider to log out from (default: active provider)"},
 		{Kind: 'f', Opts: []string{"--provider"}, Dest: "provider", Choices: []string{"openai-codex", "xai-oauth"}},
+		{Kind: 'f', Opts: []string{"--all"}, Dest: "all", Nargs: "0"},
 	}},
 	"auth": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
-		{Kind: 's', Dest: "auth_action", Nargs: "A...", Choices: []string{"add", "list", "remove", "reset", "priority", "refresh", "status", "logout"}, Sub: []apChoice{{Name: "add", Aliases: []string{}, Help: "Add a pooled credential", Listed: true}, {Name: "list", Aliases: []string{}, Help: "List pooled credentials", Listed: true}, {Name: "remove", Aliases: []string{}, Help: "Remove a pooled credential by index, id, or label", Listed: true}, {Name: "reset", Aliases: []string{}, Help: "Clear exhaustion status for a provider's credentials (all, or one target)", Listed: true}, {Name: "priority", Aliases: []string{}, Help: "Move a pooled credential to a priority (0 = tried first under fill_first)", Listed: true}, {Name: "refresh", Aliases: []string{}, Help: "Refresh a pooled OAuth credential's tokens and clear its cooldown", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Show auth status for a provider", Listed: true}, {Name: "logout", Aliases: []string{}, Help: "Log out a provider and clear stored auth state", Listed: true}}},
+		{Kind: 's', Dest: "auth_action", Nargs: "A...", Choices: []string{"add", "list", "remove", "use", "rename", "rotation", "reset", "priority", "refresh", "status", "logout"}, Sub: []apChoice{{Name: "add", Aliases: []string{}, Help: "Add a named login", Listed: true}, {Name: "list", Aliases: []string{}, Help: "List logins with their names, defaults, rotation and accounts", Listed: true}, {Name: "remove", Aliases: []string{}, Help: "Remove one login by name, index, id, or label", Listed: true}, {Name: "use", Aliases: []string{}, Help: "Make a login, or @rotate, the provider's profile default", Listed: true}, {Name: "rename", Aliases: []string{}, Help: "Rename a login", Listed: true}, {Name: "rotation", Aliases: []string{}, Help: "Show or change the provider's rotation set: on, off, or a strategy", Listed: true}, {Name: "reset", Aliases: []string{}, Help: "Clear exhaustion status for a provider's credentials (all, or one target)", Listed: true}, {Name: "priority", Aliases: []string{}, Help: "Move a pooled credential to a priority (0 = tried first under fill_first)", Listed: true}, {Name: "refresh", Aliases: []string{}, Help: "Refresh a pooled OAuth credential's tokens and clear its cooldown", Listed: true}, {Name: "status", Aliases: []string{}, Help: "Show auth status for a provider", Listed: true}, {Name: "logout", Aliases: []string{}, Help: "Remove the provider's default login, or every login with --all", Listed: true}}},
 	}},
 	"auth add": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'p', Dest: "provider", Required: true, Help: "Provider id (for example: anthropic, openai-codex, openrouter)"},
 		{Kind: 'f', Opts: []string{"--type"}, Dest: "auth_type", Choices: []string{"oauth", "api-key", "api_key"}},
+		{Kind: 'f', Opts: []string{"--name"}, Dest: "name"},
+		{Kind: 'f', Opts: []string{"--rotate"}, Dest: "rotate", Nargs: "0"},
+		{Kind: 'f', Opts: []string{"--default"}, Dest: "default", Nargs: "0"},
 		{Kind: 'f', Opts: []string{"--label"}, Dest: "label"},
 		{Kind: 'f', Opts: []string{"--priority"}, Dest: "priority"},
 		{Kind: 'f', Opts: []string{"--api-key"}, Dest: "api_key"},
@@ -557,7 +562,25 @@ var argparseTree = map[string]*apParser{
 	"auth remove": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'p', Dest: "provider", Required: true, Help: "Provider id"},
-		{Kind: 'p', Dest: "target", Required: true, Help: "Credential index, entry id, or exact label"},
+		{Kind: 'p', Dest: "target", Required: true, Help: "Login name, index, entry id, or exact label"},
+	}},
+	"auth use": {Acts: []apAction{
+		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
+		{Kind: 'p', Dest: "provider", Required: true, Help: "Provider id"},
+		{Kind: 'p', Dest: "target", Required: true, Help: "Login name or id, or @rotate for the rotation set"},
+	}},
+	"auth rename": {Acts: []apAction{
+		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
+		{Kind: 'p', Dest: "provider", Required: true, Help: "Provider id"},
+		{Kind: 'p', Dest: "target", Required: true, Help: "Login name, index, entry id, or exact label"},
+		{Kind: 'p', Dest: "name", Required: true, Help: "New login name, a lowercase slug unique per provider"},
+	}},
+	"auth rotation": {Acts: []apAction{
+		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
+		{Kind: 'p', Dest: "provider", Required: true, Help: "Provider id"},
+		{Kind: 'p', Dest: "mode", Nargs: "?", Help: "on, off, or a strategy (fill_first, round_robin, least_used, random); shows the rotation set when omitted"},
+		{Kind: 'p', Dest: "logins", Nargs: "*", Help: "Logins to mark on or off; every login when omitted"},
+		{Kind: 'f', Opts: []string{"--on-exhausted"}, Dest: "on_exhausted", Choices: []string{"fail", "rotate"}},
 	}},
 	"auth reset": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
@@ -582,6 +605,7 @@ var argparseTree = map[string]*apParser{
 	"auth logout": {Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},
 		{Kind: 'p', Dest: "provider", Required: true, Help: "Provider id"},
+		{Kind: 'f', Opts: []string{"--all"}, Dest: "all", Nargs: "0"},
 	}},
 	"status": {Desc: true, Acts: []apAction{
 		{Kind: 'h', Opts: []string{"-h", "--help"}, Dest: "help", Nargs: "0"},

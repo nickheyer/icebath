@@ -13,9 +13,11 @@ import (
 
 // SwitchModel swaps the live route in place, a once pick keeping its alias for the turn and a restore clearing the one turn state
 func (a *AIAgent) SwitchModel(ctx context.Context, newModel, newProvider, apiKey, baseURL, apiMode string, capabilities map[string]bool, once, restore bool, alias string) error {
+	ctx = a.loginContext(ctx)
 	if err := a.switchModel(ctx, newModel, newProvider, apiKey, baseURL, apiMode, capabilities); err != nil {
 		return err
 	}
+	a.noteLoginPoolSelected(ctx)
 	switch {
 	case restore:
 		a.SetOneTurn(false, nil)

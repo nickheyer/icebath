@@ -28,13 +28,6 @@ const (
 // Exact field set of a hosted room turn proof
 var hostedTaskFields = []string{"room_id", "task_id", "thread_id", "turn_id", "execution_generation", "member_id"}
 
-var promptSubmitRegistry = &handlerRegistry{}
-
-func init() {
-	promptSubmitRegistry.method("prompt.submit", promptSubmit)
-	promptSubmitRegistry.install()
-}
-
 // Reply ending voice chat for a typed bare stop phrase while voice mode is on, nil otherwise
 func typedStopPhraseResponse(ctx context.Context, rid any, text any, sid string) map[string]any {
 	stopped, err := consumeTypedStopPhrase(ctx, text, sid, true)

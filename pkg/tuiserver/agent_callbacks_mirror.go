@@ -101,7 +101,7 @@ func mirrorSubagentToChild(ctx context.Context, eventType string, payload map[st
 	if st.openTool != nil {
 		openTool := st.openTool
 		st.openTool = nil
-		if toolProgressEnabled(csid) || toolLifecycleRequiredForUI(strOr(openTool["name"])) {
+		if toolProgressEnabled(ctx, csid) || toolLifecycleRequiredForUI(strOr(openTool["name"])) {
 			emitEvent(ctx, "tool.complete", csid, openTool)
 		}
 	}
@@ -119,7 +119,7 @@ func mirrorSubagentToChild(ctx context.Context, eventType string, payload map[st
 		if preview != "" {
 			tool["preview"] = preview
 		}
-		if !toolProgressEnabled(csid) && !toolLifecycleRequiredForUI(toolName) {
+		if !toolProgressEnabled(ctx, csid) && !toolLifecycleRequiredForUI(toolName) {
 			return
 		}
 		st.openTool = tool

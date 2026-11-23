@@ -126,7 +126,7 @@ func readCodexTokens(env PoolEnv, lock bool) (codexTokenData, error) {
 		return codexTokenData{}, err
 	}
 	state := env.Store.ProviderState(data, "openai-codex")
-	if len(state) == 0 {
+	if len(state) == 0 || anyString(state["moved_to_login"]) != "" {
 		return codexTokenData{}, codexErr(fmt.Sprintf(codexNoCredentialsMsg, codexReloginCommand(env)), "codex_auth_missing", true)
 	}
 	tokens, ok := state["tokens"].(map[string]any)
@@ -638,120 +638,41 @@ func resolveCodexRuntimeCredentialsReadOnly(env PoolEnv) (map[string]any, error)
 	return resolveCodexRuntimeCredentials(env, CodexResolveOptions{ReadOnly: true})
 }
 
-// Resolves runtime credentials from the Icebath Codex token store, the pool serving when the singleton cannot
+// Resolves runtime credentials from the selected Codex login, refreshed through the pool when forced or close to expiry
 func resolveCodexRuntimeCredentials(env PoolEnv, opts CodexResolveOptions) (map[string]any, error) {
 	skew := opts.RefreshSkew
 	if skew <= 0 {
 		skew = CodexAccessTokenRefreshSkew
 	}
-	var readError *AuthError
-	var data *codexTokenData
-	observed := ""
-	readTokens := func() (codexTokenData, error) {
-		if opts.ReadOnly {
-			return readCodexTokens(env, false)
+	poolToken, poolBase := poolCodexCredential(env)
+	if poolToken != "" && !opts.ReadOnly && (opts.ForceRefresh || (!opts.SkipExpiringRefresh && codexAccessTokenIsExpiring(poolToken, skew))) {
+		refreshed, ok := LoadPool(env, "openai-codex").TryRefreshMatching(poolToken, "")
+		poolToken = ""
+		if ok {
+			poolToken, poolBase = refreshed.RuntimeAPIKey(), refreshed.RuntimeBaseURL()
 		}
-		unlock, err := env.Store.Lock(AuthLockTimeout)
-		if err != nil {
-			return codexTokenData{}, err
-		}
-		defer unlock()
-		store, err := env.Store.Load()
-		if err != nil {
-			return codexTokenData{}, err
-		}
-		if raw, ok := env.Store.ProviderState(store, "openai-codex")["tokens"].(map[string]any); ok {
-			observed = anyString(raw["access_token"])
-		}
-		return readCodexTokens(env, false)
 	}
-	read, err := readTokens()
-	if err != nil {
-		var authErr *AuthError
-		if !errors.As(err, &authErr) {
-			return nil, err
-		}
-		readError = authErr
-		if !opts.ReadOnly && authErr.ReloginRequired && (authErr.Code == "codex_auth_missing_access_token" || authErr.Code == "codex_auth_missing_refresh_token" || authErr.Code == "codex_auth_invalid_shape") {
-			code := authErr.Code
-			if code == "" {
-				code = "auth_error"
-			}
-			if imported := recoverCodexTokensFromCLI(env, code, observed); imported != nil {
-				data = &codexTokenData{tokens: imported, lastRefresh: imported["last_refresh"]}
-			}
-		}
-	} else {
-		data = &read
+	if poolToken != "" {
+		return codexRuntimeResult(env, poolToken, "credential_pool", nil, codexPoolRouteBaseURL(env, poolBase)), nil
 	}
-	if data == nil {
-		poolToken, poolBase := poolCodexCredential(env)
-		if poolToken != "" && opts.ForceRefresh && !opts.ReadOnly {
-			refreshed, ok := LoadPool(env, "openai-codex").TryRefreshMatching(poolToken, "")
-			poolToken = ""
-			if ok {
-				poolToken = refreshed.RuntimeAPIKey()
-			}
-		}
-		if poolToken != "" {
-			return codexRuntimeResult(env, poolToken, "credential_pool", nil, codexPoolRouteBaseURL(env, poolBase)), nil
-		}
-		if poolRateLimit := codexPoolRateLimitStatus(env); poolRateLimit != nil {
-			if !opts.ReadOnly {
-				if restored, known := probeCodexPoolEntryQuotaRestored(env, poolRateLimit); known && restored {
-					env.log().Info("Codex quota restored upstream — clearing stale pool cooldown(s).")
-					ClearCodexPoolQuotaCooldowns(env, "")
-					poolToken, poolBase = poolCodexCredential(env)
-					if poolToken != "" {
-						return codexRuntimeResult(env, poolToken, "credential_pool", nil, codexPoolRouteBaseURL(env, poolBase)), nil
-					}
+	if poolRateLimit := codexPoolRateLimitStatus(env); poolRateLimit != nil {
+		if !opts.ReadOnly {
+			if restored, known := probeCodexPoolEntryQuotaRestored(env, poolRateLimit); known && restored {
+				env.log().Info("Codex quota restored upstream — clearing stale pool cooldown(s).")
+				ClearCodexPoolQuotaCooldowns(env, "")
+				poolToken, poolBase = poolCodexCredential(env)
+				if poolToken != "" {
+					return codexRuntimeResult(env, poolToken, "credential_pool", nil, codexPoolRouteBaseURL(env, poolBase)), nil
 				}
 			}
-			resetAt, ok := anyFloat(poolRateLimit["reset_at"])
-			if ok && resetAt > nowEpoch() {
-				return nil, codexQuotaExhaustedError(int(resetAt-nowEpoch()), true)
-			}
-			return nil, codexQuotaExhaustedError(0, false)
 		}
-		if readError != nil {
-			return nil, readError
+		resetAt, ok := anyFloat(poolRateLimit["reset_at"])
+		if ok && resetAt > nowEpoch() {
+			return nil, codexQuotaExhaustedError(int(resetAt-nowEpoch()), true)
 		}
-		return nil, codexErr(fmt.Sprintf(codexNoCredentialsMsg, codexReloginCommand(env)), "codex_auth_missing", true)
+		return nil, codexQuotaExhaustedError(0, false)
 	}
-	tokens := mergeTokens(data.tokens, nil)
-	accessToken := stripped(tokens["access_token"])
-	refreshTimeout := time.Duration(envFloat("ICEBATH_CODEX_REFRESH_TIMEOUT_SECONDS", 20) * float64(time.Second))
-	shouldRefresh := func(token string) bool {
-		if opts.ReadOnly {
-			return false
-		}
-		return opts.ForceRefresh || (!opts.SkipExpiringRefresh && codexAccessTokenIsExpiring(token, skew))
-	}
-	if shouldRefresh(accessToken) {
-		lockTimeout := refreshTimeout + 5*time.Second
-		if lockTimeout < AuthLockTimeout {
-			lockTimeout = AuthLockTimeout
-		}
-		unlock, err := env.Store.Lock(lockTimeout)
-		if err != nil {
-			return nil, err
-		}
-		defer unlock()
-		fresh, err := readCodexTokens(env, false)
-		if err != nil {
-			return nil, err
-		}
-		data = &fresh
-		tokens = mergeTokens(fresh.tokens, nil)
-		if shouldRefresh(stripped(tokens["access_token"])) {
-			tokens, err = refreshCodexAuthTokens(env, tokens, refreshTimeout)
-			if err != nil {
-				return nil, err
-			}
-		}
-		accessToken = stripped(tokens["access_token"])
-	}
-	return codexRuntimeResult(env, accessToken, "icebath-auth-store", data.lastRefresh, ""), nil
+	return nil, codexErr(fmt.Sprintf(codexNoCredentialsMsg, codexReloginCommand(env)), "codex_auth_missing", true)
 }
 
 // Exported Codex runtime credential resolution for the agent client refresh
@@ -1020,6 +941,7 @@ func poolCodexCredential(env PoolEnv) (string, string) {
 		env.log().Debug(fmt.Sprintf("Codex pool fallback lookup failed: %v", err))
 		return "", ""
 	}
+	entries = selectedLoginRows(env, "openai-codex", entries)
 	for _, entry := range entries {
 		token, _ := entry["access_token"].(string)
 		resetAt, ok := ParseAbsoluteTimestamp(entry["last_error_reset_at"])
@@ -1038,7 +960,7 @@ type CodexLoginArgs struct {
 	Timeout   time.Duration
 }
 
-// LoginOpenAICodex runs the Codex login, device code by default and browser PKCE when opted in
+// LoginOpenAICodex runs the Codex sign in, device code by default and browser PKCE when opted in, stored as an owned login made the default
 func LoginOpenAICodex(env PoolEnv, out io.Writer, args CodexLoginArgs, forceNewLogin bool) error {
 	if !forceNewLogin {
 		accepted, err := offerExistingOAuthCredentials(env, out, "openai-codex",
@@ -1050,42 +972,17 @@ func LoginOpenAICodex(env PoolEnv, out io.Writer, args CodexLoginArgs, forceNewL
 		if accepted {
 			return nil
 		}
-		if cliTokens := importCodexCLITokensFn(env); cliTokens != nil {
-			fmt.Fprintln(out, "Found existing Codex CLI credentials at ~/.codex/auth.json")
-			fmt.Fprintln(out, "Icebath will create its own session to avoid conflicts with Codex CLI / VS Code.")
-			if promptYesNo("Import these credentials? (a separate login is recommended) [y/N]: ", "n") {
-				if err := saveCodexTokens(env, cliTokens, "", "", true, false); err != nil {
-					return err
-				}
-				configPath, err := updateConfigForProvider(env, "openai-codex", codexBaseURL(env), "", false)
-				if err != nil {
-					return err
-				}
-				fmt.Fprintln(out)
-				fmt.Fprintln(out, "Credentials imported. Note: if Codex CLI refreshes its token,")
-				fmt.Fprintln(out, "Icebath will keep working independently with its own session.")
-				fmt.Fprintf(out, "  Config updated: %s (model.provider=openai-codex)\n", configPath)
-				return nil
-			}
-		}
 	}
 	fmt.Fprintln(out)
-	creds, err := codexOAuthLogin(env, out, args)
+	login, err := SignInOAuthLogin(env, out, "openai-codex", OAuthSignIn{Browser: args.Browser, NoBrowser: args.NoBrowser, Timeout: args.Timeout, MakeDefault: true})
 	if err != nil {
 		return err
 	}
-	tokens, _ := creds["tokens"].(map[string]any)
-	if err := saveCodexTokens(env, tokens, anyString(creds["last_refresh"]), "", true, false); err != nil {
-		return err
-	}
-	baseURL := anyString(creds["base_url"])
-	if _, has := creds["base_url"]; !has {
-		baseURL = DefaultCodexBaseURL
-	}
-	configPath, err := updateConfigForProvider(env, "openai-codex", baseURL, "", false)
+	configPath, err := updateConfigForProvider(env, "openai-codex", codexBaseURL(env), "", false)
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(out, "Signed in as the login %s.\n", login.Name)
 	printLoginSuccess(out, envHome(env), "openai-codex", configPath, true)
 	return nil
 }

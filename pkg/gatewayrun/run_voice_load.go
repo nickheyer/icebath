@@ -1,62 +1,42 @@
 package gatewayrun
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Voice reply modes a chat may hold
 var voiceModeValues = map[string]bool{"off": true, "voice_only": true, "all": true}
 
-// Persisted per chat voice modes, legacy unprefixed keys warned about and dropped, empty for a missing or bad file
-func (r *GatewayRunner) loadVoiceModes() (*pydict.Dict[string, string], error) {
-	raw, err := os.ReadFile(r.voiceModePath())
-	if err != nil {
-		return pydict.New[string, string](), nil
-	}
-	text, err := pystr.DecodeUTF8SigFile(raw)
-	if err != nil {
-		return nil, err
-	}
-	parsed, err := pyjson.Loads(text)
-	if err != nil {
-		return pydict.New[string, string](), nil
-	}
-	data, ok := parsed.(*pyjson.Object)
-	if !ok {
-		return pydict.New[string, string](), nil
-	}
-	keys := []string{}
-	items := map[string]string{}
-	for _, k := range data.Keys {
-		v, _ := data.Get(k)
-		switch v.(type) {
-		case []any, *pyjson.Object:
-			return nil, &pyTypeError{msg: fmt.Sprintf("voice mode of %s is %s where text was expected", k, errchain.Kind(v))}
+// Context of the per chat voice modes, which live in the process home's settings
+func voiceModeCtx() context.Context {
+	return home.WithOverride(context.Background(), home.Process())
+}
+
+// Voice reply mode a chat chose, false when it chose none
+func chatVoiceMode(key string) (string, bool) {
+	mode, _ := settings.ChatVoiceModes.Get(voiceModeCtx())[key].(string)
+	return mode, voiceModeValues[mode]
+}
+
+// Every chat's chosen voice reply mode, keyed by chat
+func chatVoiceModes() map[string]string {
+	out := map[string]string{}
+	for key, raw := range settings.ChatVoiceModes.Get(voiceModeCtx()) {
+		if mode, _ := raw.(string); voiceModeValues[mode] {
+			out[key] = mode
 		}
-		m, isStr := v.(string)
-		if !isStr || !voiceModeValues[m] {
-			continue
-		}
-		if _, seen := items[k]; !seen {
-			keys = append(keys, k)
-		}
-		items[k] = m
 	}
-	out := pydict.New[string, string]()
-	for _, k := range keys {
-		if !strings.Contains(k, ":") {
-			pkgLog().Warn(fmt.Sprintf("Skipping legacy unprefixed voice mode key %s during migration. "+
-				"Re-enable voice mode on that chat to rebuild the prefixed key.", errchain.Show(k)))
-			continue
-		}
-		out.Set(k, items[k])
+	return out
+}
+
+// Stores a chat's voice reply mode, a failed write logged
+func storeChatVoiceMode(key, mode string) {
+	if _, err := settings.ChatVoiceModes.SetEntry(voiceModeCtx(), key, mode); err != nil {
+		pkgLog().Warn(fmt.Sprintf("Failed to save the voice mode of %s: %s", key, errchain.Show(err)))
 	}
-	return out, nil
 }

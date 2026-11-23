@@ -11,7 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // errFlowCancelled is the Ctrl-C or EOF a wrapped prompt raised
@@ -159,84 +161,56 @@ func customProviderBaseURLConfigValue(providerInfo map[string]any, resolvedBaseU
 	return pystr.Strip(resolvedBaseURL)
 }
 
-// Saves a custom endpoint to custom_providers deduplicated by base URL, updating an existing entry
+// Saves a custom endpoint as a providers entry through the settings writer, updating the entry that already serves the base URL
 func saveCustomProvider(r *ModelFlowRun, baseURL, apiKey, model string, contextLength int, name, apiMode, keyEnv string) error {
-	cfg, err := r.loadConfig()
-	if err != nil {
-		return err
+	ctx := home.WithOverride(r.ctx(), r.home())
+	existing := settings.Providers.Get(ctx)
+	key := ""
+	entry := map[string]any{}
+	for _, k := range sortedKeys(existing) {
+		held, ok := existing[k].(map[string]any)
+		if ok && strings.TrimRight(pyOrStr(held["base_url"]), "/") == strings.TrimRight(baseURL, "/") {
+			key, entry = k, held
+			break
+		}
 	}
-	providers, _ := cfg["custom_providers"].([]any)
-	if !truthy(cfg["custom_providers"]) || providers == nil {
-		providers = []any{}
-	}
-	for _, raw := range providers {
-		entry, ok := raw.(map[string]any)
-		if !ok {
-			continue
+	created := key == ""
+	if created {
+		if name == "" {
+			name = autoProviderName(baseURL)
 		}
-		entryBase, err := pyStrReceiver(dictGet(entry, "base_url", ""), "custom_providers base_url")
-		if err != nil {
-			return err
+		key = strings.TrimPrefix(CustomProviderSlug(name, ""), "custom:")
+		entry = map[string]any{"name": name, "base_url": baseURL}
+		if keyEnv == "" && apiKey != "" {
+			entry["api_key"] = apiKey
 		}
-		if strings.TrimRight(entryBase, "/") != strings.TrimRight(baseURL, "/") {
-			continue
-		}
-		changed := false
-		if model != "" && entry["model"] != model {
-			pyDictSet(entry, "model", model)
-			changed = true
-		}
-		if model != "" && contextLength != 0 {
-			pyDictSet(ensureDictSection(entry, "models"), model, contextLengthEntry(contextLength))
-			changed = true
-		}
-		if apiMode != "" {
-			if entry["api_mode"] != apiMode {
-				pyDictSet(entry, "api_mode", apiMode)
-				changed = true
-			}
-		} else if _, held := entry["api_mode"]; held {
-			delete(entry, "api_mode")
-			changed = true
-		}
-		if keyEnv != "" && (entry["key_env"] != keyEnv || truthy(entry["api_key"])) {
-			pyDictSet(entry, "key_env", keyEnv)
-			delete(entry, "api_key")
-			changed = true
-		}
-		if changed {
-			pyDictSet(cfg, "custom_providers", providers)
-			return config.Save(r.home(), cfg)
-		}
-		return nil
-	}
-	if name == "" {
-		name = autoProviderName(baseURL)
-	}
-	entry := map[string]any{"name": name, "base_url": baseURL}
-	config.SetMappingKeys(entry, []string{"name", "base_url"})
-	if keyEnv != "" {
-		pyDictSet(entry, "key_env", keyEnv)
-	} else if apiKey != "" {
-		pyDictSet(entry, "api_key", apiKey)
 	}
 	if model != "" {
-		pyDictSet(entry, "model", model)
+		entry["default_model"] = model
+		if contextLength != 0 {
+			models, _ := entry["models"].(map[string]any)
+			if models == nil {
+				models = map[string]any{}
+			}
+			models[model] = contextLengthEntry(contextLength)
+			entry["models"] = models
+		}
 	}
 	if apiMode != "" {
-		pyDictSet(entry, "api_mode", apiMode)
+		entry["api_mode"] = apiMode
+	} else {
+		delete(entry, "api_mode")
 	}
-	if model != "" && contextLength != 0 {
-		models := map[string]any{}
-		pyDictSet(models, model, contextLengthEntry(contextLength))
-		pyDictSet(entry, "models", models)
+	if keyEnv != "" {
+		entry["key_env"] = keyEnv
+		delete(entry, "api_key")
 	}
-	providers = append(providers, entry)
-	pyDictSet(cfg, "custom_providers", providers)
-	if err := config.Save(r.home(), cfg); err != nil {
+	if _, err := settings.Set(ctx, settings.Providers.EntryKey(key), entry, settings.Global); err != nil {
 		return err
 	}
-	fmt.Fprintf(r.Out, "  💾 Saved to custom providers as \"%s\" (edit in config.yaml)\n", name)
+	if created {
+		fmt.Fprintf(r.Out, "  💾 Saved to providers as \"%s\" (edit in config.yaml)\n", key)
+	}
 	return nil
 }
 

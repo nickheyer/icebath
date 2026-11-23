@@ -386,10 +386,6 @@ func TestByteRoverConfigBlocks(t *testing.T) {
 	if p := NewByteRoverProvider(context.Background(), nil, nil); p.autoExtract {
 		t.Fatal("memory.byterover auto_extract off ignored")
 	}
-	write("memory:\n  byterover: {}\n  provider_config:\n    auto_extract: false\n")
-	if p := NewByteRoverProvider(context.Background(), nil, nil); p.autoExtract {
-		t.Fatal("legacy provider_config ignored when byterover block is empty")
-	}
 }
 
 func TestByteRoverDecodeReplaceMatchesPython(t *testing.T) {

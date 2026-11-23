@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/user"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Working directory values that mean not configured
@@ -313,23 +315,14 @@ func terminalEnvTypeForTask(env *Env, taskID string) string {
 			return t
 		}
 	}
-	cfg, err := getEnvConfig(env)
-	if err != nil {
-		v := rawSecret(env, "TERMINAL_ENV")
-		if v == "" {
-			v = "local"
-		}
-		return strings.ToLower(v)
-	}
 	v := ""
-	if raw := cfg["env_type"]; raw != nil && raw != "" && raw != false {
-		v = pyStr(raw)
+	if cfg, err := getEnvConfig(env); err == nil {
+		if raw := cfg["env_type"]; raw != nil && raw != "" && raw != false {
+			v = pyStr(raw)
+		}
 	}
 	if v == "" {
-		v = rawSecret(env, "TERMINAL_ENV")
-	}
-	if v == "" {
-		v = "local"
+		v = settings.WhereCommandsRun.Get(envHomeCtx(context.Background(), env))
 	}
 	return strings.ToLower(v)
 }

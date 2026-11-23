@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
-	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -305,25 +304,13 @@ func oneline(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
 
-// Tail truncates to limit runes with an ellipsis, the result never exceeds the limit
+// Cuts text to limit runes ending in an ellipsis when it is longer, zero or less meaning no limit
 func tailTrunc(text string, limit int) string {
 	runes := []rune(text)
 	if limit <= 0 || len(runes) <= limit {
 		return text
 	}
-	if limit <= 3 {
-		return strings.Repeat(".", limit)
-	}
-	return string(runes[:limit-3]) + "..."
-}
-
-// First n runes plus an ellipsis when longer
-func clip(text string, n int) string {
-	runes := []rune(text)
-	if len(runes) > n {
-		return string(runes[:n]) + "..."
-	}
-	return text
+	return string(runes[:limit-1]) + "…"
 }
 
 // ToolPreview is a compact tool preview plus presentation facts lost to truncation
@@ -331,189 +318,6 @@ type ToolPreview struct {
 	Text      string
 	Truncated bool
 	URL       string
-}
-
-var (
-	shellSilentHeads   = setOf("cd", "pushd", "popd", "export", "set", "unset", "source", ".", "true", "false", ":")
-	shellPipeTailHeads = setOf("head", "tail", "wc", "sort", "uniq")
-	envAssignHeadRe    = regexp.MustCompile(`^[A-Za-z_]\w*=`)
-	redirectOpRe       = regexp.MustCompile(`^\d*(?:>>?|<)$`)
-	redirectDupRe      = regexp.MustCompile(`^\d*(?:>&|<&)\d+$`)
-	boundaryEchoRe     = regexp.MustCompile(`-{2,}|_exit=|(?:^|\s|=)\$[?{]|PIPESTATUS`)
-)
-
-func shellBasename(head string) string {
-	if head == "" {
-		return ""
-	}
-	return head[strings.LastIndex(head, "/")+1:]
-}
-
-type quotedRune struct {
-	index  int
-	ch     rune
-	quoted bool
-}
-
-// Runes with their quote state, a quote closes unless backslash escaped
-func scanQuoted(text string) []quotedRune {
-	var out []quotedRune
-	var quote rune
-	runes := []rune(text)
-	for i, ch := range runes {
-		switch {
-		case quote != 0:
-			out = append(out, quotedRune{i, ch, true})
-			if ch == quote && (i == 0 || runes[i-1] != '\\') {
-				quote = 0
-			}
-		case ch == '\'' || ch == '"':
-			quote = ch
-			out = append(out, quotedRune{i, ch, true})
-		default:
-			out = append(out, quotedRune{i, ch, false})
-		}
-	}
-	return out
-}
-
-func splitShellWords(segment string) []string {
-	parts := [][]rune{{}}
-	for _, q := range scanQuoted(segment) {
-		if !q.quoted && pyIsSpace(q.ch) {
-			parts = append(parts, []rune{})
-		} else {
-			parts[len(parts)-1] = append(parts[len(parts)-1], q.ch)
-		}
-	}
-	var out []string
-	for _, p := range parts {
-		if len(p) > 0 {
-			out = append(out, string(p))
-		}
-	}
-	return out
-}
-
-// Drops a trailing pipe into head, tail, wc, sort, or uniq
-func stripShellPipeTail(segment string) string {
-	words := splitShellWords(segment)
-	for i, word := range words {
-		next := ""
-		if i+1 < len(words) {
-			next = words[i+1]
-		}
-		if word == "|" && shellPipeTailHeads[shellBasename(next)] {
-			words = words[:i]
-			break
-		}
-	}
-	return strings.TrimSpace(strings.Join(words, " "))
-}
-
-// Splits on unquoted and or lists, semicolons, and newlines, dropping pipe tails per segment
-func splitShellCompound(command string) []string {
-	raw := [][]rune{{}}
-	skip := false
-	runes := []rune(command)
-	for _, q := range scanQuoted(command) {
-		i := q.index
-		switch {
-		case skip:
-			skip = false
-		case !q.quoted && i+1 < len(runes) && ((runes[i] == '&' && runes[i+1] == '&') || (runes[i] == '|' && runes[i+1] == '|')):
-			raw = append(raw, []rune{})
-			skip = true
-		case !q.quoted && (q.ch == ';' || q.ch == '\n'):
-			raw = append(raw, []rune{})
-		default:
-			raw[len(raw)-1] = append(raw[len(raw)-1], q.ch)
-		}
-	}
-	var segments []string
-	for _, buf := range raw {
-		if s := stripShellPipeTail(strings.TrimSpace(string(buf))); s != "" {
-			segments = append(segments, s)
-		}
-	}
-	return segments
-}
-
-// Command name of a segment skipping leading assignments
-func shellHeadWord(segment string) string {
-	words := splitShellWords(segment)
-	for len(words) > 0 && envAssignHeadRe.MatchString(words[0]) {
-		words = words[1:]
-	}
-	if len(words) == 0 {
-		return ""
-	}
-	return shellBasename(words[0])
-}
-
-// Drops redirections from a segment
-func cleanShellSegment(segment string) string {
-	words := splitShellWords(segment)
-	var out []string
-	i := 0
-	for i < len(words) {
-		word := words[i]
-		switch {
-		case redirectOpRe.MatchString(word):
-			i += 2
-		case redirectDupRe.MatchString(word):
-			i++
-		default:
-			out = append(out, word)
-			i++
-		}
-	}
-	return strings.TrimSpace(strings.Join(out, " "))
-}
-
-func isShellBoundaryEcho(segment string) bool {
-	words := splitShellWords(segment)
-	if len(words) == 0 || shellBasename(words[0]) != "echo" {
-		return false
-	}
-	return boundaryEchoRe.MatchString(strings.Join(words[1:], " "))
-}
-
-// SummarizeShellCommand compacts shell wrapper plumbing for display while the raw command stays elsewhere
-func SummarizeShellCommand(command string) string {
-	original := oneline(command)
-	if original == "" {
-		return ""
-	}
-	segments := splitShellCompound(original)
-	if len(segments) <= 1 {
-		first := original
-		if len(segments) == 1 {
-			first = segments[0]
-		}
-		if cleaned := cleanShellSegment(first); cleaned != "" {
-			return cleaned
-		}
-		return original
-	}
-	var core []string
-	for _, segment := range segments {
-		cleaned := cleanShellSegment(segment)
-		if cleaned != "" && !shellSilentHeads[shellHeadWord(cleaned)] && !isShellBoundaryEcho(cleaned) {
-			core = append(core, cleaned)
-		}
-	}
-	if len(core) == 0 {
-		return original
-	}
-	count := len(core) - 1
-	if count == 0 {
-		return core[0]
-	}
-	if count == 1 {
-		return core[0] + " + 1 command"
-	}
-	return core[0] + " + " + strconv.Itoa(count) + " commands"
 }
 
 func readFileLineLabel(args map[string]any) string {
@@ -637,7 +441,7 @@ func previewDelegateTask(env *Env, args map[string]any, maxLen int) string {
 		return tailTrunc(action, maxLen)
 	}
 	if tasks, ok := anyList(args["tasks"]); ok && len(tasks) > 0 {
-		goals := delegateTaskGoals(tasks, 40)
+		goals := delegateTaskGoals(tasks, 0)
 		preview := strconv.Itoa(len(tasks)) + " parallel tasks"
 		if len(goals) > 0 {
 			preview = strconv.Itoa(len(goals)) + " tasks: " + strings.Join(goals, " | ")
@@ -651,23 +455,22 @@ func previewDelegateTask(env *Env, args map[string]any, maxLen int) string {
 	return tailTrunc(oneline(pyStrOrEmpty(goal)), maxLen)
 }
 
-func previewProcessManage(env *Env, args map[string]any, _ int) string {
+func previewProcessManage(env *Env, args map[string]any, maxLen int) string {
 	action, sid, data, timeout := args["action"], args["session_id"], args["data"], args["timeout"]
 	var parts []string
 	if action != nil && pyStrOrEmpty(action) != "" {
 		parts = append(parts, pyStr(action))
 	}
 	if sid != nil && pyStrOrEmpty(sid) != "" {
-		parts = append(parts, string([]rune(pyStr(sid))[:min(16, len([]rune(pyStr(sid))))]))
+		parts = append(parts, pyStr(sid))
 	}
 	if data != nil && pyStrOrEmpty(data) != "" {
-		text := []rune(pyStr(data))
-		parts = append(parts, "\""+oneline(string(text[:min(20, len(text))]))+"\"")
+		parts = append(parts, "\""+oneline(pyStr(data))+"\"")
 	}
 	if timeout != nil && pyStrOrEmpty(timeout) != "" && pyStrOrEmpty(timeout) != "0" && action == "wait" {
 		parts = append(parts, pyStr(timeout)+"s")
 	}
-	return strings.Join(parts, " ")
+	return tailTrunc(strings.Join(parts, " "), maxLen)
 }
 
 func previewTodoList(env *Env, args map[string]any, _ int) string {
@@ -692,7 +495,7 @@ func previewShell(key string) previewBuilder {
 		if !present || command == nil {
 			return ""
 		}
-		return tailTrunc(SummarizeShellCommand(sanitizeCommandForDisplay(pyStr(command), false)), maxLen)
+		return tailTrunc(oneline(sanitizeCommandForDisplay(pyStr(command), false)), maxLen)
 	}
 }
 
@@ -707,12 +510,7 @@ func previewReadFile(env *Env, args map[string]any, maxLen int) string {
 	if p == nil {
 		return ""
 	}
-	text := pyStr(p)
-	label := path.Base(strings.ReplaceAll(text, "\\", "/"))
-	if label == "." || label == "/" || label == "" {
-		label = text
-	}
-	return tailTrunc(strings.TrimSpace(label+" "+readFileLineLabel(args)), maxLen)
+	return tailTrunc(strings.TrimSpace(oneline(pyStr(p))+" "+readFileLineLabel(args)), maxLen)
 }
 
 // The op a memory progress line shows and an N more suffix for the rest of a batch
@@ -731,7 +529,7 @@ func memoryFirstOp(args map[string]any) (map[string]any, string) {
 	return first, ""
 }
 
-func previewMemory(env *Env, args map[string]any, _ int) string {
+func previewMemory(env *Env, args map[string]any, maxLen int) string {
 	op, more := memoryFirstOp(args)
 	action, target := pyStrOrEmpty(op["action"]), pyStrOrEmpty(args["target"])
 	switch action {
@@ -740,7 +538,7 @@ func previewMemory(env *Env, args map[string]any, _ int) string {
 		if content == "" {
 			content = pyStrOrEmpty(op["new_text"])
 		}
-		return "+" + target + ": \"" + clip(oneline(content), 25) + "\"" + more
+		return tailTrunc("+"+target+": \""+oneline(content)+"\""+more, maxLen)
 	case "replace", "patch", "remove":
 		old := oneline(pyStrOrEmpty(op["old_text"]))
 		if old == "" {
@@ -750,18 +548,17 @@ func previewMemory(env *Env, args map[string]any, _ int) string {
 		if action == "remove" {
 			marker = "-"
 		}
-		runes := []rune(old)
-		return marker + target + ": \"" + string(runes[:min(20, len(runes))]) + "\"" + more
+		return tailTrunc(marker+target+": \""+old+"\""+more, maxLen)
 	}
 	return action
 }
 
-func previewSendMessage(env *Env, args map[string]any, _ int) string {
+func previewSendMessage(env *Env, args map[string]any, maxLen int) string {
 	target := "?"
 	if t, ok := args["target"]; ok {
 		target = pyStr(t)
 	}
-	return "to " + target + ": \"" + tailTrunc(oneline(pyStrOrEmpty(args["message"])), 20) + "\""
+	return tailTrunc("to "+target+": \""+oneline(pyStrOrEmpty(args["message"]))+"\"", maxLen)
 }
 
 func previewSkillView(env *Env, args map[string]any, maxLen int) string {
@@ -804,8 +601,8 @@ func previewBridgeCall(toolName string) previewBuilder {
 	}
 }
 
-func previewSessionSearch(env *Env, args map[string]any, _ int) string {
-	return "recall: \"" + clip(oneline(pyStrOrEmpty(args["query"])), 25) + "\""
+func previewSessionSearch(env *Env, args map[string]any, maxLen int) string {
+	return tailTrunc("recall: \""+oneline(pyStrOrEmpty(args["query"]))+"\"", maxLen)
 }
 
 type previewBuilder func(env *Env, args map[string]any, maxLen int) string

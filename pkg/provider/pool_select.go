@@ -40,11 +40,7 @@ func (p *Pool) resyncStaleEntry(entry PooledCredential) PooledCredential {
 	if entry.Source != resyncSource[p.provider] {
 		return entry
 	}
-	switch p.provider {
-	case "anthropic":
-		return p.syncAnthropicEntryFromCredentialsFile(entry, true)
-	}
-	return p.syncEntryFromAuthStore(entry, true)
+	return p.syncAnthropicEntryFromCredentialsFile(entry, true)
 }
 
 // Entries outside cooldown plus the single use rows whose refresh is deferred past the lock, caller holds the lock
@@ -94,7 +90,7 @@ func (p *Pool) availableEntries(clearExpired, refresh bool, model string) ([]Poo
 			}
 		}
 		if refresh && p.entryNeedsRefresh(entry) {
-			if _, single := tokensSingletonProviders[p.provider]; single {
+			if _, single := oauthRefreshProviders[p.provider]; single {
 				pending = append(pending, entry)
 				continue
 			}
@@ -148,6 +144,9 @@ func (p *Pool) logNoAvailableEntries() {
 // Selects the best available entry under the lock and returns the deferred refresh rows
 func (p *Pool) selectUnlocked(refresh, count bool, model string) (PooledCredential, bool, []PooledCredential) {
 	available, pending := p.availableEntries(true, refresh, model)
+	if len(available) == 0 && len(pending) == 0 && p.widenOnExhausted() {
+		available, pending = p.availableEntries(true, refresh, model)
+	}
 	if len(available) == 0 {
 		p.currentID = ""
 		p.logNoAvailableEntries()

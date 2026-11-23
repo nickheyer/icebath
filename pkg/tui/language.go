@@ -31,7 +31,7 @@ func registerLanguageKeys(km *keys.Map) {
 // Language commands
 func (a *app) languageCommands() []slashCommand {
 	return []slashCommand{
-		{name: "language", aliases: []string{"lang"}, help: "choose the language of the UI", usage: "[id]", run: func(r *slashRun) tea.Cmd {
+		{name: "language", help: "choose the language of the UI", usage: "[id]", run: func(r *slashRun) tea.Cmd {
 			value := trimJS(r.arg)
 			if value == "" {
 				return tea.Batch(r.ran(), a.openLanguagePicker(r))

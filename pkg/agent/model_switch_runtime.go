@@ -153,7 +153,7 @@ func buildSwitchedClient(ctx context.Context, a *AIAgent, newProvider, apiKey, b
 	if cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv); err != nil {
 		pkgLog().Debug("custom-provider TLS resolution skipped on switch_model")
 	} else {
-		provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, effectiveBase, provider.CompatibleCustomProviders(cfg), nil)
+		provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, effectiveBase, provider.ProviderEntries(cfg), nil)
 	}
 	if hasTimeout {
 		a.clientKwargs["timeout"] = timeout
@@ -209,7 +209,7 @@ func resolveSwitchContextLength(ctx context.Context, a *AIAgent, snapshot *switc
 	var intent *int
 	if cfg, err := config.Load(home.Dir(ctx), os.LookupEnv); err == nil {
 		switchCfg := map[string]any(cfg)
-		customProviders, loaded = provider.CompatibleCustomProviders(switchCfg), true
+		customProviders, loaded = provider.ProviderEntries(switchCfg), true
 		intent = configContextLengthForRuntime(ctx, a, switchCfg)
 		if intent == nil {
 			if n := provider.CustomProviderContextLength(a.model, a.baseURL, customProviders, switchCfg); n != 0 {
@@ -238,7 +238,7 @@ func resolveSwitchContextLength(ctx context.Context, a *AIAgent, snapshot *switc
 func updateSwitchCompressor(ctx context.Context, a *AIAgent, customProviders []map[string]any, loaded bool, effectiveContextLength int, snapshot *switchSnapshot) error {
 	if !loaded {
 		if cfg, err := config.Load(home.Dir(ctx), os.LookupEnv); err == nil {
-			customProviders = provider.CompatibleCustomProviders(cfg)
+			customProviders = provider.ProviderEntries(cfg)
 		}
 	}
 	probeKey := a.apiKey
@@ -285,7 +285,7 @@ func applySwitchedProviderRequestOverrides(ctx context.Context, a *AIAgent, newP
 	if a.customProviders == nil {
 		customProviders = nil
 		if cfg, err := config.Load(home.Dir(ctx), os.LookupEnv); err == nil {
-			customProviders = provider.CompatibleCustomProviders(cfg)
+			customProviders = provider.ProviderEntries(cfg)
 		}
 	}
 	newExtraBody := customProviderExtraBodyForAgent(newProvider, a.model, a.baseURL, customProviders)

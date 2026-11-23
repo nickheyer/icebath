@@ -149,7 +149,7 @@ func PromptAPIKey(env PoolEnv, out io.Writer, pconfig Profile, existingKey, prov
 			fmt.Fprintln(out, "Cancelled.")
 			return "", true, nil
 		}
-		if err := config.SaveEnvValue(h, keyEnv, newKey); err != nil {
+		if err := saveFlowKeyLogin(env, providerID, keyEnv, newKey); err != nil {
 			return "", false, err
 		}
 		flowSay(out, "API key saved.", "")
@@ -192,7 +192,7 @@ func PromptAPIKey(env PoolEnv, out io.Writer, pconfig Profile, existingKey, prov
 			flowSay(out, "  No change.", "")
 			return existingKey, false, nil
 		}
-		if err := config.SaveEnvValue(h, keyEnv, newKey); err != nil {
+		if err := saveFlowKeyLogin(env, providerID, keyEnv, newKey); err != nil {
 			return "", false, err
 		}
 		flowSay(out, "  API key updated.", "")
@@ -225,8 +225,10 @@ func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save
 			creds = anthReadClaudeCodeCredentialsFn(env)
 		}()
 		if len(creds) > 0 && (anthIsClaudeCodeTokenValidFn(creds) || truthy(creds["refreshToken"])) {
-			if err := config.UseAnthropicClaudeCodeCredentials(ctx, h, save); err != nil {
-				return false, err
+			if !linkClaudeCodeFlowLogin(env) {
+				if err := config.UseAnthropicClaudeCodeCredentials(ctx, h, save); err != nil {
+					return false, err
+				}
 			}
 			fmt.Fprintln(out, "  ✓ Claude Code credentials linked.")
 			fmt.Fprintf(out, "    Icebath will use Claude's credential store directly instead of copying a setup-token into %s/.env.\n", home.Display(h))
@@ -242,7 +244,7 @@ func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save
 		if token == "" {
 			return false, false, nil
 		}
-		if err := config.SaveAnthropicOAuthToken(ctx, h, token, save); err != nil {
+		if err := saveAnthropicFlowLogin(env, token); err != nil {
 			return false, false, err
 		}
 		fmt.Fprintln(out, "  ✓ Setup-token saved.")
@@ -288,7 +290,7 @@ func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save
 		if linked {
 			return true, nil
 		}
-		if err := config.SaveAnthropicOAuthToken(ctx, h, token, save); err != nil {
+		if err := saveAnthropicFlowLogin(env, token); err != nil {
 			return false, err
 		}
 		fmt.Fprintln(out, "  ✓ OAuth credentials saved.")

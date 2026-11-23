@@ -81,7 +81,7 @@ func assertPreserved(t *testing.T, path string) map[string]any {
 
 func TestEveryWriterPreservesCommentsConfigSet(t *testing.T) {
 	h, path := commentedHome(t)
-	if err := SetConfigValue(context.Background(), h, "streaming.enabled", "true", false, pathCommandSources()); err != nil {
+	if err := SetConfigValue(context.Background(), h, "streaming.enabled", "true", pathCommandSources()); err != nil {
 		t.Fatal(err)
 	}
 	if v, _ := CfgGet(assertPreserved(t, path), "streaming", "enabled"); v != true {
@@ -122,21 +122,6 @@ func TestEveryWriterPreservesCommentsSaveConfigPluginEnableAndMemoryProvider(t *
 	}
 	if v, _ := CfgGet(doc, "memory", "provider"); v != "honcho" {
 		t.Fatalf("memory.provider %v", v)
-	}
-}
-
-func TestEveryWriterPreservesCommentsMigrationVersionBump(t *testing.T) {
-	h, path := commentedHome(t)
-	registerMigrationFacade(t)
-	_, latest, err := CheckConfigVersion(context.Background(), h, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := MigrateConfig(context.Background(), h, false, true); err != nil {
-		t.Fatal(err)
-	}
-	if v := assertPreserved(t, path)["_config_version"]; !pyEq(v, latest) {
-		t.Fatalf("stamp %v of %d", v, latest)
 	}
 }
 

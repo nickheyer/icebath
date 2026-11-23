@@ -12,7 +12,7 @@ import (
 
 func TestRunXAIOAuthLoginFromSetupDoesNotHijackActiveProvider(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "openrouter", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openrouter", "providers": map[string]any{}})
 	configPath := filepath.Join(h, "config.yaml")
 	raw, err := yaml.Marshal(map[string]any{
 		"model": map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4", "base_url": "https://openrouter.ai/api/v1"},

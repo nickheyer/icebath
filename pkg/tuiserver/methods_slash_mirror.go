@@ -18,9 +18,6 @@ var NormalizePersonalityName func(value any) string
 // RenderPersonalityPrompt renders a personality definition as its prompt, assigned in cmd/icebath/wiring.go
 var RenderPersonalityPrompt func(value any) string
 
-// PersistPersonality saves the chosen personality to config, assigned in cmd/icebath/wiring.go
-var PersistPersonality func(ctx context.Context, value any) bool
-
 // Compresses the live session and returns the user facing feedback, a held lock answering with its skip note
 func compressLiveWithFeedback(ctx context.Context, sid string, session *tuihost.Session, a *agent.AIAgent, arg string, snapshotKwargs bool) (string, error) {
 	request := agent.ParseCompressArgs(arg)

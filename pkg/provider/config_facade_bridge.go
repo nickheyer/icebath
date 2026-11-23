@@ -3,11 +3,8 @@ package provider
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -16,12 +13,9 @@ func init() {
 	config.RegisterConfigFacade(config.FacadeHooks{
 		ApplyUserMoAPresets: ApplyUserMoAPresets,
 		SkipDeepMerge:       SkipDeepMerge,
-		IsPresetFieldPath:   IsPresetFieldPath,
-		Stamp:               configFacadeStampHooks,
 		DotenvUnreadable:    DotenvUnreadable,
 		ExtraEnvKeys:        configFacadeExtraEnvKeys,
 
-		Migration:                   configFacadeMigrationSources,
 		MaskedSecretPrompt:          maskedSecretPrompt,
 		ScopedSecret:                GetSecret,
 		SecretScopeBound:            func(ctx context.Context) bool { return CurrentSecretScope(ctx) != nil },
@@ -41,38 +35,6 @@ func explicitToolsetKeys() map[string]bool {
 	return keys
 }
 
-// Ladder collaborators provider and tools own, the facade adds its readers, writers and personality sources
-func configFacadeMigrationSources(h string) config.MigrationSources {
-	return config.MigrationSources{
-		CustomProviderEntryToProviderConfig: customProviderEntryToProviderConfig,
-		LegacyRelayPluginKeys:               plugins.LegacyRelayPluginKeysIn,
-		BotProtocolHeading:                  tools.BotModeProtocolHeading,
-		BotRoster:                           botmode.ConfigRoster,
-		StripLegacyBotProtocol:              tools.StripLegacyBotProtocol,
-		ParseConfigStringList:               tools.ParseConfigStringList,
-		ExplicitToolsetKeys:                 explicitToolsetKeys,
-		ToolsetAllowedForPlatform:           tools.ToolsetAllowedForPlatform,
-		ParseEnabledFlag:                    parseEnabledFlag,
-		RecordCoreUse:                       RecordCoreUse,
-		Browser: config.BrowserEnvSources{
-			HomeDotenv:   resolveHomeDotenv,
-			IsLaunchHome: func(h string) bool { return home.Key(h) == home.Key(RoutingProcessHome()) },
-			PMStoreRoots: func() ([]string, error) {
-				store, err := pm.StoreRoot(context.Background())
-				if err != nil {
-					return nil, err
-				}
-				writable, err := pm.WritableStoreRoot(context.Background())
-				if err != nil {
-					return nil, err
-				}
-				return []string{store, writable}, nil
-			},
-			DeferStartupNotice: func(message string) { DeferStartupNotice(home.WithOverride(context.Background(), h), message) },
-		},
-	}
-}
-
 // Writes a persisted .env change into the active scope mapping and reports whether the process env takes it too
 func publishScopedEnv(ctx context.Context, key string, value *string) bool {
 	routed := ServesRoutedProfile(ctx)
@@ -86,24 +48,6 @@ func publishScopedEnv(ctx context.Context, key string, value *string) bool {
 		s.mu.Unlock()
 	}
 	return !routed
-}
-
-// First stamp collaborators every facade save hands to NoteFirstStamp
-func configFacadeStampHooks() config.StampHooks {
-	return config.StampHooks{
-		WorkerSnapshotActive: workerConfigSnapshotActive,
-		CoreVersions:         LeftCoreVersions(),
-		RecordCoreUse:        RecordCoreUse,
-		AdoptAgentBrowserEnv: adoptAgentBrowserEnv,
-	}
-}
-
-// ConfigFacadeStampHooks exports configFacadeStampHooks
-func ConfigFacadeStampHooks() config.StampHooks { return configFacadeStampHooks() }
-
-// ConfigFacadeBrowserEnvSources is the browser env adoption source set of configFacadeMigrationSources
-func ConfigFacadeBrowserEnvSources(h string) config.BrowserEnvSources {
-	return configFacadeMigrationSources(h).Browser
 }
 
 // Env names outside the optional catalog that reload_env still removes when the .env drops them

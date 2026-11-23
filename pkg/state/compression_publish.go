@@ -8,7 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-var conversationModelConfigKeys = []string{"onboarding_run", "prompt_refresh_epoch"}
+var conversationModelConfigKeys = []string{"onboarding_run", "prompt_refresh_epoch", "logins", "login_on_exhausted", "login_wait", SessionSettingsKey}
 
 var unstampedEdgeChildSQL = `
     SELECT child.id FROM sessions parent JOIN sessions child ON child.parent_session_id = parent.id

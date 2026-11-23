@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Profiles this multiplexer serves, the boot reservation once taken, else the live profiles directory
@@ -44,10 +45,10 @@ func LoadGatewayConfigMap(ctx context.Context, configPath string) map[string]any
 	return loadGatewayConfig(ctx, configPath)
 }
 
-// Profile model of a config or the gateway config, empty when none is configured
+// Model of a frozen config document, or the profile's model setting when cfg is nil, empty when none is configured
 func resolveGatewayModel(ctx context.Context, cfg map[string]any) string {
 	if cfg == nil {
-		cfg = loadGatewayConfig(ctx, "")
+		return settings.Model.Get(ctx)
 	}
 	modelCfg, ok := cfg["model"]
 	if !ok {

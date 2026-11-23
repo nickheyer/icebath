@@ -77,7 +77,15 @@ func (a *AIAgent) RunConversation(ctx context.Context, userMessage string, o Run
 
 // RunConversationContent admits one turn of text or content parts, then runs the conversation loop
 func (a *AIAgent) RunConversationContent(ctx context.Context, userMessage any, o RunConversationOptions) (result map[string]any, err error) {
-	ctx = withLifecycleEnv(ctx, a.env)
+	if choices, held := provider.SessionLoginsFrom(ctx); held {
+		a.SetSessionLogins(choices)
+	}
+	ctx = withLifecycleEnv(a.loginContext(ctx), a.env)
+	if err := a.syncLoginPool(ctx); err != nil {
+		return nil, err
+	}
+	a.loginExhaustedPending.Store(nil)
+	defer func() { a.flushLoginExhausted(ctx, result, err) }()
 	defer bindAdmissionFiniteScope(ctx, a.env)()
 	defer a.bindOutputContext(ctx)()
 	cancelBackgroundReviewForLiveTurn(a)

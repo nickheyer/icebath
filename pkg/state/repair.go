@@ -17,13 +17,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -720,9 +720,9 @@ func reapplyDurabilityBarriers(ctx context.Context, conn SQLiteConn) bool {
 // Durability barriers plus the configured synchronous level for guest users of the state database
 func ApplyDurabilityBarriers(ctx context.Context, conn SQLiteConn) bool {
 	ok := reapplyDurabilityBarriers(ctx, conn)
-	if cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv); err == nil {
-		if rawSynchronous, _ := config.CfgGet(cfg, "database", "synchronous"); rawSynchronous != nil {
-			_ = applySynchronousPragma(ctx, conn, rawSynchronous, "state.db (guest)")
+	if level := settings.DatabaseSynchronous.Get(ctx); level != "" {
+		if err := applySynchronousPragma(ctx, conn, level, "state.db (guest)"); err != nil {
+			pkgLog().Debug(fmt.Sprintf("state.db (guest): synchronous pragma failed: %v", err))
 		}
 	}
 	return ok

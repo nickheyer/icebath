@@ -2,7 +2,6 @@ package slack
 
 import (
 	"context"
-	"os"
 	"testing"
 )
 
@@ -27,32 +26,16 @@ func threadMentionExtra() map[string]any {
 	return map[string]any{"allowed_channels": []any{"C123"}, "require_mention": false, "thread_require_mention": true, "reply_in_thread": true}
 }
 
-func TestThreadRequireMentionEnvBridge(t *testing.T) {
-	t.Setenv("SLACK_THREAD_REQUIRE_MENTION", "")
-	os.Unsetenv("SLACK_THREAD_REQUIRE_MENTION")
-	if _, err := applyYAMLConfig(context.Background(), map[string]any{}, map[string]any{"thread_require_mention": true}); err != nil {
-		t.Fatal(err)
-	}
-	if got := os.Getenv("SLACK_THREAD_REQUIRE_MENTION"); got != "true" {
-		t.Fatalf("bridged env %q", got)
-	}
-}
-
-func TestThreadRequireMentionParsesYAMLAndEnv(t *testing.T) {
+func TestThreadRequireMentionParsesYAML(t *testing.T) {
 	ctx := context.Background()
 	check := func(extra map[string]any, want bool) {
 		t.Helper()
 		a, _ := threadMentionAdapter(t, extra)
 		if got := a.slackThreadRequireMention(ctx); got != want {
-			t.Fatalf("extra %v env %q gave %v", extra, os.Getenv("SLACK_THREAD_REQUIRE_MENTION"), got)
+			t.Fatalf("config %v gave %v", extra, got)
 		}
 	}
-	t.Setenv("SLACK_THREAD_REQUIRE_MENTION", "true")
-	check(nil, true)
-	check(map[string]any{"thread_require_mention": "false"}, true)
-	t.Setenv("SLACK_THREAD_REQUIRE_MENTION", "false")
-	check(map[string]any{"thread_require_mention": true}, false)
-	os.Unsetenv("SLACK_THREAD_REQUIRE_MENTION")
+	check(nil, false)
 	check(map[string]any{"thread_require_mention": "false"}, false)
 	check(map[string]any{"thread_require_mention": true}, true)
 }

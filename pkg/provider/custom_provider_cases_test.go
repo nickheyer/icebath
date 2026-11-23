@@ -156,7 +156,7 @@ func TestProvidersDictRoundtripLeavesCachedConfigUntouched(t *testing.T) {
 	if !reflect.DeepEqual(cfg, snapshot) {
 		t.Fatalf("providers view mutated the config: %v", cfg)
 	}
-	CompatibleCustomProviders(cfg)
+	ProviderEntries(cfg)
 	if !reflect.DeepEqual(cfg, snapshot) {
 		t.Fatalf("compatible view mutated the config: %v", cfg)
 	}

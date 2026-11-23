@@ -8,8 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -42,32 +40,4 @@ func describeSendProxyError(err error) string {
 // GetAPIHeaders returns the JSON content headers q.qq.com needs to skip its anti bot page
 func GetAPIHeaders() map[string]string {
 	return map[string]string{"Content-Type": "application/json", "Accept": "application/json", "User-Agent": BuildUserAgent()}
-}
-
-// CoerceList turns a comma separated string, a list or a scalar into trimmed non empty strings
-func CoerceList(value any) []string {
-	var items []any
-	switch v := value.(type) {
-	case nil:
-		return []string{}
-	case string:
-		for _, s := range strings.Split(v, ",") {
-			items = append(items, s)
-		}
-	case []any:
-		items = v
-	case []string:
-		for _, s := range v {
-			items = append(items, s)
-		}
-	default:
-		items = []any{v}
-	}
-	out := []string{}
-	for _, item := range items {
-		if s := pystr.Strip(pyrepr.Str(item)); s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
 }

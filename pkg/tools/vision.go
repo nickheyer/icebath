@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -61,88 +61,9 @@ func visionDebugSession(env *Env) *DebugSession {
 	return visionDebug
 }
 
-// Value of auxiliary.vision.<key>, nil when unset
-func cfgAuxVision(env *Env, key string) any {
-	return cfgTree(env).Sub("auxiliary").Sub("vision")[key]
-}
-
-// Python float of a scalar, bools included
-func pyFloatOf(v any) (float64, bool) {
-	switch t := v.(type) {
-	case bool:
-		if t {
-			return 1, true
-		}
-		return 0, true
-	case int:
-		return float64(t), true
-	case int64:
-		return float64(t), true
-	case uint64:
-		return float64(t), true
-	case float64:
-		return t, true
-	case string:
-		f, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
-		return f, err == nil
-	}
-	return 0, false
-}
-
-// Vision setting from the env var then auxiliary.vision, skipping values that fail to parse or fall below the minimum
-func readVisionFloat(env *Env, envVar, key string, minimum *float64) (float64, bool) {
-	accept := func(raw any) (float64, bool) {
-		if raw == nil {
-			return 0, false
-		}
-		f, ok := pyFloatOf(raw)
-		if !ok || math.IsNaN(f) || (minimum != nil && f < *minimum) {
-			return 0, false
-		}
-		return f, true
-	}
-	if s := secretValue(env, envVar); s != "" {
-		if f, ok := accept(s); ok {
-			return f, true
-		}
-	}
-	return accept(cfgAuxVision(env, key))
-}
-
-// Integer vision setting from the env var then auxiliary.vision, values below the minimum skipped
-func readVisionInt(env *Env, envVar, key string, minimum int) (int, bool) {
-	accept := func(raw any) (int, bool) {
-		if raw == nil {
-			return 0, false
-		}
-		if _, isBool := raw.(bool); isBool {
-			b := raw.(bool)
-			n := 0
-			if b {
-				n = 1
-			}
-			return n, n >= minimum
-		}
-		n, ok := pyInt(raw)
-		if !ok || n < minimum {
-			return 0, false
-		}
-		return n, true
-	}
-	if s := secretValue(env, envVar); s != "" {
-		if n, ok := accept(s); ok {
-			return n, true
-		}
-	}
-	return accept(cfgAuxVision(env, key))
-}
-
 // HTTP download timeout for media, separate from the LLM call timeout
 func visionDownloadTimeout(env *Env) time.Duration {
-	if f, ok := readVisionFloat(env, "ICEBATH_VISION_DOWNLOAD_TIMEOUT", "download_timeout", nil); ok {
-		return time.Duration(f * float64(time.Second))
-	}
-	return 30 * time.Second
+	return settings.AuxiliaryVisionDownloadTimeout.Get(envHomeCtx(context.Background(), env))
 }
 
 // Bounded worker slots for the CPU heavy encode, resize, and decode steps
@@ -154,9 +75,9 @@ var visionCPU struct {
 // Usable CPU count honouring the affinity mask, at least one, replaced in tests
 var detectHostCPUs = func() int { return max(1, runtime.NumCPU()) }
 
-// Worker count from ICEBATH_VISION_MAX_CONCURRENCY then auxiliary.vision.max_concurrency then usable cores
+// Worker count from the vision worker setting, else the usable cores
 func resolveVisionCPUWorkers(env *Env) int {
-	if n, ok := readVisionInt(env, "ICEBATH_VISION_MAX_CONCURRENCY", "max_concurrency", 1); ok && n > 0 {
+	if n, ok := settings.AuxiliaryVisionMaxConcurrency.Lookup(envHomeCtx(context.Background(), env)); ok && n > 0 {
 		return n
 	}
 	return detectHostCPUs()
@@ -929,30 +850,12 @@ func visionAnalyzeNative(ctx context.Context, env *Env, sessionID string, imageU
 	return buildNativeVisionToolResult(src, question, dataURL, p.sizeBytes, BuildScaleNote(scale, p.cropOffset))
 }
 
-// Aux call options with auxiliary.vision timeout and temperature, a floor for video
-func auxCallOptions(env *Env, model string, defaultTimeout float64, minTimeout *float64) AuxOptions {
-	timeout, temperature := defaultTimeout, 0.1
-	func() {
-		if raw := cfgAuxVision(env, "timeout"); raw != nil {
-			f, ok := pyFloatOf(raw)
-			if !ok {
-				return
-			}
-			if minTimeout != nil {
-				f = math.Max(f, *minTimeout)
-			}
-			timeout = f
-		}
-		if raw := cfgAuxVision(env, "temperature"); raw != nil {
-			f, ok := pyFloatOf(raw)
-			if !ok {
-				return
-			}
-			temperature = f
-		}
-	}()
-	t := temperature
-	return AuxOptions{Task: "vision", Model: model, Temperature: &t, Timeout: time.Duration(timeout * float64(time.Second)), Async: true}
+// Aux call options with the vision timeout and temperature, a floor for video
+func auxCallOptions(env *Env, model string, minTimeout time.Duration) AuxOptions {
+	ctx := envHomeCtx(context.Background(), env)
+	timeout := max(settings.AuxiliaryVisionTimeout.Get(ctx), minTimeout)
+	t := settings.AuxiliaryVisionTemperature.Get(ctx)
+	return AuxOptions{Task: "vision", Model: model, Temperature: &t, Timeout: timeout, Async: true}
 }
 
 // Single user message holding the prompt and one media data URL part
@@ -1171,7 +1074,7 @@ func visionAnalyzeTool(ctx context.Context, env *Env, imageURL any, userPrompt, 
 		debug["image_size_bytes"] = p.sizeBytes
 		msgs := mediaMessages(prompt, "image_url", dataURL)
 		log.Info("Processing image with vision model...")
-		opts := auxCallOptions(env, model, 120.0, nil)
+		opts := auxCallOptions(env, model, 0)
 		if env == nil || env.AuxClient() == nil {
 			return "", "", errors.New("no auxiliary model is configured for vision")
 		}
@@ -1261,23 +1164,13 @@ var visionAnalyzeSchema = Dict(
 	),
 )
 
-// First non empty auxiliary.<section>.model, else the first non empty legacy env var
-func configuredAuxModel(env *Env, sections, envVars []string) string {
-	for _, section := range sections {
-		v := cfgTree(env).Sub("auxiliary").Sub(section)["model"]
-		if truthy(v) {
-			if s := strings.TrimSpace(pyStr(v)); s != "" {
-				return s
-			}
-			break
-		}
+// Model of video analysis, the vision model when none is set
+func videoAuxModel(env *Env) string {
+	ctx := envHomeCtx(context.Background(), env)
+	if m := strings.TrimSpace(settings.AuxiliaryVideoModel.Get(ctx)); m != "" {
+		return m
 	}
-	for _, e := range envVars {
-		if v := secretValue(env, e); v != "" {
-			return v
-		}
-	}
-	return ""
+	return strings.TrimSpace(settings.AuxiliaryVisionModel.Get(ctx))
 }
 
 // Argument value as Python str would render it, empty when absent
@@ -1306,7 +1199,7 @@ func handleVisionAnalyze(ctx context.Context, call *Call) string {
 		return visionAnalyzeNative(ctx, env, call.SessionID, imageURL, question, call.TaskID, region)
 	}
 	fullPrompt := "Fully describe and explain everything about this image, then answer the following question:\n\n" + argPyStr(call.Args, "question")
-	model := configuredAuxModel(env, []string{"vision"}, []string{"AUXILIARY_VISION_MODEL"})
+	model := strings.TrimSpace(settings.AuxiliaryVisionModel.Get(envHomeCtx(ctx, env)))
 	return visionAnalyzeTool(ctx, env, imageURL, fullPrompt, model, call.TaskID, region)
 }
 
@@ -1426,8 +1319,7 @@ func videoAnalyzeTool(ctx context.Context, env *Env, videoURL any, userPrompt, m
 				float64(len(dataURL))/(1024*1024), float64(maxVideoBase64Bytes)/(1024*1024))
 		}
 		debug["video_size_bytes"] = size
-		floor := 180.0
-		opts := auxCallOptions(env, model, 180.0, &floor)
+		opts := auxCallOptions(env, model, 3*time.Minute)
 		analysis, err := callVisionLLM(ctx, env, mediaMessages(prompt, "video_url", dataURL), opts, "Empty video response, retrying once", nil)
 		if err != nil {
 			return "", "", err
@@ -1467,7 +1359,7 @@ func handleVideoAnalyze(ctx context.Context, call *Call) string {
 	}
 	fullPrompt := "Fully describe and explain everything happening in this video, including visual content, motion, audio cues, " +
 		"text overlays, and scene transitions. Then answer the following question:\n\n" + argPyStr(call.Args, "question")
-	model := configuredAuxModel(call.Env, []string{"video", "vision"}, []string{"AUXILIARY_VIDEO_MODEL", "AUXILIARY_VISION_MODEL"})
+	model := videoAuxModel(call.Env)
 	return videoAnalyzeTool(ctx, call.Env, videoURL, fullPrompt, model, call.TaskID)
 }
 

@@ -46,7 +46,7 @@ func newLanguageHome(t *testing.T) *languageHome {
 func (l *languageHome) set(value string) error {
 	src := moaCommandSources()
 	src.Language = LanguageCatalog()
-	return config.SetConfigValue(context.Background(), l.h, "display.language", value, false, src)
+	return config.SetConfigValue(context.Background(), l.h, "display.language", value, src)
 }
 
 func (l *languageHome) saved() string {

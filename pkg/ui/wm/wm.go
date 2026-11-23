@@ -54,13 +54,17 @@ type resizer struct {
 // Window manager that tiles cards per workspace, floats dialogs, animates every move and routes input
 type Model struct {
 	// Tab groups made so far, numbering the next one
-	groups    int
-	theme     theme.Theme
-	clock     anim.Clock
-	spaces    []*Workspace
-	active    int
-	leaving   *Workspace
-	overlay   *entry
+	groups  int
+	theme   theme.Theme
+	clock   anim.Clock
+	spaces  []*Workspace
+	active  int
+	leaving *Workspace
+	overlay *entry
+	// Whether ctrl+x was pressed and the next key is read from the leader strip
+	leader bool
+	// Sticky overlays a later overlay covered, the newest last, each shown again when the one above it closes
+	covered   []*entry
 	parting   *entry
 	veil      anim.Value
 	toasts    []*toast
@@ -75,8 +79,9 @@ type Model struct {
 	hoverY    int
 	hintHot   string
 	hot       barSpot
-	commands  []Command
-	keys      *keys.Map
+	// Commands the app contributes, asked for at each use
+	commandSource func() []Command
+	keys          *keys.Map
 	// Terminal answered the kitty keyboard query with flags, so it reports ctrl and shift on a letter apart
 	kittyKeys bool
 	recent    []string
@@ -125,6 +130,49 @@ type Model struct {
 	memoed    map[color.Color]color.Color
 	card      screen
 	buf       screen
+	// Owner the cards opened right now belong to, and the route every command of an owned card passes through
+	owner any
+	route func(owner any, cmd tea.Cmd) tea.Cmd
+	// Text the last sweep with the mouse copied, kept for a copy command run after it
+	lastSel string
+	// How the bar fitted last frame, kept until it fits more loosely with room to spare, and the widest each dial has been
+	barLevel, barKept, barField, barCompact int
+	dialWidths                              map[string]int
+}
+
+// Sends every command an owned card returns through route, so an app with several owners gets each answer back to the right one
+func (m *Model) SetRoute(route func(owner any, cmd tea.Cmd) tea.Cmd) { m.route = route }
+
+// Runs fn with owner as the owner of every card it opens
+func (m *Model) As(owner any, fn func() tea.Cmd) tea.Cmd {
+	prev := m.owner
+	m.owner = owner
+	defer func() { m.owner = prev }()
+	return fn()
+}
+
+// Owner the card was opened under, nil for a card with none or one not open
+func (m *Model) OwnerOf(c Card) any {
+	if m.overlay != nil && m.overlay.card == c {
+		return m.overlay.owner
+	}
+	for _, h := range m.covered {
+		if h.card == c {
+			return h.owner
+		}
+	}
+	if e := m.entryOf(c); e != nil {
+		return e.owner
+	}
+	return nil
+}
+
+// Command of an entry's card through the route of its owner
+func (m *Model) routed(e *entry, cmd tea.Cmd) tea.Cmd {
+	if cmd == nil || m.route == nil || e.owner == nil {
+		return cmd
+	}
+	return m.route(e.owner, cmd)
 }
 
 // Configures the manager at construction
@@ -225,9 +273,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case toastTickMsg:
 		m.pruneToasts()
 		return m, m.wake()
+	case sheetTickMsg:
+		return m, m.wake()
+	case sweepTickMsg:
+		return m, m.after(m.sweepStep(msg))
 	case Addressed:
 		if e := m.entryOf(msg.Addressee()); e != nil {
 			return m, m.after(m.send(e, msg))
+		}
+		if s := m.sheetEntry(msg.Addressee()); s != nil {
+			return m, m.after(m.send(s, msg))
 		}
 		if c := msg.Addressee(); c != nil {
 			c.Update(msg)
@@ -239,6 +294,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // Adds a frame request to a handler result when the clock had stopped, so input always repaints
 func (m *Model) after(cmd tea.Cmd) tea.Cmd {
+	// Input keeps the ambient flow of the frames running a while longer
+	m.idle = 0
 	if !m.resting {
 		return cmd
 	}
@@ -249,12 +306,16 @@ func (m *Model) after(cmd tea.Cmd) tea.Cmd {
 	return tea.Batch(cmd, wake)
 }
 
-// Reports whether the clock may stop between frames, which it may once the terminal is blurred or motion is off
+// Frames with nothing moving and no input after which the ambient flow of the frames stops, eight seconds at the idle rate
+const ambientRestFrames = 240
+
+// Reports whether the clock may stop between frames: once the terminal is blurred or motion is off, and with motion on once nothing moved
+// and nothing was typed or clicked for a while, so a window left alone costs no frames. Input starts the clock again
 func (m *Model) canRest() bool {
 	if len(m.toasts) > 0 || m.awake() {
 		return false
 	}
-	return m.blurred || m.motion == 0
+	return m.blurred || m.motion == 0 || m.idle > ambientRestFrames
 }
 
 // Whether a card on the stage or the overlay needs frames while nothing moves
@@ -270,6 +331,14 @@ func (m *Model) awake() bool {
 		}
 	}
 	return false
+}
+
+// Starts the frame clock again when it stopped, for an app whose card began to move without any input reaching the window manager
+func (m *Model) Wake() tea.Cmd {
+	if !m.resting {
+		return nil
+	}
+	return m.wake()
 }
 
 // Reports whether the clock has stopped scheduling frames
@@ -323,7 +392,7 @@ func (m *Model) AddWorkspace(id string, cards ...Card) (*Workspace, tea.Cmd) {
 		if ws.focus == nil {
 			ws.focus = e
 		}
-		cmds = append(cmds, c.Init())
+		cmds = append(cmds, m.routed(e, c.Init()))
 	}
 	if len(m.spaces) == 1 {
 		m.active = 0
@@ -393,7 +462,7 @@ func (m *Model) RemoveWorkspace(i int) tea.Cmd {
 		cmds = append(cmds, m.Switch(next))
 	}
 	for _, e := range ws.entries() {
-		cmds = append(cmds, m.send(e, FocusMsg{}), m.send(e, ClosedMsg{}))
+		cmds = append(cmds, m.dropSheets(e), m.send(e, FocusMsg{}), m.send(e, ClosedMsg{}))
 	}
 	m.spaces = slices.Delete(m.spaces, i, i+1)
 	if m.leaving == ws {
@@ -429,7 +498,7 @@ func (m *Model) OpenFrom(ws *Workspace, c Card, origin Box) tea.Cmd {
 		}
 	}
 	e := m.adopt(ws, c, origin)
-	cmds := []tea.Cmd{c.Init(), m.focusEntry(e)}
+	cmds := []tea.Cmd{m.routed(e, c.Init()), m.focusEntry(e), m.focusToast(e)}
 	m.retarget(ws)
 	return tea.Batch(append(cmds, m.wake())...)
 }
@@ -454,7 +523,7 @@ func (m *Model) OpenAside(ws *Workspace, c Card, origin Box) tea.Cmd {
 	}
 	if e == nil {
 		e = m.adopt(ws, c, origin)
-		cmds = append(cmds, c.Init())
+		cmds = append(cmds, m.routed(e, c.Init()))
 	}
 	ws.focus = e
 	if e.floating {
@@ -599,17 +668,24 @@ func (m *Model) FocusDir(d Dir) tea.Cmd {
 	if ws == nil || e == nil {
 		return nil
 	}
-	if ws.zoom != nil {
-		return m.nudge()
-	}
 	if e.floating {
 		if len(ws.tiles) == 0 {
 			return m.nudge()
 		}
 		return m.focusEntry(ws.tiles[0])
 	}
+	// A zoomed window gives the space back first, as moving to the next window does, the neighbor found in the layout under it
+	zoomed := ws.zoom
+	if zoomed != nil {
+		ws.zoom = nil
+		m.retarget(ws)
+	}
 	n := ws.neighbor(e, d)
 	if n == nil {
+		if zoomed != nil {
+			ws.zoom = zoomed
+			m.retarget(ws)
+		}
 		return m.nudge()
 	}
 	return m.focusEntry(n)
@@ -771,10 +847,18 @@ func (m *Model) SetLayout(mode Mode) tea.Cmd {
 // Box the tiles are laid out in, the stage inside the outer gaps
 func (m *Model) stage() Box {
 	sw, sh := m.width, m.stageHeight()
-	if sw-2*m.gapOutX < minCols || sh-2*m.gapOutY < minRows {
+	gx, gy := m.gapOutX, m.gapOutY
+	// A small terminal gives the margins to the cards first
+	if m.width <= compactCols {
+		gx = 0
+	}
+	if m.height <= compactRows {
+		gy = 0
+	}
+	if sw-2*gx < minCols || sh-2*gy < minRows {
 		return Box{0, 0, sw, sh}
 	}
-	return Box{m.gapOutX, m.gapOutY, sw - 2*m.gapOutX, sh - 2*m.gapOutY}
+	return Box{gx, gy, sw - 2*gx, sh - 2*gy}
 }
 
 // Switches the workspace on the stage between the master and dwindle arrangements
@@ -983,7 +1067,7 @@ func (m *Model) entryOf(c Card) *entry {
 }
 
 func (m *Model) newEntry(c Card, ws *Workspace) *entry {
-	e := &entry{id: m.nextID, card: c, ws: ws, rect: anim.NewRect(0, 0, 0, 0), open: fast(0), lit: fast(0), hover: fast(0), pulse: fast(0), hide: fast(0), shake: anim.NewValueWith(0, anim.Rattle), weight: 1, dim: -1, dirty: true}
+	e := &entry{id: m.nextID, card: c, owner: m.owner, ws: ws, rect: anim.NewRect(0, 0, 0, 0), open: fast(0), lit: fast(0), hover: fast(0), pulse: fast(0), hide: fast(0), shake: anim.NewValueWith(0, anim.Rattle), weight: 1, dim: -1, dirty: true}
 	m.nextID++
 	e.open.Set(1)
 	return e
@@ -1038,7 +1122,7 @@ func (m *Model) closeEntry(e *entry) tea.Cmd {
 	e.held = false
 	e.open.Set(0)
 	ws.removeLeaf(e)
-	cmds := []tea.Cmd{m.send(e, FocusMsg{}), m.send(e, ClosedMsg{})}
+	cmds := []tea.Cmd{m.dropSheets(e), m.send(e, FocusMsg{}), m.send(e, ClosedMsg{})}
 	wasFocus := ws.focus == e
 	if ws.zoom == e {
 		ws.zoom = nil
@@ -1049,7 +1133,7 @@ func (m *Model) closeEntry(e *entry) tea.Cmd {
 			ws.focus = next
 			next.decode = 0
 			if ws == m.Active() {
-				cmds = append(cmds, m.send(next, FocusMsg{Focused: true}))
+				cmds = append(cmds, m.send(next, FocusMsg{Focused: true}), m.focusToast(next))
 			}
 		}
 	}
@@ -1257,12 +1341,16 @@ func (m *Model) letGo() {
 }
 
 func (m *Model) send(e *entry, msg tea.Msg) tea.Cmd {
+	// A card the card opens while it handles the message belongs to the same owner
+	prev := m.owner
+	m.owner = e.owner
 	c, cmd := e.card.Update(msg)
+	m.owner = prev
 	if c != nil {
 		e.card = c
 	}
 	e.dirty = true
-	return cmd
+	return m.routed(e, cmd)
 }
 
 // Delivers a message to the overlay when one is up and otherwise to the focused card
@@ -1282,6 +1370,9 @@ func (m *Model) broadcast(msg tea.Msg) tea.Cmd {
 	for _, ws := range m.spaces {
 		for _, e := range ws.entries() {
 			cmds = append(cmds, m.send(e, msg))
+			for _, s := range e.sheets {
+				cmds = append(cmds, m.send(s, msg))
+			}
 		}
 	}
 	if m.overlay != nil {

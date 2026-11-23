@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
@@ -125,7 +127,6 @@ func installProcessWiring() {
 	tuiserver.StatusReport.Fields, tuiserver.StatusReport.Lines = app.TUIStatusFields, app.TUIStatusLines
 	tuiserver.NormalizePersonalityName = commands.NormalizePersonalityName
 	tuiserver.RenderPersonalityPrompt = commands.RenderPersonalityPrompt
-	tuiserver.PersistPersonality = commands.PersistPersonality
 	tuiserver.CommandsByCategory = func() []tuiserver.HelpCategory {
 		var out []tuiserver.HelpCategory
 		for _, g := range commands.CommandsByCategory(commands.Default) {
@@ -160,8 +161,13 @@ func installProcessWiring() {
 	tuiserver.GatewayKnownCommands = commands.GatewayKnownCommands
 	tuiserver.CatalogRegistry, tuiserver.RegistryPluginCommands = catalogRegistry, registryPluginCommands
 	tuiserver.SaveConfigValue = app.SaveConfigValue
-	tuiserver.HostedSetupFlows = app.HostedSetupFlows
+	tuiserver.ChatAppCommands.Webhook = func(ctx context.Context, w io.Writer, p tuigateway.ChatAppsWebhookParams) (int, error) {
+		return gatewaycli.WebhookCommand(ctx, w, gatewaycli.WebhookArgs{Action: p.Action, Name: p.Name, Prompt: p.Prompt, Events: p.Events, Description: p.Description,
+			Skills: p.Skills, Deliver: p.Deliver, DeliverChatID: p.DeliverChat, DeliverOnly: p.DeliverOnly, Payload: p.Payload})
+	}
+	tuiserver.ChatAppCommands.Send = gatewaycli.SendCommand
 	gateway.CommandCatalog, gateway.SlashCompletions = tuiserver.CommandCatalog, tuiserver.SlashCompletions
+	tuiserver.CLICommandTree = cliCommandTree
 	gateway.ResolveRegistryCommand = resolveRegistryCommand
 	gateway.ResolveBoundCommand, gateway.RunBoundCommand = commands.BoundGatewayCommand, commands.RunBoundGatewayCommand
 	gateway.SessionReadLines.Toolsets, gateway.SessionReadLines.Platforms = app.ToolsetsLines, app.PlatformsLines
@@ -241,13 +247,7 @@ func installProcessWiring() {
 	gateway.ImageAttachments.DecodeBase64 = tuiserver.DecodeAttachBase64
 	gateway.ImageAttachments.SniffImageExt = tuiserver.SniffImageExt
 	gateway.ImageAttachments.StageImageBytes = tuiserver.StageImageBytes
-	tuiserver.BindHostedRoomServer()
 	gateway.ResolvePersonality = commands.ResolvePersonality
-	gateway.PersistPersonality = commands.PersistPersonality
-	gateway.RunApprovalModeCommand = func(ctx context.Context, h string, env *tools.Env, mode string) (bool, string, error) {
-		result, err := commands.RunApprovalModeCommand(ctx, h, env, mode)
-		return result.OK, result.Mode, err
-	}
 	gateway.ErrorSurfaceFromResult = agent.BuildErrorSurfaceFromResult
 	gateway.SessionCompress = agent.SessionCompressAgent{}
 	gateway.ExpandContextReferences = agent.ExpandGatewayContextReferences

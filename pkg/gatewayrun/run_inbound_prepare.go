@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -80,45 +80,20 @@ func (r *GatewayRunner) ExpandInboundContextReferences(ctx context.Context, sour
 // Context window of the turn model, a global pin only for the configured route, custom limits winning
 func (r *GatewayRunner) InboundModelContextLength(ctx context.Context, source *gateway.SessionSource, sessionKey string) (int, error) {
 	var configCtx *int
-	var cfg map[string]any
-	var modelCfg any = map[string]any{}
-	var customProviders []map[string]any
-	func() {
-		defer func() { _ = recover() }()
-		cfg = gateway.LoadGatewayConfigMap(ctx, "")
-		modelCfg = map[string]any{}
-		if raw, ok := cfg["model"]; ok {
-			modelCfg = raw
-		}
-		if m, ok := modelCfg.(map[string]any); ok {
-			if raw, present := m["context_length"]; present && raw != nil {
-				n, err := pyint.Int64(raw)
-				if err != nil {
-					return
-				}
-				value := int(n)
-				configCtx = &value
-			}
-		}
-		customProviders = provider.CompatibleCustomProviders(cfg)
-	}()
+	if n, set := settings.ModelContextLength.Lookup(ctx); set {
+		configCtx = &n
+	}
+	cfg := gateway.LoadGatewayConfigMap(ctx, "")
+	customProviders := provider.ProviderEntries(cfg)
 	model, runtime, err := r.resolveSessionAgentRuntime(ctx, source, sessionKey, cfg, true)
 	if err != nil {
 		return 0, err
 	}
 	baseURL := noneText(runtime["base_url"])
-	m, isDict := modelCfg.(map[string]any)
-	var configuredModel any = modelCfg
-	if isDict {
-		configuredModel = m["default"]
-		if !pyrepr.Truthy(configuredModel) {
-			configuredModel = m["model"]
-		}
-	}
-	if s, ok := configuredModel.(string); !ok || model != s {
+	if model != settings.Model.Get(ctx) {
 		configCtx = nil
 	}
-	if configCtx != nil && provider.ShouldClearContextPin("", "", noneText(m["base_url"]), baseURL, noneText(m["provider"]), noneText(runtime["provider"])) {
+	if configCtx != nil && provider.ShouldClearContextPin("", "", settings.ModelBaseURL.Get(ctx), baseURL, settings.ModelProvider.Get(ctx), noneText(runtime["provider"])) {
 		configCtx = nil
 	}
 	if len(customProviders) > 0 && baseURL != "" {

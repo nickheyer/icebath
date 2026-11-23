@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Python floor division of two ints
@@ -170,27 +170,9 @@ func (w *holderWatch) exit() {
 	<-w.done
 }
 
-// sessions.search_slow_ms for the served profile, 1000 when unset, blank or not a number
-func searchSlowMS(ctx context.Context) (float64, error) {
-	value := RoutedSessionsSetting(ctx, "search_slow_ms", "ICEBATH_SEARCH_SLOW_MS")
-	if value == nil {
-		return 1000.0, nil
-	}
-	text, err := pyrepr.Format(value, "")
-	if err != nil {
-		text = pyrepr.Repr(value)
-	}
-	if pystr.Strip(text) == "" {
-		return 1000.0, nil
-	}
-	f, err := pyint.Float(value)
-	if err != nil {
-		if pe, ok := err.(*pyint.Error); ok && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
-			return 1000.0, nil
-		}
-		return 0, err
-	}
-	return f, nil
+// sessions.search_slow_ms for the served profile in milliseconds
+func searchSlowMS(ctx context.Context) float64 {
+	return float64(settings.SessionsSearchSlowMs.Get(ctx)) / float64(time.Millisecond)
 }
 
 // Characters FTS5 rejects outside a quoted phrase, percent kept literal for the CJK LIKE fallback

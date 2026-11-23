@@ -576,6 +576,15 @@ SCENARIOS.update({
     "ovdisc": MIDLOOP + [{"cut_in_reasoning": True}, DONE], "ovdisc_aux": [SUM1, SUM2],
 })
 
+# Named login cases, keyed by the last four characters of the request's API key: the login ending 1111 is rate limited, every other answers
+RLRA = lambda s: {"status": 429, "headers": {"retry-after": str(s)}, "body": RL}
+SCENARIOS.update({
+    "lx": [{"content": "Answer from another login."}],
+    "lx%1111": [{"status": 429, "body": RL}],
+    "lw": [{"content": "Answer from another login."}],
+    "lw%1111": [RLRA(25), RLRA(25), RLRA(25), {"content": "Answer after the login reset."}],
+})
+
 # Delegation control step addressing the subagent id the latest tool result named
 SA_ID_RE = re.compile(r"sa-\d+-[0-9a-f]{8}")
 def DGS(action, **kw):

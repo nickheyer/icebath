@@ -24,8 +24,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -934,9 +936,10 @@ func (vercelSandboxBackend) SetupInstructions(env *Env) []string {
 
 // DoctorChecks reports the runtime, disk, auth and persistence rows
 func (vercelSandboxBackend) DoctorChecks() []DoctorCheck {
-	runtime := strings.TrimSpace(os.Getenv("TERMINAL_VERCEL_RUNTIME"))
+	ctx := context.Background()
+	runtime := strings.TrimSpace(settings.TerminalVercelRuntime.Get(ctx))
 	if runtime == "" {
-		runtime = "node24"
+		runtime = config.LegacyVercelRuntime
 	}
 	supported := strings.Join(SupportedVercelRuntimes, ", ")
 	var rows []DoctorCheck
@@ -945,8 +948,7 @@ func (vercelSandboxBackend) DoctorChecks() []DoctorCheck {
 	} else {
 		rows = append(rows, DoctorCheck{OK: false, Label: "Vercel runtime unsupported", Detail: "(" + runtime + "; use " + supported + ")"})
 	}
-	disk := strings.TrimSpace(os.Getenv("TERMINAL_CONTAINER_DISK"))
-	if disk == "" || disk == "0" || disk == "51200" {
+	if disk := settings.TerminalContainerDisk.Get(ctx); disk == 0 || disk == settings.TerminalContainerDisk.Default {
 		rows = append(rows, DoctorCheck{OK: true, Label: "Vercel disk setting", Detail: "(uses platform default)"})
 	} else {
 		rows = append(rows, DoctorCheck{OK: false, Label: "Vercel custom disk unsupported", Detail: "(reset terminal.container_disk to 51200)"})
@@ -963,11 +965,7 @@ func (vercelSandboxBackend) DoctorChecks() []DoctorCheck {
 	for _, line := range auth.DetailLines {
 		rows = append(rows, DoctorCheck{OK: true, Label: "Vercel auth " + line, Detail: ""})
 	}
-	persistent := truthyEnvValue(os.Getenv("TERMINAL_CONTAINER_PERSISTENT"))
-	if os.Getenv("TERMINAL_CONTAINER_PERSISTENT") == "" {
-		persistent = true
-	}
-	if persistent {
+	if settings.TerminalContainerPersistent.Get(ctx) {
 		rows = append(rows, DoctorCheck{OK: true, Label: "Vercel persistence", Detail: "snapshot filesystem only; live processes do not survive sandbox recreation"})
 	} else {
 		rows = append(rows, DoctorCheck{OK: true, Label: "Vercel persistence", Detail: "ephemeral filesystem"})

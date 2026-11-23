@@ -203,13 +203,6 @@ func publishSessionControlSnapshot(ctx context.Context, sid string, session *tui
 	}
 }
 
-var sessionControlRegistry = &handlerRegistry{}
-
-func init() {
-	sessionControlRegistry.scopedMethod("session.control.read", sessionControlRead)
-	sessionControlRegistry.install()
-}
-
 // Current stable control snapshot of a live session
 func sessionControlRead(ctx context.Context, rid any, params map[string]any) map[string]any {
 	session, errResp := sessNowait(ctx, params, rid)

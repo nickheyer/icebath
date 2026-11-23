@@ -6,10 +6,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -96,12 +96,8 @@ func catalogRegistry(cat *commandCatalogAcc, rows []CatalogCommand) {
 
 // Quick commands of the config under User commands, the category present even when every entry is malformed
 func catalogQuickCommands(ctx context.Context, cat *commandCatalogAcc) error {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), config.EnvRefLookupContext(ctx))
-	if err != nil {
-		return err
-	}
-	qcmds, isDict := tree["quick_commands"].(map[string]any)
-	if !isDict || len(qcmds) == 0 {
+	qcmds := settings.QuickCommands.Get(ctx)
+	if len(qcmds) == 0 {
 		return nil
 	}
 	cat.category("User commands")

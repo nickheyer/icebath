@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -17,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -66,86 +66,33 @@ func (hygieneWaitTimeout) Error() string { return "" }
 // Python class name the wait timeout carries
 func (hygieneWaitTimeout) PyTypeName() string { return "TimeoutError" }
 
-// Applies the model and compression knobs of the gateway config, invalid values keeping the defaults
-func hmwaHygieneReadConfig(hs *hygieneSettings, data map[string]any) {
-	switch modelCfg := data["model"].(type) {
-	case string:
-		hs.model = modelCfg
-	case map[string]any:
-		if v := modelCfg["default"]; pyrepr.Truthy(v) {
-			hs.model = pyrepr.Str(v)
-		} else if v := modelCfg["model"]; pyrepr.Truthy(v) {
-			hs.model = pyrepr.Str(v)
-		}
-		if raw := modelCfg["context_length"]; raw != nil {
-			if n, err := pyint.Int64(raw); err == nil {
-				value := int(n)
-				hs.configContextLength = &value
-			}
-		}
-		hs.provider, hs.baseURL = "", ""
-		if v := modelCfg["provider"]; pyrepr.Truthy(v) {
-			hs.provider = pyrepr.Str(v)
-		}
-		if v := modelCfg["base_url"]; pyrepr.Truthy(v) {
-			hs.baseURL = pyrepr.Str(v)
-		}
+// Duration of a setting in seconds, its registry default for a stored value that is not positive
+func positiveSeconds(ctx context.Context, e *settings.Duration) float64 {
+	if d := e.Get(ctx); d > 0 {
+		return d.Seconds()
 	}
-	rawComp, present := data["compression"]
-	if !present {
-		rawComp = map[string]any{}
-	}
-	compCfg, ok := rawComp.(map[string]any)
-	if !ok {
-		return
-	}
-	enabled, present := compCfg["enabled"]
-	if !present {
-		enabled = true
-	}
-	switch strings.ToLower(pyrepr.Str(enabled)) {
-	case "true", "1", "yes":
-		hs.compressionEnabled = true
-	default:
-		hs.compressionEnabled = false
-	}
-	floatKnob := func(key string, current float64, allowZero bool) float64 {
-		raw := compCfg[key]
-		if raw == nil {
-			return current
-		}
-		parsed, err := pyint.Float(raw)
-		if err != nil {
-			return current
-		}
-		if (allowZero && parsed >= 0) || (!allowZero && parsed > 0) {
-			return parsed
-		}
-		return current
-	}
-	if raw := compCfg["hygiene_hard_message_limit"]; raw != nil {
-		if n, err := pyint.Int64(raw); err == nil && n > 0 {
-			hs.hardMsgLimit = int(n)
-		}
-	}
-	hs.timeoutSeconds = floatKnob("hygiene_timeout_seconds", hs.timeoutSeconds, false)
-	hs.totalCeilingSeconds = floatKnob("hygiene_total_ceiling_seconds", hs.totalCeilingSeconds, false)
-	hs.totalCeilingSeconds = max(hs.totalCeilingSeconds, hs.timeoutSeconds)
-	hs.maxTurnHoldSeconds = floatKnob("hygiene_max_turn_hold_seconds", hs.maxTurnHoldSeconds, false)
-	hs.failureCooldownSeconds = floatKnob("hygiene_failure_cooldown_seconds", hs.failureCooldownSeconds, true)
+	return e.Default.Seconds()
 }
 
 // Model, provider, context length and hygiene knobs of the session, a failure keeping the defaults
 func (r *GatewayRunner) hmwaHygieneSettings(ctx context.Context, source *gateway.SessionSource, sessionKey string) *hygieneSettings {
-	hs := &hygieneSettings{model: "anthropic/claude-sonnet-4.6", thresholdPct: 0.85, compressionEnabled: true,
-		hardMsgLimit: 5000, timeoutSeconds: 30.0, totalCeilingSeconds: 600.0, maxTurnHoldSeconds: 10.0,
-		failureCooldownSeconds: 300.0, data: map[string]any{}}
+	hs := &hygieneSettings{model: settings.Model.Get(ctx), provider: settings.ModelProvider.Get(ctx), baseURL: settings.ModelBaseURL.Get(ctx),
+		thresholdPct: 0.85, compressionEnabled: settings.AutoCompress.Get(ctx), hardMsgLimit: settings.CompressionHygieneHardMessageLimit.Get(ctx),
+		timeoutSeconds: positiveSeconds(ctx, settings.CompressionHygieneTimeoutSeconds), maxTurnHoldSeconds: positiveSeconds(ctx, settings.CompressionHygieneMaxTurnHoldSeconds),
+		failureCooldownSeconds: max(0, settings.CompressionHygieneFailureCooldownSeconds.Get(ctx).Seconds()), data: map[string]any{}}
+	hs.totalCeilingSeconds = max(positiveSeconds(ctx, settings.CompressionHygieneTotalCeilingSeconds), hs.timeoutSeconds)
+	if hs.hardMsgLimit < 1 {
+		hs.hardMsgLimit = settings.CompressionHygieneHardMessageLimit.Default
+	}
+	if hs.model == "" {
+		hs.model = "anthropic/claude-sonnet-4.6"
+	}
+	if n, set := settings.ModelContextLength.Lookup(ctx); set {
+		hs.configContextLength = &n
+	}
 	func() {
 		defer func() { _ = recover() }()
 		hs.data = gateway.LoadGatewayConfigMap(ctx, "")
-		if len(hs.data) > 0 {
-			hmwaHygieneReadConfig(hs, hs.data)
-		}
 		configuredModel, configuredProvider, configuredBaseURL := hs.model, hs.provider, hs.baseURL
 		if model, runtime, err := r.resolveSessionAgentRuntime(ctx, source, sessionKey, hs.data, true); err == nil {
 			hs.model = model
@@ -163,7 +110,7 @@ func (r *GatewayRunner) hmwaHygieneSettings(ctx context.Context, source *gateway
 			hs.configContextLength = nil
 		}
 		if hs.configContextLength == nil && hs.baseURL != "" {
-			if n := provider.CustomProviderContextLength(hs.model, hs.baseURL, provider.CompatibleCustomProviders(hs.data), nil); n != 0 {
+			if n := provider.CustomProviderContextLength(hs.model, hs.baseURL, provider.ProviderEntries(hs.data), nil); n != 0 {
 				hs.configContextLength = &n
 			}
 		}
@@ -579,12 +526,7 @@ func (r *GatewayRunner) hmwaHygieneBuildAgent(ctx context.Context, model string,
 		pkgLog().Warn(fmt.Sprintf("Session hygiene could not restore the system prompt for session %s: %s. Preserving an empty prompt so the live turn rebuilds it with its configured providers.",
 			entry.SessionID, pyrepr.ExceptionMessage(err)))
 	}
-	checkpointRequired := false
-	if cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil); err == nil {
-		if comp, ok := cfg["compression"].(map[string]any); ok {
-			checkpointRequired = provider.IsTruthyValue(comp["checkpoint_required"])
-		}
-	}
+	checkpointRequired := settings.CompressionCheckpointRequired.Get(ctx)
 	opts := agent.AIAgentOptions{Model: model, MaxIterations: new(4), QuietMode: true, SkipMemory: !checkpointRequired,
 		EnabledToolsets: []string{"memory"}, SessionID: entry.SessionID, SessionDB: db}
 	applyRuntimeKwargs(&opts, runtime)

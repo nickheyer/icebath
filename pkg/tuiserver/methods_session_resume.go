@@ -16,11 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Declares session.resume on the session module registry
-func registerSessionResumeHandlers() {
-	sessionRegistry.method("session.resume", sessionResume)
-}
-
 // Per call session.resume state, ownsDB marking a dedicated profile handle that is still ours to close
 type resumeCtx struct {
 	ctx                                                  context.Context

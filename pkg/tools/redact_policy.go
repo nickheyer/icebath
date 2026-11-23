@@ -3,118 +3,79 @@ package tools
 import (
 	"context"
 	"log/slog"
-	"os"
-	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Raw redaction switches recorded per profile home key, nil when the source left the switch unset
+// Hide secrets switch recorded per profile home key from that profile's settings
 var redactPolicy = struct {
 	sync.Mutex
-	env map[string]*string
-	cfg map[string]*string
-}{env: map[string]*string{}, cfg: map[string]*string{}}
+	cfg map[string]bool
+}{cfg: map[string]bool{}}
+
+// Set by a process that must hide secrets whatever its profile says, such as the MCP tool server
+var redactionForced atomic.Bool
 
 func init() {
 	config.RegisterRedactionSwitch(RedactEnabled)
 	config.RegisterPolicyNote(func(setter, homeKey string, raw any) {
-		switch setter {
-		case "note_env_policy":
-			NoteEnvPolicy(homeKey, raw)
-		case "note_config_policy":
+		if setter == "note_config_policy" {
 			NoteConfigPolicy(homeKey, raw)
 		}
 	})
 }
 
-// Launch profile redaction switch read once from the process environment
-var launchRedactEnabled = sync.OnceValue(func() bool {
-	v, ok := os.LookupEnv("ICEBATH_REDACT_SECRETS")
-	if !ok {
-		v = "true"
-	}
-	return redactSwitchOn(v)
-})
+// ForceSecretRedaction hides secrets in this process whatever the profile setting says
+func ForceSecretRedaction() { redactionForced.Store(true) }
 
-// Reports whether a raw switch value turns redaction on
-func redactSwitchOn(raw string) bool {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "1", "true", "yes", "on":
+// Records the hide secrets value a profile's config holds, an unset or unreadable value keeping it on
+func NoteConfigPolicy(homeKey string, raw any) {
+	on := true
+	if b, ok := config.AsBool(raw); ok && raw != nil {
+		on = b
+	}
+	redactPolicy.Lock()
+	redactPolicy.cfg[homeKey] = on
+	redactPolicy.Unlock()
+}
+
+// Key of the process home, empty when the process has no home
+func processHomeKey() (key string) {
+	defer func() {
+		if recover() != nil {
+			key = ""
+		}
+	}()
+	return home.Key(home.Process())
+}
+
+// Effective redaction switch of the context profile from its recorded setting, on until one is recorded
+func redactEnabledFor(ctx context.Context) bool {
+	if redactionForced.Load() {
 		return true
 	}
-	return false
-}
-
-// Raw value as Python str gives it, nil for None
-func policyRaw(raw any) *string {
-	if raw == nil {
-		return nil
-	}
-	s := pyrepr.Str(raw)
-	return &s
-}
-
-// Records the ICEBATH_REDACT_SECRETS value a profile dotenv holds
-func NoteEnvPolicy(homeKey string, raw any) {
-	redactPolicy.Lock()
-	redactPolicy.env[homeKey] = policyRaw(raw)
-	redactPolicy.Unlock()
-}
-
-// Records the security.redact_secrets value a profile config holds
-func NoteConfigPolicy(homeKey string, raw any) {
-	redactPolicy.Lock()
-	redactPolicy.cfg[homeKey] = policyRaw(raw)
-	redactPolicy.Unlock()
-}
-
-// Effective redaction switch of the context profile from the live secret scope and recorded policy only
-func redactEnabledFor(ctx context.Context, scopeOf func(context.Context) map[string]string) bool {
-	override := home.Override(ctx)
-	if override == "" {
-		return launchRedactEnabled()
-	}
-	key := home.Key(override)
-	var scope map[string]string
-	if scopeOf != nil {
-		scope = scopeOf(ctx)
-	}
-	var raw *string
-	if v, ok := scope["ICEBATH_REDACT_SECRETS"]; ok {
-		raw = &v
+	key := processHomeKey()
+	if override := home.Override(ctx); override != "" {
+		key = home.Key(override)
 	}
 	redactPolicy.Lock()
 	defer redactPolicy.Unlock()
-	if raw == nil && scope == nil {
-		recorded, ok := redactPolicy.env[key]
-		if !ok {
-			return true
-		}
-		raw = recorded
-	}
-	if raw == nil {
-		raw = redactPolicy.cfg[key]
-	}
-	if raw == nil {
-		return true
-	}
-	return redactSwitchOn(*raw)
+	on, recorded := redactPolicy.cfg[key]
+	return on || !recorded
 }
 
-// Whether secret redaction is on for the context profile under its live environment and recorded policy
+// Whether secret redaction is on for the context profile
 func RedactEnabled(ctx context.Context) bool {
-	return redactEnabledFor(ctx, liveSecretScope)
+	return redactEnabledFor(ctx)
 }
 
 // Log handler that redacts secrets from every record message and attribute
 type RedactingHandler struct {
-	next    slog.Handler
-	scopeOf func(context.Context) map[string]string
-	ops     []redactHandlerOp
+	next slog.Handler
+	ops  []redactHandlerOp
 }
 
 // One WithAttrs or WithGroup call replayed per record under that record's policy
@@ -123,9 +84,9 @@ type redactHandlerOp struct {
 	attrs []slog.Attr
 }
 
-// Wraps next so records are redacted under the profile policy, scopeOf reading the live secret scope
-func NewRedactingHandler(next slog.Handler, scopeOf func(context.Context) map[string]string) *RedactingHandler {
-	return &RedactingHandler{next: next, scopeOf: scopeOf}
+// Wraps next so records are redacted under the policy of their context profile
+func NewRedactingHandler(next slog.Handler) *RedactingHandler {
+	return &RedactingHandler{next: next}
 }
 
 // Defers the level decision to the wrapped handler
@@ -135,7 +96,7 @@ func (h *RedactingHandler) Enabled(ctx context.Context, level slog.Level) bool {
 
 // Redacts the message and every bound or record attribute when the context profile redacts
 func (h *RedactingHandler) Handle(ctx context.Context, r slog.Record) error {
-	enabled := redactEnabledFor(ctx, h.scopeOf)
+	enabled := redactEnabledFor(ctx)
 	next := h.next
 	for _, op := range h.ops {
 		if op.attrs == nil {
@@ -168,7 +129,7 @@ func (h *RedactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 		return h
 	}
 	ops := append(append([]redactHandlerOp(nil), h.ops...), redactHandlerOp{attrs: append([]slog.Attr(nil), attrs...)})
-	return &RedactingHandler{next: h.next, scopeOf: h.scopeOf, ops: ops}
+	return &RedactingHandler{next: h.next, ops: ops}
 }
 
 // Opens a group replayed on the wrapped handler per record
@@ -177,7 +138,7 @@ func (h *RedactingHandler) WithGroup(name string) slog.Handler {
 		return h
 	}
 	ops := append(append([]redactHandlerOp(nil), h.ops...), redactHandlerOp{group: name})
-	return &RedactingHandler{next: h.next, scopeOf: h.scopeOf, ops: ops}
+	return &RedactingHandler{next: h.next, ops: ops}
 }
 
 // Default redaction passes applied unconditionally to formatted log text

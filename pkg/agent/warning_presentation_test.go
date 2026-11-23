@@ -57,14 +57,14 @@ func TestDestinationSnapshotOwnsPolicyAndReaderFailureNeverBreaksEmission(t *tes
 	var emitted [][2]any
 	a := &AIAgent{platform: "cli", printFn: func(string) {}}
 	a.statusCallback = func(kind string, message any) { emitted = append(emitted, [2]any{kind, message}) }
-	a.SetNotificationPresentation("slack", map[string]any{"display": map[string]any{"suppress_warning_notifications": true,
-		"platforms": map[string]any{"slack": map[string]any{"suppress_warning_notifications": false}}}})
+	setSettingsForTest(t, map[string]any{"display.suppress_warning_notifications": true, "display.platforms.slack.suppress_warning_notifications": false})
+	a.SetNotificationPresentation("slack")
 	a.emitWarning("destination allows this diagnostic")
 	if !reflect.DeepEqual(emitted, [][2]any{{"warn", "destination allows this diagnostic"}}) {
 		t.Fatalf("emitted %v", emitted)
 	}
 	saved := warningNotificationsEnabled
-	warningNotificationsEnabled = func(context.Context, string, map[string]any) bool { panic("configuration unavailable") }
+	warningNotificationsEnabled = func(context.Context, string) bool { panic("configuration unavailable") }
 	t.Cleanup(func() { warningNotificationsEnabled = saved })
 	a.emitWarning("still observable when configuration fails")
 	if emitted[len(emitted)-1] != [2]any{"warn", "still observable when configuration fails"} {
@@ -75,9 +75,6 @@ func TestDestinationSnapshotOwnsPolicyAndReaderFailureNeverBreaksEmission(t *tes
 func TestDirectPrintDiagnosticsPreserveContentAndMutedTurnHasNoPrints(t *testing.T) {
 	for _, suppress := range []bool{false, true} {
 		a, printed := warningEmitter(t, suppress)
-		if display, _ := NotificationConfigSnapshot(context.Background())["display"].(map[string]any); display["suppress_warning_notifications"] != suppress {
-			t.Fatalf("snapshot did not read the owning profile config %v", display)
-		}
 		a.safePrint("diagnostic", true)
 		a.vprint("retry diagnostic", true, true)
 		if want := map[bool]int{true: 0, false: 2}[suppress]; len(*printed) != want {
@@ -162,12 +159,12 @@ func TestNotificationTurnFreezesPresentationAndRestores(t *testing.T) {
 	} else {
 		done()
 	}
-	restorePolicy := a.NotificationPolicySnapshot("slack", map[string]any{"display": map[string]any{}})
-	if *a.notificationPlatform != "slack" || a.notificationConfig == nil {
+	restorePolicy := a.NotificationPolicySnapshot("slack")
+	if *a.notificationPlatform != "slack" {
 		t.Fatal("policy snapshot not bound")
 	}
 	restorePolicy()
-	if a.notificationPlatform != nil || a.notificationConfig != nil {
+	if a.notificationPlatform != nil {
 		t.Fatal("policy snapshot not restored")
 	}
 	for event, want := range map[string]bool{"task_failure_notice": true, "watch_disabled": true, "watch_overflow_released": true, "completed": false} {

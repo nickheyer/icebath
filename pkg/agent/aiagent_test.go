@@ -3,10 +3,13 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -145,16 +148,22 @@ func TestLaunchCwdForSession(t *testing.T) {
 	prevGetwd := launchGetwd
 	launchGetwd = func() (string, error) { return "/work", nil }
 	t.Cleanup(func() { launchGetwd = prevGetwd })
-	t.Setenv("TERMINAL_ENV", "")
-	if launchCwdForSession("cli") != "/work" || launchCwdForSession("telegram") != "" {
+	h := t.TempDir()
+	ctx := home.WithOverride(context.Background(), h)
+	backend := func(name string) {
+		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("terminal:\n  backend: "+name+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if launchCwdForSession(ctx, "cli") != "/work" || launchCwdForSession(ctx, "telegram") != "" {
 		t.Fatal("local cli family source must stamp the cwd and nothing else")
 	}
-	t.Setenv("TERMINAL_ENV", " Docker ")
-	if launchCwdForSession("cli") != "" {
+	backend("docker")
+	if launchCwdForSession(ctx, "cli") != "" {
 		t.Fatal("remote backend stamped a cwd")
 	}
-	t.Setenv("TERMINAL_ENV", " LOCAL ")
-	if launchCwdForSession("cli") != "/work" {
+	backend("LOCAL")
+	if launchCwdForSession(ctx, "cli") != "/work" {
 		t.Fatal("local backend in any case must stamp the cwd")
 	}
 }
@@ -307,20 +316,23 @@ func TestQuietAgentSettersReplaceTheStdoutCallbacks(t *testing.T) {
 
 func TestNotificationAccessorsReadTheBoundTurnState(t *testing.T) {
 	a := &AIAgent{}
-	if a.MuteNotificationReply() || a.NotificationConfig() != nil {
-		t.Fatal("a fresh agent mutes nothing and binds no config")
+	if a.MuteNotificationReply() {
+		t.Fatal("a fresh agent mutes nothing")
 	}
-	restore := a.NotificationPolicySnapshot("cli", map[string]any{"display": map[string]any{}})
-	if a.NotificationConfig() == nil {
-		t.Fatal("the bound config must read back")
+	restore := a.NotificationPolicySnapshot("slack")
+	if a.notificationPlatform == nil || *a.notificationPlatform != "slack" {
+		t.Fatal("the bound platform must read back")
 	}
 	restore()
+	if a.notificationPlatform != nil {
+		t.Fatal("restore must clear the platform")
+	}
 	_, unmute := a.NotificationTurn(context.Background(), true, "s1")
 	if !a.MuteNotificationReply() {
 		t.Fatal("a muted turn must read as muted")
 	}
 	unmute()
-	if a.MuteNotificationReply() || a.NotificationConfig() != nil {
+	if a.MuteNotificationReply() {
 		t.Fatal("restores must clear the turn state")
 	}
 }

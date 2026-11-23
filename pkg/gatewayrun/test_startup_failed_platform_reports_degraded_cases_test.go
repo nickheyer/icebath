@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Api server adapter that loses the bind race, fatal and non retryable so it is parked
@@ -61,14 +60,13 @@ func (a *healthyAdapter) fail(ctx context.Context, code string) error {
 	return a.NotifyFatalError(ctx)
 }
 
-// Runner of the degraded cases with the product room server bound, adapters from the registry, bluebubbles adapterless
+// Runner of the degraded cases, adapters from the registry, bluebubbles adapterless
 func degradedRunner(t *testing.T, platforms map[gateway.Platform]*gateway.PlatformConfig, build map[gateway.Platform]func() gateway.PlatformAdapter) *GatewayRunner {
 	t.Helper()
 	withoutPlatformPlugins(t)
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", tmp)
 	ctx := context.Background()
-	tuiserver.BindHostedRoomServer()
 	for platform, make := range build {
 		injectRegistryAdapters(t, func(gateway.Platform) gateway.PlatformAdapter { return make() }, platform)
 	}

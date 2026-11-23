@@ -49,7 +49,6 @@ func TestMain(m *testing.M) {
 	tools.PoolKeys = provider.PoolKeySource()
 	NormalizePersonalityName = commands.NormalizePersonalityName
 	RenderPersonalityPrompt = commands.RenderPersonalityPrompt
-	PersistPersonality = commands.PersistPersonality
 	Personality.EphemeralSystemPrompt = commands.ResolveEphemeralSystemPrompt
 	ResolveCommand = func(name string) (ResolvedCommand, bool) {
 		d := commands.Resolve(name)

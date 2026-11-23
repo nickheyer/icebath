@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // icebath auth list, every pooled provider or the one named, free tier rows rendered as the upgrade hint
@@ -44,23 +43,7 @@ func (c *authCLI) list() error {
 		providers = authSortedKeys(set)
 	}
 	for _, provider := range providers {
-		pool := LoadPool(c.env, provider)
-		entries := pool.Entries()
-		if len(entries) == 0 {
-			continue
-		}
-		current, hasCurrent := pool.Peek()
-		fmt.Fprintf(c.out, "%s (%d credentials):\n", provider, len(entries))
-		for idx, entry := range entries {
-			marker := "  "
-			if hasCurrent && entry.ID == current.ID {
-				marker = "← "
-			}
-			row := fmt.Sprintf("  #%d  %-20s %-7s id=%s priority=%d %s%s %s", idx+1, entry.Label, entry.AuthType,
-				entry.ID, entry.Priority, authDisplaySource(entry.Source), formatExhaustedStatus(entry), marker)
-			fmt.Fprintln(c.out, strings.TrimRight(row, " \t\n\r\v\f"))
-		}
-		fmt.Fprintln(c.out)
+		c.printLoginGroup(provider)
 	}
 	if providerFilter == "" || ExternalLoginProviders[providerFilter] {
 		c.printExternalLoginNotice()
@@ -92,6 +75,15 @@ func (c *authCLI) remove() error {
 	pool := LoadPool(c.env, provider)
 	index, _, errText := pool.ResolveTarget(authTextOr(target))
 	if index == 0 {
+		if named, err := FindLogin(c.env, provider, authTextOr(target)); err == nil {
+			for i, e := range pool.Entries() {
+				if e.ID == named.ID {
+					index = i + 1
+				}
+			}
+		}
+	}
+	if index == 0 {
 		return authExit(fmt.Sprintf("%s Provider: %s.", errText, provider))
 	}
 	removed, ok := pool.RemoveIndex(index)
@@ -99,6 +91,13 @@ func (c *authCLI) remove() error {
 		return authExit(fmt.Sprintf("No credential matching \"%s\" for provider %s.", pyStr(target), provider))
 	}
 	fmt.Fprintf(c.out, "Removed %s credential #%d (%s)\n", provider, index, removed.Label)
+	if next, repinned := repinDefaultAfterRemoval(c.env, provider, removed); repinned {
+		if next == "" {
+			fmt.Fprintf(c.out, "%s has no default login now.\n", provider)
+		} else if row, err := FindLogin(c.env, provider, next); err == nil {
+			fmt.Fprintf(c.out, "%s now uses the login %s by default.\n", provider, row.LoginName())
+		}
+	}
 	step, ok := FindRemovalStep(provider, removed.Source)
 	if !ok {
 		return nil
@@ -253,7 +252,7 @@ func (c *authCLI) logout() error {
 	if moved := c.movedAuthHint("logout", normalized); moved != "" {
 		return authExit(moved)
 	}
-	return LogoutCommand(c.env, raw, c.out)
+	return LogoutLogin(c.env, raw, nsFlag(c.ns, "all"), c.out)
 }
 
 var authCmdAWSCallerIdentityFn = awsCallerIdentityARN
@@ -386,15 +385,3 @@ var authStrategyDescriptions = map[string]string{
 	StrategyLeastUsed:  "Always pick the least-used key",
 	StrategyRandom:     "Random selection"}
 
-// Writes credential_pool_strategies.<provider> into config.yaml
-func (c *authCLI) saveStrategy(provider, strategy string) error {
-	h := envHome(c.env)
-	cfg := c.loadConfig()
-	strategies, ok := cfg["credential_pool_strategies"].(map[string]any)
-	if !ok {
-		strategies = map[string]any{}
-	}
-	strategies[provider] = strategy
-	cfg["credential_pool_strategies"] = strategies
-	return config.SaveConfig(c.ctx, h, cfg, config.SaveOptions{})
-}

@@ -36,7 +36,7 @@ func stopNodeProject(t *testing.T, root string) {
 // Clears every env signal the verify on stop switch consults
 func clearVerifyEnv(t *testing.T) {
 	t.Helper()
-	for _, name := range []string{"ICEBATH_VERIFY_ON_STOP", "ICEBATH_PLATFORM", "ICEBATH_SESSION_PLATFORM", "ICEBATH_SESSION_SOURCE"} {
+	for _, name := range []string{"ICEBATH_PLATFORM", "ICEBATH_SESSION_PLATFORM", "ICEBATH_SESSION_SOURCE"} {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
@@ -60,21 +60,14 @@ func recordTerminalPiped(t *testing.T, command, cwd string, exitCode int, output
 	}
 }
 
-func TestVerifyOnStopEnvCanEnable(t *testing.T) {
-	clearVerifyEnv(t)
-	t.Setenv("ICEBATH_VERIFY_ON_STOP", "1")
-	t.Setenv("ICEBATH_SESSION_PLATFORM", "telegram")
-	if !verifyOnStopEnabled(context.Background(), nil, map[string]any{"agent": map[string]any{}}) {
-		t.Fatal("env 1 must force verify on stop on")
-	}
-}
-
 func TestVerifyOnStopAutoOnForInteractiveSurfaces(t *testing.T) {
 	for _, source := range []string{"cli", "tui", "codex", "local"} {
 		t.Run(source, func(t *testing.T) {
 			clearVerifyEnv(t)
 			t.Setenv("ICEBATH_SESSION_SOURCE", source)
-			if !verifyOnStopEnabled(context.Background(), nil, map[string]any{"agent": map[string]any{"verify_on_stop": "auto"}}) {
+			t.Setenv("ICEBATH_HOME", t.TempDir())
+			setSettingsForTest(t, map[string]any{"agent.verify_on_stop": "auto"})
+			if !verifyOnStopEnabled(context.Background(), nil) {
 				t.Fatalf("auto must resolve on for %s", source)
 			}
 		})
@@ -84,13 +77,11 @@ func TestVerifyOnStopAutoOnForInteractiveSurfaces(t *testing.T) {
 func TestVerifyOnStopMissingValueDefaultsOff(t *testing.T) {
 	clearVerifyEnv(t)
 	t.Setenv("ICEBATH_SESSION_SOURCE", "cli")
-	for _, cfg := range []map[string]any{
-		{"agent": map[string]any{}},
-		{"agent": map[string]any{"verify_on_stop": "bogus"}},
-		{},
-	} {
-		if verifyOnStopEnabled(context.Background(), nil, cfg) {
-			t.Fatalf("config %v must resolve off", cfg)
+	for _, values := range []map[string]any{{}, {"agent.verify_on_stop": "bogus"}} {
+		t.Setenv("ICEBATH_HOME", t.TempDir())
+		setSettingsForTest(t, values)
+		if verifyOnStopEnabled(context.Background(), nil) {
+			t.Fatalf("settings %v must resolve off", values)
 		}
 	}
 }

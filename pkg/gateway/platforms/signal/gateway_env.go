@@ -6,10 +6,7 @@ var envEnableCredentials = []string{"SIGNAL_HTTP_URL"}
 
 var envOverrides = []gateway.EnvStep{
 	&gateway.EnvCred{Platform: gateway.PlatformSignal, Creds: [][]string{{"SIGNAL_HTTP_URL"}, {"SIGNAL_ACCOUNT"}},
-		Fixed: []gateway.EnvSpec{
-			{Key: "http_url", Env: "SIGNAL_HTTP_URL"}, {Key: "account", Env: "SIGNAL_ACCOUNT"},
-			{Key: "ignore_stories", Env: "SIGNAL_IGNORE_STORIES", Default: "true", Fn: gateway.TruthyValue},
-		}},
+		Fixed: []gateway.EnvSpec{{Key: "http_url", Env: "SIGNAL_HTTP_URL"}, {Key: "account", Env: "SIGNAL_ACCOUNT"}}},
 	gateway.HomeStep{Platform: gateway.PlatformSignal, EnvBase: "SIGNAL_HOME_CHANNEL"},
 }
 

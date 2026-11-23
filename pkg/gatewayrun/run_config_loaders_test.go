@@ -1,10 +1,7 @@
 package gatewayrun
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -60,58 +57,11 @@ func TestGetSystemPromptForChannelUsesChannelOverrideWhenPresent(t *testing.T) {
 	}
 }
 
-func TestBusyTextTimingRejectsNonNumericConfig(t *testing.T) {
-	var logs bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(previous) })
-	timing := busyTextTimingFromConfig(map[string]any{"display": map[string]any{
-		"busy_text_debounce_seconds": "fast", "busy_text_hard_cap_seconds": -3}})
-	if timing != [2]float64{0.35, 1.0} {
-		t.Fatalf("timing %v", timing)
-	}
-	text := logs.String()
-	if !strings.Contains(text, "busy_text_debounce_seconds") || !strings.Contains(text, "busy_text_hard_cap_seconds") {
-		t.Fatalf("logs %s", text)
-	}
-}
-
 func TestParseReasoningCommandArgsAcceptsASCIIAndSmartGlobalFlags(t *testing.T) {
 	if value, global := parseReasoningCommandArgs("high --global"); value != "high" || !global {
 		t.Fatalf("got %q %v", value, global)
 	}
 	if value, global := parseReasoningCommandArgs("—global xhigh"); value != "xhigh" || !global {
 		t.Fatalf("got %q %v", value, global)
-	}
-}
-
-func TestConfigBoundsAreValidatedWithAWarningNamingTheKey(t *testing.T) {
-	cases := []struct {
-		cfg       map[string]any
-		expected  *[2]int
-		warnedKey string
-	}{
-		{map[string]any{"mode": "off", "min_ms": -5}, nil, ""},
-		{map[string]any{"mode": "natural", "min_ms": "oops", "max_ms": "bad"}, &[2]int{800, 2500}, ""},
-		{map[string]any{"mode": "custom", "min_ms": 1000, "max_ms": 2000}, &[2]int{1000, 2000}, ""},
-		{map[string]any{"mode": "custom", "min_ms": "oops", "max_ms": 1000}, &[2]int{800, 1000}, "human_delay.min_ms"},
-		{map[string]any{"mode": "custom", "min_ms": -1, "max_ms": 1000}, &[2]int{800, 1000}, "human_delay.min_ms"},
-		{map[string]any{"mode": "custom", "min_ms": 3000, "max_ms": 1000}, &[2]int{800, 2500}, "human_delay.max_ms=1000"},
-	}
-	for _, c := range cases {
-		var logs bytes.Buffer
-		previous := slog.Default()
-		slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-		got := humanDelayFromConfig(map[string]any{"human_delay": c.cfg})
-		slog.SetDefault(previous)
-		if (got == nil) != (c.expected == nil) || (got != nil && *got != *c.expected) {
-			t.Fatalf("cfg %v got %v", c.cfg, got)
-		}
-		if c.warnedKey == "" && strings.Contains(logs.String(), "human_delay") {
-			t.Fatalf("cfg %v warned %s", c.cfg, logs.String())
-		}
-		if c.warnedKey != "" && !strings.Contains(logs.String(), c.warnedKey) {
-			t.Fatalf("cfg %v logs %s", c.cfg, logs.String())
-		}
 	}
 }

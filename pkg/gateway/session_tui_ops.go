@@ -186,6 +186,9 @@ func sessionHistory(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 		if err != nil {
 			return nil, err
 		}
+		if messages, err = withShellLines(messages, a.ProfileID, ref.SessionID); err != nil {
+			return nil, err
+		}
 		return pyjson.ObjectOf("count", len(rows), "messages", messages), nil
 	})
 }
@@ -553,12 +556,19 @@ func fitFrame(text string, budget int) string {
 
 // Drops the newest user turn and everything after it through the fenced rewind mutation, 0 without a user turn
 func rewindLastTurn(ctx context.Context, c *AuthorityConnection, ref SessionRef) (int64, error) {
-	a := c.authority
+	count, _, err := rewindLastUserTurn(ctx, c.authority, c.actor, ref, "")
+	return count, err
+}
+
+// Drops the newest user turn and everything after it as actor, the count removed and the user row it dropped, 0 and nil without a user turn
+// or, when only is given, when the newest user turn says something else
+func rewindLastUserTurn(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, only string) (int64, map[string]any, error) {
 	rows, err := forwardOffThread(ctx, func() ([]map[string]any, error) { return localHistory(ctx, a, ref, nil) })
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	var target any
+	var dropped map[string]any
 	for i := len(rows) - 1; i >= 0; i-- {
 		row := rows[i]
 		if _, isInt := row["row_id"].(int64); !isInt {
@@ -569,18 +579,23 @@ func rewindLastTurn(ctx context.Context, c *AuthorityConnection, ref SessionRef)
 		if pyrepr.Truthy(row["archived"]) || state.UserOriginatedTurnView(row) == nil {
 			continue
 		}
-		target = row["row_id"]
+		target, dropped = row["row_id"], row
 		break
 	}
 	if target == nil {
-		return 0, nil
+		return 0, nil, nil
+	}
+	if only != "" {
+		if text, err := state.RetryableUserText(dropped["content"]); err != nil || text != only {
+			return 0, nil, nil
+		}
 	}
 	handle, err := a.handle(ctx, ref)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	id := uuid.New()
-	result, err := mutateSession(ctx, a, c.actor, ref, pyjson.ObjectOf("session_id", ref.SessionID,
+	result, err := mutateSession(ctx, a, actor, ref, pyjson.ObjectOf("session_id", ref.SessionID,
 		"request_id", "rollback:"+hex.EncodeToString(id[:]), "expected_revision", handle.Revision,
 		"expected_generation", handle.ExecutionGeneration, "operation", "rewind",
 		"payload", pyjson.ObjectOf("target_message_id", target)))
@@ -588,13 +603,13 @@ func rewindLastTurn(ctx context.Context, c *AuthorityConnection, ref SessionRef)
 		if state.IsMutationGuardRefusal(err) {
 			refusal := state.NewRuntimeStoreError("session_busy", nil, nil)
 			refusal.Cause = err
-			return 0, refusal
+			return 0, nil, refusal
 		}
-		return 0, err
+		return 0, nil, err
 	}
 	count := result.GetOr("rewound_count", nil)
 	if !pyrepr.Truthy(count) {
-		return 0, nil
+		return 0, nil, nil
 	}
-	return anyInt64(count), nil
+	return anyInt64(count), dropped, nil
 }

@@ -15,6 +15,7 @@ import (
 	"unicode"
 	"unicode/utf16"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"gopkg.in/yaml.v3"
@@ -30,17 +31,16 @@ func (e *ConfigExit) Error() string { return "exit " + strconv.Itoa(e.Code) }
 
 // Readers and writers config set, get, unset, show and check reach outside this package
 type ConfigCommandSources struct {
-	RuntimeKeyOwners        RuntimeKeyOwners
-	LeftCoreTerminalKeys    map[string]string
-	DisplayOverrideableKeys map[string]bool
-	IsEnvSettingKey         func(key string) bool
-	SaveEnvSetting          func(ctx context.Context, h, key, value string) error
-	ReadEnvSetting          func(h, key string) (string, bool)
-	RemoveEnvSetting        func(ctx context.Context, h, key string) (bool, error)
-	DropStaleModelRoute     func(modelCfg map[string]any, provider string, cfg map[string]any) (map[string]any, bool)
-	Language                LanguageCatalog
-	Show                    func(ctx context.Context, h string) (ShowSources, error)
-	CheckDiagnostics        CheckDiagnosticsSources
+	// Registers the settings blocks plugins declare, so their keys are known before a lookup
+	LoadPluginSettings func()
+	IsEnvSettingKey      func(key string) bool
+	SaveEnvSetting       func(ctx context.Context, h, key, value string) error
+	ReadEnvSetting       func(h, key string) (string, bool)
+	RemoveEnvSetting     func(ctx context.Context, h, key string) (bool, error)
+	DropStaleModelRoute  func(modelCfg map[string]any, provider string, cfg map[string]any) (map[string]any, bool)
+	Language             LanguageCatalog
+	Show                 func(ctx context.Context, h string) (ShowSources, error)
+	CheckDiagnostics     CheckDiagnosticsSources
 }
 
 const (
@@ -62,38 +62,10 @@ func ManagedError(ctx context.Context, h, action string) {
 	fmt.Fprintln(FacadeNoticeOut, FormatManagedMessage(ctx, h, action))
 }
 
-var (
-	openDictTopLevelKeys = setOf("providers", "credential_pool_strategies", "mcp_servers", "hooks", "quick_commands",
-		"personalities", "command_allowlist", "model_catalog", "channel_prompts", "server_actions", "secrets", "goals", "loops")
-	schemaDefinedDictKeys = setOf("discord", "telegram", "slack", "whatsapp", "signal", "mattermost", "matrix", "feishu",
-		"wecom", "weixin", "bluebubbles", "qqbot", "yuanbao", "email", "sms", "dingtalk", "sessions", "checkpoints", "plugins")
-	dynamicTopLevelKeys   = setOf("custom_providers")
-	platformContainerKeys = setOf("platforms")
-)
-
 func setOf(names ...string) map[string]bool {
 	out := make(map[string]bool, len(names))
 	for _, n := range names {
 		out[n] = true
-	}
-	return out
-}
-
-// Reports whether a root accepts any sub key without a schema walk
-func openSubkeyTopLevel(key string) bool {
-	return openDictTopLevelKeys[key] || dynamicTopLevelKeys[key] || schemaDefinedDictKeys[key]
-}
-
-// Every known top level config key, defaults plus the extra and open roots
-func knownTopLevelKeys() map[string]bool {
-	out := map[string]bool{}
-	for k := range Defaults() {
-		out[k] = true
-	}
-	for _, set := range []map[string]bool{ExtraRootKeys, openDictTopLevelKeys, dynamicTopLevelKeys, schemaDefinedDictKeys} {
-		for k := range set {
-			out[k] = true
-		}
 	}
 	return out
 }
@@ -188,85 +160,26 @@ func seqRatio(a, b []rune) float64 {
 	return 2 * float64(matches) / float64(total)
 }
 
-// Known flag and suggestion for a CLI key, the schema walk then the runtime read keys
-func ValidateConfigKey(key string, src ConfigCommandSources) (bool, string) {
-	known, suggestion := validateSchemaKey(key, src)
-	if known || key == "" {
-		return known, suggestion
-	}
-	if IsRuntimeReadKey(SplitPath(key), FacadeRuntimeKeyOwners(src.RuntimeKeyOwners)) {
-		return true, ""
-	}
-	return false, suggestion
+// Settings registry calls the CLI makes, installed by the settings package
+type SettingsHooks struct {
+	// Whether the registry holds a key
+	Known func(key string) bool
+	// Writes the text typed for a registered key through the settings writer, the stored value back; known false for any other key
+	Set func(ctx context.Context, key, text string) (stored any, known bool, err error)
+	// Removes the value a registered key holds in config.yaml, whether one was there; known false for any other key
+	Reset func(ctx context.Context, key string) (wasSet, known bool, err error)
+	// Value in effect for a registered key, known false for any other key
+	Get func(ctx context.Context, key string) (value any, known bool)
+	// Settings groups config show prints for the home in ctx
+	Show func(ctx context.Context) []ShowGroup
+	// Every registered key, for the closest-match suggestion
+	Keys func() []string
 }
 
-func validateSchemaKey(key string, src ConfigCommandSources) (bool, string) {
-	if key == "" {
-		return false, ""
-	}
-	segments := SplitPath(key)
-	top := segments[0]
-	if strings.HasPrefix(top, "_") || platformContainerKeys[top] || src.LeftCoreTerminalKeys[key] != "" {
-		return true, ""
-	}
-	known := knownTopLevelKeys()
-	if !known[top] {
-		suggestion := suggestClosestKey(top, known)
-		if suggestion == "" {
-			return false, ""
-		}
-		if rest := strings.Join(segments[1:], "."); rest != "" {
-			return false, suggestion + "." + rest
-		}
-		return false, suggestion
-	}
-	if openSubkeyTopLevel(top) {
-		return true, ""
-	}
-	defaults := Defaults()
-	var node any = map[string]any(defaults)[top]
-	consumed := []string{top}
-	for _, seg := range segments[1:] {
-		m, isMap := node.(map[string]any)
-		if platformContainerKeys[seg] || !isMap || len(m) == 0 {
-			return true, ""
-		}
-		child, ok := m[seg]
-		if !ok {
-			rest := strings.Join(segments[len(consumed):], ".")
-			head := SplitPath(rest)[0]
-			if _, inDefaults := defaults[head]; (inDefaults || openSubkeyTopLevel(head)) && knownKey(rest, src) {
-				return false, rest
-			}
-			names := map[string]bool{}
-			for k := range m {
-				names[k] = true
-			}
-			if sibling := suggestClosestKey(seg, names); sibling != "" {
-				return false, strings.Join(append(slices.Clone(consumed), sibling), ".")
-			}
-			return false, ""
-		}
-		consumed = append(consumed, seg)
-		node = child
-	}
-	return true, ""
-}
+var settingsHooks SettingsHooks
 
-func knownKey(key string, src ConfigCommandSources) bool {
-	ok, _ := ValidateConfigKey(key, src)
-	return ok
-}
-
-// Reports whether a suggestion proves the key only carries an extra prefix
-func isWrongPrefixSuggestion(key, suggestion string, src ConfigCommandSources) bool {
-	if suggestion == "" {
-		return false
-	}
-	keySegs, sugSegs := SplitPath(key), SplitPath(suggestion)
-	return len(sugSegs) < len(keySegs) && slices.Equal(keySegs[len(keySegs)-len(sugSegs):], sugSegs) &&
-		knownKey(suggestion, src)
-}
+// Installs the settings registry lookups the CLI writer consults
+func RegisterSettingsHooks(h SettingsHooks) { settingsHooks = h }
 
 // Leaf default declared for a dotted key, nil for sections and misses
 func defaultValueForKey(key string) any {
@@ -322,6 +235,9 @@ func coerceFloat(value string) (any, bool) {
 var scalarWords = map[string]any{"true": true, "yes": true, "on": true, "false": false, "no": false, "off": false,
 	"null": nil, "none": nil, "~": nil}
 
+// Value the CLI writes for typed text: bool, null, int, float, list or mapping, text of string settings kept verbatim
+func ParseCLIValue(key, value string) (any, error) { return coerceConfigSetValue(key, value) }
+
 // Coerces a config set string to bool, null, int, float, list or mapping, string settings kept verbatim
 func coerceConfigSetValue(key, value string) (any, error) {
 	if _, isStr := defaultValueForKey(key).(string); isStr && !(key == "model" && LooksStructuredValue(value)) {
@@ -351,80 +267,6 @@ func coerceConfigSetValue(key, value string) (any, error) {
 		return parsed, nil
 	}
 	return value, nil
-}
-
-// List or mapping when the schema, the container table or the value on disk fixes the key to one
-func expectedContainerType(key string, userConfig map[string]any) string {
-	parts := SplitPath(key)
-	schema, _ := CfgGet(Defaults(), parts...)
-	if _, isMap := schema.(map[string]any); len(parts) == 1 && isMap {
-		schema = nil
-	}
-	existing, _ := Tree(userConfig).Lookup(key)
-	var table any
-	if t, ok := KnownContainerTypes[key]; ok {
-		table = t
-	}
-	for _, node := range []any{schema, table, existing} {
-		if _, isMap := node.(map[string]any); isMap || node == "mapping" {
-			return "mapping"
-		}
-		if _, isList := node.([]any); isList || node == "list" {
-			return "list"
-		}
-	}
-	return ""
-}
-
-// Value to store after refusing a wrong shaped value for a list or mapping slot
-func refuseContainerTypeMismatch(key string, value any, userConfig map[string]any, force bool) (any, error) {
-	expected := expectedContainerType(key, userConfig)
-	if expected == "" {
-		return value, nil
-	}
-	if s, isStr := value.(string); expected == "list" && isStr && ScalarAsOneItemListKeys[key] {
-		return []any{s}, nil
-	}
-	_, isList := value.([]any)
-	_, isMap := value.(map[string]any)
-	if (expected == "list" && isList) || (expected == "mapping" && (isMap || force)) {
-		return value, nil
-	}
-	got := "string"
-	if _, isStr := value.(string); !isStr {
-		got = PyTypeName(value)
-	}
-	literal := "{key: value}"
-	if expected == "list" {
-		literal = "[item, ...]"
-	}
-	return nil, exitInvalid(fmt.Sprintf("✗ Cannot set '%s': it must be a %s, got a %s — nothing was written.\n"+
-		"  Pass a YAML/JSON literal, e.g.:\n    icebath config set %s '%s'\n  or edit config.yaml directly.", key, expected, got, key, literal))
-}
-
-// Canonical path for a per platform display key and the note to print when it moved
-func redirectPlatformDisplayKey(key string, src ConfigCommandSources) (string, string) {
-	segs := SplitPath(key)
-	note := ""
-	if len(segs) >= 3 && segs[0] == "gateway" && segs[1] == "platforms" {
-		segs = segs[1:]
-		key = strings.Join(segs, ".")
-		note = fmt.Sprintf("  (note: the top-level platforms.%s block outranks gateway.platforms — saved as %s)", segs[1], key)
-	}
-	if len(segs) != 3 || segs[0] != "platforms" || src.DisplayOverrideableKeys == nil || !src.DisplayOverrideableKeys[segs[2]] {
-		return key, note
-	}
-	canonical := "display.platforms." + segs[1] + "." + segs[2]
-	return canonical, "  (note: per-platform display setting — saved as " + canonical + ")"
-}
-
-// The gateway.platforms spelling the user typed, empty when they typed another path
-func legacyGatewayPlatformsKey(requested string) string {
-	segs := SplitPath(requested)
-	if len(segs) >= 3 && segs[0] == "gateway" && segs[1] == "platforms" {
-		return strings.Join(segs, ".")
-	}
-	return ""
 }
 
 // Refuses a key pinned by the managed layer or locked by a remote config level
@@ -471,286 +313,77 @@ func writeUserConfig(ctx context.Context, h, configPath string, userConfig map[s
 	return AtomicConfigReplace(ctx, h, configPath, userConfig, "")
 }
 
-func printUnknownKeyNotice(key, suggestion string) {
-	fmt.Fprintln(FacadeStdout, colorize("⚠ '"+key+"' is not a recognized config key — it was saved anyway, but Icebath may not read it.", ansiYellow))
-	if suggestion != "" {
-		fmt.Fprintln(FacadeStdout, colorize("  Did you mean: "+suggestion, ansiYellow))
+// Writes a registry key through the settings writer and reports it, false when the registry does not know the key
+func setRegisteredValue(ctx context.Context, h, key, value string, src ConfigCommandSources) (bool, error) {
+	if settingsHooks.Set == nil || settingsHooks.Known == nil || !settingsHooks.Known(key) {
+		return false, nil
 	}
-	if len(SplitPath(key)) == 1 {
-		fmt.Fprintln(FacadeStdout, colorize("  (Custom top-level keys are supported and bridged to the environment for skills/external tools. "+
-			"Use --force to skip this notice.)", ansiDim))
-		return
-	}
-	fmt.Fprintln(FacadeStdout, colorize("  (Use --force to skip this notice.)", ansiDim))
-}
-
-// Sets a dotted config key, routing env shaped keys to .env and refusing wrong shapes, managed and locked keys
-func SetConfigValue(ctx context.Context, h, key, value string, force bool, src ConfigCommandSources) error {
-	if IsManaged(ctx, h) {
-		ManagedError(ctx, h, "set configuration values")
-		return nil
-	}
-	if key != strings.TrimFunc(key, isPySpace) || strings.TrimFunc(key, isPySpace) == "" {
-		return exitInvalid(fmt.Sprintf("✗ Invalid config key: %s (empty or surrounding whitespace).", pyStringRepr(key)))
-	}
-	if slices.Contains(SplitPath(key), "") {
-		return exitInvalid(fmt.Sprintf("✗ Invalid config key: %s — contains an empty path segment (leading, trailing, or doubled '.').", pyStringRepr(key)))
-	}
-	if err := exitIfKeyManaged(ctx, h, key, "set"); err != nil {
-		return err
-	}
-	if IsEnvConfigKey(key) {
-		save := hooks().SaveProviderEnvCredential
-		if save == nil {
-			return errors.New("provider credential lifecycle is not registered")
-		}
-		if err := save(ctx, h, strings.ToUpper(key), value); err != nil {
-			return exitInvalid("✗ " + err.Error())
-		}
-		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", key, GetEnvPath(h))
-		return nil
-	}
-	if src.IsEnvSettingKey(key) {
-		if err := src.SaveEnvSetting(ctx, h, key, value); err != nil {
-			return exitInvalid("✗ " + err.Error())
-		}
-		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", strings.ToUpper(key), GetEnvPath(h))
-		return nil
-	}
-	legacy := legacyGatewayPlatformsKey(key)
-	key, note := redirectPlatformDisplayKey(key, src)
-	if note != "" {
-		fmt.Fprintln(FacadeStdout, note)
-	}
-	known, suggestion := ValidateConfigKey(key, src)
-	if !known && !force && isWrongPrefixSuggestion(key, suggestion, src) {
-		return exitInvalid(UnknownSubkeyRefusal(key, suggestion))
-	}
-	if key == "display.language" {
+	if key == DisplayLanguageKey {
 		if msg := DisplayLanguageError(value, src.Language); msg != "" {
-			return exitInvalid(msg)
+			return true, exitInvalid(msg)
 		}
 	}
+	ctx = home.WithOverride(ctx, h)
 	configPath := GetConfigPath(h)
 	userConfig, err := RequireReadableConfigBeforeWrite(ctx, configPath)
 	if err != nil {
-		return err
+		return true, err
 	}
-	coerced, err := coerceConfigSetValue(key, value)
+	modelCfg, _ := Clone(userConfig["model"]).(map[string]any)
+	oldProvider := strings.TrimSpace(pyOrEmpty(modelCfg["provider"]))
+	stored, _, err := settingsHooks.Set(ctx, key, value)
 	if err != nil {
-		return err
-	}
-	modelVal := userConfig["model"]
-	if s, isStr := modelVal.(string); strings.HasPrefix(strings.ToLower(strings.TrimSpace(key)), "model.") && isStr && s != "" {
-		setOrdered(userConfig, "model", map[string]any{"default": s})
-	}
-	key, err = GuardSectionOverwrite(key, coerced, userConfig, force, FacadeStdout)
-	if err != nil {
-		var refusal *ConfigSetRefusal
-		if errors.As(err, &refusal) {
-			return exitInvalid(refusal.Message)
-		}
-		return err
-	}
-	coerced, err = refuseContainerTypeMismatch(key, coerced, userConfig, force)
-	if err != nil {
-		return err
-	}
-	var oldProvider any
-	if m, isMap := modelVal.(map[string]any); isMap {
-		oldProvider = m["provider"]
-	}
-	if err := Tree(userConfig).Set(key, coerced); err != nil {
-		var phantom *PhantomKeyError
-		var pathErr *PathError
-		if errors.As(err, &phantom) || (errors.As(err, &pathErr) && pathErr.Kind == "ValueError") {
-			return exitInvalid("✗ " + err.Error())
-		}
-		return err
-	}
-	if legacy != "" && Tree(userConfig).Unset(legacy) {
-		fmt.Fprintf(FacadeStdout, "  (removed the shadowed %s duplicate)\n", legacy)
+		return true, exitInvalid("✗ " + err.Error())
 	}
 	routeNotice := ""
-	oldName := strings.TrimSpace(pyOrEmpty(oldProvider))
-	if oldName == "" {
-		oldName = "the previous provider"
-	}
-	newName := PyStr(coerced)
-	if key == "model.provider" && strings.ToLower(oldName) != strings.ToLower(strings.TrimSpace(newName)) {
-		modelCfg, _ := userConfig["model"].(map[string]any)
-		popped, unverified := src.DropStaleModelRoute(modelCfg, newName, userConfig)
-		if len(popped) > 0 {
-			var parts []string
-			for _, k := range MappingKeys(popped) {
-				parts = append(parts, fmt.Sprintf("model.%s (%s)", k, PyStr(popped[k])))
-			}
-			routeNotice = "  Cleared " + strings.Join(parts, ", ") + " — that route belonged to " + oldName + ", not " + newName +
-				". " + newName + "'s endpoint resolves automatically; set model.base_url again if you meant a custom endpoint."
-		} else if unverified {
-			routeNotice = colorize(fmt.Sprintf("⚠ model.base_url (%s) was set under %s and still applies to %s — requests go there. "+
-				"If it is not %s's endpoint: `icebath config unset model.base_url` (and model.api_mode).",
-				PyStr(modelCfg["base_url"]), oldName, newName, newName), ansiYellow)
+	if newProvider := PyStr(stored); key == "model.provider" && !strings.EqualFold(oldProvider, strings.TrimSpace(newProvider)) {
+		if oldProvider == "" {
+			oldProvider = "the previous provider"
+		}
+		if routeNotice, err = dropStaleRoute(ctx, modelCfg, oldProvider, newProvider, userConfig, src); err != nil {
+			return true, err
 		}
 	}
-	if k := strings.ToLower(strings.TrimSpace(key)); k == "model.api_base" || k == "api_base" {
-		userConfig = normalizeModelKeys(userConfig)
-		key = "model.base_url"
-		fmt.Fprintln(FacadeStdout, "  (note: 'api_base' is an alias — saved as model.base_url)")
-	}
-	if err := writeUserConfig(PinningKeys(ctx, key), h, configPath, userConfig); err != nil {
-		return err
-	}
-	if envVar, ok := TerminalConfigEnvVarForKey(key); ok && key != "terminal.cwd" {
-		if err := SaveEnvValueContext(ctx, h, envVar, terminalEnvValueText(coerced)); err != nil {
-			return err
-		}
-	}
-	touchSkinFile(h, key, coerced)
-	if key == "display.language" && src.Language != nil {
+	touchSkinFile(h, key, stored)
+	if key == DisplayLanguageKey && src.Language != nil {
 		src.Language.ResetLanguageCache()
 	}
-	display := coerced
-	if s, isStr := coerced.(string); isSecretConfigKey(key) && isStr && s != "" {
+	display := stored
+	if s, isStr := stored.(string); isSecretConfigKey(key) && isStr && s != "" {
 		display = MaskSecret(s, "")
 	}
 	dest, err := ConfigDestination(ctx, configPath)
 	if err != nil {
-		return err
+		return true, err
 	}
 	fmt.Fprintf(FacadeStdout, "✓ Set %s = %s in %s\n", key, PyStr(display), dest)
 	if routeNotice != "" {
 		fmt.Fprintln(FacadeStdout, routeNotice)
 	}
-	if !known && !force {
-		printUnknownKeyNotice(key, suggestion)
-	}
-	return nil
+	return true, nil
 }
 
-// Prints a resolved config value, credentials masked unless raw or redaction is off
-func GetConfigValue(ctx context.Context, h, key string, asJSON, raw bool, src ConfigCommandSources) error {
-	var value any
-	found := false
-	switch {
-	case IsEnvConfigKey(key):
-		v, ok, err := GetEnvValue(ctx, h, strings.ToUpper(key))
-		if err != nil {
-			return err
+// Clears the model endpoint a provider change leaves behind through the settings writer, the notice to print
+func dropStaleRoute(ctx context.Context, modelCfg map[string]any, oldName, newName string, userConfig map[string]any, src ConfigCommandSources) (string, error) {
+	baseURL := PyStr(modelCfg["base_url"])
+	popped, unverified := src.DropStaleModelRoute(modelCfg, newName, userConfig)
+	if unverified {
+		return colorize(fmt.Sprintf("⚠ model.base_url (%s) was set under %s and still applies to %s — requests go there. "+
+			"If it is not %s's endpoint: `icebath config unset model.base_url` (and model.api_mode).",
+			baseURL, oldName, newName, newName), ansiYellow), nil
+	}
+	if len(popped) == 0 {
+		return "", nil
+	}
+	var parts []string
+	for _, k := range SortedKeys(popped) {
+		if _, _, err := settingsHooks.Reset(ctx, "model."+k); err != nil {
+			return "", err
 		}
-		value, found = v, ok
-	case src.IsEnvSettingKey(key):
-		v, ok := src.ReadEnvSetting(h, key)
-		value, found = v, ok
-	default:
-		legacy := legacyGatewayPlatformsKey(key)
-		key, _ = redirectPlatformDisplayKey(key, src)
-		cfg, err := LoadContext(ctx, h, EnvRefLookupContext(ctx))
-		if err != nil {
-			return err
-		}
-		value, found = cfg.Lookup(key)
-		if !found && legacy != "" {
-			value, found = cfg.Lookup(legacy)
-		}
+		parts = append(parts, fmt.Sprintf("model.%s (%s)", k, PyStr(popped[k])))
 	}
-	if !found {
-		return exitInvalid("Config key not set: " + key)
-	}
-	if !raw && redactEnabled(ctx) {
-		if s, isStr := value.(string); isStr {
-			if isSecretConfigKey(key) && !envTemplateRe.MatchString(s) {
-				value = MaskSecret(s, "")
-			}
-		} else {
-			value = RedactConfigValue(value)
-		}
-	}
-	fmt.Fprintln(FacadeStdout, formatConfigGetValue(value, asJSON))
-	if knownTopLevelKeys()[SplitPath(key)[0]] {
-		if known, suggestion := ValidateConfigKey(key, src); !known {
-			fmt.Fprintln(FacadeNoticeOut, colorize("⚠ '"+key+"' is not a recognized config key — Icebath may not read it; "+
-				"the value printed above comes from your config file.", ansiYellow))
-			if suggestion != "" {
-				fmt.Fprintln(FacadeNoticeOut, colorize("  Did you mean: "+suggestion, ansiYellow))
-			}
-		}
-	}
-	return nil
-}
-
-// Removes a user set config or .env value, refusing managed and locked keys
-func UnsetConfigValue(ctx context.Context, h, key string, src ConfigCommandSources) error {
-	if IsManaged(ctx, h) {
-		ManagedError(ctx, h, "unset configuration values")
-		return nil
-	}
-	if err := exitIfKeyManaged(ctx, h, key, "unset"); err != nil {
-		return err
-	}
-	if IsEnvConfigKey(key) {
-		remove := hooks().RemoveProviderEnvCredential
-		if remove == nil {
-			return errors.New("provider credential lifecycle is not registered")
-		}
-		found, err := remove(ctx, h, strings.ToUpper(key))
-		if err != nil {
-			return exitInvalid("✗ " + err.Error())
-		}
-		if !found {
-			return exitInvalid("Config key not set: " + key)
-		}
-		fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, GetEnvPath(h))
-		return nil
-	}
-	if src.IsEnvSettingKey(key) {
-		found, err := src.RemoveEnvSetting(ctx, h, key)
-		if err != nil {
-			return exitInvalid("✗ " + err.Error())
-		}
-		if !found {
-			return exitInvalid("Config key not set: " + key)
-		}
-		fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, GetEnvPath(h))
-		return nil
-	}
-	configPath := GetConfigPath(h)
-	userConfig, err := RequireReadableConfigBeforeWrite(ctx, configPath)
-	if err != nil {
-		return err
-	}
-	legacy := legacyGatewayPlatformsKey(key)
-	key, note := redirectPlatformDisplayKey(key, src)
-	if note != "" {
-		fmt.Fprintln(FacadeStdout, strings.ReplaceAll(note, "saved as", "resolved as"))
-	}
-	removed := Tree(userConfig).Unset(key)
-	if legacy != "" {
-		removed = Tree(userConfig).Unset(legacy) || removed
-	}
-	envVar, ok := TerminalConfigEnvVarForKey(key)
-	if !ok {
-		envVar, ok = src.LeftCoreTerminalKeys[key]
-	}
-	if ok && envVar != "" && key != "terminal.cwd" {
-		found, err := RemoveHomeEnvValue(ctx, h, envVar)
-		if err != nil {
-			return err
-		}
-		removed = found || removed
-	}
-	if !removed {
-		return exitInvalid("Config key not set: " + key)
-	}
-	if err := writeUserConfig(ctx, h, configPath, userConfig); err != nil {
-		return err
-	}
-	dest, err := ConfigDestination(ctx, configPath)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, dest)
-	return nil
+	return "  Cleared " + strings.Join(parts, ", ") + " — that route belonged to " + oldName + ", not " + newName +
+		". " + newName + "'s endpoint resolves automatically; set model.base_url again if you meant a custom endpoint.", nil
 }
 
 // Command line text of a config value, JSON or YAML block style for containers
@@ -879,7 +512,6 @@ type ConfigArgs struct {
 	Value   *string
 	JSON    bool
 	Raw     bool
-	Force   bool
 }
 
 type configUsage struct {
@@ -889,13 +521,12 @@ type configUsage struct {
 }
 
 var (
-	usageGet = configUsage{"Usage: icebath config get <key> [--json] [--raw]", []string{"icebath config get model",
+	usageGet = configUsage{"Usage: icebath config get <key> [--json] [--raw]", []string{"icebath config get model.default",
 		"icebath config get terminal.backend", "icebath config get skills.config --json"}, nil}
-	usageSet = configUsage{"Usage: icebath config set [--force] <key> <value>", []string{
-		"icebath config set model anthropic/claude-sonnet-4", "icebath config set terminal.backend docker",
-		"icebath config set OPENROUTER_API_KEY sk-or-..."}, []string{"", "  --force: skip the unknown-key notice for unrecognized keys,",
-		"           and allow a scalar to replace a whole mapping section"}}
-	usageUnset = configUsage{"Usage: icebath config unset <key>", []string{"icebath config unset model",
+	usageSet = configUsage{"Usage: icebath config set <key> <value>", []string{
+		"icebath config set model.default anthropic/claude-sonnet-4", "icebath config set terminal.backend docker",
+		"icebath config set OPENROUTER_API_KEY sk-or-..."}, nil}
+	usageUnset = configUsage{"Usage: icebath config unset <key>", []string{"icebath config unset model.default",
 		"icebath config unset terminal.backend", "icebath config unset OPENROUTER_API_KEY"}, nil}
 )
 
@@ -934,89 +565,9 @@ func printBanner(text string) {
 	fmt.Fprintln(FacadeStdout)
 }
 
-// Shows what migrate would change and runs the interactive migration
-func cmdConfigMigrate(ctx context.Context, h string) error {
-	printBanner("\U0001f504 Checking configuration for updates...")
-	missingEnv, err := GetMissingEnvVars(ctx, h, false)
-	if err != nil {
-		return err
-	}
-	missingConfig, err := GetMissingConfigFields(ctx, h, EnvRefLookupContext(ctx))
-	if err != nil {
-		return err
-	}
-	current, latest, err := CheckConfigVersion(ctx, h, true)
-	if err != nil {
-		return err
-	}
-	if len(missingEnv) == 0 && len(missingConfig) == 0 && current >= latest {
-		fmt.Fprintln(FacadeStdout, colorize("✓ Configuration is up to date!", ansiGreen))
-		fmt.Fprintln(FacadeStdout)
-		return nil
-	}
-	if current < latest {
-		fmt.Fprintf(FacadeStdout, "  Config version: %d → %d\n", current, latest)
-	}
-	if len(missingConfig) > 0 {
-		fmt.Fprintf(FacadeStdout, "\n  %d new config option(s) will be added with defaults\n", len(missingConfig))
-	}
-	var required, optional []MissingEnvVar
-	for _, v := range missingEnv {
-		if v.IsRequired {
-			required = append(required, v)
-		} else if !v.Advanced {
-			optional = append(optional, v)
-		}
-	}
-	groups := []struct {
-		heading string
-		group   []MissingEnvVar
-		suffix  string
-	}{{"⚠️  %d required API key(s) missing:", required, ""}, {"ℹ️  %d optional API key(s) not configured:", optional, " (enables: {})"}}
-	for _, g := range groups {
-		if len(g.group) == 0 {
-			continue
-		}
-		fmt.Fprintf(FacadeStdout, "\n  "+g.heading+"\n", len(g.group))
-		for _, v := range g.group {
-			suffix := ""
-			if g.suffix != "" {
-				suffix = toolsSuffix(v.EnvVar, g.suffix)
-			}
-			fmt.Fprintf(FacadeStdout, "     • %s%s\n", v.Name, suffix)
-		}
-	}
-	fmt.Fprintln(FacadeStdout)
-	results, err := MigrateConfig(ctx, h, true, false)
-	if err != nil {
-		return err
-	}
-	fmt.Fprintln(FacadeStdout)
-	if len(results.EnvAdded) > 0 || len(results.ConfigAdded) > 0 {
-		fmt.Fprintln(FacadeStdout, colorize("✓ Configuration updated!", ansiGreen))
-	}
-	if len(results.Warnings) > 0 {
-		fmt.Fprintln(FacadeStdout)
-		for _, w := range results.Warnings {
-			fmt.Fprintln(FacadeStdout, colorize("  ⚠️  "+w, ansiYellow))
-		}
-	}
-	fmt.Fprintln(FacadeStdout)
-	return nil
-}
-
 // Non interactive report of missing and stale configuration
 func cmdConfigCheck(ctx context.Context, h string, src ConfigCommandSources) error {
 	printBanner("\U0001f4cb Configuration Status")
-	current, latest, err := CheckConfigVersion(ctx, h, true)
-	if err != nil {
-		return err
-	}
-	if current >= latest {
-		fmt.Fprintf(FacadeStdout, "  Config version: %d ✓\n", current)
-	} else {
-		fmt.Fprintln(FacadeStdout, colorize(fmt.Sprintf("  Config version: %d → %d (update available)", current, latest), ansiYellow))
-	}
 	groups := []struct {
 		title   string
 		table   map[string]EnvVar
@@ -1108,7 +659,7 @@ func cmdConfigSet(ctx context.Context, h string, args ConfigArgs, src ConfigComm
 	if args.Key == "" || args.Value == nil {
 		return usageExit(usageSet)
 	}
-	return runWriteCommand(SetConfigValue(ctx, h, args.Key, *args.Value, args.Force, src))
+	return runWriteCommand(SetConfigValue(ctx, h, args.Key, *args.Value, src))
 }
 
 // Removes a config value, the unset usage when no key is given
@@ -1125,7 +676,7 @@ func cmdConfigShow(ctx context.Context, h string, src ConfigCommandSources) erro
 	if err != nil {
 		return err
 	}
-	return ShowConfig(FacadeStdout, show)
+	return ShowConfig(home.WithOverride(ctx, h), FacadeStdout, show)
 }
 
 // Runs one config subcommand, a backend write refusal printed as an error with status 1
@@ -1146,8 +697,6 @@ func ConfigCommand(ctx context.Context, h string, args ConfigArgs, src ConfigCom
 		handler = func() error { fmt.Fprintln(FacadeStdout, GetConfigPath(h)); return nil }
 	case "env-path":
 		handler = func() error { fmt.Fprintln(FacadeStdout, GetEnvPath(h)); return nil }
-	case "migrate":
-		handler = func() error { return cmdConfigMigrate(ctx, h) }
 	case "check":
 		handler = func() error { return cmdConfigCheck(ctx, h, src) }
 	default:
@@ -1161,4 +710,166 @@ func ConfigCommand(ctx context.Context, h string, args ConfigArgs, src ConfigCom
 		return &ConfigExit{Code: 1}
 	}
 	return err
+}
+
+// Whether the registry knows a key, plugin declared blocks registered first
+func knownSetting(key string, src ConfigCommandSources) bool {
+	if settingsHooks.Known == nil {
+		return false
+	}
+	if settingsHooks.Known(key) {
+		return true
+	}
+	if src.LoadPluginSettings != nil {
+		src.LoadPluginSettings()
+	}
+	return settingsHooks.Known(key)
+}
+
+// Refusal for a key the settings registry does not know, naming the closest setting when one is near
+func unknownKeyRefusal(key string) error {
+	msg := "✗ " + key + " is not a setting icebath knows; nothing was written."
+	if settingsHooks.Keys != nil {
+		if s := suggestClosestKey(key, setOf(settingsHooks.Keys()...)); s != "" {
+			msg += "\n  Did you mean: " + s
+		}
+	}
+	return exitInvalid(msg)
+}
+
+// Checks a typed key: no surrounding whitespace and no empty path segment
+func checkKeySpelling(key string) error {
+	if key != strings.TrimFunc(key, isPySpace) || strings.TrimFunc(key, isPySpace) == "" {
+		return exitInvalid(fmt.Sprintf("✗ Invalid config key: %s (empty or surrounding whitespace).", pyStringRepr(key)))
+	}
+	if slices.Contains(SplitPath(key), "") {
+		return exitInvalid(fmt.Sprintf("✗ Invalid config key: %s — contains an empty path segment (leading, trailing, or doubled '.').", pyStringRepr(key)))
+	}
+	return nil
+}
+
+// Sets a setting through the settings writer, env shaped keys going to .env; any other key is refused
+func SetConfigValue(ctx context.Context, h, key, value string, src ConfigCommandSources) error {
+	if IsManaged(ctx, h) {
+		ManagedError(ctx, h, "set configuration values")
+		return nil
+	}
+	if err := checkKeySpelling(key); err != nil {
+		return err
+	}
+	if err := exitIfKeyManaged(ctx, h, key, "set"); err != nil {
+		return err
+	}
+	if IsEnvConfigKey(key) {
+		save := hooks().SaveProviderEnvCredential
+		if save == nil {
+			return errors.New("provider credential lifecycle is not registered")
+		}
+		if err := save(ctx, h, strings.ToUpper(key), value); err != nil {
+			return exitInvalid("✗ " + err.Error())
+		}
+		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", key, GetEnvPath(h))
+		return nil
+	}
+	if src.IsEnvSettingKey(key) {
+		if err := src.SaveEnvSetting(ctx, h, key, value); err != nil {
+			return exitInvalid("✗ " + err.Error())
+		}
+		fmt.Fprintf(FacadeStdout, "✓ Set %s in %s\n", strings.ToUpper(key), GetEnvPath(h))
+		return nil
+	}
+	if !knownSetting(key, src) {
+		return unknownKeyRefusal(key)
+	}
+	_, err := setRegisteredValue(ctx, h, key, value, src)
+	return err
+}
+
+// Prints the value in effect for a setting or an env shaped key, credentials masked unless raw or redaction is off
+func GetConfigValue(ctx context.Context, h, key string, asJSON, raw bool, src ConfigCommandSources) error {
+	var value any
+	found := false
+	switch {
+	case IsEnvConfigKey(key):
+		v, ok, err := GetEnvValue(ctx, h, strings.ToUpper(key))
+		if err != nil {
+			return err
+		}
+		value, found = v, ok
+	case src.IsEnvSettingKey(key):
+		v, ok := src.ReadEnvSetting(h, key)
+		value, found = v, ok
+	case knownSetting(key, src) && settingsHooks.Get != nil:
+		value, found = settingsHooks.Get(home.WithOverride(ctx, h), key)
+	default:
+		return unknownKeyRefusal(key)
+	}
+	if !found {
+		return exitInvalid("Config key not set: " + key)
+	}
+	if !raw && redactEnabled(ctx) {
+		if s, isStr := value.(string); isStr {
+			if isSecretConfigKey(key) && !envTemplateRe.MatchString(s) {
+				value = MaskSecret(s, "")
+			}
+		} else {
+			value = RedactConfigValue(value)
+		}
+	}
+	fmt.Fprintln(FacadeStdout, formatConfigGetValue(value, asJSON))
+	return nil
+}
+
+// Removes a setting's value through the settings writer or an env shaped key from .env, refusing managed, locked and unknown keys
+func UnsetConfigValue(ctx context.Context, h, key string, src ConfigCommandSources) error {
+	if IsManaged(ctx, h) {
+		ManagedError(ctx, h, "unset configuration values")
+		return nil
+	}
+	if err := exitIfKeyManaged(ctx, h, key, "unset"); err != nil {
+		return err
+	}
+	if IsEnvConfigKey(key) {
+		remove := hooks().RemoveProviderEnvCredential
+		if remove == nil {
+			return errors.New("provider credential lifecycle is not registered")
+		}
+		found, err := remove(ctx, h, strings.ToUpper(key))
+		if err != nil {
+			return exitInvalid("✗ " + err.Error())
+		}
+		if !found {
+			return exitInvalid("Config key not set: " + key)
+		}
+		fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, GetEnvPath(h))
+		return nil
+	}
+	if src.IsEnvSettingKey(key) {
+		found, err := src.RemoveEnvSetting(ctx, h, key)
+		if err != nil {
+			return exitInvalid("✗ " + err.Error())
+		}
+		if !found {
+			return exitInvalid("Config key not set: " + key)
+		}
+		fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, GetEnvPath(h))
+		return nil
+	}
+	if !knownSetting(key, src) || settingsHooks.Reset == nil {
+		return unknownKeyRefusal(key)
+	}
+	ctx = home.WithOverride(ctx, h)
+	wasSet, _, err := settingsHooks.Reset(ctx, key)
+	if err != nil {
+		return exitInvalid("✗ " + err.Error())
+	}
+	if !wasSet {
+		return exitInvalid("Config key not set: " + key)
+	}
+	dest, err := ConfigDestination(ctx, GetConfigPath(h))
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(FacadeStdout, "✓ Unset %s from %s\n", key, dest)
+	return nil
 }

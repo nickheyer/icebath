@@ -79,7 +79,7 @@ func (r *GatewayRunner) finishStartupRestore(ctx context.Context) {
 		tasks := append([]*gatewayTask(nil), r.startupRestoreTasks...)
 		r.startupRestoreTasksMu.Unlock()
 		if len(tasks) > 0 {
-			done := r.waitBoundedOrRelease(ctx, tasks, startupRestoreDrainTimeoutSecs(),
+			done := r.waitBoundedOrRelease(ctx, tasks, startupRestoreDrainTimeoutSecs(ctx),
 				"Startup-restore gate released after %.0fs with %d boot auto-resume turn(s) "+
 					"still running; draining inbound queue now (resume slots already claimed, so no "+
 					"duplicate agents). Slow turn(s) continue in the background.",

@@ -8,11 +8,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Bind host as text for logs
@@ -108,20 +107,7 @@ func (a *APIServerAdapter) connectListener(ctx context.Context) (bool, error) {
 	runCtx := context.WithoutCancel(ctx)
 	a.trackBackgroundTask(startAgentTask(runCtx, a.sweepOrphanedRuns))
 	if gateway.IsNetworkAccessible(ctx, a.hostText()) {
-		backend := "local"
-		func() {
-			defer func() { _ = recover() }()
-			cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-			if err != nil {
-				return
-			}
-			if terminal, ok := cfg["terminal"].(map[string]any); ok {
-				if b, ok := terminal["backend"]; ok {
-					backend = pyrepr.Str(b)
-				}
-			}
-		}()
-		if strings.ToLower(backend) == "local" {
+		if strings.ToLower(settings.WhereCommandsRun.Get(ctx)) == "local" {
 			pkgLog().Warn(fmt.Sprintf("[%s] API server is network-accessible (%s) AND the "+
 				"terminal backend is 'local' (unsandboxed). Agent work "+
 				"dispatched through this endpoint runs as the host user "+

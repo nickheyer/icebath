@@ -3,12 +3,14 @@ package tui
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Catalog line of the shared command texts the terminal UI prints for a slash command
@@ -68,31 +70,30 @@ func (a *app) exportProfile(arg string) tea.Cmd {
 	})
 }
 
-// Imports a shared archive as a new profile with its wrapper alias
-func (a *app) importProfile(arg string) tea.Cmd {
-	parts, name, ok := takeFlag(strings.Fields(arg), "--name")
-	if !ok || len(parts) == 0 {
-		return a.showOutput(commandText(a.ctx, "import.usage", nil), "import")
+// Why restoring a backup waits until icebath closes, as the command tree words it
+const restoreBackupReason = "It restores a backup over the data this window uses."
+
+// Queues a restore of a home backup zip for after icebath closes, the CLI's icebath import
+func (a *app) restoreBackup(arg string) tea.Cmd {
+	parts := strings.Fields(arg)
+	force := slices.Contains(parts, "--force") || slices.Contains(parts, "-f")
+	parts = slices.DeleteFunc(parts, func(p string) bool { return p == "--force" || p == "-f" })
+	if len(parts) == 0 {
+		return a.showOutput(tr(txt.HubsProfilesRestoreUsage), "import")
 	}
-	params := tuigateway.ProfilesImportParams{Archive: absolutePath(strings.Join(parts, " ")), Name: name}
-	return call(a.gw, tuigateway.ProfilesImport, params, func(res *tuigateway.ProfilesImportResult, err error) tea.Cmd {
-		return a.archiveOutput("import", err, func() []string {
-			imported := res.Name
-			lines := []string{commandText(a.ctx, "import.imported", map[string]any{"name": imported, "path": res.Path})}
-			if wrapper := val(res.Wrapper); wrapper != "" {
-				lines = append(lines, commandText(a.ctx, "import.wrapper_created", map[string]any{"path": wrapper}))
-			}
-			return append(lines, commandText(a.ctx, "import.use_it", map[string]any{"name": imported}))
-		})
-	})
+	argv := []string{"import", absolutePath(profilesExpandHome(strings.Join(parts, " ")))}
+	if force {
+		argv = append(argv, "--force")
+	}
+	return a.queueAfterExitCmd(argv, restoreBackupReason)
 }
 
-// Slash commands that export a profile to a shareable archive and import one as a new profile
+// Slash commands that export a profile to a shareable archive and restore a home backup after icebath closes, as the CLI's import does
 func (a *app) profileArchiveCommands() []slashCommand {
 	return []slashCommand{
 		{name: "export", help: "export a profile (config, skills, theme) to a shareable archive", usage: "[profile] [-o output.tar.gz]",
 			run: func(r *slashRun) tea.Cmd { return tea.Batch(r.ran(), a.exportProfile(r.arg)) }},
-		{name: "import", help: "import a shared profile archive as a new profile", usage: "<archive.tar.gz> [--name <name>]",
-			run: func(r *slashRun) tea.Cmd { return tea.Batch(r.ran(), a.importProfile(r.arg)) }},
+		{name: "import", help: "restore an icebath backup zip once icebath closes", usage: "<backup.zip> [--force]",
+			run: func(r *slashRun) tea.Cmd { return tea.Batch(r.ran(), a.restoreBackup(r.arg)) }},
 	}
 }

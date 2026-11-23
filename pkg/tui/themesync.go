@@ -97,7 +97,7 @@ func (s *tuiStore) commitTheme(t theme) tea.Cmd {
 	}
 	changed := !themesEqual(prev, t)
 	s.themes.lastCommitted = &t
-	s.ui.Theme = t
+	s.ui.setTheme(t)
 	pin := ""
 	if s.themes.configPinned {
 		if p := os.Getenv("ICEBATH_TUI_THEME"); p == "light" || p == "dark" {

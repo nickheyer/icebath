@@ -40,9 +40,9 @@ var enCatalog = func() enCatalogFile {
 // English entries whose wording depends on an argument, chosen in code
 var enLogic = map[txt.Key]func(args []any) string{
 	txt.StatusSessionCount: func(args []any) string {
-		word := "sessions"
+		word := "more sessions"
 		if n, isNumber := argNumber(arg(args, 0)); isNumber && n == 1 {
-			word = "session"
+			word = "more session"
 		}
 		return argText(arg(args, 0)) + " " + word
 	},
@@ -165,8 +165,12 @@ func applyLocale(id string, messages map[string]string) {
 
 func init() { lang.Install(tr) }
 
-// Text of a key in the active locale, then English. Every key is an entry of the English catalog, so there is always a text
-func tr(key txt.Key, args ...any) string {
+// Text of a key in the active locale, then English, its {key:action.id} placeholders naming the keys bound now. Every key is an entry of the English
+// catalog, so there is always a text
+func tr(key txt.Key, args ...any) string { return lang.Keys(catalogText(key, args...)) }
+
+// Text of a key in the active locale, then English, as the catalog words it
+func catalogText(key txt.Key, args ...any) string {
 	name := key.Name()
 	catalog.mu.RLock()
 	text, packed := catalog.pack[name]

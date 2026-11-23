@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -329,34 +330,14 @@ func CacheTTLMeansDisabled(ttl any) bool {
 	return false
 }
 
-// Raw prompt_caching cache_ttl of the bound home config, the default when the config cannot be read
-func rawCacheTTLFromConfig(ctx context.Context, def any) any {
-	cfg := LoadConfigSafe(ctx, home.Dir(ctx))
-	if cfg == nil {
-		return def
-	}
-	section := cfg["prompt_caching"]
-	if !pyTruthy(section) {
-		return "5m"
-	}
-	m, ok := section.(map[string]any)
-	if !ok {
-		return def
-	}
-	if v, has := m["cache_ttl"]; has {
-		return v
-	}
-	return "5m"
-}
-
-// PromptCachingDisabledFromConfig reports whether the bound config turns prompt caching off
+// PromptCachingDisabledFromConfig reports whether the bound home's prompt_caching.cache_ttl turns prompt caching off
 func PromptCachingDisabledFromConfig(ctx context.Context) bool {
-	return CacheTTLMeansDisabled(rawCacheTTLFromConfig(ctx, "5m"))
+	return CacheTTLMeansDisabled(settings.PromptCachingCacheTtl.Get(ctx))
 }
 
-// Configured 5m or 1h cache tier, empty for auto, unknown or unreadable config
+// Configured 5m or 1h cache tier, empty for a disabled or unknown value
 func configuredCacheTTL(ctx context.Context) string {
-	if s, ok := rawCacheTTLFromConfig(ctx, nil).(string); ok && validCacheTTLs[s] {
+	if s := settings.PromptCachingCacheTtl.Get(ctx); validCacheTTLs[s] {
 		return s
 	}
 	return ""

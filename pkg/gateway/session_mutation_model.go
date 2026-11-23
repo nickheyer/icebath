@@ -132,7 +132,7 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	}
 	userProviders, _ := resolution["providers"].(map[string]any)
 	var customProviders []any
-	for _, entry := range provider.CompatibleCustomProviders(resolution) {
+	for _, entry := range provider.ProviderEntries(resolution) {
 		customProviders = append(customProviders, entry)
 	}
 	explicit := ""

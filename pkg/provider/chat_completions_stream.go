@@ -21,19 +21,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-// Env var for the stale stream detector base in seconds
-const StreamStaleTimeoutEnv = "ICEBATH_STREAM_STALE_TIMEOUT"
-
-// Env var for the stale ceiling of a local endpoint in seconds
-const LocalStreamStaleTimeoutEnv = "ICEBATH_LOCAL_STREAM_STALE_TIMEOUT"
-
 // Env var for the socket read timeout of a streaming request in seconds
 const StreamReadTimeoutEnv = "ICEBATH_STREAM_READ_TIMEOUT"
 
-// Env var for the overall request timeout in seconds
-const APITimeoutEnv = "ICEBATH_API_TIMEOUT"
-
-const defaultAPITimeout = 1800.0
 const defaultStreamReadTimeout = 120.0
 const defaultStreamStaleTimeout = 180.0
 
@@ -79,7 +69,7 @@ func (c *chatCompletionsClient) requestTimeout(req *Request, settings wireSettin
 	if d, ok := configuredProviderTimeout(settings.providers, c.cc.provider, model, "timeout_seconds", "request_timeout_seconds"); ok {
 		return d, true
 	}
-	return secondsDuration(envFloat(APITimeoutEnv, defaultAPITimeout)), false
+	return secondsDuration(settings.apiTimeout), false
 }
 
 // Stale patience scaled for context size and floored for known reasoning models
@@ -102,15 +92,12 @@ func (c *chatCompletionsClient) staleTimeout(req *Request, settings wireSettings
 	if base <= 0 {
 		base = defaultStreamStaleTimeout
 	}
-	if _, explicit := os.LookupEnv(StreamStaleTimeoutEnv); explicit {
-		base = envFloat(StreamStaleTimeoutEnv, base)
-	}
 	if base == defaultStreamStaleTimeout && c.cc.local {
 		local := settings.localStreamStale
 		if local <= 0 {
 			local = 900
 		}
-		return envFloat(LocalStreamStaleTimeoutEnv, local)
+		return local
 	}
 	timeout := scaleStaleTimeoutForContext(base, estTokens)
 	if floor, ok := ReasoningStaleTimeoutFloor(req.Model); ok && floor.Seconds() > timeout {

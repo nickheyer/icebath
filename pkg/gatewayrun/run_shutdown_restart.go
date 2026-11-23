@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -83,7 +84,6 @@ func restartWatcherEnv(ctx context.Context) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	env = gateway.DropBridgedEnv(env)
 	delete(env, "_ICEBATH_GATEWAY")
 	return env, nil
 }
@@ -185,7 +185,7 @@ func (r *GatewayRunner) launchDetachedRestartCommand(ctx context.Context) error 
 
 // Chat agents idle past the gateway timeout plus wedged cron runs, the units the restart wait may skip
 func (r *GatewayRunner) wedgedAgentCount(ctx context.Context) int {
-	return r.wedgedChatAgentCount() + r.wedgedCronJobCount(ctx)
+	return r.wedgedChatAgentCount(ctx) + r.wedgedCronJobCount(ctx)
 }
 
 // Per run split of in flight cron work, everything awaitable when the split cannot be read
@@ -212,8 +212,8 @@ func (r *GatewayRunner) restartSafeCronCount(ctx context.Context) int {
 }
 
 // Running chat agents with no activity for the gateway timeout, zero when the timeout is disabled
-func (r *GatewayRunner) wedgedChatAgentCount() int {
-	timeout := floatEnv("ICEBATH_AGENT_TIMEOUT", 1800)
+func (r *GatewayRunner) wedgedChatAgentCount(ctx context.Context) int {
+	timeout := settings.AgentGatewayTimeout.Get(ctx).Seconds()
 	if timeout <= 0 {
 		return 0
 	}
@@ -256,7 +256,7 @@ func (r *GatewayRunner) wedgedChatAgentCount() int {
 // Active work minus wedged chat turns and restart safe cron runs
 func (r *GatewayRunner) awaitableWorkCount(ctx context.Context) int {
 	nonCron := r.runningAgentCount() + gateway.ManagedTurnCount(r) + r.activeAPIRunCount() + r.activeDeferredAgentWorkerCount()
-	return max(0, nonCron-r.wedgedChatAgentCount()) + r.restartWaitCronCounts(ctx).Awaitable
+	return max(0, nonCron-r.wedgedChatAgentCount(ctx)) + r.restartWaitCronCounts(ctx).Awaitable
 }
 
 // Waits for in flight work before stop, true when it drained to zero and false when the cap elapsed or only excluded work remains

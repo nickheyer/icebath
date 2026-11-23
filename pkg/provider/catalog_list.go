@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // DefaultCatalogURL is the site copy of the shipped model catalog the refresh fetches
@@ -155,46 +156,17 @@ func boolOf(v any, fallback bool) bool {
 	return true
 }
 
-// Parses a model_catalog block, legacy ttl_hours honoured only while ttl_minutes sits at its default
-func ParseCatalogConfig(raw map[string]any) CatalogConfig {
-	if raw == nil {
-		raw = map[string]any{}
+// Reads the bound home's model_catalog settings, a refresh interval below one minute or a blank address falling back to the built-in one
+func loadCatalogConfigFromHome(ctx context.Context) CatalogConfig {
+	ttl := settings.ModelCatalogTtlMinutes.Get(ctx)
+	if ttl <= 0 {
+		ttl = time.Duration(DefaultCatalogTTLMinutes * float64(time.Minute))
 	}
-	ttlMinutes := DefaultCatalogTTLMinutes
-	if v, present := raw["ttl_minutes"]; present && v != nil && v != "" {
-		if f, ok := floatOf(v); ok {
-			ttlMinutes = f
-		}
-	}
-	if ttlMinutes == DefaultCatalogTTLMinutes {
-		if hours, present := raw["ttl_hours"]; present && boolOf(hours, false) {
-			if f, ok := floatOf(hours); ok {
-				ttlMinutes = f * 60.0
-			}
-		}
-	}
-	if ttlMinutes <= 0 {
-		ttlMinutes = DefaultCatalogTTLMinutes
-	}
-	url := strings.TrimSpace(stringOf(raw["url"]))
+	url := strings.TrimSpace(settings.ModelCatalogUrl.Get(ctx))
 	if url == "" {
 		url = DefaultCatalogURL
 	}
-	providers, _ := asMap(raw["providers"])
-	if providers == nil {
-		providers = map[string]any{}
-	}
-	return CatalogConfig{Enabled: boolOf(raw["enabled"], true), URL: url, TTLHours: ttlMinutes / 60.0, Providers: providers}
-}
-
-// Reads the bound home's model_catalog block with defaults filled in
-func loadCatalogConfigFromHome(ctx context.Context) CatalogConfig {
-	tree, err := config.Load(home.Dir(ctx), nil)
-	if err != nil {
-		return ParseCatalogConfig(nil)
-	}
-	block, _ := asMap(tree["model_catalog"])
-	return ParseCatalogConfig(block)
+	return CatalogConfig{Enabled: settings.ModelCatalogEnabled.Get(ctx), URL: url, TTLHours: ttl.Hours(), Providers: settings.ModelCatalogProviders.Get(ctx)}
 }
 
 // CatalogCachePath is the per profile disk cache file

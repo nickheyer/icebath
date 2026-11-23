@@ -12,10 +12,8 @@ import (
 )
 
 func TestPgpasswordPreservedVerbatim(t *testing.T) {
-	t.Setenv("ICEBATH_REDACT_SECRETS", "true")
 	a := kwargsTestAgent(t, "custom", "http://127.0.0.1:9/v1", "test-model", "chat_completions")
 	key := home.Key(home.Dir(t.Context()))
-	tools.NoteEnvPolicy(key, "true")
 	tools.NoteConfigPolicy(key, true)
 	args := `{"command": "PGPASSWORD='honchorulez' psql -h 127.0.0.1"}`
 	msg := &state.Message{Role: "assistant", Content: "ok",

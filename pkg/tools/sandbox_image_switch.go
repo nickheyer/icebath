@@ -2,17 +2,13 @@ package tools
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // SandboxImageSwitch is a default image change the persisted docker sandbox still has to decide
@@ -38,42 +34,22 @@ func sandboxSwitchEnv(ctx context.Context, env *Env) *Env {
 	return scoped
 }
 
-// Text of a config value through str, empty for a falsy value
-func sandboxSwitchStr(v any) string {
-	if !pyrepr.Truthy(v) {
-		return ""
-	}
-	return pyrepr.Str(v)
-}
-
 // Pending switch of the docker backend running an unpinned default with a labeled container on another image
 func PendingSandboxImageSwitch(ctx context.Context, env *Env) (*SandboxImageSwitch, error) {
 	env = sandboxSwitchEnv(ctx, env)
 	ctx = home.WithOverride(ctx, env.Home)
-	cfg, err := config.LoadReadonly(ctx, env.Home, config.NewSecrets(env.Home).Lookup())
-	if err != nil {
-		return nil, err
-	}
-	terminal := map[string]any{}
-	if raw := cfg["terminal"]; pyrepr.Truthy(raw) {
-		m, ok := raw.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("terminal in config is %s, expected a mapping", errchain.Kind(raw))
-		}
-		terminal = m
-	}
-	if backend, ok := terminal["backend"].(string); !ok || backend != "docker" || GetTerminalBackend("docker") == nil {
+	if settings.WhereCommandsRun.Get(ctx) != "docker" || GetTerminalBackend("docker") == nil {
 		return nil, nil
 	}
-	if sandboxImagePinned(ctx, env, terminal) {
+	if sandboxImagePinned(ctx, env) {
 		return nil, nil
 	}
-	target := sandboxSwitchStr(terminal["docker_image"])
+	target := settings.ContainerImage.Get(ctx)
 	docker := FindDocker(env)
 	if docker == "" || target == "" {
 		return nil, nil
 	}
-	identity := dockerContainerIdentity(env, sandboxSwitchStr(terminal["docker_shared_container_key"]))
+	identity := dockerContainerIdentity(env, settings.TerminalDockerSharedContainerKey.Get(ctx))
 	listing := dockerQuery(ctx, env, []string{docker, "ps", "-a", "--filter", "label=icebath-agent=1",
 		"--filter", "label=icebath-profile=" + identity, "--format", "{{.Names}}\t{{.Image}}"},
 		10*time.Second, "sandbox image switch probe failed", "docker ps exited")
@@ -108,27 +84,19 @@ func PendingSandboxImageSwitch(ctx context.Context, env *Env) (*SandboxImageSwit
 	return &SandboxImageSwitch{CurrentImage: current, TargetImage: target, Containers: containers}, nil
 }
 
-// Runtime pin verdict, the file key first, then the bound terminal scope, else a differing launch env image
-func sandboxImagePinned(ctx context.Context, env *Env, terminalCfg map[string]any) bool {
-	if raw, err := readRawConfig(sandboxSwitchEnv(ctx, env)); err == nil {
-		if t, ok := raw["terminal"].(map[string]any); ok {
-			if _, pinned := t["docker_image"]; pinned {
-				return true
-			}
-		}
+// Runtime pin verdict, an image the user or an administrator set first, then the bound terminal scope
+func sandboxImagePinned(ctx context.Context, env *Env) bool {
+	if v, err := settings.Resolve(ctx, settings.ContainerImage.Key); err == nil && v.Source != settings.SourceDefault {
+		return true
 	}
 	scope := GetTerminalScope(ctx)
 	if scope == nil && env != nil {
 		scope = env.TerminalScope
 	}
-	if scope != nil {
-		return scope.Policy["TERMINAL_DOCKER_IMAGE_PINNED"] == "1"
-	}
-	envImage := os.Getenv("TERMINAL_DOCKER_IMAGE")
-	return envImage != "" && envImage != sandboxSwitchStr(terminalCfg["docker_image"])
+	return scope != nil && scope.Policy["TERMINAL_DOCKER_IMAGE_PINNED"] == "1"
 }
 
-// Pins the target or the current image, re-bridges the process env and on approval evicts the cached sandbox
+// Pins the target or the current image and on approval evicts the cached sandbox
 func DecideSandboxImageSwitch(ctx context.Context, env *Env, sw *SandboxImageSwitch, approve bool) (string, error) {
 	env = sandboxSwitchEnv(ctx, env)
 	ctx = home.WithOverride(ctx, env.Home)
@@ -136,23 +104,7 @@ func DecideSandboxImageSwitch(ctx context.Context, env *Env, sw *SandboxImageSwi
 	if approve {
 		image = sw.TargetImage
 	}
-	cfg, err := config.LoadContext(ctx, env.Home, config.NewSecrets(env.Home).Lookup())
-	if err != nil {
-		return "", err
-	}
-	if _, has := cfg["terminal"]; !has {
-		cfg["terminal"] = map[string]any{}
-	}
-	terminal, ok := cfg["terminal"].(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("terminal in config is %s, expected a mapping", errchain.Kind(cfg["terminal"]))
-	}
-	terminal["docker_image"] = image
-	if err := config.SaveConfig(ctx, env.Home, map[string]any(cfg), config.SaveOptions{PreserveKeys: [][]string{{"terminal", "docker_image"}}}); err != nil {
-		return "", err
-	}
-	override := true
-	if err := config.ApplyTerminalConfigToEnv(ctx, env.Home, config.TerminalEnvOptions{Override: &override}); err != nil {
+	if _, err := settings.Set(ctx, settings.ContainerImage.Key, image, settings.Global); err != nil {
 		return "", err
 	}
 	if approve {

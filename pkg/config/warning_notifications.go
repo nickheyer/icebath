@@ -3,8 +3,6 @@ package config
 import (
 	"context"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Producer owned diagnostic classification carried on the two argument status callback, a plain string otherwise
@@ -47,32 +45,32 @@ func EffectiveUserConfig(ctx context.Context) map[string]any {
 }
 
 // A diagnostic category wake mutes its turn only when the owning policy hides diagnostics
-func DiagnosticTurnMuted(ctx context.Context, displayMetadata map[string]any, platform string, userConfig map[string]any) bool {
-	return displayMetadata["notification_category"] == "diagnostic" && !warningPolicy(ctx, platform, userConfig)
+func DiagnosticTurnMuted(ctx context.Context, displayMetadata map[string]any, platform string) bool {
+	return displayMetadata["notification_category"] == "diagnostic" && !warningPolicy(ctx, platform)
 }
 
 // Only trusted diagnostic only wakes mute a turn, a recorded mute snapshot winning
-func DiagnosticWakeMuted(ctx context.Context, event WakeEvent, userConfig map[string]any) bool {
+func DiagnosticWakeMuted(ctx context.Context, event WakeEvent) bool {
 	if event == nil {
 		return false
 	}
 	if muted, set := event.WakeReplyMuted(); set {
 		return muted
 	}
-	return event.WakeInternal() && DiagnosticTurnMuted(ctx, event.WakeMetadata(), event.WakeSourcePlatform(), userConfig)
+	return event.WakeInternal() && DiagnosticTurnMuted(ctx, event.WakeMetadata(), event.WakeSourcePlatform())
 }
 
 // Runs the renderer only when its classified content is visible and reports whether it ran
-func RenderNotification(ctx context.Context, render func() error, platform string, diagnostic bool, userConfig map[string]any) (bool, error) {
-	if diagnostic && !warningPolicy(ctx, platform, userConfig) {
+func RenderNotification(ctx context.Context, render func() error, platform string, diagnostic bool) (bool, error) {
+	if diagnostic && !warningPolicy(ctx, platform) {
 		return false, nil
 	}
 	return true, render()
 }
 
 // Awaits the presenter only when its classified content is visible and reports whether it ran
-func PresentNotification(ctx context.Context, present func(context.Context) error, platform string, diagnostic bool, userConfig map[string]any) (bool, error) {
-	if diagnostic && !warningPolicy(ctx, platform, userConfig) {
+func PresentNotification(ctx context.Context, present func(context.Context) error, platform string, diagnostic bool) (bool, error) {
+	if diagnostic && !warningPolicy(ctx, platform) {
 		return false, nil
 	}
 	return true, present(ctx)
@@ -80,10 +78,10 @@ func PresentNotification(ctx context.Context, present func(context.Context) erro
 
 var warningPolicy = WarningNotificationsEnabled
 
-// Whether diagnostics show on the platform, a nil config reading the active profile effective config
-func WarningNotificationsEnabled(ctx context.Context, platform string, userConfig map[string]any) bool {
-	if userConfig == nil {
-		userConfig = EffectiveUserConfig(ctx)
-	}
-	return !pyrepr.Truthy(ResolveDisplaySetting(ctx, userConfig, platform, "suppress_warning_notifications", false))
+// Whether a chat platform hides warning notices, installed by the settings package
+var SuppressWarningsOn func(ctx context.Context, platform string) bool
+
+// Whether diagnostics show on the platform of the profile in ctx
+func WarningNotificationsEnabled(ctx context.Context, platform string) bool {
+	return SuppressWarningsOn == nil || !SuppressWarningsOn(ctx, platform)
 }

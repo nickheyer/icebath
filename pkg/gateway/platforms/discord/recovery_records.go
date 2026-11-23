@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
 	"regexp"
 	"sort"
@@ -14,10 +13,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -31,95 +29,41 @@ func (a *DiscordAdapter) withDiscordRecoveryDB(ctx context.Context, fn func(conn
 	return a.recoveryStore.Call(ctx, fn, def)
 }
 
-// Whether to reconcile Discord messages missed while the gateway was down
+// Whether to reconcile Discord messages missed while the background service was down
 func (a *DiscordAdapter) missedMessageBackfillEnabled(ctx context.Context) bool {
-	if configured, ok := a.Config.Extra["missed_message_backfill"].(map[string]any); ok {
-		if value, present := configured["enabled"]; present {
-			if s, isStr := value.(string); isStr {
-				switch strings.ToLower(pystr.Strip(s)) {
-				case "true", "1", "yes", "on":
-					return true
-				}
-				return false
-			}
-			return pyrepr.Truthy(value)
-		}
-	}
-	switch strings.ToLower(pystr.Strip(gateway.PlatformGateEnv(ctx, "DISCORD_MISSED_MESSAGE_BACKFILL", "false"))) {
-	case "true", "1", "yes", "on":
-		return true
-	}
-	return false
+	return settings.DiscordMissedMessageBackfillEnabled.Get(a.sctx(ctx))
 }
 
-// Channels scanned for missed messages, allowed plus free response channels by default
+// Channels scanned for missed messages, allowed plus free response channels when none are named
 func (a *DiscordAdapter) missedMessageBackfillChannels(ctx context.Context) strSet {
-	if configured, ok := a.Config.Extra["missed_message_backfill"].(map[string]any); ok {
-		if raw, present := configured["channels"]; present {
-			channels := gateCSVSet(raw)
-			_, isList := gateway.DecodeJSONListLiteral(raw).([]any)
-			if len(channels) > 0 || isList {
-				return channels
-			}
-		}
+	if channels := a.settingSet(ctx, settings.DiscordMissedMessageBackfillChannels); len(channels) > 0 {
+		return channels
 	}
-	raw := a.gateEnv(ctx, "DISCORD_MISSED_MESSAGE_BACKFILL_CHANNELS", "")
-	if pystr.Strip(raw) == "" {
-		out := a.getAllowedChannels(ctx)
-		for k := range a.discordFreeResponseChannels(ctx) {
-			out[k] = struct{}{}
-		}
-		return out
+	out := a.getAllowedChannels(ctx)
+	for k := range a.discordFreeResponseChannels(ctx) {
+		out[k] = struct{}{}
 	}
-	return gateCSVSet(raw)
+	return out
 }
-
-// Numeric backfill setting from the dict extra or env, the default on a bad value, clamped to the bounds
-func (a *DiscordAdapter) missedMessageBackfillNumber(ctx context.Context, key, envKey string, def float64, integral bool, lo float64, hi *float64) float64 {
-	var raw any
-	if configured, ok := a.Config.Extra["missed_message_backfill"].(map[string]any); ok {
-		raw = def
-		if v, present := configured[key]; present {
-			raw = v
-		}
-	} else {
-		raw = gateway.PlatformGateEnv(ctx, envKey, fmt.Sprint(int64(def)))
-	}
-	value := def
-	if integral {
-		if n, err := pyint.Of(raw); err == nil {
-			f, _ := new(big.Float).SetInt(n).Float64()
-			value = f
-		}
-	} else if f, err := pyint.Float(raw); err == nil {
-		value = f
-	}
-	if hi != nil {
-		value = math.Min(value, *hi)
-	}
-	return math.Max(lo, value)
-}
-
-func bound(v float64) *float64 { return &v }
 
 // Seconds back the missed message scan reaches, at least one minute
 func (a *DiscordAdapter) missedMessageBackfillWindowSeconds(ctx context.Context) float64 {
-	return a.missedMessageBackfillNumber(ctx, "window_seconds", "DISCORD_MISSED_MESSAGE_BACKFILL_WINDOW_SECONDS", 21600, false, 60.0, nil)
+	return math.Max(60, settings.DiscordMissedMessageBackfillWindowSeconds.Get(a.sctx(ctx)).Seconds())
 }
 
-// Messages read per channel by the missed message scan
+// Messages read per channel by the missed message scan, 1 to 500
 func (a *DiscordAdapter) missedMessageBackfillLimit(ctx context.Context) int {
-	return int(a.missedMessageBackfillNumber(ctx, "limit", "DISCORD_MISSED_MESSAGE_BACKFILL_LIMIT", 100, true, 1, bound(500)))
+	return min(max(settings.DiscordMissedMessageBackfillLimit.Get(a.sctx(ctx)), 1), 500)
 }
 
-// Messages one scan may dispatch
+// Messages one scan may dispatch, 1 to 100
 func (a *DiscordAdapter) missedMessageBackfillMaxDispatches(ctx context.Context) int {
-	return int(a.missedMessageBackfillNumber(ctx, "max_dispatches", "DISCORD_MISSED_MESSAGE_BACKFILL_MAX_DISPATCHES", 10, true, 1, bound(100)))
+	return min(max(settings.DiscordMissedMessageBackfillMaxDispatches.Get(a.sctx(ctx)), 1), 100)
 }
 
-// Lifetime dispatch ceiling of one message regardless of completion state
+// Lifetime dispatch ceiling of one message regardless of completion state, 1 to 100
 func (a *DiscordAdapter) missedMessageBackfillMaxAttempts(ctx context.Context) int {
-	return int(a.missedMessageBackfillNumber(ctx, "max_attempts", "DISCORD_MISSED_MESSAGE_BACKFILL_MAX_ATTEMPTS", 3, true, 1, bound(100)))
+	return min(max(settings.DiscordMissedMessageBackfillMaxAttempts.Get(a.sctx(ctx)), 1), 100)
 }
 
 // Channel id, thread id and parent id of a message, the thread set only inside threads

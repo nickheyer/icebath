@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,7 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -25,18 +24,9 @@ func platformConfigKey(platform gateway.Platform) string {
 	return string(platform)
 }
 
-// Whether a steered follow up gets its ack bubble, the environment overriding the display setting
+// Whether a steered follow up gets its ack bubble on the event's platform
 func (r *GatewayRunner) busySteerAckEnabled(ctx context.Context, event *gateway.MessageEvent, sessionKey string) bool {
-	var enabled bool
-	if env, ok := os.LookupEnv("ICEBATH_GATEWAY_BUSY_STEER_ACK_ENABLED"); ok {
-		switch strings.ToLower(pystr.Strip(env)) {
-		case "1", "true", "yes", "on":
-			enabled = true
-		}
-	} else {
-		enabled = pyrepr.Truthy(config.ResolveDisplaySetting(ctx, gateway.LoadGatewayConfigMap(ctx, ""),
-			platformConfigKey(event.Source.Platform), "busy_steer_ack_enabled", true))
-	}
+	enabled := settings.DisplayBusySteerAckEnabled.Get(settings.WithPlatform(ctx, platformConfigKey(event.Source.Platform)))
 	if !enabled {
 		pkgLog().Debug(fmt.Sprintf("Busy steer ack suppressed for session %s", sessionKey))
 	}
@@ -80,9 +70,8 @@ type busyAckModes struct {
 
 // Busy ack text with the optional status detail and the one time busy input onboarding hint
 func (r *GatewayRunner) composeBusyAckMessage(ctx context.Context, event *gateway.MessageEvent, now float64, busyState *SessionState, runningAgent *agent.AIAgent, modes busyAckModes) string {
-	cfg := gateway.LoadGatewayConfigMap(ctx, "")
 	var statusParts []string
-	detailEnabled := pyrepr.Truthy(config.ResolveDisplaySetting(ctx, cfg, platformConfigKey(event.Source.Platform), "busy_ack_detail", true))
+	detailEnabled := settings.DisplayBusyAckDetail.Get(settings.WithPlatform(ctx, platformConfigKey(event.Source.Platform)))
 	if detailEnabled && runningAgent != nil && runningAgent != agentPendingSentinel {
 		statusParts = busyAckStatusParts(ctx, now, busyState, runningAgent)
 	}
@@ -110,7 +99,7 @@ func (r *GatewayRunner) composeBusyAckMessage(ctx context.Context, event *gatewa
 		head, tail = t("gateway.busy.interrupting_head"), t("gateway.busy.interrupting_tail")
 	}
 	message := i18n.T(ctx, "gateway.busy.ack", "", map[string]any{"head": head, "detail": statusDetail, "tail": tail})
-	if !tools.IsSeen(cfg, tools.OnboardingBusyInputFlag) {
+	if !config.Truthy(settings.OnboardingSeen.Get(ctx)[tools.OnboardingBusyInputFlag]) {
 		hintMode := "interrupt"
 		switch {
 		case modes.steer:
@@ -219,11 +208,7 @@ func (r *GatewayRunner) busyInterruptAndAck(ctx context.Context, event *gateway.
 	if mode == "interrupt" && !redirected && runningAgent != nil && runningAgent != agentPendingSentinel {
 		r.interruptRunningAgentForBusyEvent(ctx, event, adapter, runningAgent)
 	}
-	ackEnabled := "true"
-	if env, ok := os.LookupEnv("ICEBATH_GATEWAY_BUSY_ACK_ENABLED"); ok {
-		ackEnabled = env
-	}
-	if strings.ToLower(ackEnabled) != "true" {
+	if !settings.DisplayBusyAckEnabled.Get(ctx) {
 		pkgLog().Debug(fmt.Sprintf("Busy ack suppressed for session %s", sessionKey))
 		return nil
 	}

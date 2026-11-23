@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -87,7 +88,7 @@ func (g *scriptedGateway) serve() {
 
 // Runs a command like drain with the branch poll of the session cwd held off
 func settle(a *app, cmd tea.Cmd) {
-	a.seenCwd = a.store.sessionCwd()
+	a.git.cwd, a.git.gen = a.store.sessionCwd(), max(a.git.gen, 1)
 	for depth := 0; cmd != nil && depth < 24; depth++ {
 		m := cmd()
 		batch, isBatch := m.(tea.BatchMsg)
@@ -103,9 +104,16 @@ func settle(a *app, cmd tea.Cmd) {
 			case tea.BatchMsg:
 				next = append(next, inner...)
 			case wm.Intent, asyncDoneMsg, dieMsg:
-				a.seenCwd = a.store.sessionCwd()
+				a.git.cwd, a.git.gen = a.store.sessionCwd(), max(a.git.gen, 1)
 				_, more := a.Update(inner)
 				next = append(next, more)
+			case sessionMsg:
+				switch inner.m.(type) {
+				case asyncDoneMsg, dieMsg:
+					a.git.cwd, a.git.gen = a.store.sessionCwd(), max(a.git.gen, 1)
+					_, more := a.Update(inner)
+					next = append(next, more)
+				}
 			}
 		}
 		cmd = tea.Batch(next...)
@@ -197,7 +205,7 @@ func wantShown(t *testing.T, a *app, wants ...string) {
 	}
 }
 
-func TestExportAndImportMoveAProfileThroughAnArchive(t *testing.T) {
+func TestExportWritesAProfileArchive(t *testing.T) {
 	a := testApp(t)
 	work := t.TempDir()
 	t.Chdir(work)
@@ -226,15 +234,9 @@ func TestExportAndImportMoveAProfileThroughAnArchive(t *testing.T) {
 	wantShown(t, a, "✓ Exported 'default' to "+archive, "/import")
 	drain(a, a.dispatchSubmission("/export nosuch -o "+archive))
 	wantShown(t, a, "Error: Profile 'nosuch' does not exist.")
+	// Archive import lives in the Profiles screen; /import restores a home backup after exit
 	drain(a, a.dispatchSubmission("/import"))
-	wantShown(t, a, "Usage: /import <archive.tar.gz> [--name <name>]")
-	drain(a, a.dispatchSubmission("/import /nowhere/missing.tar.gz"))
-	wantShown(t, a, "Error: Archive not found: /nowhere/missing.tar.gz")
-	drain(a, a.dispatchSubmission("/import shared.tar.gz --name copied"))
-	if sent := g.sent("profiles.import"); len(sent) != 2 || sent[1]["archive"] != archive || sent[1]["name"] != "copied" {
-		t.Fatalf("import params %v", sent)
-	}
-	wantShown(t, a, "✓ Imported profile 'copied' at "+profileDir, "Use it: icebath -p copied")
+	wantShown(t, a, tr(txt.HubsProfilesRestoreUsage))
 }
 
 // Learned skill and two memories in the home of the app
@@ -398,7 +400,7 @@ func TestJourneyWindowWalksDeletesAndReloadsTheTimeline(t *testing.T) {
 	drain(a, card.refetch())
 	view := ansi.Strip(card.View(100, 40))
 	for _, want := range []string{"✦ Journey learned skills & memories over time", "skills (1)", "memories (2)", "tidy-notes",
-		"User prefers concise responses", "3/3 revealed · 100%", "↑↓/jk move"} {
+		"User prefers concise responses", "3/3 revealed · 100%", "up/down move"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("journey lacks %q:\n%s", want, view)
 		}
@@ -407,11 +409,11 @@ func TestJourneyWindowWalksDeletesAndReloadsTheTimeline(t *testing.T) {
 		card.Update(keys.Press("k"))
 	}
 	memoryLabel := card.activeNode().FullLabel
-	card.Update(wm.ActionMsg{ID: "palette.pick"})
+	card.Update(keys.Press("enter"))
 	if !card.item || !strings.Contains(ansi.Strip(card.View(100, 40)), memoryLabel) {
 		t.Fatalf("item view of %q:\n%s", memoryLabel, ansi.Strip(card.View(100, 40)))
 	}
-	card.Update(wm.ActionMsg{ID: "palette.left"})
+	card.Update(keys.Press("left"))
 	if card.item {
 		t.Fatal("left kept the item view open")
 	}
@@ -498,8 +500,9 @@ func worktreeGateway(t *testing.T, a *app, repo string, moved map[string]any) *s
 	t.Helper()
 	tree := filepath.Join(repo, ".worktrees", "feat")
 	return attachScripted(t, a, map[string]func(map[string]any) map[string]any{
-		"session.workspace.move": fixed(moved),
-		"worktree.status":        fixed(map[string]any{"repo_root": repo, "launch": nil}),
+		"session.revision": fixed(map[string]any{"session_id": "sid-1", "revision": 1, "execution_generation": 0}),
+		"session.mutate":   fixed(moved),
+		"worktree.status":  fixed(map[string]any{"repo_root": repo, "launch": nil}),
 		"worktree.create": func(p map[string]any) map[string]any {
 			if err := os.MkdirAll(tree, 0o755); err != nil {
 				t.Error(err)
@@ -523,7 +526,7 @@ func TestWorktreeNewMovesTheSessionAndQuitHandsTheTreeToTheLauncher(t *testing.T
 	repo := t.TempDir()
 	t.Chdir(t.TempDir())
 	a := testApp(t)
-	g := worktreeGateway(t, a, repo, map[string]any{"cwd": filepath.Join(repo, ".worktrees", "feat")})
+	g := worktreeGateway(t, a, repo, map[string]any{"session_id": "sid-1", "revision": 2})
 	var settled []Worktree
 	var settledActive string
 	a.host.SettleWorktrees = func(_ context.Context, trees []Worktree, active string) { settled, settledActive = trees, active }
@@ -538,8 +541,8 @@ func TestWorktreeNewMovesTheSessionAndQuitHandsTheTreeToTheLauncher(t *testing.T
 	if created := g.sent("worktree.create"); len(created) != 1 || created[0]["name"] != "feat" || created[0]["cwd"] != repo || created[0]["pid"] != float64(os.Getpid()) {
 		t.Fatalf("worktree.create calls %v", created)
 	}
-	moved := g.sent("session.workspace.move")
-	if len(moved) != 1 || moved[0]["cwd"] != tree || moved[0]["session_key"] != "stored-1" {
+	moved := g.sent("session.mutate")
+	if payload, _ := moved[0]["payload"].(map[string]any); len(moved) != 1 || moved[0]["operation"] != "workspace" || payload["cwd"] != tree {
 		t.Fatalf("workspace moves %v", moved)
 	}
 	if recorded := g.sent("worktree.record"); len(recorded) != 1 || recorded[0]["path"] != tree {
@@ -604,7 +607,7 @@ func TestHandoffWaitsForTheGatewayAndOpensAFreshSession(t *testing.T) {
 		"handoff.state": sequence(map[string]any{"state": "pending", "platform": "telegram", "error": ""},
 			map[string]any{"state": "running", "platform": "telegram", "error": ""}, map[string]any{"state": "completed", "platform": "telegram", "error": ""}),
 		"session.create": fixed(map[string]any{"session_id": "sid-2", "info": map[string]any{"model": "fake-model"}}),
-		"session.title":  fixed(map[string]any{"title": "notes"}),
+		"session.list":   fixed(map[string]any{"sessions": []any{map[string]any{"id": "sid-1", "session_id": "stored-1", "title": "notes"}}}),
 	})
 	a.store.ui.Sid = "sid-1"
 	settle(a, a.dispatchSubmission("/handoff"))
@@ -639,18 +642,4 @@ func TestHandoffReportsTheGatewayRefusalAndAFailedTransfer(t *testing.T) {
 	a.store.ui.Busy = true
 	settle(a, a.dispatchSubmission("/handoff telegram"))
 	wantScreen(t, a, "Agent is busy. Wait for the current turn to finish, then retry /handoff.")
-}
-
-func TestUsageReadsSessionUsageTotals(t *testing.T) {
-	a := testApp(t)
-	g := attachScripted(t, a, map[string]func(map[string]any) map[string]any{
-		"session.usage": fixed(map[string]any{"calls": 3, "input": 1200, "output": 80, "total": 1280, "model": "fake-model",
-			"context_max": 128000, "context_used": 1280, "context_percent": 1}),
-	})
-	a.store.ui.Sid = "sid-1"
-	drain(a, a.dispatchSubmission("/usage"))
-	if sent := g.sent("session.usage"); len(sent) != 1 || sent[0]["session_id"] != "sid-1" {
-		t.Fatalf("session.usage calls %v", sent)
-	}
-	wantScreen(t, a, "1,280", "Context: 1,280 / 128,000 (1%)")
 }

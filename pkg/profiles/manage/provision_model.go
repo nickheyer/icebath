@@ -28,13 +28,9 @@ func loadScopedConfig(ctx context.Context) (map[string]any, error) {
 	return map[string]any(tree), err
 }
 
-// Raw user config of the home a context is scoped to with its model section canonical, empty when the home has none
+// Raw user config of the home a context is scoped to, empty when the home has none
 func rawScopedConfig(ctx context.Context) (map[string]any, error) {
-	raw, err := config.ReadUserConfigRaw(ctx, config.GetConfigPath(home.Dir(ctx)))
-	if err != nil {
-		return nil, err
-	}
-	return config.NormalizeRootModelKeys(raw), nil
+	return config.ReadUserConfigRaw(ctx, config.GetConfigPath(home.Dir(ctx)))
 }
 
 // Writes a validated main model assignment into a profile's config, the profile's own catalog and secrets vouching for the pick

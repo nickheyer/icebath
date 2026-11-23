@@ -145,7 +145,7 @@ func consoleConfigShow(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return 0, config.ShowConfig(os.Stdout, src)
+	return 0, config.ShowConfig(ctx, os.Stdout, src)
 }
 
 // Text of an optional string argument, empty for None
@@ -256,7 +256,7 @@ func consoleConfigSet(e *ConsoleEngine, args []string) (string, error) {
 	}
 	h := home.Dir(e.ctx)
 	return consoleCaptureOutput(func() (int, error) {
-		err := config.SetConfigValue(e.ctx, h, args[0], strings.Join(args[1:], " "), false, commands.ConfigCommandSources(h))
+		err := config.SetConfigValue(e.ctx, h, args[0], strings.Join(args[1:], " "), commands.ConfigCommandSources(h))
 		var exit *config.ConfigExit
 		if errors.As(err, &exit) {
 			return exit.Code, nil
@@ -265,25 +265,6 @@ func consoleConfigSet(e *ConsoleEngine, args []string) (string, error) {
 	})
 }
 
-// Adds missing config defaults without prompting and reports whether anything changed
-func consoleConfigMigrate(e *ConsoleEngine, args []string) (int, error) {
-	if err := consoleExpectNoArgs(args, "config migrate"); err != nil {
-		return 0, err
-	}
-	results, err := config.MigrateConfig(e.ctx, home.Dir(e.ctx), false, false)
-	if err != nil {
-		return 0, err
-	}
-	if len(results.EnvAdded) > 0 || len(results.ConfigAdded) > 0 {
-		fmt.Fprintln(os.Stdout, "Configuration updated.")
-	} else {
-		fmt.Fprintln(os.Stdout, "Configuration is up to date.")
-	}
-	for _, warning := range results.Warnings {
-		fmt.Fprintln(os.Stdout, "Warning: "+warning)
-	}
-	return 0, nil
-}
 
 // Refuses an export whose single session exceeds the per session budget, zero disabling it
 func consoleGuardExports(ctx context.Context, db *state.SessionDB, sessionIDs []string) error {
@@ -518,8 +499,6 @@ func consoleBuiltinCommands() []consoleBuiltin {
 		{[]string{"profile"}, "profile", "Show active profile status.", consoleProfileStatus, ""},
 		{[]string{"config", "set"}, "config set <key> <value>", "Set a configuration value.", consoleConfigSet,
 			"Update Icebath configuration?"},
-		{[]string{"config", "migrate"}, "config migrate", "Update config with new options.", consoleCaptured(consoleConfigMigrate),
-			"Update Icebath configuration with missing defaults?"},
 		{[]string{"sessions", "export"}, "sessions export <output> [--source SOURCE] [--session-id ID]", "Export sessions to JSONL.",
 			consoleCaptured(consoleSessionsExport), "Export session data?"},
 		{[]string{"sessions", "rename"}, "sessions rename <session> <title>", "Rename a session.",

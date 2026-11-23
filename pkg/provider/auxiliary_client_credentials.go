@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -65,7 +65,7 @@ func auxResolveXaiOAuthForAux(ctx context.Context) (string, string, bool) {
 // Key and validated base URL of the selected xAI OAuth pool row, scoped base URL env first
 func auxXaiOAuthPoolPair(ctx context.Context) (string, string, error) {
 	env := modelsPoolEnv(ctx)
-	pool := LoadPool(env, "xai-oauth")
+	pool := LoadSelectedPool(env, "xai-oauth")
 	if pool == nil || !pool.HasCredentials() {
 		return "", "", nil
 	}
@@ -119,7 +119,7 @@ func auxResolveCodexCredentialAndBase(ctx context.Context) (string, string, erro
 	if override == "" {
 		override = DefaultCodexBaseURL
 	}
-	return auxReadCodexSingletonTokenFn(ctx), override, nil
+	return "", override, nil
 }
 
 // ResolveCodexCredentialAndBase is the Codex token and the base url of the same authority
@@ -378,20 +378,13 @@ func auxIsFreeModel(model string) bool {
 	return strings.HasSuffix(normalized, ":free") || strings.HasPrefix(normalized, "stealth/")
 }
 
-// Free only flag and OpenRouter model of the auxiliary config, the free default when unreadable
+// Free only flag and OpenRouter model of the auxiliary config, the built-in free model when none is set
 func auxOpenrouterSettings(ctx context.Context) (bool, string) {
-	tree, err := auxLoadConfigReadonlyFn(ctx)
-	if err != nil {
-		return false, auxOpenRouterModel
+	model := strings.TrimSpace(settings.AuxiliaryOpenrouterModel.Get(ctx))
+	if model == "" {
+		model = auxOpenRouterModel
 	}
-	freeOnly, _ := config.CfgGet(tree, "auxiliary", "free_only")
-	model := auxOpenRouterModel
-	if val, ok := config.CfgGet(tree, "auxiliary", "openrouter_model"); ok {
-		if s, isStr := val.(string); isStr && strings.TrimSpace(s) != "" {
-			model = strings.TrimSpace(s)
-		}
-	}
-	return pyrepr.Truthy(freeOnly), model
+	return settings.AuxiliaryFreeOnly.Get(ctx), model
 }
 
 // Warns once per model that a non free OpenRouter model may incur spend
@@ -440,11 +433,7 @@ func auxTryOpenrouter(ctx context.Context, explicitAPIKey any, model, explicitBa
 				baseURL = OpenRouterBaseURL
 			}
 			pkgLog().Debug("Auxiliary client: OpenRouter via pool")
-			headers, err := BuildORHeaders(ctx, nil)
-			if err != nil {
-				return nil, "", err
-			}
-			return auxCreateOpenAIClient(ctx, orKey, baseURL, auxOpenAIOptions{DefaultHeaders: headers}), orModel, nil
+			return auxCreateOpenAIClient(ctx, orKey, baseURL, auxOpenAIOptions{DefaultHeaders: BuildORHeaders(ctx)}), orModel, nil
 		}
 		pkgLog().Debug("Auxiliary client: OpenRouter pool exhausted, trying OPENROUTER_API_KEY")
 	}
@@ -465,10 +454,7 @@ func auxTryOpenrouter(ctx context.Context, explicitAPIKey any, model, explicitBa
 		return nil, "", nil
 	}
 	pkgLog().Debug("Auxiliary client: OpenRouter")
-	headers, err := BuildORHeaders(ctx, nil)
-	if err != nil {
-		return nil, "", err
-	}
+	headers := BuildORHeaders(ctx)
 	baseURL := overrideURL
 	if baseURL == "" {
 		baseURL = OpenRouterBaseURL

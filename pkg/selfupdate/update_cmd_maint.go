@@ -32,6 +32,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -58,7 +59,6 @@ var (
 	maintCreateQuickSnapshot  = backup.CreateQuickSnapshot
 	maintSqliteRuntimeStatus  = postUpdateSqliteRuntimeStatus
 	maintSyncSkills           = skills.SyncSkills
-	maintConfigMigration      = checkAndApplyConfigMigration
 	maintCheckoutVersion      = checkoutVersion
 	maintNoticesAndSelfHeals  = printPostUpdateNoticesAndSelfHeals
 	maintSyncProfiles         = syncProfilesAfterUpdate
@@ -124,26 +124,7 @@ func maintHasRow(ctx context.Context, conn state.SQLiteConn, query string) (bool
 
 // Advertises the opt in FTS storage rebuild when state.db still needs one
 func printFTSOptimizeAvailableNotice(ctx context.Context, w io.Writer) {
-	mode := "advise"
-	if cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil); err == nil {
-		var sessions map[string]any
-		known := true
-		switch section := cfg["sessions"].(type) {
-		case map[string]any:
-			sessions = section
-		case config.Tree:
-			sessions = section
-		default:
-			known = !pyrepr.Truthy(section)
-		}
-		if known {
-			mode = "advise"
-			if value, ok := sessions["fts_optimize_notice"]; ok {
-				mode = pyrepr.Str(value)
-			}
-			mode = strings.ToLower(pystr.Strip(mode))
-		}
-	}
+	mode := settings.SessionsFtsOptimizeNotice.Get(ctx)
 	if mode == "off" {
 		return
 	}
@@ -968,9 +949,6 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 		return false, err
 	}
 	owedStep("profile_sync", func() error { return maintSyncProfiles(ctx, w) })
-	owedStep("config_migration", func() error {
-		return maintConfigMigration(ctx, w, o.AssumeYes, o.GatewayMode, o.PreUpdateSnapshotID)
-	})
 	if err := bestEffort(ctx, "Default plugin install failed: %s", func() error {
 		_, err := defaults.InstallAndRecord(ctx, func(line string) { fmt.Fprintln(w, line) }, defaults.UpdateWait)
 		return err

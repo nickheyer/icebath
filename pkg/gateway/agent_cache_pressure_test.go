@@ -1,27 +1,39 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/memory"
 )
 
-// test_agent_cache_pressure.py TestBoundsResolution test_absent_section_leaves_lru_bounds_unset
-func TestAbsentSectionLeavesLruBoundsUnset(t *testing.T) {
-	bounds := ResolveAgentCacheBounds(map[string]any{})
-	if bounds.MaxSize != nil || bounds.IdleTTLSecs != nil {
+// Agent cache bounds of a fresh home whose config.yaml holds the agent_cache section given
+func cacheBoundsWith(t *testing.T, section string) AgentCacheBounds {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("agent:\n  agent_cache:\n"+section), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return ResolveAgentCacheBounds(home.WithOverride(context.Background(), dir))
+}
+
+// An absent section takes the registry defaults
+func TestAbsentSectionTakesTheDefaults(t *testing.T) {
+	bounds := ResolveAgentCacheBounds(home.WithOverride(context.Background(), t.TempDir()))
+	if bounds.MaxSize == nil || *bounds.MaxSize != 128 || bounds.IdleTTLSecs == nil || *bounds.IdleTTLSecs != 3600 {
 		t.Fatalf("bounds %+v", bounds)
 	}
 }
 
 // test_agent_cache_pressure.py TestBoundsResolution test_configured_values_are_honoured
 func TestConfiguredValuesAreHonoured(t *testing.T) {
-	bounds := ResolveAgentCacheBounds(map[string]any{"agent": map[string]any{"agent_cache": map[string]any{
-		"max_size": 32, "idle_ttl_secs": 600, "memory_high_mb": 2048, "max_evictions_per_pass": 4, "protect_recent": 2,
-	}}})
+	bounds := cacheBoundsWith(t, "    max_size: 32\n    idle_ttl_secs: 600\n    memory_high_mb: 2048\n    max_evictions_per_pass: 4\n    protect_recent: 2\n")
 	if bounds.MaxSize == nil || *bounds.MaxSize != 32 || bounds.IdleTTLSecs == nil || *bounds.IdleTTLSecs != 600.0 ||
 		bounds.MemoryHighMB == nil || *bounds.MemoryHighMB != 2048 || bounds.MaxEvictionsPerPass != 4 || bounds.ProtectRecent != 2 {
 		t.Fatalf("bounds %+v", bounds)
@@ -30,15 +42,15 @@ func TestConfiguredValuesAreHonoured(t *testing.T) {
 
 // test_agent_cache_pressure.py TestBoundsResolution test_garbage_values_fall_back_to_defaults
 func TestGarbageValuesFallBackToDefaults(t *testing.T) {
-	bounds := ResolveAgentCacheBounds(map[string]any{"agent": map[string]any{"agent_cache": map[string]any{"max_size": "lots", "idle_ttl_secs": -5}}})
-	if bounds.MaxSize != nil || bounds.IdleTTLSecs != nil || bounds.MaxEvictionsPerPass <= 0 {
+	bounds := cacheBoundsWith(t, "    max_size: lots\n    idle_ttl_secs: -5\n")
+	if bounds.MaxSize == nil || *bounds.MaxSize != 128 || bounds.IdleTTLSecs != nil || bounds.MaxEvictionsPerPass <= 0 {
 		t.Fatalf("bounds %+v", bounds)
 	}
 }
 
 // test_agent_cache_pressure.py TestBoundsResolution test_protect_recent_zero_is_respected
 func TestProtectRecentZeroIsRespected(t *testing.T) {
-	if bounds := ResolveAgentCacheBounds(map[string]any{"agent": map[string]any{"agent_cache": map[string]any{"protect_recent": 0}}}); bounds.ProtectRecent != 0 {
+	if bounds := cacheBoundsWith(t, "    protect_recent: 0\n"); bounds.ProtectRecent != 0 {
 		t.Fatalf("protect_recent %d", bounds.ProtectRecent)
 	}
 }
@@ -185,7 +197,7 @@ func TestSkippedCandidatesDoNotConsumeTheBatch(t *testing.T) {
 
 // test_agent_cache_pressure.py TestSalvageFollowups test_protect_recent_yaml_false_keeps_default
 func TestProtectRecentYamlFalseKeepsDefault(t *testing.T) {
-	if bounds := ResolveAgentCacheBounds(map[string]any{"agent": map[string]any{"agent_cache": map[string]any{"protect_recent": false}}}); bounds.ProtectRecent <= 0 {
+	if bounds := cacheBoundsWith(t, "    protect_recent: false\n"); bounds.ProtectRecent <= 0 {
 		t.Fatalf("protect_recent %d", bounds.ProtectRecent)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/nickheyer/icebath/pkg/ui/field"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -33,7 +34,27 @@ type rowInput struct {
 	done func(l *lister, text string) tea.Cmd
 	// Runs on the cancel key, which clears the text when nil
 	cancel func(l *lister) tea.Cmd
-	text   string
+	// Text typed into the row, what the list reads and replaces
+	text string
+	// Editor of the text with the keys every field shares, made again when the text was replaced from outside
+	in *field.Field
+}
+
+// Field editing the row text, made from the text when there is none or the text was replaced since
+func (r *rowInput) field() *field.Field {
+	if r.in == nil || r.in.Value() != r.text {
+		r.in = field.New(r.text)
+	}
+	return r.in
+}
+
+// Keeps the row text after an edit of its field
+func (r *rowInput) keep() { r.text = r.field().Value() }
+
+// Cell of the selected row being typed into, the column and the text with its caret
+type cellEdit struct {
+	col int
+	in  *field.Field
 }
 
 // Table card with a cursor, filter bar, detail pane, keymap actions, an editable cell, a row typed into, captured keys and questions
@@ -76,7 +97,7 @@ type lister struct {
 	bar      searchBar
 	expanded bool
 	pane     detailPane
-	edit     *render.Edit
+	edit     *cellEdit
 	onDone   func(l *lister, text string) tea.Cmd
 	capture  func(l *lister, chord string) tea.Cmd
 	asking   string
@@ -109,11 +130,11 @@ func (l *lister) Contexts() []string {
 	case l.ask != nil:
 		return []string{keys.Confirm}
 	case l.edit != nil:
-		return []string{keys.Edit}
+		return []string{keys.Edit, keys.Text}
 	case l.bar.Active():
 		return l.bar.Contexts()
 	case l.typing():
-		return append(append(slices.Clone(l.input.ctxs), l.shared...), keys.Edit)
+		return append(append(slices.Clone(l.input.ctxs), l.shared...), keys.Edit, keys.Text)
 	}
 	out := []string{keys.Filter, keys.List, keys.Panel}
 	if l.detailShown() {
@@ -141,10 +162,38 @@ func (l *lister) typing() bool {
 // Cell being typed into, the one opened for an edit or the row input once it holds text, nil for none
 func (l *lister) cell() *render.Edit {
 	if l.edit != nil {
-		return l.edit
+		return &render.Edit{Col: l.edit.col, Text: l.edit.in.Value(), Cursor: l.edit.in.Cursor(), Selected: l.edit.in.Whole()}
 	}
 	if l.typing() && l.input.text != "" {
-		return &render.Edit{Col: l.input.col, Text: strings.Join(strings.Fields(l.input.text), " ")}
+		return &render.Edit{Col: l.input.col, Text: l.input.text, Cursor: l.input.field().Cursor()}
+	}
+	return nil
+}
+
+// Follows an edit of the field typing goes into, the row input keeping its text and the filter narrowing the rows
+func (l *lister) took(changed bool) {
+	if !changed {
+		return
+	}
+	switch {
+	case l.bar.Active():
+		l.refresh()
+	case l.edit == nil && l.typing():
+		l.input.keep()
+	}
+}
+
+// Field typing goes into now, the cell being edited, the filter bar or the row input, nil while none takes typing
+func (l *lister) typingInto() *field.Field {
+	switch {
+	case l.capture != nil || l.ask != nil:
+		return nil
+	case l.edit != nil:
+		return l.edit.in
+	case l.bar.Active():
+		return l.bar.input()
+	case l.typing():
+		return l.input.field()
 	}
 	return nil
 }
@@ -216,7 +265,9 @@ func (l *lister) index() int {
 
 // Opens the cell of the selected row for typing, starting from its current text
 func (l *lister) editCell(col int, initial string, done func(l *lister, text string) tea.Cmd) {
-	l.edit, l.onDone = &render.Edit{Col: col, Text: initial, Selected: initial != ""}, done
+	in := field.New(initial)
+	in.SelectAll()
+	l.edit, l.onDone = &cellEdit{col: col, in: in}, done
 }
 
 // Asks a yes or no question along the bottom, running yes on a yes
@@ -224,15 +275,6 @@ func (l *lister) confirm(text string, yes func() tea.Cmd) { l.ask = &question{te
 
 // Reports whether a cell is being typed into
 func (l *lister) Editing() bool { return l.edit != nil }
-
-// Types text into the cell being edited, replacing it while it shows selected
-func (l *lister) typeCell(text string) {
-	if l.edit.Selected {
-		l.edit.Text = ""
-	}
-	l.edit.Text += text
-	l.edit.Selected = false
-}
 
 func (l *lister) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -249,40 +291,28 @@ func (l *lister) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 	case wm.ActionMsg:
 		return l, l.act(msg.ID)
 	case tea.KeyPressMsg:
-		switch {
+		switch in := l.typingInto(); {
 		case l.capture != nil:
 			if chord, ok := keys.Captured(msg); ok {
 				done := l.capture
 				l.capture = nil
 				return l, done(l, chord)
 			}
-		case l.edit != nil:
-			if msg.Text != "" {
-				l.typeCell(msg.Text)
-			}
-		case l.bar.Active():
-			if msg.Text != "" {
-				l.bar.Type(msg.Text)
-				l.refresh()
-			}
+		case in != nil:
+			l.took(in.Take(msg))
 		case l.ask != nil:
-		case l.typing():
-			l.input.text += msg.Text
 		case msg.Text != "":
 			return l, l.leftover(msg.Text)
 		}
-	case tea.PasteMsg:
-		switch {
-		case l.edit != nil:
-			l.typeCell(msg.Content)
-		case l.bar.Active():
-			l.bar.Type(msg.Content)
-			l.refresh()
+	case tea.PasteMsg, tea.ClipboardMsg:
+		switch in := l.typingInto(); {
+		case in != nil:
+			l.took(in.Take(msg))
 		case l.capture != nil || l.ask != nil:
-		case l.typing():
-			l.input.text += msg.Content
 		case l.typed != nil:
-			return l, l.typed(l, msg.Content, true)
+			if paste, ok := msg.(tea.PasteMsg); ok {
+				return l, l.typed(l, paste.Content, true)
+			}
 		}
 	case tea.MouseClickMsg:
 		if msg.Button != tea.MouseLeft || l.edit != nil || l.capture != nil || l.ask != nil {
@@ -348,7 +378,7 @@ func (l *lister) act(id string) tea.Cmd {
 			}
 			return nil
 		}
-		text := strings.TrimSpace(l.edit.Text)
+		text := strings.TrimSpace(l.edit.in.Value())
 		done := l.onDone
 		l.edit, l.onDone = nil, nil
 		if done != nil {
@@ -364,32 +394,6 @@ func (l *lister) act(id string) tea.Cmd {
 			return nil
 		}
 		l.edit, l.onDone = nil, nil
-		return nil
-	case "edit.delete.back":
-		if l.edit != nil {
-			if l.edit.Selected {
-				l.edit.Text = ""
-			} else if r := []rune(l.edit.Text); len(r) > 0 {
-				l.edit.Text = string(r[:len(r)-1])
-			}
-			l.edit.Selected = false
-		} else if l.typing() {
-			if r := []rune(l.input.text); len(r) > 0 {
-				l.input.text = string(r[:len(r)-1])
-			}
-		}
-		return nil
-	case "edit.clear":
-		if l.edit != nil {
-			l.edit.Text, l.edit.Selected = "", false
-		} else if l.typing() {
-			l.input.text = ""
-		}
-		return nil
-	case "edit.end":
-		if l.edit != nil {
-			l.edit.Selected = false
-		}
 		return nil
 	case "search.accept":
 		l.bar.Accept()
@@ -412,9 +416,15 @@ func (l *lister) act(id string) tea.Cmd {
 		l.sel = listMove(id, l.sel, len(l.shown), l.h-render.TableHead)
 		return nil
 	}
-	if l.pane.act(id) || l.bar.Action(id) {
+	if l.pane.act(id) {
 		l.refresh()
 		return nil
+	}
+	if in := l.typingInto(); in != nil && strings.HasPrefix(id, "text.") {
+		before := in.Value()
+		cmd, _ := in.Action(id)
+		l.took(in.Value() != before)
+		return cmd
 	}
 	if fn, ok := l.actions[id]; ok && (l.free[id] || l.index() >= 0) {
 		return fn(l, l.index())
@@ -495,7 +505,7 @@ func (l *lister) View(w, h int) string {
 		}
 		rows = numbered
 		if ed != nil {
-			ed = &render.Edit{Col: ed.Col + 1, Text: ed.Text, Selected: ed.Selected}
+			ed = &render.Edit{Col: ed.Col + 1, Text: ed.Text, Cursor: ed.Cursor, Selected: ed.Selected}
 		}
 	}
 	l.xs, l.widths = render.Columns(cols, rows, w)
@@ -539,9 +549,9 @@ func (l *lister) Cursor() *tea.Cursor {
 	col, n := -1, 0
 	switch {
 	case l.edit != nil:
-		col, n = l.edit.Col, len([]rune(l.edit.Text))
+		col, n = l.edit.col, ansi.StringWidth(string([]rune(l.edit.in.Value())[:l.edit.in.Cursor()]))
 	case l.typing():
-		col, n = l.input.col, ansi.StringWidth(strings.Join(strings.Fields(l.input.text), " "))
+		col, n = l.input.col, ansi.StringWidth(string([]rune(l.input.text)[:l.input.field().Cursor()]))
 	}
 	if col < 0 {
 		return nil

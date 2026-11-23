@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/backup"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -19,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/plugins/defaults"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // One named home or machine maintenance step
@@ -31,7 +28,6 @@ type PostUpdateStep struct {
 // Home steps boot runs in their order, gated by the per home record, every entry point syncing skills itself
 var BootHomeSteps = []PostUpdateStep{
 	{"adopt_blessed_checkout", func(ctx context.Context) (map[string]any, error) { return StepAdoptBlessedCheckout(ctx, "") }},
-	{"migrate_config", StepMigrateConfig},
 	{"state_db_guard", StepStateDBGuard},
 	{"drop_live_plugin_catalog", StepDropLivePluginCatalog},
 	{"expose_cli", StepExposeCLI},
@@ -42,23 +38,6 @@ var BootHomeSteps = []PostUpdateStep{
 func init() {
 	defaults.Identity = func(ctx context.Context) string { return CurrentInstallIdentity(ctx, pm.InstallRoot()) }
 }
-
-// Collaborators of the config migration step, the module attributes tests patch
-var (
-	stampMissingConfigFn = func(ctx context.Context, h string) (bool, error) {
-		return config.StampMissingConfig(ctx, h, provider.ConfigFacadeStampHooks())
-	}
-	readConfigVersionStampFn = func(ctx context.Context, h string) (*int, int, error) {
-		return config.ReadConfigVersionStamp(ctx, h, false)
-	}
-	checkConfigVersionFn     = func(ctx context.Context, h string) (int, int, error) { return config.CheckConfigVersion(ctx, h, false) }
-	agentBrowserEnvPendingFn = func(h string) bool {
-		return config.AgentBrowserEnvPending(h, provider.ConfigFacadeBrowserEnvSources(h))
-	}
-	migrateConfigFn = func(ctx context.Context, h string) (*config.MigrationResults, error) {
-		return config.MigrateConfig(ctx, h, false, true)
-	}
-)
 
 // Explicit pm install of one package, the pm attribute tests patch
 var pmEnsureFn = func(ctx context.Context, name string) error {
@@ -79,56 +58,6 @@ func restoreBackups(backups []backupPair) []string {
 		restored = append(restored, b.original)
 	}
 	return restored
-}
-
-// Migrates config.yaml to the current schema non interactively, backups restored when the version does not advance
-func StepMigrateConfig(ctx context.Context) (map[string]any, error) {
-	h := home.Dir(ctx)
-	if _, err := stampMissingConfigFn(ctx, h); err != nil {
-		return nil, err
-	}
-	stamp, latest, err := readConfigVersionStampFn(ctx, h)
-	if err != nil {
-		return nil, err
-	}
-	current := 0
-	if stamp != nil {
-		current = *stamp
-	}
-	if current >= latest {
-		return map[string]any{"ok": true, "skipped": "up-to-date"}, nil
-	}
-	if current < config.SupportFloorVersion && !(stamp == nil && agentBrowserEnvPendingFn(h)) {
-		pkgLog().Warn("config migration skipped: " + config.SupportFloorMessage(h))
-		return map[string]any{"ok": true, "skipped": "below-support-floor"}, nil
-	}
-	backups, err := backupExisting([]string{home.ConfigPath(h), home.EnvPath(h)})
-	if err != nil {
-		return nil, err
-	}
-	results, err := migrateConfigFn(ctx, h)
-	if err != nil {
-		restoreBackups(backups)
-		return nil, err
-	}
-	post, _, err := checkConfigVersionFn(ctx, h)
-	if err != nil {
-		return nil, err
-	}
-	if post < latest {
-		restored := restoreBackups(backups)
-		names := "none"
-		if len(restored) > 0 {
-			names = strings.Join(restored, ", ")
-		}
-		return nil, fmt.Errorf("migration did not advance config version to %d (still %d); restored: %s", latest, post, names)
-	}
-	if results != nil {
-		for _, notice := range results.Notices {
-			provider.DeferStartupNotice(ctx, notice)
-		}
-	}
-	return map[string]any{"ok": true, "migrated": fmt.Sprintf("%d->%d", current, latest)}, nil
 }
 
 // Verifies the active home's state.db is intact, damage reported loudly and never repaired here

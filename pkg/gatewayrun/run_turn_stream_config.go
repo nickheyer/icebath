@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -147,8 +148,7 @@ func (r *GatewayRunner) proxyStreamConsumer(ctx context.Context, source *gateway
 	if !scfg.GloballyEnabled() {
 		return nil
 	}
-	platStreaming := config.ResolveDisplaySetting(ctx, gateway.LoadGatewayConfigMap(ctx, ""), platformConfigKey(source.Platform), "streaming", nil)
-	if !scfg.EnabledFor(platStreaming) {
+	if !scfg.EnabledFor(settings.DisplayStreaming.Get(settings.WithPlatform(ctx, platformConfigKey(source.Platform)))) {
 		return nil
 	}
 	adapter, err := r.deliveryAdapterFor(ctx, source)

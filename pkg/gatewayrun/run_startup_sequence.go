@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -19,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -377,6 +377,7 @@ func (r *GatewayRunner) Start(ctx context.Context) (bool, error) {
 // Startup sequence from recovery through connects to the running state and background watchers
 func (r *GatewayRunner) startImpl(ctx context.Context) (bool, error) {
 	pkgLog().Info("Starting Icebath Gateway...")
+	tuihost.RegisterSessionSettingsStore()
 	r.startInstallFaulthandler(ctx)
 	r.startLogStartupEnvironment(ctx)
 	if stop, err := r.abortStartupIfShutdownRequested(ctx, nil, nil); err != nil || stop {
@@ -453,19 +454,13 @@ func (r *GatewayRunner) startLogStartupEnvironment(ctx context.Context) {
 	pkgLog().Info(fmt.Sprintf("Session storage: %s", r.config.SessionsDir))
 	r.startLogSystemdTimingAlignment(ctx)
 	r.startLogRetiredSessionReset(ctx)
-	logAgentBudget()
-	redactRaw, ok := os.LookupEnv("ICEBATH_REDACT_SECRETS")
-	if !ok {
-		redactRaw = "true"
-	}
-	switch strings.ToLower(redactRaw) {
-	case "1", "true", "yes", "on":
+	logAgentBudget(ctx)
+	if settings.RedactSecrets.Get(ctx) {
 		pkgLog().Info("Secret redaction: ENABLED (tool output, logs, and chat " +
 			"responses are scrubbed before delivery)")
-	default:
-		pkgLog().Warn(fmt.Sprintf("Secret redaction: DISABLED (ICEBATH_REDACT_SECRETS=%s). API keys and tokens may appear "+
-			"verbatim in chat output, session JSONs, and logs. Set security.redact_secrets: true "+
-			"in config.yaml to re-enable.", redactRaw))
+	} else {
+		pkgLog().Warn("Secret redaction: DISABLED. API keys and tokens may appear verbatim in chat output, " +
+			"session files and logs. Turn Hide secrets on in /settings, Safety, to re-enable.")
 	}
 	if profile := profiles.GetActiveProfileName(ctx); profile != "" && profile != "default" {
 		pkgLog().Info(fmt.Sprintf("Active profile: %s", profile))
@@ -486,12 +481,7 @@ func (r *GatewayRunner) startLogStartupEnvironment(ctx context.Context) {
 				pkgLog().Debug("gateway health OTLP export startup failed", "exc_info", rec)
 			}
 		}()
-		cfg, err := config.Load(home.Dir(ctx), nil)
-		if err != nil {
-			pkgLog().Debug("gateway health OTLP export startup failed", "exc_info", err)
-			return
-		}
-		runtime := monitoring.StartGatewayHealthExport(map[string]any(cfg))
+		runtime := monitoring.StartGatewayHealthExport(ctx)
 		r.gatewayHealthExportRuntime = runtime
 		if runtime.Enabled {
 			pkgLog().Info("Gateway health OTLP export: enabled")
@@ -625,56 +615,12 @@ func (r *GatewayRunner) onRelayProvisioned() {
 	}
 }
 
-// Starts the local Group Chat worker, an error when it has no backend or did not start
-func startHostedRoomWorkerSync() (tuihost.HostedRoomService, error) {
-	service := tuihost.GetHostedRoomService()
-	if service == nil {
-		started, err := tuihost.StartHostedRoomService()
-		if err != nil {
-			return nil, err
-		}
-		service = started
-	}
-	if service == nil {
-		return nil, errors.New("Group Chat worker has no bound session backend")
-	}
-	status := service.RuntimeStatus()
-	if running, _ := status["running"].(bool); !running {
-		return nil, errors.New("Group Chat worker did not start")
-	}
-	if stopping, _ := status["stopping"].(bool); stopping {
-		return nil, errors.New("Group Chat worker did not start")
-	}
-	return service, nil
-}
-
-// Ensures the room worker runs and returns its service, through the session authority when one is bound
+// Ensures the room worker of the session authority runs and returns its service, an error until the authority is bound
 func (r *GatewayRunner) ensureHostedRoomWorker(ctx context.Context) (any, error) {
-	if r.sessionAuthority != nil {
-		return gateway.EnsureHostedService(ctx, r)
+	if r.SessionAuthority() == nil {
+		return nil, errors.New("Group Chat worker waits for the session authority")
 	}
-	service, err := runOffLoopValue(ctx, startHostedRoomWorkerSync)
-	return service, err
-}
-
-// Runs a blocking call on its own goroutine, returning its result or the context error
-func runOffLoopValue[T any](ctx context.Context, fn func() (T, error)) (T, error) {
-	type result struct {
-		v   T
-		err error
-	}
-	done := make(chan result, 1)
-	go func() {
-		v, err := fn()
-		done <- result{v, err}
-	}()
-	select {
-	case res := <-done:
-		return res.v, res.err
-	case <-ctx.Done():
-		var zero T
-		return zero, ctx.Err()
-	}
+	return gateway.EnsureHostedService(ctx, r)
 }
 
 // Keeps the room worker alive for the messaging gateway lifetime

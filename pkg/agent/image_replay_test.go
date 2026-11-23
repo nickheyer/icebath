@@ -41,19 +41,24 @@ func TestReplayFrontierMovesInWholeBatches(t *testing.T) {
 }
 
 func TestResolveReplayRecentImagesRejectsUnusableValues(t *testing.T) {
+	h := t.TempDir()
+	ctx := home.WithOverride(context.Background(), h)
 	cases := []struct {
-		cfg  map[string]any
+		yaml string
 		want int
 	}{
-		{nil, 3}, {map[string]any{"vision": map[string]any{"replay_recent_images": nil}}, 3},
-		{map[string]any{"vision": map[string]any{"replay_recent_images": 5}}, 5},
-		{map[string]any{"vision": map[string]any{"replay_recent_images": -1}}, 0},
-		{map[string]any{"vision": map[string]any{"replay_recent_images": true}}, 0},
-		{map[string]any{"vision": map[string]any{"replay_recent_images": "2"}}, 0},
+		{"", 3}, {"vision:\n  replay_recent_images: null\n", 3},
+		{"vision:\n  replay_recent_images: 5\n", 5},
+		{"vision:\n  replay_recent_images: -1\n", 0},
+		{"vision:\n  replay_recent_images: lots\n", 3},
+		{"vision:\n  replay_recent_images: '2'\n", 2},
 	}
 	for _, c := range cases {
-		if got := ResolveReplayRecentImages(c.cfg); got != c.want {
-			t.Errorf("%v = %d, want %d", c.cfg, got, c.want)
+		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(c.yaml), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := ResolveReplayRecentImages(ctx); got != c.want {
+			t.Errorf("%q = %d, want %d", c.yaml, got, c.want)
 		}
 	}
 }

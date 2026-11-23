@@ -21,9 +21,9 @@ func (poolKeySource) SourceSuppressed(env *tools.Env, providerID, source string)
 	return pe.Store.IsSourceSuppressed(providerID, source)
 }
 
-// Runtime key else access token of the first pooled credential of the pool key, empty when none
+// Runtime key else access token of the profile default login of the pool key, empty when none
 func (poolKeySource) PoolAPIKey(env *tools.Env, providerID string) string {
-	pool := LoadPool(toolsPoolEnv(env), providerID)
+	pool := LoadSelectedPool(toolsPoolEnv(env), providerID)
 	if pool == nil || !pool.HasCredentials() {
 		return ""
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -16,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -242,38 +242,21 @@ func (a *AIAgent) isAzureOpenAIURL(baseURL *string) bool {
 	return ok
 }
 
-// Reads an environment variable as a float, the default when unset, blank or unparsable
-func envFloatOr(key string, def float64) float64 {
-	raw := strings.TrimSpace(os.Getenv(key))
-	if raw == "" {
-		return def
-	}
-	v, err := parsePyFloat(raw)
-	if err != nil {
-		return def
-	}
-	return v
-}
-
-// Python float() over a string, accepting inf, nan and underscores between digits
-func parsePyFloat(raw string) (float64, error) {
-	s := strings.TrimSpace(raw)
-	switch strings.ToLower(strings.TrimLeft(s, "+-")) {
-	case "inf", "infinity", "nan":
-		return strconv.ParseFloat(s, 64)
-	}
-	if strings.Contains(s, "__") || strings.HasPrefix(s, "_") || strings.HasSuffix(s, "_") {
-		return 0, fmt.Errorf("%s is not a number", raw)
-	}
-	return strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
-}
-
-// Per call request timeout from model config, provider config, ICEBATH_API_TIMEOUT, then 1800 seconds
+// Per call request timeout from model config, provider config, then agent.api_timeout
 func (a *AIAgent) resolvedAPICallTimeout(ctx context.Context) float64 {
 	if v, ok := provider.GetProviderRequestTimeout(ctx, a.provider, a.model); ok {
 		return v
 	}
-	return envFloatOr("ICEBATH_API_TIMEOUT", 1800.0)
+	return settings.AgentApiTimeout.Get(ctx).Seconds()
+}
+
+// The silent request limit the user set, false when it is left to the model
+func explicitAPICallStaleTimeout(ctx context.Context) (float64, bool) {
+	v, err := settings.Resolve(ctx, settings.AgentApiCallStaleTimeout.Key)
+	if err != nil || v.Source == settings.SourceDefault {
+		return 0, false
+	}
+	return settings.AgentApiCallStaleTimeout.Get(ctx).Seconds(), true
 }
 
 // Base non stream stale timeout and whether it is the implicit 90 second default
@@ -281,11 +264,7 @@ func (a *AIAgent) resolvedAPICallStaleTimeoutBase(ctx context.Context) (float64,
 	if v, ok := provider.GetProviderStaleTimeout(ctx, a.provider, a.model); ok {
 		return v, false
 	}
-	if env, ok := os.LookupEnv("ICEBATH_API_CALL_STALE_TIMEOUT"); ok {
-		v, err := parsePyFloat(env)
-		if err != nil {
-			panic(fmt.Errorf("ICEBATH_API_CALL_STALE_TIMEOUT is %s, which is not a number", env))
-		}
+	if v, ok := explicitAPICallStaleTimeout(ctx); ok {
 		return v, false
 	}
 	if floor, ok := provider.ReasoningStaleTimeoutFloor(a.model); ok {
@@ -324,7 +303,7 @@ func (a *AIAgent) staleTimeoutIsExplicit(ctx context.Context) bool {
 	if _, ok := provider.GetProviderStaleTimeout(ctx, a.provider, a.model); ok {
 		return true
 	}
-	_, ok := os.LookupEnv("ICEBATH_API_CALL_STALE_TIMEOUT")
+	_, ok := explicitAPICallStaleTimeout(ctx)
 	return ok
 }
 

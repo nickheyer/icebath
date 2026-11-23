@@ -1,8 +1,5 @@
 package config
 
-// Schema version written to config.yaml, bumped only when existing files need a migration
-const Version = 69
-
 // Toolset selection every new config starts from
 const DefaultToolset = "icebath-cli"
 
@@ -452,7 +449,7 @@ func defaultsLiteral() Tree {
 		},
 		"display": map[string]any{
 			"personality":                      "",
-			"busy_input_mode":                  "interrupt",
+			"busy_input_mode":                  "queue",
 			"busy_steer_ack_enabled":           true,
 			"cli_layout":                       "modern",
 			"tui_native":                       false,
@@ -476,8 +473,6 @@ func defaultsLiteral() Tree {
 			"file_mutation_verifier":           true,
 			"turn_completion_explainer":        true,
 			"battery":                          false,
-			"focus_view":                       false,
-			"focus_saved_tool_progress":        "all",
 			"skin":                             "default",
 			"language":                         "en",
 			"tui_status_indicator":             "unicode",
@@ -646,10 +641,11 @@ func defaultsLiteral() Tree {
 			},
 		},
 		"voice": map[string]any{
-			"record_key":                    "ctrl+b",
+			"record_key":                    "",
 			"submit_mode":                   "direct",
 			"max_recording_seconds":         120,
-			"auto_tts":                      false,
+			"input_enabled":                 false,
+			"speak_replies":                 false,
 			"beep_enabled":                  true,
 			"beep_volume":                   0.3,
 			"thinking_sound":                true,
@@ -659,6 +655,10 @@ func defaultsLiteral() Tree {
 			"barge_in_grace_seconds":        0.5,
 			"barge_in_threshold_multiplier": 3.0,
 			"stop_phrases":                  []any{"stop"},
+		},
+		"image_gen": map[string]any{
+			"provider": "",
+			"model":    "",
 		},
 		"vision": map[string]any{
 			"embed_target_bytes":   262144,
@@ -1243,25 +1243,5 @@ func defaultsLiteral() Tree {
 			"port":         0,
 			"detect_ports": []any{},
 		},
-		"_config_version": Version,
 	})
-}
-
-// Top level keys a config file may carry beside the defaults without a warning
-var ExtraRootKeys = map[string]bool{
-	"custom_providers": true, "fallback_model": true, "mcp_servers": true, "image_gen": true, "video_gen": true,
-	"plugins": true, "smart_model_routing": true, "platform_toolsets": true, "known_plugin_toolsets": true,
-	"known_builtin_toolsets": true, "group_sessions_per_user": true,
-	"thread_sessions_per_user": true, "stt_echo_transcripts": true, "reset_triggers": true, "always_log_local": true,
-	"filter_silence_narration": true, "multiplex_profiles": true, "profile_routes": true, "platforms": true,
-	"require_mention": true, "unauthorized_dm_behavior": true, "signal": true, "allow_all_users": true, "timeouts": true,
-}
-
-// Reports whether a root key is part of the schema
-func KnownRootKey(key string) bool {
-	if ExtraRootKeys[key] {
-		return true
-	}
-	_, ok := Defaults()[key]
-	return ok
 }

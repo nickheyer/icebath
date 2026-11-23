@@ -91,3 +91,66 @@ func (d *DB) ModelConfigValue(sessionID, key string) (any, bool) {
 func SessionYoloEnabled(sessionMeta map[string]any) bool {
 	return pyTruthy(ParseModelConfig(sessionMeta["model_config"])["yolo_mode"])
 }
+
+// Plain model_config of a session row, nested objects as plain maps
+func plainModelConfig(raw any) map[string]any {
+	plain, _ := pyjson.Plain(parseModelConfigValue(raw)).(map[string]any)
+	if plain == nil {
+		plain = map[string]any{}
+	}
+	return plain
+}
+
+// SessionModelConfig is a session's model_config with nested objects as plain maps, empty when the session or its config is missing
+func (d *SessionDB) SessionModelConfig(ctx context.Context, sessionID string) (map[string]any, error) {
+	session, err := d.GetSession(ctx, sessionID)
+	if err != nil || session == nil {
+		return map[string]any{}, err
+	}
+	return plainModelConfig(rowValue(session, "model_config")), nil
+}
+
+// UpdateSessionModelConfig rewrites a session's model_config through fn in one write, fn answering false leaving it untouched and a missing row a no op
+func (d *SessionDB) UpdateSessionModelConfig(ctx context.Context, sessionID string, fn func(cfg map[string]any) bool) error {
+	if sessionID == "" {
+		return nil
+	}
+	return d.executeWrite(ctx, func(conn SQLiteConn) error {
+		row, err := connRow(ctx, conn, "SELECT model_config FROM sessions WHERE id = ?", sessionID)
+		if err != nil || row == nil {
+			return err
+		}
+		cfg := plainModelConfig(row["model_config"])
+		if !fn(cfg) {
+			return nil
+		}
+		var text any
+		if len(cfg) > 0 {
+			dumped, err := pyjson.Dumps(cfg, pyjson.SortKeys(true))
+			if err != nil {
+				return err
+			}
+			text = dumped
+		}
+		_, err = conn.ExecContext(ctx, "UPDATE sessions SET model_config = ? WHERE id = ?", text, sessionID)
+		return err
+	}, nil)
+}
+
+// model_config key holding the values a session set for itself in the settings session layer
+const SessionSettingsKey = "session_settings"
+
+// SessionsWithModelConfigKey lists the open sessions whose model_config holds a key
+func (d *SessionDB) SessionsWithModelConfigKey(ctx context.Context, key string) ([]string, error) {
+	rows, err := d.readRows(ctx, "SELECT id FROM sessions WHERE ended_at IS NULL AND "+sqlJSONExtract("model_config", "$."+key)+" IS NOT NULL")
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if id, ok := rowValue(row, "id").(string); ok && id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}

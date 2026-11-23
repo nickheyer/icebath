@@ -582,6 +582,9 @@ func writeWindowsTaskScript(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if refuseTempHomeServiceWrite(cmdText, "scheduled task launcher") {
+		return "", &SystemExitError{Code: 1}
+	}
 	if err := windowsAtomicWrite(scriptPath, cmdText, winWithSuffix(scriptPath, ".tmp"), false); err != nil {
 		return "", err
 	}

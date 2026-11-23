@@ -137,7 +137,6 @@ type Schema struct {
 	Documented []Leaf
 	GenLeaves  []Leaf
 	TopLevel   []string
-	Latest     int
 	Load       func([]byte) (any, error)
 	keys       func(map[string]any) []string
 }
@@ -169,17 +168,7 @@ func NewSchema(defaults map[string]any, keys func(map[string]any) []string, load
 			s.GenLeaves = append(s.GenLeaves, l)
 		}
 	}
-	for _, k := range keys(defaults) {
-		if k != "_config_version" {
-			s.TopLevel = append(s.TopLevel, k)
-		}
-	}
-	switch v := defaults["_config_version"].(type) {
-	case int:
-		s.Latest = v
-	case float64:
-		s.Latest = int(v)
-	}
+	s.TopLevel = keys(defaults)
 	return s
 }
 
@@ -447,7 +436,6 @@ func (s *Schema) GenCase(seed int64, o GenOptions) (*Case, error) {
 			skills.set("external_dirs", []any{"/opt/c18/" + Choice(g, Words), Choice(g, Unicode)})
 		}
 	}
-	tree.set("_config_version", s.Latest)
 
 	lines := []string{fmt.Sprintf("# C18 generated config (seed=%d) — comments must survive every write", seed)}
 	leafLines := map[string]int{}
@@ -475,7 +463,7 @@ func (s *Schema) GenCase(seed int64, o GenOptions) (*Case, error) {
 				}
 			default:
 				note := ""
-				if g.Random() < 0.25 && k != "_config_version" {
+				if g.Random() < 0.25 {
 					note = "  # inline note"
 				}
 				leafLines[Key(p...)] = len(lines)
@@ -495,24 +483,6 @@ func (s *Schema) GenCase(seed int64, o GenOptions) (*Case, error) {
 		return nil, fmt.Errorf("generator self-check failed for seed %d: changed %v\n%s", seed, Paths(ChangedPaths(plain, parsed)), text)
 	}
 	return &Case{Seed: seed, Text: text, Tree: plain, LeafLines: leafLines, LeafOrder: order, Env: env}, nil
-}
-
-var configVersionLine = regexp.MustCompile(`(?m)^_config_version:`)
-
-// Text with a newline terminated block inserted right before the root _config_version line
-func BeforeVersion(text, block string) (string, error) {
-	loc := configVersionLine.FindStringIndex(text)
-	if loc == nil {
-		return "", fmt.Errorf("no root _config_version line in:\n%s", text)
-	}
-	return text[:loc[0]] + block + text[loc[0]:], nil
-}
-
-var stampLine = regexp.MustCompile(`(?m)^_config_version: \d+$`)
-
-// Text with every root version stamp rewritten to the given version
-func Restamp(text string, version int) string {
-	return stampLine.ReplaceAllString(text, fmt.Sprintf("_config_version: %d", version))
 }
 
 // CLI spelling of a path, literal dots escaped

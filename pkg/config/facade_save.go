@@ -322,13 +322,6 @@ func saveConfigLocked(ctx context.Context, h string, cfg map[string]any, opts Sa
 		}
 		normalized = StripDefaults(normalized, map[string]any(Defaults()), preserve)
 	}
-	var stamp StampHooks
-	if fn := hooks().Stamp; fn != nil {
-		stamp = fn()
-	}
-	if _, err := noteFirstStamp(h, raw, normalized, stamp); err != nil {
-		return err
-	}
 	if err := AtomicConfigReplace(ctx, h, path, normalized, commentedSectionsForSave(normalized)); err != nil {
 		return err
 	}

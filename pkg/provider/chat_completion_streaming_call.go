@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Streaming request on the agent wire firing the delta callbacks, the non streaming response shape on return
@@ -300,7 +301,7 @@ func (c *streamingCall) streamTimeouts() (float64, float64, float64) {
 	if cfg, ok := GetProviderRequestTimeout(c.ctx, c.agent.Provider(), c.agent.Model()); ok {
 		return cfg, cfg, math.Min(cfg, 60)
 	}
-	base := envFloat("ICEBATH_API_TIMEOUT", 1800)
+	base := settings.AgentApiTimeout.Get(c.ctx).Seconds()
 	read := envFloat("ICEBATH_STREAM_READ_TIMEOUT", 120)
 	c.mu.Lock()
 	stale := c.staleTimeout
@@ -901,12 +902,12 @@ func (c *streamingCall) forgetInvisibleDeltas(err error) bool {
 	return toolInFlight
 }
 
-// Per provider stale_timeout_seconds config, else the stream stale env base
+// Per provider stale_timeout_seconds config, else agent.stream_stale_timeout
 func streamingConfiguredStaleBase(ctx context.Context, agent ChatCompletionAgent) float64 {
 	if cfg, ok := GetProviderStaleTimeout(ctx, agent.Provider(), agent.Model()); ok {
 		return cfg
 	}
-	base, _ := streamEnvStaleBase()
+	base, _ := streamStaleBase(ctx)
 	return base
 }
 

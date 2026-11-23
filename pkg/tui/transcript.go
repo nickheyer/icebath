@@ -3,8 +3,10 @@ package tui
 import (
 	"encoding/json"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
@@ -58,7 +60,7 @@ func delegationResultMsg(text string, meta *tuigateway.DisplayMetadata, createdA
 }
 
 // Trail row and the question → answer lines a settled clarify leaves in the transcript, a blank answer read as skipped
-func clarifySettledRows(questions []clarifyQuestion, answers map[string]string) (string, string) {
+func clarifySettledRows(questions []clarifyQuestion, answers map[string]string) (toolRow, string) {
 	rows := make([]string, len(questions))
 	for i, q := range questions {
 		answer := tr(txt.SessionMainSkipped)
@@ -67,7 +69,7 @@ func clarifySettledRows(questions []clarifyQuestion, answers map[string]string) 
 		}
 		rows[i] = q.Question + " → " + answer
 	}
-	return buildToolTrailLine("clarify", trCount(txt.PromptClarifyQuestionsOne, txt.PromptClarifyQuestionsOther, len(questions)), toolVerdict{}, "", nil), strings.Join(rows, "\n")
+	return namedToolRow("clarify", trCount(txt.PromptClarifyQuestionsOne, txt.PromptClarifyQuestionsOther, len(questions)), toolVerdict{}), strings.Join(rows, "\n")
 }
 
 // Stored result of a clarify tool call, as much of it as the transcript reads
@@ -81,10 +83,10 @@ type storedClarifyResult struct {
 }
 
 // Trail row and text of a stored clarify result as the live turn showed it, the answers of a submitted form or the abandoned block of one that ended otherwise, found false when the result holds no responses
-func storedClarifyRows(content string) (trail, text string, abandoned, found bool) {
+func storedClarifyRows(content string) (trail toolRow, text string, abandoned, found bool) {
 	var result storedClarifyResult
 	if json.Unmarshal([]byte(content), &result) != nil || len(result.Responses) == 0 {
-		return "", "", false, false
+		return toolRow{}, "", false, false
 	}
 	questions := make([]clarifyQuestion, len(result.Responses))
 	answers := map[string]string{}
@@ -121,44 +123,176 @@ func storedClarifyRows(content string) (trail, text string, abandoned, found boo
 	return trail, formatAbandonedClarify(questions, answers, reason), true, true
 }
 
-// Transcript rows of a stored session, tool rows folded into the next reply, a clarify result shown as its settled rows and display only events projected
-func toTranscriptMessages(rows []tuigateway.TranscriptMessage) []msg {
+// Rows a shell line a person ran leaves under its prompt row, what it printed and its exit status when it failed or printed nothing; the live
+// line and a stored one both end here
+func shellOutputRows(r tuigateway.ShellExecResult) []msg {
 	var out []msg
-	var pending []string
+	printed := trimJS(strings.Join(slices.DeleteFunc([]string{r.Stdout, r.Stderr}, func(s string) bool { return s == "" }), "\n"))
+	if printed != "" {
+		out = append(out, msg{Role: "system", Text: printed})
+	}
+	if r.Code != 0 || printed == "" {
+		out = append(out, msg{Role: "system", Text: tr(txt.CommonExitCode, r.Code)})
+	}
+	return out
+}
+
+// Rows a finished turn leaves in the transcript: its final rows, or the failure copy in place of a bare error reply, then the line of what it
+// did; the live turn and a stored turn both end here
+func finishedTurnRows(done messageCompleteResult, p tuigateway.MessageCompletePayload, summary string) []msg {
+	var out []msg
+	if !done.WasInterrupted {
+		errText := val(p.Error)
+		switch {
+		case val(p.Status) == "error" && !val(p.Partial) && isBareErrorText(done.FinalText, errText):
+			for i, m := range done.FinalMessages {
+				if !(i == len(done.FinalMessages)-1 && m.Role == "assistant" && isBareErrorText(m.Text, errText)) {
+					out = append(out, m)
+				}
+			}
+			out = append(out, msg{Role: "assistant", Text: describeTurnFailure(p)})
+		case len(done.FinalMessages) > 0:
+			out = done.FinalMessages
+		default:
+			out = []msg{{Role: "assistant", Text: done.FinalText}}
+		}
+	}
+	if summary != "" {
+		out = append(out, msg{Kind: "event", Role: "system", Text: summary})
+	}
+	return out
+}
+
+// Stored turn played through a turn controller of its own on a clock set to the stored times, so its rows come out of the same code the live
+// turn ran: its reasoning, text, tool calls and the line of what it did
+type storedTurn struct {
+	store *tuiStore
+	turn  *turnController
+	at    float64
+	out   *[]msg
+	// Text of the newest reply of the turn, the completion once no tool call follows it
+	last string
+	// Whether a reply or a tool call came after the prompt, a turn without either left open as the background service still runs it
+	fed bool
+}
+
+// Turn opened at the time of its prompt, under the transcript settings of the view
+func openStoredTurn(ui uiState, at float64, out *[]msg) *storedTurn {
+	st := &storedTurn{at: at, out: out}
+	st.store = &tuiStore{ui: ui, now: func() time.Time { return time.UnixMilli(int64(math.Round(st.at * 1000))) }}
+	st.turn = newTurnController(st.store)
+	st.turn.startMessage()
+	return st
+}
+
+// Moves the turn clock to a stored time, never backward
+func (st *storedTurn) tick(at *float64) {
+	if ts := val(at); ts > st.at {
+		st.at = ts
+	}
+}
+
+// Feeds a stored reply, its reasoning first, as the stream brought it
+func (st *storedTurn) reply(row tuigateway.TranscriptMessage, text string) {
+	st.tick(row.Timestamp)
+	if reasoning := val(row.Reasoning); strings.TrimFunc(reasoning, isJSSpace) != "" {
+		st.turn.recordReasoningDelta(reasoning, false)
+	}
+	if text != "" {
+		st.turn.recordMessageDelta(text)
+	}
+	st.last, st.fed = text, true
+}
+
+// Feeds a stored tool call, started when the reply asking for it was made and finished at the time of its row, a settled clarify leaving its
+// questions and answers as the live dialog did
+func (st *storedTurn) tool(row tuigateway.TranscriptMessage) {
+	name := firstText(val(row.Name), "tool")
+	id := firstText(val(row.ToolCallID), name)
+	labels := toolLabelsOf(row.Labels)
+	st.last, st.fed = "", true
+	st.turn.recordToolStart(id, name, val(row.Context), "", labels)
+	st.tick(row.Timestamp)
+	content, _ := row.Content.(string)
+	verdict := verdictOf(row.IsError, row.Refused, row.Error)
+	if name == "clarify" && content != "" {
+		if trail, text, abandoned, found := storedClarifyRows(content); found {
+			role := "user"
+			if abandoned {
+				role = "system"
+			}
+			st.append(msg{Kind: "trail", Role: "system", Tools: []toolRow{trail}})
+			st.append(msg{Role: role, Text: text})
+			st.turn.persistedToolLabels[toolTrailLabel("clarify")] = true
+		}
+	}
+	st.turn.summary.recordTool(name, content, verdict.Failed)
+	if diff := strings.TrimFunc(stripAnsi(val(row.InlineDiff)), isJSSpace); diff != "" && st.store.ui.InlineDiffs {
+		st.turn.recordInlineDiffToolComplete(diff, id, name, row.DurationS, strippedText(row.ResultText), labels, verdict)
+	} else {
+		st.turn.recordToolComplete(id, name, "", row.DurationS, nil, strippedText(row.ResultText), labels, verdict)
+	}
+	st.turn.pushImageSegment(val(row.ImagePath), id)
+}
+
+// Appends a row at the turn clock
+func (st *storedTurn) append(m msg) {
+	*st.out = appendTranscriptMessage(*st.out, m, func() float64 { return st.at })
+}
+
+// Ends the turn with its last reply as the completion
+func (st *storedTurn) finish() {
+	text := st.last
+	done := st.turn.recordMessageComplete(tuigateway.MessageCompletePayload{Text: &text})
+	for _, m := range finishedTurnRows(done, tuigateway.MessageCompletePayload{}, st.turn.summaryLine()) {
+		st.append(m)
+	}
+}
+
+// Transcript rows of a stored session under the transcript settings of the view, each turn rebuilt by the code the live turn ran and display only
+// events projected
+func toTranscriptMessages(rows []tuigateway.TranscriptMessage, ui uiState) []msg {
+	var out []msg
+	var turn *storedTurn
+	settle := func() {
+		if turn != nil && turn.fed {
+			turn.finish()
+		}
+		turn = nil
+	}
 	for _, row := range rows {
 		var createdAt *float64
 		if ts := val(row.Timestamp); !math.IsInf(ts, 0) && !math.IsNaN(ts) && ts > 0 {
 			createdAt = &ts
 		}
 		if row.Role == "tool" {
-			name := "tool"
-			if row.Name != nil {
-				name = *row.Name
+			if turn == nil {
+				turn = openStoredTurn(ui, val(createdAt), &out)
 			}
-			if content, _ := row.Content.(string); name == "clarify" && content != "" {
-				if trail, text, abandoned, found := storedClarifyRows(content); found {
-					role := "user"
-					if abandoned {
-						role = "system"
-					}
-					out = append(out, msg{Kind: "trail", Role: "system", Tools: append(pending, trail)}, msg{Role: role, Text: text})
-					pending = nil
-					continue
-				}
-			}
-			pending = append(pending, buildToolTrailLine(name, val(row.Context), verdictOf(row.IsError, row.Refused, row.Error), "", nil))
+			turn.tool(row)
 			continue
 		}
 		text := val(row.Text)
-		if row.Text == nil || strings.TrimFunc(text, isJSSpace) == "" {
+		reasoning := strings.TrimFunc(val(row.Reasoning), isJSSpace)
+		if strings.TrimFunc(text, isJSSpace) == "" && (row.Role != "assistant" || reasoning == "") {
 			continue
 		}
 		event := func(text string) {
-			out = append(out, msg{Kind: "event", Role: "system", Text: text})
-			pending = nil
+			settle()
+			out = append(out, msg{Kind: "event", Role: "system", Text: text, CreatedAt: createdAt})
 		}
 		switch val(row.DisplayKind) {
 		case "hidden":
+			continue
+		case "shell":
+			settle()
+			out = append(out, msg{Role: "user", Text: "!" + text, CreatedAt: createdAt})
+			if row.Shell != nil {
+				for _, m := range shellOutputRows(*row.Shell) {
+					m.CreatedAt = createdAt
+					out = append(out, m)
+				}
+			}
 			continue
 		case "model_switch":
 			event(tr(txt.LibTextMessagesModelChanged))
@@ -170,8 +304,8 @@ func toTranscriptMessages(rows []tuigateway.TranscriptMessage) []msg {
 			event(tr(txt.LibTextMessagesPersonalityChanged))
 			continue
 		case "async_delegation_complete":
+			settle()
 			out = append(out, delegationResultMsg(text, row.DisplayMetadata, createdAt))
-			pending = nil
 			continue
 		case "process_complete":
 			label := tr(txt.LibTextMessagesBackgroundProcessFinished)
@@ -183,13 +317,20 @@ func toTranscriptMessages(rows []tuigateway.TranscriptMessage) []msg {
 		}
 		switch row.Role {
 		case "assistant":
-			out = append(out, msg{Role: row.Role, Text: text, CreatedAt: createdAt, Tools: pending})
-			pending = nil
-		case "user", "system":
+			if turn == nil {
+				turn = openStoredTurn(ui, val(createdAt), &out)
+			}
+			turn.reply(row, text)
+		case "user":
+			settle()
 			out = append(out, msg{Role: row.Role, Text: text, CreatedAt: createdAt})
-			pending = nil
+			turn = openStoredTurn(ui, val(createdAt), &out)
+		case "system":
+			settle()
+			out = append(out, msg{Role: row.Role, Text: text, CreatedAt: createdAt})
 		}
 	}
+	settle()
 	return out
 }
 

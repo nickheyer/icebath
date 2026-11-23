@@ -254,13 +254,13 @@ func TestDescribeShellExecError(t *testing.T) {
 		t.Run("names the "+backend+" backend and points at the agent (#134889 TUI-16)", func(t *testing.T) {
 			err := &rpcError{Message: "unsupported_terminal_backend", Code: 4001, HasCode: true, Data: map[string]any{"reason": "unsupported_terminal_backend", "field": "terminal.backend", "detail": backend}}
 			text := describeShellExecError(err)
-			mustContain(t, text, "terminal backend is "+backend, "Ask the agent to run it instead")
+			mustContain(t, text, "runs its commands in "+backend, "Ask the agent to run it instead")
 			mustLack(t, text, "unsupported_terminal_backend")
 		})
 	}
 	t.Run("still names the refusal when an older gateway sends no backend, and passes other errors through", func(t *testing.T) {
 		text := describeShellExecError(&rpcError{Message: "unsupported_terminal_backend", Code: 4001, HasCode: true, Data: map[string]any{"reason": "unsupported_terminal_backend"}})
-		mustContain(t, text, "this session's terminal backend isn't local", "Ask the agent to run it instead.")
+		mustContain(t, text, "this session runs its commands elsewhere", "Ask the agent to run it instead.")
 		mustLack(t, text, "not local", "agent's terminal runs inside")
 		if describeShellExecError(refusal("dangerous_command", 4001)) != "dangerous_command" {
 			t.Fatal("changed")

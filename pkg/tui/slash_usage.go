@@ -6,8 +6,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
@@ -126,20 +124,4 @@ func rateLimitSections(state map[string]any, now time.Time) []panelSection {
 		sections = append(sections, panelSection{Items: warnings})
 	}
 	return sections
-}
-
-// Session totals from session.usage, the no calls line before the first call
-func (a *app) sessionUsage(r *slashRun) tea.Cmd {
-	return tea.Batch(r.ran(), ask(r.rpc, r.a.sys, tuigateway.SessionUsage, tuigateway.SessionUsageParams{SessionID: r.sid}, func(res *tuigateway.Usage) tea.Cmd {
-		if res == nil {
-			return nil
-		}
-		a.store.ui.Usage = &tuigateway.Usage{Calls: res.Calls, Input: res.Input, Output: res.Output, Total: res.Total}
-		if res.Calls == 0 {
-			r.sys(tr(txt.SlashCmdSessionUsageNoCalls))
-			return nil
-		}
-		a.panel(tr(txt.SlashCmdSessionUsageUsageTitle), append(usageTotalsSections(res), rateLimitSections(res.RateLimit, a.store.now())...))
-		return nil
-	}))
 }

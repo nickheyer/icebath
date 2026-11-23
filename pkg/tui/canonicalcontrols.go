@@ -52,7 +52,7 @@ func splitArgs(arg string) []string {
 	return jsWhitespaceSplit.Split(trimmed, -1)
 }
 
-// Model mutation payload of a model argument with its provider, reasoning and scope flags
+// Model mutation payload of a model argument with its provider, reasoning and scope flags, the login to pin with it under "login"
 func modelPayload(arg string) (map[string]any, error) {
 	parts := splitArgs(arg)
 	model := parts[0]
@@ -76,6 +76,10 @@ func modelPayload(arg string) (map[string]any, error) {
 			continue
 		case flag == "--reasoning" && len(parts) > 0 && canonicalReasoningEfforts[strings.ToLower(parts[0])]:
 			payload["reasoning"] = strings.ToLower(parts[0])
+			parts = parts[1:]
+			continue
+		case flag == "--login" && len(parts) > 0 && parts[0] != "" && !strings.HasPrefix(parts[0], "--"):
+			payload["login"] = parts[0]
 			parts = parts[1:]
 			continue
 		}
@@ -117,11 +121,6 @@ func hasRefusalReason(err error) bool {
 
 // Compare and swap mutation of a session, reading its revision first unless a pending request is retried
 func (s *tuiStore) mutateCanonical(gw turnGateway, sid, operation string, payload map[string]any, stale func() bool, then func(*mutationOutcome, error) tea.Cmd) tea.Cmd {
-	return s.mutateCanonicalRead(gw, sid, operation, payload, stale, nil, then)
-}
-
-// Compare and swap mutation handing onRead the snapshot of the revision read before it is checked
-func (s *tuiStore) mutateCanonicalRead(gw turnGateway, sid, operation string, payload map[string]any, stale func() bool, onRead func(*tuigateway.CanonicalSnapshot), then func(*mutationOutcome, error) tea.Cmd) tea.Cmd {
 	if s.pendingMutations == nil {
 		s.pendingMutations = map[string]pendingMutation{}
 	}
@@ -147,19 +146,17 @@ func (s *tuiStore) mutateCanonicalRead(gw turnGateway, sid, operation string, pa
 	if pending, has := s.pendingMutations[key]; has {
 		return send(pending.params)
 	}
-	return call(gw, tuigateway.CanonicalSessionResume, tuigateway.CanonicalResumeParams{SessionID: sid, OmitMessages: true}, func(snapshot *tuigateway.CanonicalSnapshot, err error) tea.Cmd {
+	// The revision is read without attaching: a resume would subscribe again and refresh the session's policy
+	return call(gw, tuigateway.CanonicalSessionRevision, tuigateway.SessionRevisionParams{SessionID: sid}, func(fence *tuigateway.SessionRevisionResult, err error) tea.Cmd {
 		if err != nil {
 			return then(nil, err)
-		}
-		if onRead != nil {
-			onRead(snapshot)
 		}
 		if stale() {
 			return then(nil, nil)
 		}
-		params := tuigateway.SessionMutateParams{SessionID: sid, RequestID: uuid.NewString(), ExpectedRevision: snapshot.Revision, Operation: operation, Payload: payload}
+		params := tuigateway.SessionMutateParams{SessionID: sid, RequestID: uuid.NewString(), ExpectedRevision: fence.Revision, Operation: operation, Payload: payload}
 		if operation != "rename" {
-			params.ExpectedGeneration = ptr(snapshot.ExecutionGeneration)
+			params.ExpectedGeneration = ptr(fence.ExecutionGeneration)
 		}
 		s.pendingMutations[key] = pendingMutation{sid: sid, params: params}
 		return send(params)
@@ -176,6 +173,24 @@ func (s *tuiStore) mutateCanonicalSession(gw turnGateway, sid, operation, arg st
 			return func() tea.Msg { return asyncDoneMsg{run: func() tea.Cmd { return then(nil, err) }} }
 		}
 		payload = model
+		// A login named with the model is pinned for the session once the model is switched
+		if login, named := payload["login"].(string); named {
+			delete(payload, "login")
+			switched := then
+			then = func(m *mutationOutcome, err error) tea.Cmd {
+				if err != nil || m == nil {
+					return switched(m, err)
+				}
+				provider, _ := payload["provider"].(string)
+				pin := tuigateway.SessionSetLoginParams{SessionID: sid, Provider: provider, Login: &login}
+				return call(gw, tuigateway.SessionSetLogin, pin, func(_ *tuigateway.SessionSetLoginResult, err error) tea.Cmd {
+					if err != nil {
+						return switched(nil, err)
+					}
+					return switched(m, nil)
+				})
+			}
+		}
 	case arg != "" && operation == "branch":
 		payload["title"] = arg
 	case arg != "":

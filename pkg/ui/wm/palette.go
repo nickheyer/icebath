@@ -12,6 +12,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/nickheyer/icebath/pkg/ui/anim"
+	"github.com/nickheyer/icebath/pkg/ui/field"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -64,10 +65,10 @@ type scored struct {
 
 // Fuzzy picker typed into from the bar field with its matches hanging below, a line of text without items
 type Palette struct {
-	theme   theme.Theme
-	items   []Item
-	query   string
-	cursor  int
+	theme theme.Theme
+	items []Item
+	// Text typed into the field, edited with the keys every field shares
+	input   *field.Field
 	matches []scored
 	sel     int
 	// First match row shown, kept so the list scrolls only when the selection leaves it or the wheel turns
@@ -105,15 +106,14 @@ type Palette struct {
 
 // Builds a palette over the items
 func NewPalette(t theme.Theme, items []Item) *Palette {
-	p := &Palette{theme: t, items: items, hl: anim.NewValueWith(0, highlightSpring)}
+	p := &Palette{theme: t, items: items, input: field.New(""), hl: anim.NewValueWith(0, highlightSpring)}
 	p.filter()
 	return p
 }
 
 // Builds a palette that takes a line of text, prefilled with value
 func NewPrompt(t theme.Theme, placeholder, value string, submit func(text string) tea.Cmd) *Palette {
-	p := &Palette{theme: t, Placeholder: placeholder, query: value, cursor: len([]rune(value)), OnText: submit, hl: anim.NewValueWith(0, highlightSpring)}
-	return p
+	return &Palette{theme: t, Placeholder: placeholder, input: field.New(value), OnText: submit, hl: anim.NewValueWith(0, highlightSpring)}
 }
 
 // Glides the highlight toward the selected row, jumping there when motion is off
@@ -142,23 +142,23 @@ func (p *Palette) Glyph() string { return p.theme.Glyphs.Palette }
 func (p *Palette) Key() string   { return "palette" }
 func (p *Palette) Init() tea.Cmd { return nil }
 
-// Keymap contexts in force, the yes and no keys while a question is asked and the palette's own context ahead of the picker keys
+// Keymap contexts in force, the yes and no keys while a question is asked and the palette's own context ahead of the picker keys, the field keys last
 func (p *Palette) Contexts() []string {
 	switch {
 	case p.ask != nil:
 		return []string{keys.Confirm, keys.Palette}
 	case p.Context != "":
-		return []string{p.Context, keys.Palette}
+		return []string{p.Context, keys.Palette, keys.Text}
 	}
-	return []string{keys.Palette}
+	return []string{keys.Palette, keys.Text}
 }
 
 // Text typed so far
-func (p *Palette) Query() string { return p.query }
+func (p *Palette) Query() string { return p.input.Value() }
 
 // Replaces the typed text and filters the rows by it
 func (p *Palette) SetQuery(text string) {
-	p.query, p.cursor = text, len([]rune(text))
+	p.input.SetValue(text)
 	p.filter()
 }
 
@@ -258,18 +258,15 @@ func (p *Palette) Input(w int, bg color.Color) (string, int) {
 		text := ansi.Truncate(p.ask.text, w, t.Glyphs.Ellipsis)
 		return base.Foreground(t.Accent).Bold(true).Render(text), min(ansi.StringWidth(text)+1, w)
 	}
-	if p.query == "" {
+	if p.input.Empty() {
 		return base.Foreground(t.TextDim).Render(ansi.Truncate(p.Placeholder, w, t.Glyphs.Ellipsis)), 0
 	}
-	runes := []rune(p.query)
-	if p.Masked {
-		runes = []rune(strings.Repeat(t.Glyphs.Mask, len(runes)))
+	p.input.Masked = p.Masked
+	text, caret := p.input.Line(w)
+	if p.input.Whole() {
+		return base.Foreground(t.Bg).Background(t.Ice).Render(text), caret
 	}
-	from := 0
-	for from < p.cursor && ansi.StringWidth(string(runes[from:p.cursor])) >= w {
-		from++
-	}
-	return base.Foreground(t.Text).Render(ansi.Truncate(string(runes[from:]), w, "")), ansi.StringWidth(string(runes[from:p.cursor]))
+	return base.Foreground(t.Text).Render(text), caret
 }
 
 // Score of a fuzzy subsequence match with the matched positions, negative for none
@@ -309,14 +306,22 @@ func (p *Palette) filter() {
 	p.matches = p.matches[:0]
 	for _, it := range p.items {
 		if p.Filter != nil {
-			if p.Filter(p.query, it) {
+			if p.Filter(p.Query(), it) {
 				p.matches = append(p.matches, scored{item: it})
 			}
 			continue
 		}
-		s, hits := fuzzy(p.query, it.Title)
+		s, hits := fuzzy(p.Query(), it.Title)
+		// A title that is the query, or starts with it, leads every looser match
+		switch title, q := strings.ToLower(it.Title), strings.ToLower(strings.TrimSpace(p.Query())); {
+		case q == "":
+		case title == q:
+			s += 200
+		case strings.HasPrefix(title, q):
+			s += 100
+		}
 		if s < 0 {
-			ds, _ := fuzzy(p.query, it.Detail)
+			ds, _ := fuzzy(p.Query(), it.Detail)
 			if ds < 0 {
 				continue
 			}
@@ -324,7 +329,7 @@ func (p *Palette) filter() {
 		}
 		p.matches = append(p.matches, scored{item: it, score: s, hits: hits})
 	}
-	if p.query != "" {
+	if p.Query() != "" {
 		sort.SliceStable(p.matches, func(i, j int) bool { return p.matches[i].score > p.matches[j].score })
 	}
 	if p.sel >= len(p.matches) {
@@ -342,14 +347,9 @@ func (p *Palette) Update(msg tea.Msg) (Card, tea.Cmd) {
 		}
 	case ActionMsg:
 		return p, p.action(msg.ID)
-	case tea.KeyPressMsg:
-		if msg.Text != "" && !p.held() {
-			p.insert(msg.Text)
-		}
-		return p, nil
-	case tea.PasteMsg:
-		if !p.held() {
-			p.insert(msg.Content)
+	case tea.KeyPressMsg, tea.PasteMsg, tea.ClipboardMsg:
+		if !p.held() && p.input.Take(msg) {
+			p.filter()
 		}
 		return p, nil
 	case tea.MouseClickMsg:
@@ -410,55 +410,15 @@ func (p *Palette) action(id string) tea.Cmd {
 		p.move(8)
 	case "palette.page.up":
 		p.move(-8)
-	case "palette.delete.back":
-		if p.cursor > 0 {
-			r := []rune(p.query)
-			p.query = string(r[:p.cursor-1]) + string(r[p.cursor:])
-			p.cursor--
+	default:
+		before := p.Query()
+		cmd, _ := p.input.Action(id)
+		if p.Query() != before {
 			p.filter()
 		}
-	case "palette.delete.forward":
-		r := []rune(p.query)
-		if p.cursor < len(r) {
-			p.query = string(r[:p.cursor]) + string(r[p.cursor+1:])
-			p.filter()
-		}
-	case "palette.left":
-		p.cursor = max(0, p.cursor-1)
-	case "palette.right":
-		p.cursor = min(len([]rune(p.query)), p.cursor+1)
-	case "palette.home":
-		p.cursor = 0
-	case "palette.end":
-		p.cursor = len([]rune(p.query))
-	case "palette.clear":
-		p.query, p.cursor = "", 0
-		p.filter()
-	case "palette.delete.word":
-		runes := []rune(p.query)
-		i := p.cursor
-		for i > 0 && runes[i-1] == ' ' {
-			i--
-		}
-		for i > 0 && runes[i-1] != ' ' {
-			i--
-		}
-		r := append([]rune{}, runes[:i]...)
-		r = append(r, runes[p.cursor:]...)
-		p.query, p.cursor = string(r), i
-		p.filter()
+		return cmd
 	}
 	return nil
-}
-
-func (p *Palette) insert(text string) {
-	r := []rune(p.query)
-	out := append([]rune{}, r[:p.cursor]...)
-	out = append(out, []rune(text)...)
-	out = append(out, r[p.cursor:]...)
-	p.query = string(out)
-	p.cursor += len([]rune(text))
-	p.filter()
 }
 
 func (p *Palette) move(d int) {
@@ -506,7 +466,7 @@ func (p *Palette) pick() tea.Cmd {
 		if p.OnText == nil {
 			return RequestDismissOf(p)
 		}
-		text := p.query
+		text := p.Query()
 		if p.Hold {
 			return p.OnText(text)
 		}
@@ -675,6 +635,7 @@ func (m *Model) builtin() []Command {
 		{ID: "window.zoom", Title: "Window: fullscreen", When: hasFocus, Run: m.ToggleZoom},
 		{ID: "window.float", Title: "Window: float", When: hasFocus, Run: m.ToggleFloat},
 		{ID: "window.close", Title: "Window: close", When: func() bool { e := m.focused(); return e != nil && closable(e.card) }, Run: m.CloseFocused},
+		{ID: "window.attention", Title: "Window: the one waiting on you", When: m.needsYou, Run: m.FocusAttention},
 		{ID: "tabs.join", Title: "Tab: join the window beside", When: func() bool {
 			e := m.focused()
 			return e != nil && !e.floating && besideTile(m.Active(), e) != nil
@@ -703,13 +664,17 @@ func (m *Model) builtin() []Command {
 	return out
 }
 
-// Replaces the commands the app contributes, which take precedence over the built in ones
-func (m *Model) SetCommands(cmds []Command) { m.commands = cmds }
+// Sets where the commands the app contributes come from, asked each time they are listed or run and taking precedence over the built in ones
+func (m *Model) SetCommandSource(source func() []Command) { m.commandSource = source }
 
 // Every command, the app's first
 func (m *Model) Commands() []Command {
-	out := make([]Command, 0, len(m.commands)+40)
-	out = append(out, m.commands...)
+	var app []Command
+	if m.commandSource != nil {
+		app = m.commandSource()
+	}
+	out := make([]Command, 0, len(app)+40)
+	out = append(out, app...)
 	out = append(out, m.builtin()...)
 	return out
 }
@@ -747,7 +712,8 @@ func (m *Model) SetKeys(km *keys.Map) {
 // Fires the first ready action the key is bound to in the contexts of the target, reporting whether one was
 func (m *Model) dispatch(target *entry, msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	ctxs := contextsOf(target.card)
-	if target == m.overlay && !slices.Contains(ctxs, keys.Palette) {
+	floating := target == m.overlay || target.host != nil
+	if floating && !slices.Contains(ctxs, keys.Palette) {
 		ctxs = append(ctxs, keys.Palette)
 	}
 	grab := raw(target.card)
@@ -759,13 +725,13 @@ func (m *Model) dispatch(target *entry, msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if m.overlay != nil && a.Context == keys.Global && !a.Overlay {
 			continue
 		}
-		if target == m.overlay && id == "palette.close" {
-			if b, steps := target.card.(Backer); steps && b.Back() {
+		if floating && (id == "palette.close" || id == "panel.close") && !closesItself(target.card) {
+			if b, steps := target.card.(Backer); steps && id == "palette.close" && b.Back() {
 				return nil, true
 			}
-			return m.Dismiss(), true
-		}
-		if target == m.overlay && id == "panel.close" {
+			if target.host != nil {
+				return m.Detach(target.card), true
+			}
 			return m.Dismiss(), true
 		}
 		if c, ok := m.command(id); ok {
@@ -818,7 +784,7 @@ func (m *Model) remember(id string) {
 
 // Opens the palette over titled ready commands and the focused card actions, recent first
 func (m *Model) OpenPalette() tea.Cmd {
-	if m.overlay != nil {
+	if m.overlay != nil && !sticky(m.overlay) {
 		return m.Dismiss()
 	}
 	var items []Item

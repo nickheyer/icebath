@@ -44,12 +44,9 @@ func TestQQEnvCredentialsEnableAndFillExtra(t *testing.T) {
 		t.Fatalf("either credential of the one group enables qqbot: %+v", pc)
 	}
 	t.Setenv("QQ_CLIENT_SECRET", "sec")
-	t.Setenv("QQ_ALLOWED_USERS", " u1,u2 ")
-	t.Setenv("QQ_GROUP_ALLOWED_USERS", " g1 ")
 	t.Setenv("QQBOT_HOME_CHANNEL", " chat ")
 	pc := applyQQEnv(t)
-	if pc == nil || !pc.Enabled || pc.Extra["app_id"] != "app" || pc.Extra["client_secret"] != "sec" ||
-		pc.Extra["allow_from"] != "u1,u2" || pc.Extra["group_allow_from"] != "g1" {
+	if pc == nil || !pc.Enabled || pc.Extra["app_id"] != "app" || pc.Extra["client_secret"] != "sec" {
 		t.Fatalf("qqbot config %+v", pc)
 	}
 	h := pc.HomeChannel

@@ -8,15 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Legacy gateway.json base layer under the home, an empty mapping when absent and on a malformed file
@@ -74,30 +73,6 @@ func plainJSON(v any) any {
 		return t
 	}
 	return v
-}
-
-var bridgedAllowAll struct {
-	sync.Mutex
-	set bool
-}
-
-// GATEWAY_ALLOW_ALL_USERS when the config bridge wrote it, ok false for an operator set or absent value
-func BridgedAllowAllUsers() (string, bool) {
-	bridgedAllowAll.Lock()
-	set := bridgedAllowAll.set
-	bridgedAllowAll.Unlock()
-	if !set {
-		return "", false
-	}
-	return os.LookupEnv("GATEWAY_ALLOW_ALL_USERS")
-}
-
-// Child process env without the bridge owned GATEWAY_ALLOW_ALL_USERS, an operator value stays
-func DropBridgedEnv(env map[string]string) map[string]string {
-	if _, ok := BridgedAllowAllUsers(); ok {
-		delete(env, "GATEWAY_ALLOW_ALL_USERS")
-	}
-	return env
 }
 
 func quickCommandsOK(value any) bool {
@@ -217,25 +192,6 @@ func profileScoped(ctx context.Context) bool {
 // True inside a multiplexed secondary profile's scope, for the platform adapters
 func ProfileScoped(ctx context.Context) bool { return profileScoped(ctx) }
 
-// Python membership of a key in a mapping, list element or substring of a string
-func pyContains(container any, key string) bool {
-	switch c := container.(type) {
-	case map[string]any:
-		_, ok := c[key]
-		return ok
-	case []any:
-		for _, e := range c {
-			if s, ok := e.(string); ok && s == key {
-				return true
-			}
-		}
-		return false
-	case string:
-		return strings.Contains(c, key)
-	}
-	return false
-}
-
 func setDefaultDict(container map[string]any, key string) map[string]any {
 	if v, ok := container[key]; ok {
 		m, _ := v.(map[string]any)
@@ -247,53 +203,7 @@ func setDefaultDict(container map[string]any, key string) map[string]any {
 	return m
 }
 
-// YAML to env bridges kept in core, allow_all_users, top level require_mention for Telegram and Signal's
-func BridgeCoreEnvSettings(ctx context.Context, yamlCfg, platformsData map[string]any) {
-	skipEnvBridge := profileScoped(ctx)
-	gatewaySection := yamlCfg["gateway"]
-	allowAll := yamlCfg["allow_all_users"]
-	if nested, ok := gatewaySection.(map[string]any); ok && allowAll == nil {
-		allowAll = nested["allow_all_users"]
-	}
-	bridgedAllowAll.Lock()
-	if !skipEnvBridge && (bridgedAllowAll.set || os.Getenv("GATEWAY_ALLOW_ALL_USERS") == "") {
-		switch pystr.Lower(pyrepr.Str(allowAll)) {
-		case "true", "1", "yes":
-			bridgedAllowAll.set = true
-		default:
-			bridgedAllowAll.set = false
-		}
-		if bridgedAllowAll.set {
-			os.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
-			pkgLog().Warn("config.yaml allow_all_users: true grants every sender on every platform access (bridged to GATEWAY_ALLOW_ALL_USERS; an explicit env var wins).")
-		} else {
-			os.Unsetenv("GATEWAY_ALLOW_ALL_USERS")
-		}
-	}
-	bridgedAllowAll.Unlock()
-	if tl, ok := yamlCfg["require_mention"]; ok && tl != nil {
-		telegram := yamlCfg["telegram"]
-		if !pyrepr.Truthy(telegram) {
-			telegram = map[string]any{}
-		}
-		if !pyContains(telegram, "require_mention") {
-			extra := setDefaultDict(setDefaultDict(platformsData, "telegram"), "extra")
-			if _, set := extra["require_mention"]; !set {
-				extra["require_mention"] = tl
-			}
-			if !skipEnvBridge && os.Getenv("TELEGRAM_REQUIRE_MENTION") == "" {
-				os.Setenv("TELEGRAM_REQUIRE_MENTION", pystr.Lower(pyrepr.Str(tl)))
-			}
-		}
-	}
-	signal, _ := yamlCfg["signal"].(map[string]any)
-	if rm, ok := signal["require_mention"]; ok {
-		extra := setDefaultDict(setDefaultDict(platformsData, "signal"), "extra")
-		if _, set := extra["require_mention"]; !set {
-			extra["require_mention"] = rm
-		}
-		if !skipEnvBridge && os.Getenv("SIGNAL_REQUIRE_MENTION") == "" {
-			os.Setenv("SIGNAL_REQUIRE_MENTION", pystr.Lower(pyrepr.Str(rm)))
-		}
-	}
+// Registers the setting the gateway wide allow all users switch moved to
+func init() {
+	RegisterEnvSettings(map[string]settings.Entry{"GATEWAY_ALLOW_ALL_USERS": settings.GatewayAllowAllUsers})
 }

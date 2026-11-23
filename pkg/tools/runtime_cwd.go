@@ -64,16 +64,16 @@ func ScopedSessionCwd(env *Env) string {
 	return strings.TrimSpace(s)
 }
 
-// Scope aware TERMINAL_CWD value read through the per turn terminal scope
+// Scope aware working folder read through the per turn terminal scope
 func scopeTerminalCwd(env *Env) (string, error) {
 	policy, err := terminalPolicy(env)
 	if err != nil {
 		return "", err
 	}
-	return policy.Get("TERMINAL_CWD", ""), nil
+	return policy.Setting("cwd"), nil
 }
 
-// Scope aware TERMINAL_CWD value for plugin sessions, read through the per turn terminal scope
+// Scope aware working folder for plugin sessions, read through the per turn terminal scope
 func ScopeTerminalCwd(env *Env) (string, error) { return scopeTerminalCwd(env) }
 
 // Normalized path of a configured directory with its user home expanded, empty with a warning when it is no directory
@@ -110,7 +110,7 @@ func resolveConfiguredCwd(env *Env, overrideIsFinal, includeSessionOverride bool
 	if raw == "" {
 		return "", nil
 	}
-	return existingDirErr(env, raw, "TERMINAL_CWD")
+	return existingDirErr(env, raw, "working folder")
 }
 
 // ResolveAgentCwd returns the configured cwd else the launch directory

@@ -7,4 +7,3 @@ external_dependencies:
     check: "brv --version"
 config_keys:
   - memory.byterover
-  - memory.provider_config  # legacy block name early docs used

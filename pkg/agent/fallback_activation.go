@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Provider client resolver the fallback walk binds candidates through
@@ -308,11 +309,7 @@ func (a *AIAgent) switchDeferredByReset(ctx context.Context, reason provider.Fai
 	if !provider.RateLimitFailoverReasons[reason] || a.fallbackActivated {
 		return false
 	}
-	cfg, err := config.Load(home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return false
-	}
-	threshold := provider.MinSwitchResetFromConfig(cfg)
+	threshold := settings.FallbackMinSwitchResetSeconds.Get(ctx)
 	if threshold <= 0 {
 		return false
 	}

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -15,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -256,12 +256,7 @@ func (r *GatewayRunner) buildManualCompressionAgent(ctx context.Context, session
 			sessionRow = row
 		}
 	}
-	checkpointRequired := false
-	if cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil); err == nil && cfg != nil {
-		if comp, ok := cfg["compression"].(map[string]any); ok {
-			checkpointRequired = provider.IsTruthyValue(comp["checkpoint_required"])
-		}
-	}
+	checkpointRequired := settings.CompressionCheckpointRequired.Get(ctx)
 	opts := agent.AIAgentOptions{Model: model, MaxIterations: new(4), QuietMode: true, SkipMemory: !checkpointRequired,
 		EnabledToolsets: []string{"memory"}, SessionID: sessionID, Platform: platformKey, GatewaySessionKey: sessionKey,
 		ReasoningConfig: reasoning}

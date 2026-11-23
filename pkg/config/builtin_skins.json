@@ -73,7 +73,7 @@
   "spinner": {},
   "branding": {
    "agent_name": "Icebath Agent",
-   "welcome": "Welcome to Icebath Agent! Type your message or /help for commands.",
+   "welcome": "",
    "goodbye": "Goodbye! 󰆧",
    "response_label": " 󰆧 Icebath ",
    "prompt_symbol": "$",
@@ -122,7 +122,7 @@
   "spinner": {},
   "branding": {
    "agent_name": "Icebath Agent",
-   "welcome": "Welcome to Icebath Agent! Type your message or /help for commands.",
+   "welcome": "",
    "goodbye": "Goodbye! 󰆧",
    "response_label": " 󰆧 Icebath ",
    "prompt_symbol": "$",
@@ -171,7 +171,7 @@
   "spinner": {},
   "branding": {
    "agent_name": "Icebath Agent",
-   "welcome": "Welcome to Icebath Agent! Type your message or /help for commands.",
+   "welcome": "",
    "goodbye": "Goodbye! 󰆧",
    "response_label": " 󰆧 Icebath ",
    "prompt_symbol": "$",
@@ -220,7 +220,7 @@
   "spinner": {},
   "branding": {
    "agent_name": "Icebath Agent",
-   "welcome": "Welcome to Icebath Agent! Type your message or /help for commands.",
+   "welcome": "",
    "goodbye": "Goodbye! 󰆧",
    "response_label": " 󰆧 Icebath ",
    "prompt_symbol": "$",
@@ -268,7 +268,7 @@
   "spinner": {},
   "branding": {
    "agent_name": "Icebath Agent",
-   "welcome": "Welcome to Icebath Agent! Type your message or /help for commands.",
+   "welcome": "",
    "goodbye": "Goodbye! 󰆧",
    "response_label": " 󰆧 Icebath ",
    "prompt_symbol": "$",
@@ -317,7 +317,7 @@
   "spinner": {},
   "branding": {
    "agent_name": "Icebath Agent",
-   "welcome": "Welcome to Icebath Agent! Type your message or /help for commands.",
+   "welcome": "",
    "goodbye": "Goodbye! 󰆧",
    "response_label": " 󰆧 Icebath ",
    "prompt_symbol": "$",
@@ -366,7 +366,7 @@
   "spinner": {},
   "branding": {
    "agent_name": "Icebath Agent",
-   "welcome": "Welcome to Icebath Agent! Type your message or /help for commands.",
+   "welcome": "",
    "goodbye": "Goodbye! 󰆧",
    "response_label": " 󰆧 Icebath ",
    "prompt_symbol": "$",

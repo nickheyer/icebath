@@ -11,35 +11,22 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-// Natural human delay range in milliseconds
-var defaultHumanDelayRangeMS = [2]int{800, 2500}
-
-// Busy input modes a profile config may name
-var busyInputModes = map[string]bool{"interrupt": true, "queue": true, "steer": true}
 
 // Ephemeral system prompt of a config from its personality or system prompt, assigned by the command package
 var ResolveEphemeralSystemPromptFromConfig func(cfg map[string]any) string
 
 // Persisted /fast preference parsed like the CLI, empty when unset or unknown, assigned by the app package
 var ParseServiceTierConfig func(raw string) string
-
-// Value at section.key of a config, nil when absent
-func cfgValue(cfg map[string]any, keys ...string) any {
-	value, _ := config.CfgGet(cfg, keys...)
-	return value
-}
 
 // Python str of a value, empty for a falsy one
 func truthyText(v any) string {
@@ -49,29 +36,9 @@ func truthyText(v any) string {
 	return pyrepr.Str(v)
 }
 
-// Stripped section.key string of the gateway config, empty when unset
-func cfgStr(ctx context.Context, section, key string) string {
-	return pystr.Strip(truthyText(cfgValue(gateway.LoadGatewayConfigMap(ctx, ""), section, key)))
-}
-
-// Non empty stripped env var, else the config string
-func envOrCfgStr(ctx context.Context, envVar, section, key string) string {
-	if v := pystr.Strip(os.Getenv(envVar)); v != "" {
-		return v
-	}
-	return cfgStr(ctx, section, key)
-}
-
-// Ephemeral prefill messages from the env file, the config file, or the legacy agent key
+// Ephemeral prefill messages from the configured prefill file
 func loadPrefillMessages(ctx context.Context) []any {
-	filePath := os.Getenv("ICEBATH_PREFILL_MESSAGES_FILE")
-	if filePath == "" {
-		cfg := gateway.LoadGatewayConfigMap(ctx, "")
-		filePath = truthyText(cfg["prefill_messages_file"])
-		if filePath == "" {
-			filePath = truthyText(cfgValue(cfg, "agent", "prefill_messages_file"))
-		}
-	}
+	filePath := pystr.Strip(settings.PrefillMessagesFile.Get(ctx))
 	if filePath == "" {
 		return nil
 	}
@@ -261,30 +228,25 @@ func (r *GatewayRunner) setSessionServiceTierOverride(sessionKey string, service
 	r.sessionServiceTierOverrides().Set(sessionKey, serviceTierOverride{set: true, tier: serviceTier})
 }
 
-// Configured agent.service_tier parsed like the CLI, nil when unset or unknown
+// Configured /fast preference parsed like the CLI, nil for normal or an unknown tier
 func loadServiceTier(ctx context.Context) *string {
-	return optString(ParseServiceTierConfig(cfgStr(ctx, "agent", "service_tier")))
+	return optString(ParseServiceTierConfig(settings.FastMode.Get(ctx)))
 }
 
-// The display.show_reasoning toggle
+// Whether the profile in ctx shows the model's thinking
 func loadShowReasoning(ctx context.Context) bool {
-	return provider.IsTruthyValue(cfgValue(gateway.LoadGatewayConfigMap(ctx, ""), "display", "show_reasoning"))
+	return settings.ShowThinking.Get(ctx)
 }
 
-// Busy input behavior from env or config, interrupt unless queue or steer
+// Busy input behavior of the profile in ctx
 func loadBusyInputMode(ctx context.Context) string {
-	mode := strings.ToLower(envOrCfgStr(ctx, "ICEBATH_GATEWAY_BUSY_INPUT_MODE", "display", "busy_input_mode"))
-	if mode == "queue" || mode == "steer" {
-		return mode
-	}
-	return "interrupt"
+	return settings.BusyMode.Get(ctx)
 }
 
-// Busy text behavior, an explicit legacy busy_text_mode first, else queue only for a queue input mode
+// Busy text behavior, an explicit busy_text_mode first, else queue only for a queue input mode
 func loadBusyTextMode(ctx context.Context) string {
-	legacy := strings.ToLower(envOrCfgStr(ctx, "ICEBATH_GATEWAY_BUSY_TEXT_MODE", "display", "busy_text_mode"))
-	if legacy == "interrupt" || legacy == "queue" {
-		return legacy
+	if text := settings.DisplayBusyTextMode.Get(ctx); text != "" {
+		return text
 	}
 	if loadBusyInputMode(ctx) == "queue" {
 		return "queue"
@@ -292,93 +254,31 @@ func loadBusyTextMode(ctx context.Context) string {
 	return "interrupt"
 }
 
-// Busy input and text modes of one profile config, never consulting the process env
-func busyModesFromConfig(cfg map[string]any, fallbackInput, fallbackText string) (string, string) {
-	rawInput := strings.ToLower(pystr.Strip(truthyText(cfgValue(cfg, "display", "busy_input_mode"))))
-	inputMode := fallbackInput
-	if busyInputModes[rawInput] {
-		inputMode = rawInput
-	}
-	rawText := strings.ToLower(pystr.Strip(truthyText(cfgValue(cfg, "display", "busy_text_mode"))))
-	switch {
-	case rawText == "interrupt" || rawText == "queue":
-		return inputMode, rawText
-	case busyInputModes[rawInput]:
-		if inputMode == "queue" {
-			return inputMode, "queue"
-		}
-		return inputMode, "interrupt"
-	}
-	return inputMode, fallbackText
+// Busy text debounce and hard cap seconds of the profile in ctx
+func busyTextTiming(ctx context.Context) [2]float64 {
+	return [2]float64{settings.DisplayBusyTextDebounceSeconds.Get(ctx).Seconds(), settings.DisplayBusyTextHardCapSeconds.Get(ctx).Seconds()}
 }
 
-// Busy text debounce and hard cap seconds of one profile, a bad value warned about and defaulted
-func busyTextTimingFromConfig(cfg map[string]any) [2]float64 {
-	var out [2]float64
-	for i, spec := range []struct {
-		key string
-		def float64
-	}{{"busy_text_debounce_seconds", gateway.DefaultBusyTextDebounceSeconds}, {"busy_text_hard_cap_seconds", gateway.DefaultBusyTextHardCapSeconds}} {
-		raw := cfgValue(cfg, "display", spec.key)
-		if raw == nil || raw == "" {
-			out[i] = spec.def
-			continue
-		}
-		value, err := pyint.Float(raw)
-		if err != nil || value < 0 || math.IsNaN(value) {
-			pkgLog().Warn(fmt.Sprintf("display.%s=%s is not a non-negative number; using %s", spec.key, errchain.Show(raw), pyrepr.Str(spec.def)))
-			value = spec.def
-		}
-		out[i] = value
-	}
-	return out
-}
-
-// Human delay range of one profile in milliseconds, nil when off, natural for a bad custom range
-func humanDelayFromConfig(cfg map[string]any) *[2]int {
-	modeRaw := cfgValue(cfg, "human_delay", "mode")
-	if modeRaw == nil {
-		modeRaw = "off"
-	}
-	mode := strings.ToLower(pystr.Strip(truthyText(modeRaw)))
-	if mode == "" {
-		mode = "off"
-	}
-	if mode == "off" {
+// Human delay range of the profile in ctx in milliseconds, nil when off, the default range for natural or a backwards custom range
+func humanDelay(ctx context.Context) *[2]int {
+	natural := [2]int{int(settings.HumanDelayMinMs.Default.Milliseconds()), int(settings.HumanDelayMaxMs.Default.Milliseconds())}
+	switch settings.HumanDelay.Get(ctx) {
+	case "off":
 		return nil
+	case "natural":
+		return &natural
 	}
-	bounds := defaultHumanDelayRangeMS
-	if mode != "natural" {
-		if mode != "custom" {
-			pkgLog().Warn(fmt.Sprintf("human_delay.mode=%s is not off/natural/custom; using natural", errchain.Show(mode)))
-			natural := defaultHumanDelayRangeMS
-			return &natural
-		}
-		for i, key := range []string{"min_ms", "max_ms"} {
-			def := defaultHumanDelayRangeMS[i]
-			raw := cfgValue(cfg, "human_delay", key)
-			value := def
-			if raw != nil && raw != "" {
-				parsed, err := pyint.Int64(raw)
-				if err != nil || parsed < 0 {
-					pkgLog().Warn(fmt.Sprintf("human_delay.%s=%s is not a non-negative integer; using %d", key, errchain.Show(raw), def))
-				} else {
-					value = int(parsed)
-				}
-			}
-			bounds[i] = value
-		}
-		if bounds[0] > bounds[1] {
-			pkgLog().Warn(fmt.Sprintf("human_delay.min_ms=%d exceeds human_delay.max_ms=%d; using natural range", bounds[0], bounds[1]))
-			bounds = defaultHumanDelayRangeMS
-		}
+	bounds := [2]int{int(settings.HumanDelayMinMs.Get(ctx).Milliseconds()), int(settings.HumanDelayMaxMs.Get(ctx).Milliseconds())}
+	if bounds[0] > bounds[1] {
+		pkgLog().Warn(fmt.Sprintf("Human-like delay minimum %d ms exceeds the maximum %d ms; using the natural range", bounds[0], bounds[1]))
+		return &natural
 	}
 	return &bounds
 }
 
-// Caches a routed profile busy policy and pacing for this gateway lifetime
-func (r *GatewayRunner) snapshotProfileBusyModes(profileName string, cfg map[string]any) {
-	inputMode, textMode := busyModesFromConfig(cfg, r.busyInputMode, r.busyTextMode)
+// Caches a routed profile busy policy and pacing for this gateway lifetime, read in the profile scope of ctx
+func (r *GatewayRunner) snapshotProfileBusyModes(ctx context.Context, profileName string) {
+	inputMode, textMode := loadBusyInputMode(ctx), loadBusyTextMode(ctx)
 	if r.busyInputModesByProfile == nil {
 		r.busyInputModesByProfile = map[string]string{}
 	}
@@ -393,8 +293,8 @@ func (r *GatewayRunner) snapshotProfileBusyModes(profileName string, cfg map[str
 	}
 	r.busyInputModesByProfile[profileName] = inputMode
 	r.busyTextModesByProfile[profileName] = textMode
-	r.busyTextTimingByProfile[profileName] = busyTextTimingFromConfig(cfg)
-	r.humanDelayByProfile[profileName] = humanDelayFromConfig(cfg)
+	r.busyTextTimingByProfile[profileName] = busyTextTiming(ctx)
+	r.humanDelayByProfile[profileName] = humanDelay(ctx)
 }
 
 // Routed profile whose busy policy applies, empty for none
@@ -434,21 +334,9 @@ func (r *GatewayRunner) effectiveBusyTextMode(ctx context.Context, source *gatew
 	return r.effectiveBusyMode(ctx, source, r.busyTextMode, r.busyTextModesByProfile)
 }
 
-// Warns when a supplied timeout is not a number the parser could read
-func warnUnparsableTimeout(cfgKey string, raw any, def float64) {
-	if _, err := pyint.Float(raw); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Invalid %s '%s', using default %.0fs", cfgKey, pyrepr.Str(raw), def))
-	}
-}
-
 // Graceful restart and stop drain timeout in seconds
 func loadRestartDrainTimeout(ctx context.Context) float64 {
-	raw := envOrCfgStr(ctx, "ICEBATH_RESTART_DRAIN_TIMEOUT", "agent", "restart_drain_timeout")
-	value := gateway.ParseRestartDrainTimeout(raw)
-	if raw != "" && value == gateway.DefaultGatewayRestartDrainTimeout {
-		warnUnparsableTimeout("restart_drain_timeout", raw, gateway.DefaultGatewayRestartDrainTimeout)
-	}
-	return value
+	return max(0, settings.AgentRestartDrainTimeout.Get(ctx).Seconds())
 }
 
 // Live launchd ExitTimeOut of this job, nil when not launchd owned or unreadable, warning when the drain exceeds it
@@ -472,41 +360,19 @@ func loadLaunchdExitTimeout(drainTimeout float64) *float64 {
 	return exitTimeout
 }
 
-// Non empty env var else agent.cfgKey parsed, warning once when a supplied value fails to parse
-func loadEnvOrAgentCfgTimeout(ctx context.Context, envVar, cfgKey string, parse func(any) float64, def float64) float64 {
-	var raw any
-	if envRaw, ok := os.LookupEnv(envVar); ok && pystr.Strip(envRaw) != "" {
-		raw = envRaw
-	} else {
-		raw = cfgValue(gateway.LoadGatewayConfigMap(ctx, ""), "agent", cfgKey)
-	}
-	value := parse(raw)
-	if raw != nil && pystr.Strip(pyrepr.Str(raw)) != "" {
-		warnUnparsableTimeout(cfgKey, raw, def)
-	}
-	return value
-}
-
 // In band restart wait for idle timeout in seconds
 func loadRestartAfterTurnTimeout(ctx context.Context) float64 {
-	return loadEnvOrAgentCfgTimeout(ctx, "ICEBATH_RESTART_AFTER_TURN_TIMEOUT", "restart_after_turn_timeout",
-		gateway.ParseRestartAfterTurnTimeout, gateway.DefaultGatewayRestartAfterTurnTimeout)
+	return max(0, settings.AgentRestartAfterTurnTimeout.Get(ctx).Seconds())
 }
 
 // Cron and api server floor under the stop drain wait in seconds
 func loadCronDrainTimeout(ctx context.Context) float64 {
-	return loadEnvOrAgentCfgTimeout(ctx, "ICEBATH_CRON_DRAIN_TIMEOUT", "cron_drain_timeout",
-		gateway.ParseCronDrainTimeout, gateway.DefaultGatewayCronDrainTimeout)
+	return max(0, settings.AgentCronDrainTimeout.Get(ctx).Seconds())
 }
 
-// Unexpected signal post interrupt grace in seconds from the gateway config
+// Unexpected signal post interrupt grace in seconds
 func loadSignalInterruptGraceTimeout(ctx context.Context) float64 {
-	raw := cfgValue(gateway.LoadGatewayConfigMap(ctx, ""), "gateway", "signal_interrupt_grace_timeout")
-	value := gateway.ParseSignalInterruptGraceTimeout(raw)
-	if raw != nil && raw != "" {
-		warnUnparsableTimeout("signal_interrupt_grace_timeout", raw, gateway.DefaultGatewaySignalInterruptGraceTimeout)
-	}
-	return value
+	return max(0, settings.GatewaySignalInterruptGraceTimeout.Get(ctx).Seconds())
 }
 
 // Grace before teardown after interrupting agents, longer on an unexpected signal
@@ -517,36 +383,14 @@ func (r *GatewayRunner) postInterruptGraceTimeout() float64 {
 	return gateway.DefaultGatewayPostInterruptGraceTimeout
 }
 
-// Background process notification mode of the ambient profile, concise unless a known mode is set
+// Background process notification mode of the ambient profile
 func loadBackgroundNotificationsMode(ctx context.Context) string {
-	mode := gateway.PlatformGateEnv(ctx, "ICEBATH_BACKGROUND_NOTIFICATIONS", "")
-	if mode == "" {
-		raw := cfgValue(gateway.LoadGatewayConfigMap(ctx, ""), "display", "background_process_notifications")
-		if raw == false {
-			mode = "off"
-		} else if raw != nil && raw != "" {
-			mode = pyrepr.Str(raw)
-		}
-	}
-	if mode == "" {
-		mode = "concise"
-	}
-	mode = strings.ToLower(pystr.Strip(mode))
-	switch mode {
-	case "concise", "all", "result", "error", "off":
-		return mode
-	}
-	pkgLog().Warn(fmt.Sprintf("Unknown background_process_notifications '%s', defaulting to 'concise'", mode))
-	return "concise"
+	return settings.DisplayBackgroundProcessNotifications.Get(ctx)
 }
 
-// OpenRouter provider routing preferences of the gateway config, empty when unset
+// OpenRouter provider routing preferences of the profile, empty when unset
 func loadProviderRouting(ctx context.Context) map[string]any {
-	routing, ok := gateway.LoadGatewayConfigMap(ctx, "")["provider_routing"].(map[string]any)
-	if !ok || len(routing) == 0 {
-		return map[string]any{}
-	}
-	return routing
+	return settings.ProviderRouting.Get(ctx)
 }
 
 // Fallback chain of fallback_providers merged with the legacy fallback_model, nil when empty
@@ -647,6 +491,5 @@ func (r *GatewayRunner) loadDaybreak(ctx context.Context, source *gateway.Sessio
 	if err != nil || policy == nil || !gateway.DaybreakLabels[policy.Source] {
 		return false
 	}
-	daybreak, ok := cfgValue(gateway.LoadGatewayConfigMap(ctx, ""), "agent", "daybreak").(bool)
-	return ok && daybreak
+	return settings.Daybreak.Get(ctx)
 }

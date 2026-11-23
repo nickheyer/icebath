@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"net"
 	"strings"
 	"sync"
@@ -16,45 +15,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const defaultCodexStreamDrainTimeout = 2.0
-
-// Seconds the post terminal drain may block, agent.stream_drain_timeout clamped at zero, two by default
+// Seconds the post terminal drain may block, agent.stream_drain_timeout clamped at zero
 func codexStreamDrainTimeout(ctx context.Context) float64 {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return defaultCodexStreamDrainTimeout
-	}
-	agentCfg, ok := map[string]any(tree)["agent"].(map[string]any)
-	if !ok {
-		return defaultCodexStreamDrainTimeout
-	}
-	var value float64
-	switch v := agentCfg["stream_drain_timeout"].(type) {
-	case bool:
-		return defaultCodexStreamDrainTimeout
-	case float64:
-		value = v
-	case float32:
-		value = float64(v)
-	default:
-		n, isInt := pyrepr.Int(v)
-		if !isInt {
-			return defaultCodexStreamDrainTimeout
-		}
-		if value, _ = new(big.Float).SetInt(n).Float64(); math.IsInf(value, 0) {
-			return defaultCodexStreamDrainTimeout
-		}
-	}
-	if !(value > 0) {
-		return 0
-	}
-	return value
+	return max(settings.AgentStreamDrainTimeout.Get(ctx).Seconds(), 0)
 }
 
 // Drain budget, raw stream socket lookup and socket shutdown seams of the post terminal drain

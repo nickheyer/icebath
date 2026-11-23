@@ -241,7 +241,7 @@ func titlePinMayShareEndpoint(ctx context.Context, pinnedProvider, mainProvider,
 	if err != nil {
 		return false, err
 	}
-	compatible := provider.CompatibleCustomProviders(cfg)
+	compatible := provider.ProviderEntries(cfg)
 	entries := make([]any, len(compatible))
 	for i, e := range compatible {
 		entries[i] = e

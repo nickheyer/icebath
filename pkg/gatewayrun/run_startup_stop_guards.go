@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Disarms the loop liveness watchdog, floor timer and heartbeat task before shutdown loads the loop
@@ -49,15 +48,8 @@ func (r *GatewayRunner) stopLoopLivenessGuards() {
 
 // Pauses hosted room execution durably without interrupting accepted turns, true when it stopped in time
 func (r *GatewayRunner) stopHostedRoomWorker(ctx context.Context, timeout float64) bool {
-	if r.sessionAuthority != nil {
-		return gateway.StopHostedService(ctx, r, timeout)
+	if r.SessionAuthority() == nil {
+		return true
 	}
-	result := make(chan bool, 1)
-	go func() { result <- tuihost.StopHostedRoomService(timeout) }()
-	select {
-	case stopped := <-result:
-		return stopped
-	case <-ctx.Done():
-		return false
-	}
+	return gateway.StopHostedService(ctx, r, timeout)
 }

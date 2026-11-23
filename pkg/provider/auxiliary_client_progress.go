@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Inner completion of a gateway data envelope, the provider message raised for an error envelope
@@ -217,7 +218,7 @@ func auxAsyncClientStreamsInternally(client AuxClient) bool {
 }
 
 // Stream only providers, Tencent Copilot, configured stream only base URL markers and the managed llama server
-func auxProviderRequiresStream(ctx context.Context, baseURL string) (required bool) {
+func auxProviderRequiresStream(ctx context.Context, baseURL string) bool {
 	url := pystr.Lower(baseURL)
 	if url == "" {
 		return false
@@ -225,33 +226,8 @@ func auxProviderRequiresStream(ctx context.Context, baseURL string) (required bo
 	if baseURLHostMatches(url, "copilot.tencent.com") || auxIsManagedLocalEndpoint(url) {
 		return true
 	}
-	defer func() {
-		if recover() != nil {
-			required = false
-		}
-	}()
-	tree, err := auxLoadConfigFn(ctx)
-	if err != nil {
-		return false
-	}
-	var aux any = map[string]any{}
-	if v, ok := tree["auxiliary"]; ok {
-		aux = v
-	}
-	auxMap, ok := aux.(map[string]any)
-	if !ok {
-		return false
-	}
-	markers := auxMap["stream_only_base_urls"]
-	if !pyrepr.Truthy(markers) {
-		return false
-	}
-	list, ok := markers.([]any)
-	if !ok {
-		return false
-	}
-	for _, marker := range list {
-		if s, isStr := marker.(string); isStr && pystr.Strip(s) != "" && strings.Contains(url, pystr.Lower(pystr.Strip(s))) {
+	for _, marker := range settings.AuxiliaryStreamOnlyBaseUrls.Strings(ctx) {
+		if pystr.Strip(marker) != "" && strings.Contains(url, pystr.Lower(pystr.Strip(marker))) {
 			return true
 		}
 	}

@@ -25,6 +25,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
@@ -374,26 +375,16 @@ func contentBytes(content map[string]any) int {
 	return len(out)
 }
 
-// Outbound chunk size from config, env or the registry entry, clamped to 500 through the ceiling
-func resolveMaxMessageLength(ctx context.Context, cfg *gateway.PlatformConfig) int {
-	var extra map[string]any
-	if cfg != nil {
-		extra = cfg.Extra
-	}
-	raw, _ := gateway.ExtraOrSecret(ctx, extra, "max_message_length", "MATRIX_MAX_MESSAGE_LENGTH", nil, true)
-	if raw == nil || pystr.Strip(pyrepr.Str(raw)) == "" {
+// Outbound chunk size from the profile's setting or the registry entry, clamped to 500 through the ceiling
+func resolveMaxMessageLength(ctx context.Context) int {
+	value, set := settings.MatrixMaxMessageLength.Lookup(gateway.SettingsContext(ctx))
+	if !set {
+		value = defaultMaxMessageLength
 		if entry := gateway.Registry.Get(ctx, "matrix"); entry != nil && entry.MaxMessageLength != 0 {
-			raw = entry.MaxMessageLength
+			value = entry.MaxMessageLength
 		}
 	}
-	if raw == nil {
-		return defaultMaxMessageLength
-	}
-	value, err := pyint.Int64(raw)
-	if err != nil {
-		return defaultMaxMessageLength
-	}
-	return int(max(500, min(value, matrixMaxMessageLengthCeiling)))
+	return int(max(500, min(int64(value), matrixMaxMessageLengthCeiling)))
 }
 
 var matrixImageFilenameExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true,
@@ -526,25 +517,6 @@ func envInt(ctx context.Context, name string, def int64) int64 {
 	return n
 }
 
-// Stripped non empty tokens of a comma separated string or a list
-func csvSet(raw any) map[string]bool {
-	out := map[string]bool{}
-	if list, ok := raw.([]any); ok {
-		for _, r := range list {
-			if s := pystr.Strip(pyrepr.Str(r)); s != "" {
-				out[s] = true
-			}
-		}
-		return out
-	}
-	for _, r := range strings.Split(pyrepr.Str(raw), ",") {
-		if s := pystr.Strip(r); s != "" {
-			out[s] = true
-		}
-	}
-	return out
-}
-
 // Thread root event id an event belongs to, empty when it is not in a thread
 func threadRoot(relatesTo map[string]any) string {
 	if relatesTo["rel_type"] == "m.thread" {
@@ -556,12 +528,6 @@ func threadRoot(relatesTo map[string]any) string {
 		}
 	}
 	return ""
-}
-
-// Room or user list from the scoped env, then config extra, then empty
-func extraCSVSet(ctx context.Context, cfg *gateway.PlatformConfig, key, envName string) map[string]bool {
-	raw, _ := gateway.ExtraOrSecret(ctx, cfg.Extra, key, envName, "", false)
-	return csvSet(raw)
 }
 
 // Configured recovery key output file through the profile scoped reader, empty when unset

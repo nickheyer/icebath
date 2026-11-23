@@ -25,7 +25,7 @@ const maxLSPTurnEndNotes = 3
 
 // Verify on stop follow up for this turn's edits, empty when disabled or already proven
 func verifyOnStopNudge(ctx context.Context, a *AIAgent) string {
-	if !verifyOnStopEnabled(ctx, a.env, nil) {
+	if !verifyOnStopEnabled(ctx, a.env) {
 		return ""
 	}
 	nudge, err := buildVerifyOnStopNudge(ctx, a.env, a.sessionID, sortedMutationPaths(a), a.verificationStopNudges, defaultVerifyOnStopMaxAttempts)

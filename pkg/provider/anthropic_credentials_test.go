@@ -57,45 +57,6 @@ func TestReadClaudeCodeCredentialsHonoursAdoptOptOut(t *testing.T) {
 	}
 }
 
-func TestSpentRotationRegistryAndSidecar(t *testing.T) {
-	ResetSpentRotationsForTests()
-	t.Cleanup(ResetSpentRotationsForTests)
-	h := newTestHome(t)
-	env := testEnv(t, h)
-	source := SpentRotationSourcePath(env, "icebath_pkce")
-	if source != IcebathOAuthFile(env) || SpentRotationSourcePath(env, "manual") != "" {
-		t.Fatal("only singleton sources have a sidecar")
-	}
-	MarkRotationConsumedUncommitted(source, "spent-rt", "")
-	if !IsRotationConsumedUncommitted("spent-rt", source) || IsRotationConsumedUncommitted("fresh-rt", source) {
-		t.Fatal("process local verdict")
-	}
-	ResetSpentRotationsForTests()
-	if !IsRotationConsumedUncommitted("spent-rt", source) {
-		t.Fatal("the sidecar lets a fresh process see the verdict")
-	}
-}
-
-func TestResolveAnthropicTokenOrder(t *testing.T) {
-	h := newTestHome(t)
-	env := testEnv(t, h)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
-	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-key")
-	if ResolveAnthropicToken(env, "") != "sk-ant-api03-key" {
-		t.Fatal("an explicit API key wins over discovered OAuth")
-	}
-	t.Setenv("ANTHROPIC_TOKEN", "sk-ant-oat01-static")
-	if ResolveAnthropicToken(env, "") != "sk-ant-oat01-static" {
-		t.Fatal("the env OAuth token comes first")
-	}
-	t.Setenv("ANTHROPIC_TOKEN", "")
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	writeClaudeCodeCredentials(t, "sk-ant-oat01-cc", "rt", time.Now().UnixMilli()+3_600_000)
-	if ResolveAnthropicToken(env, "") != "sk-ant-oat01-cc" {
-		t.Fatal("the borrowed login is the last resort")
-	}
-}
-
 func TestMergeKeychainCredentialPayloadKeepsMetadata(t *testing.T) {
 	merged := mergeKeychainCredentialPayload(map[string]any{"claudeAiOauth": map[string]any{"accessToken": "old", "refreshToken": "old-r", "subscriptionType": "max", "scopes": []any{"user:inference"}}, "other": 1}, "new", "new-r", 42)
 	oauth := merged["claudeAiOauth"].(map[string]any)
@@ -134,4 +95,43 @@ func ResetSpentRotationsForTests() {
 	defer spentRotationMu.Unlock()
 	spentRotationFingerprints = nil
 	deadRefreshTokenPrints = map[string]bool{}
+}
+
+func TestResolveAnthropicTokenOrder(t *testing.T) {
+	h := newTestHome(t)
+	env := testEnv(t, h)
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-key")
+	if ResolveAnthropicToken(env, "") != "sk-ant-api03-key" {
+		t.Fatal("an explicit API key wins over discovered OAuth")
+	}
+	t.Setenv("ANTHROPIC_TOKEN", "sk-ant-oat01-static")
+	if ResolveAnthropicToken(env, "") != "sk-ant-oat01-static" {
+		t.Fatal("the env OAuth token comes first")
+	}
+	t.Setenv("ANTHROPIC_TOKEN", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	writeClaudeCodeCredentials(t, "sk-ant-oat01-cc", "rt", time.Now().UnixMilli()+3_600_000)
+	if ResolveAnthropicToken(env, "") != "sk-ant-oat01-cc" {
+		t.Fatal("the borrowed login is the last resort")
+	}
+}
+
+func TestSpentRotationRegistryAndSidecar(t *testing.T) {
+	ResetSpentRotationsForTests()
+	t.Cleanup(ResetSpentRotationsForTests)
+	h := newTestHome(t)
+	env := testEnv(t, h)
+	source := SpentRotationSourcePath(env, "claude_code")
+	if source != ClaudeCodeCredentialsPath() || SpentRotationSourcePath(env, "manual:icebath_pkce") != "" {
+		t.Fatal("only the linked Claude Code file has a sidecar")
+	}
+	MarkRotationConsumedUncommitted(source, "spent-rt", "")
+	if !IsRotationConsumedUncommitted("spent-rt", source) || IsRotationConsumedUncommitted("fresh-rt", source) {
+		t.Fatal("process local verdict")
+	}
+	ResetSpentRotationsForTests()
+	if !IsRotationConsumedUncommitted("spent-rt", source) {
+		t.Fatal("the sidecar lets a fresh process see the verdict")
+	}
 }

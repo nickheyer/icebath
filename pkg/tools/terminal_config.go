@@ -73,31 +73,34 @@ func displayHome(env *Env) string {
 	return home.Display(env.Home)
 }
 
-// Parses a terminal setting with a clear error naming the variable
-func parseTerminalInt(policy TerminalPolicy, name, def string) (int, error) {
-	raw := policy.Get(name, def)
+// Parses a terminal setting as a whole number with a clear error naming the setting
+func parseTerminalInt(policy TerminalPolicy, key string) (int, error) {
+	raw := policy.Setting(key)
 	v, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil {
-		return 0, fmt.Errorf("Invalid value for %s: %q (expected integer). Check ~/.icebath/.env or environment variables.", name, raw)
+		return 0, fmt.Errorf("terminal.%s holds %q, which is not a whole number; fix it in /settings Terminal", key, raw)
 	}
 	return v, nil
 }
 
-// Parses a terminal setting as a number with a clear error naming the variable
-func parseTerminalFloat(policy TerminalPolicy, name, def string) (float64, error) {
-	raw := policy.Get(name, def)
+// Parses a terminal setting as a number with a clear error naming the setting
+func parseTerminalFloat(policy TerminalPolicy, key string) (float64, error) {
+	raw := policy.Setting(key)
 	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
-		return 0, fmt.Errorf("Invalid value for %s: %q (expected number). Check ~/.icebath/.env or environment variables.", name, raw)
+		return 0, fmt.Errorf("terminal.%s holds %q, which is not a number; fix it in /settings Terminal", key, raw)
 	}
 	return v, nil
 }
 
-// Parses a terminal setting as JSON with a clear error naming the variable
-func parseTerminalJSON(policy TerminalPolicy, name, def string, out any) error {
-	raw := policy.Get(name, def)
+// Parses a terminal list or mapping setting held as JSON, an unset one decoding to empty
+func parseTerminalJSON(policy TerminalPolicy, key string, out any) error {
+	raw := strings.TrimSpace(policy.Setting(key))
+	if raw == "" {
+		return nil
+	}
 	if err := json.Unmarshal([]byte(raw), out); err != nil {
-		return fmt.Errorf("Invalid value for %s: %q (expected valid JSON). Check ~/.icebath/.env or environment variables.", name, raw)
+		return fmt.Errorf("terminal.%s holds %q, which is not a valid list or mapping; fix it in /settings Terminal", key, raw)
 	}
 	return nil
 }
@@ -129,7 +132,7 @@ func safeGetcwd(env *Env, policy TerminalPolicy) string {
 	if cwd, err := os.Getwd(); err == nil {
 		return cwd
 	}
-	if v := policy.Get("TERMINAL_CWD", ""); v != "" {
+	if v := policy.Setting("cwd"); v != "" {
 		return v
 	}
 	if h, err := os.UserHomeDir(); err == nil {

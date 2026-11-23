@@ -97,15 +97,9 @@ func FindProviderEntry(providers any, key any) (string, map[string]any) {
 	return "", nil
 }
 
-var camelAliases = []struct{ camel, snake string }{
-	{"apiKey", "api_key"}, {"baseUrl", "base_url"}, {"apiMode", "api_mode"}, {"keyEnv", "key_env"},
-	{"apiKeyEnv", "key_env"}, {"defaultModel", "default_model"}, {"contextLength", "context_length"},
-	{"rateLimitDelay", "rate_limit_delay"}, {"sessionAffinityHeader", "session_affinity_header"},
-}
-
 var knownProviderKeys = map[string]bool{
-	"provider": true, "name": true, "api": true, "url": true, "base_url": true, "api_key": true, "key_env": true,
-	"api_key_env": true, "key_cmd": true, "api_mode": true, "transport": true, "model": true, "default_model": true,
+	"provider": true, "name": true, "base_url": true, "api_key": true, "key_env": true,
+	"key_cmd": true, "api_mode": true, "default_model": true,
 	"models": true, "models_discovered": true, "context_length": true, "rate_limit_delay": true,
 	"request_timeout_seconds": true, "stale_timeout_seconds": true, "discover_models": true, "extra_body": true,
 	"extra_headers": true, "capabilities": true, "ssl_ca_cert": true, "ssl_verify": true, "catalog_provider": true,
@@ -141,7 +135,7 @@ func pickProviderBaseURL(entry map[string]any, providerKey string) string {
 	if label == "" {
 		label = "?"
 	}
-	for _, urlKey := range []string{"base_url", "url", "api"} {
+	for _, urlKey := range []string{"base_url"} {
 		raw, ok := entry[urlKey].(string)
 		if !ok || strings.TrimSpace(raw) == "" {
 			continue
@@ -221,33 +215,9 @@ func NormalizeCustomProviderEntry(raw any, providerKey string) map[string]any {
 	if label == "" {
 		label = "?"
 	}
-	if v, ok := entry["api_key_env"]; ok {
-		if _, has := entry["key_env"]; !has {
-			entry["key_env"] = v
-		}
-	}
-	for _, ca := range camelAliases {
-		if v, ok := entry[ca.camel]; ok {
-			if _, has := entry[ca.snake]; !has {
-				warnOncePerProvider(providerKey, "camel:"+ca.camel,
-					"providers.%s: camelCase key '%s' auto-mapped to '%s' (use snake_case to avoid this warning)", label, ca.camel, ca.snake)
-				entry[ca.snake] = v
-			}
-		}
-	}
 	var unknown []string
 	for k := range entry {
-		if knownProviderKeys[k] {
-			continue
-		}
-		isCamel := false
-		for _, ca := range camelAliases {
-			if ca.camel == k {
-				isCamel = true
-				break
-			}
-		}
-		if !isCamel {
+		if !knownProviderKeys[k] {
 			unknown = append(unknown, k)
 		}
 	}
@@ -288,15 +258,11 @@ func NormalizeCustomProviderEntry(raw any, providerKey string) map[string]any {
 	}
 	put("api_key", stripped("api_key"))
 	put("key_cmd", stripped("key_cmd"))
-	keyEnv := stripped("key_env", "api_key_env")
-	put("key_env", keyEnv)
-	if keyEnv != "" && truthy(entry["api_key_env"]) && !truthy(entry["key_env"]) {
-		normalized["api_key_env"] = keyEnv
-	}
-	if apiMode := stripped("api_mode", "transport"); apiMode != "" {
+	put("key_env", stripped("key_env"))
+	if apiMode := stripped("api_mode"); apiMode != "" {
 		put("api_mode", CanonicalAPIMode(apiMode))
 	}
-	put("model", stripped("model", "default_model"))
+	put("model", stripped("default_model"))
 	put("catalog_provider", stripped("catalog_provider"))
 	modelsDict, discovered := normalizeProviderModels(entry["models"])
 	put("models", modelsDict)
@@ -422,29 +388,6 @@ func filterCapabilities(value any) map[string]bool {
 	return out
 }
 
-// Translates a legacy custom provider entry into the v12 providers shape
-func customProviderEntryToProviderConfig(entry any, providerKey string) map[string]any {
-	normalized := NormalizeCustomProviderEntry(entry, providerKey)
-	if normalized == nil {
-		return nil
-	}
-	out := map[string]any{"api": normalized["base_url"]}
-	for _, field := range []string{"name", "api_key", "key_env", "key_cmd", "models", "models_discovered", "context_length",
-		"rate_limit_delay", "discover_models", "extra_body", "extra_headers", "session_affinity_header", "ssl_ca_cert",
-		"ssl_verify", "catalog_provider"} {
-		if v, ok := normalized[field]; ok {
-			out[field] = v
-		}
-	}
-	if v, ok := normalized["model"]; ok {
-		out["default_model"] = v
-	}
-	if v, ok := normalized["api_mode"]; ok {
-		out["transport"] = v
-	}
-	return out
-}
-
 // Sorted keys so map iteration order is stable across calls
 func sortedKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
@@ -474,22 +417,9 @@ func ProvidersDictToCustomProviders(providersDict any) []map[string]any {
 	return out
 }
 
-// CompatibleCustomProviders is the deduplicated list view over custom_providers and providers blocks
-func CompatibleCustomProviders(cfg map[string]any) []map[string]any {
-	var legacy []any
-	if raw, ok := cfg["custom_providers"]; ok && raw != nil {
-		list, isList := asList(raw)
-		if !isList {
-			pkgLog().Warn(fmt.Sprintf("custom_providers is a %s, expected a list — skipping legacy entries; "+
-				"'providers:' entries are still used. Move provider configs to the 'providers:' section.", config.PyTypeName(raw)))
-		}
-		legacy = list
-	}
-	var candidates []map[string]any
-	for _, e := range legacy {
-		candidates = append(candidates, NormalizeCustomProviderEntry(e, ""))
-	}
-	candidates = append(candidates, ProvidersDictToCustomProviders(cfg["providers"])...)
+// ProviderEntries is the deduplicated list view of the enabled providers entries
+func ProviderEntries(cfg map[string]any) []map[string]any {
+	candidates := ProvidersDictToCustomProviders(cfg["providers"])
 	norm := func(entry map[string]any, field string) string {
 		return strings.ToLower(strings.TrimSpace(cfgString(entry[field])))
 	}
@@ -524,7 +454,7 @@ func CompatibleCustomProviders(cfg map[string]any) []map[string]any {
 // Entries whose normalized route identity equals the base URL, from the given list or the config view
 func entriesForRoute(baseURL string, customProviders []map[string]any, cfg map[string]any) []map[string]any {
 	if customProviders == nil {
-		customProviders = CompatibleCustomProviders(cfg)
+		customProviders = ProviderEntries(cfg)
 	}
 	if baseURL == "" {
 		return nil
@@ -554,10 +484,8 @@ func EntriesForRoute(baseURL string, customProviders []map[string]any, cfg map[s
 // CustomProviderAPIMode is the canonical api_mode of the first custom entry serving the base URL or empty
 func CustomProviderAPIMode(baseURL string, customProviders []map[string]any, cfg map[string]any) string {
 	for _, entry := range entriesForRoute(baseURL, customProviders, cfg) {
-		for _, field := range []string{"api_mode", "transport"} {
-			if value, ok := entry[field].(string); ok && strings.TrimSpace(value) != "" {
-				return CanonicalAPIMode(value)
-			}
+		if value, ok := entry["api_mode"].(string); ok && strings.TrimSpace(value) != "" {
+			return CanonicalAPIMode(value)
 		}
 	}
 	return ""
@@ -705,7 +633,7 @@ func CustomProviderContextLength(model, baseURL string, customProviders []map[st
 		return 0
 	}
 	if customProviders == nil {
-		customProviders = CompatibleCustomProviders(cfg)
+		customProviders = ProviderEntries(cfg)
 	}
 	for _, mc := range routeModelCfgs(model, baseURL, customProviders, cfg) {
 		if ctx, ok := positiveInt(mc["context_length"]); ok {
@@ -726,7 +654,7 @@ func CustomProviderModelCapability(model, baseURL, capability string, customProv
 		return false, false
 	}
 	if customProviders == nil {
-		customProviders = CompatibleCustomProviders(cfg)
+		customProviders = ProviderEntries(cfg)
 	}
 	for _, mc := range routeModelCfgs(model, baseURL, customProviders, cfg) {
 		if b, ok := mc[capability].(bool); ok {

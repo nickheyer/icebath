@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,14 +12,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
-
-// Inbound media cap applied when gateway.max_inbound_media_bytes is absent or unparseable
-const DefaultInboundMediaMaxBytes int64 = 128 * 1024 * 1024
 
 // Age in hours past which the cleanup sweeps delete cached media
 const MediaCacheMaxAgeHours = 24
@@ -52,31 +48,9 @@ func (e *ValueError) Error() string { return e.Msg }
 // Python exception class name the error stands for
 func (e *ValueError) PyTypeName() string { return "ValueError" }
 
-// Inbound media byte cap from the home config, the default when the key is missing or not an integer
+// Inbound media byte cap of a home's settings
 func InboundMediaMaxBytes(ctx context.Context, h string) int64 {
-	tree, err := config.LoadReadonly(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return DefaultInboundMediaMaxBytes
-	}
-	section, ok := map[string]any(tree)["gateway"].(map[string]any)
-	if !ok {
-		return DefaultInboundMediaMaxBytes
-	}
-	raw, ok := section["max_inbound_media_bytes"]
-	if !ok {
-		return DefaultInboundMediaMaxBytes
-	}
-	n, err := pyint.Of(raw)
-	if err != nil {
-		return DefaultInboundMediaMaxBytes
-	}
-	if !n.IsInt64() {
-		if n.Sign() > 0 {
-			return math.MaxInt64
-		}
-		return math.MinInt64
-	}
-	return n.Int64()
+	return int64(settings.GatewayMaxInboundMediaBytes.Get(home.WithOverride(ctx, h)))
 }
 
 // Rejects a payload over the cap, nil maxBytes reading the home config and a zero cap disabling the check

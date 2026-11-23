@@ -53,7 +53,7 @@ func (a *app) startHandoff(r *slashRun, platform string) tea.Cmd {
 		r.sys(commandText(a.ctx, "shared.agent_busy", map[string]any{"command": "/handoff"}))
 		return nil
 	}
-	w := &handoffWatch{r: r, sid: r.sid, platform: platform, subscriptionHeld: a.life.subscriptions[r.sid]}
+	w := &handoffWatch{r: r, sid: r.sid, platform: platform, subscriptionHeld: a.life.subs.of(r.sid)}
 	return call(a.gw, tuigateway.HandoffRequest, tuigateway.HandoffRequestParams{SessionID: r.sid, Platform: platform}, func(res *tuigateway.HandoffRequestResult, err error) tea.Cmd {
 		if err != nil {
 			r.sys(refusalDetail(err))
@@ -77,19 +77,11 @@ func (a *app) startHandoff(r *slashRun, platform string) tea.Cmd {
 // Stored title of a session from the gateway, the title the view holds when the gateway names none
 func (a *app) storedTitle(sid string, then func(title string) tea.Cmd) tea.Cmd {
 	held := trimJS(a.store.ui.SessionTitle)
-	if a.gw.canonical() {
-		return requestSessions(a.gw, true, "", func(sessions []listedSession, _ error) tea.Cmd {
-			for _, s := range sessions {
-				if title := trimJS(s.Title); (s.ID == sid || s.SessionID == sid) && title != "" {
-					return then(title)
-				}
+	return requestSessions(a.gw, true, func(sessions []listedSession, _ error) tea.Cmd {
+		for _, s := range sessions {
+			if title := trimJS(s.Title); (s.ID == sid || s.SessionID == sid) && title != "" {
+				return then(title)
 			}
-			return then(held)
-		})
-	}
-	return call(a.gw, tuigateway.SessionTitle, tuigateway.SessionTitleParams{SessionID: sid}, func(r *tuigateway.SessionTitleResult, err error) tea.Cmd {
-		if err == nil && trimJS(r.Title) != "" {
-			return then(trimJS(r.Title))
 		}
 		return then(held)
 	})
@@ -173,7 +165,7 @@ func (a *app) leaveHandedOffSession(w *handoffWatch, report string) tea.Cmd {
 		a.store.ui.Status = tr(txt.SlashCmdCoreClearForgingSession)
 		return a.life.startNewSession(report, "", true, nil)
 	}
-	if a.gw.canonical() && w.subscriptionHeld != "" {
+	if w.subscriptionHeld != "" {
 		return a.life.detachCanonical(w.sid, w.subscriptionHeld, "", true, open)
 	}
 	return open(nil)

@@ -12,7 +12,7 @@
 
 <a href="https://icebath.app"><img src="https://img.shields.io/badge/site-icebath.app-0b0f14?style=for-the-badge&labelColor=0b0f14&color=1c2733" alt="icebath.app" /></a>
 <img src="https://img.shields.io/badge/go-1.27-0b0f14?style=for-the-badge&logo=go&logoColor=dfe9f2&labelColor=0b0f14&color=1c2733" alt="go 1.27" />
-<img src="https://img.shields.io/badge/linux-amd64-0b0f14?style=for-the-badge&logo=linux&logoColor=dfe9f2&labelColor=0b0f14&color=1c2733" alt="linux amd64" />
+<img src="https://img.shields.io/badge/linux%20%C2%B7%20macos%20%C2%B7%20windows-amd64%20%C2%B7%20arm64-0b0f14?style=for-the-badge&labelColor=0b0f14&color=1c2733" alt="linux, macos, windows on amd64 and arm64" />
 
 <br />
 <br />
@@ -54,9 +54,13 @@ git clone https://github.com/nickheyer/icebath && icebath/setup-icebath.sh
 ## ▍ Usage
 
 ```sh
-icebath                         # open the TUI, set up a model there on first run
+icebath                         # open the terminal UI; the first run sets up a model
 icebath chat -q "check disk usage"
-icebath gateway install         # messaging gateway as a background service
+icebath config set display.tui_theme dark
+icebath gateway install         # run the background service, for chat apps and scheduled jobs
 icebath update
 icebath uninstall
 ```
+
+Inside the terminal UI, `/help` lists every key and command and `/settings` changes any setting.
+Every setting is listed in [SETTINGS.md](SETTINGS.md); [cli-config.yaml.example](cli-config.yaml.example) shows each one at its default.

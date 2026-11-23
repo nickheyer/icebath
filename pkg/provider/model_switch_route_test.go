@@ -243,7 +243,7 @@ func TestUnlistedIDOnUserProviderIsKeptVerbatim(t *testing.T) {
 		fakeSwitchPipeline(t, false)
 		cfg := modelsConfig(ctx)
 		var custom []any
-		for _, entry := range CompatibleCustomProviders(cfg) {
+		for _, entry := range ProviderEntries(cfg) {
 			custom = append(custom, entry)
 		}
 		providers, _ := cfg["providers"].(map[string]any)

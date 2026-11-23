@@ -1,35 +1,11 @@
 package tuihost
 
 import (
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
-// Tool progress mode focus view pins while it is on
-const FocusToolProgressMode = "off"
-
 var toolProgressModeWords = map[string]bool{"off": true, "new": true, "all": true, "verbose": true}
-
-// Mouse tracking spellings mapped to off, wheel, buttons or all
-var MouseTrackingAliases = tuigateway.MouseTrackingAliases
-
-// Mouse tracking mode of the display config, legacy tui_mouse only when mouse_tracking is absent
-func DisplayMouseTracking(display any) string {
-	section, _ := display.(map[string]any)
-	return string(tuigateway.MouseTrackingOf(section))
-}
-
-// Settings the terminal UI follows from a profile config, the local display overlay applied and the arena redacted
-func ClientConfig(cfg map[string]any) tuigateway.ClientConfig {
-	display := config.LocalDisplayConfig(cfg["display"])
-	if arena, present := display["arena"]; present {
-		display["arena"] = config.RedactConfigValue(arena)
-	}
-	return tuigateway.ClientConfigOf(map[string]any{"display": display, "approvals": cfg["approvals"], "voice": cfg["voice"],
-		"paste_collapse_threshold": cfg["paste_collapse_threshold"], "paste_collapse_char_threshold": cfg["paste_collapse_char_threshold"]})
-}
 
 // Known tool progress mode of a raw config value, log kept as a gateway mode, else the default
 func NormalizeToolProgressMode(mode any, def string) string {

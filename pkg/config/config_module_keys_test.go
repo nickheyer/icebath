@@ -82,7 +82,7 @@ func TestEnvVarPolicyNameUppercasesLikePythonStr(t *testing.T) {
 
 func TestConfigNormalizationDoesNotOverwriteUserValuesSaveConfigDoesNotInjectMaxTurnsWhenUnset(t *testing.T) {
 	h, path, _ := moduleHome(t, "")
-	moduleDump(t, path, map[string]any{"_config_version": latestConfigVersion(), "memory": map[string]any{"user_char_limit": 2200}})
+	moduleDump(t, path, map[string]any{"memory": map[string]any{"user_char_limit": 2200}})
 	moduleSave(t, h, moduleLoad(t, h))
 	raw := moduleYAML(t, path)
 	if agent, _ := raw["agent"].(map[string]any); agent != nil {
@@ -92,18 +92,6 @@ func TestConfigNormalizationDoesNotOverwriteUserValuesSaveConfigDoesNotInjectMax
 	}
 	if !pyEq(Tree(raw).Get("memory.user_char_limit"), 2200) {
 		t.Fatalf("memory %v", raw["memory"])
-	}
-}
-
-func TestConfigNormalizationDoesNotOverwriteUserValuesNormalizeMaxTurnsDoesNotInjectDefault(t *testing.T) {
-	result, err := normalizeMaxTurns(map[string]any{"_config_version": latestConfigVersion()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if agent, _ := result["agent"].(map[string]any); agent != nil {
-		if _, has := agent["max_turns"]; has {
-			t.Fatalf("max_turns injected: %v", result)
-		}
 	}
 }
 
@@ -142,48 +130,6 @@ func TestDefaultConfigHasNoDuplicateTopLevelKeys(t *testing.T) {
 	for k := range literal {
 		if seen[k] != 1 {
 			t.Fatalf("%s is in the literal and not in the declared order", k)
-		}
-	}
-}
-
-func TestGatewayMultiplexKeysAreRecognizedConfigKeys(t *testing.T) {
-	src := pathCommandSources()
-	if _, has := Defaults().Map("gateway")["auto_migrate"]; has {
-		t.Fatal("gateway.auto_migrate is a default")
-	}
-	for _, key := range []string{"gateway.multiplex_profiles", "gateway.profile_routes", "gateway.auto_multiplex_migration"} {
-		if known, suggestion := ValidateConfigKey(key, src); !known || suggestion != "" {
-			t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
-		}
-	}
-	if known, suggestion := ValidateConfigKey("gateway.auto_migrate", src); known || suggestion != "gateway.auto_multiplex_migration" {
-		t.Fatalf("gateway.auto_migrate known %v suggestion %q", known, suggestion)
-	}
-}
-
-func TestEmptyDictDefaultSectionsAreOpenContainers(t *testing.T) {
-	src := pathCommandSources()
-	defaults := Defaults()
-	for _, path := range []string{"compression.model_thresholds", "terminal.docker_env"} {
-		if m, ok := defaults.Get(path).(map[string]any); !ok || len(m) != 0 {
-			t.Fatalf("%s default %v", path, defaults.Get(path))
-		}
-	}
-	for _, key := range []string{"compression.model_thresholds.gpt-5", "terminal.docker_env.FOO", "lsp.servers.python.command", "auxiliary.vision.extra_body.reasoning"} {
-		if known, suggestion := ValidateConfigKey(key, src); !known || suggestion != "" {
-			t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
-		}
-	}
-	if known, suggestion := ValidateConfigKey("compression.model_threshold.gpt-5", src); known || suggestion != "compression.model_thresholds" {
-		t.Fatalf("typo known %v suggestion %q", known, suggestion)
-	}
-}
-
-func TestLspRootPolicyKeysAreRecognizedAndOffByDefault(t *testing.T) {
-	src := pathCommandSources()
-	for _, key := range []string{"lsp.warmup_timeout", "lsp.broken_retry_seconds", "lsp.exclude_roots"} {
-		if known, suggestion := ValidateConfigKey(key, src); !known || suggestion != "" {
-			t.Fatalf("%s known %v suggestion %q", key, known, suggestion)
 		}
 	}
 }
@@ -239,32 +185,6 @@ func TestSaveConfigExplicitPathAuthoritySaveSurvivesCachedRawReadReturningEmpty(
 	sort.Strings(lost)
 	if len(lost) != 0 {
 		t.Fatalf("sections lost by the save: %v", lost)
-	}
-}
-
-func TestSaveConfigPartialWritePreservationPersistMigrationWritesFullReadRawConfig(t *testing.T) {
-	body := "_config_version: 30\nmodel:\n  default: deepseek-v4-pro\n  provider: deepseek\nagent:\n  max_turns: 60\n" +
-		"platforms:\n  feishu:\n    enabled: true\n    extra:\n      app_id: cli_xxx\n      app_secret: xxx\n"
-	h, path, _ := caseHome(t, body, "")
-	cfg, err := ReadRawConfig(t.Context(), h)
-	if err != nil {
-		t.Fatal(err)
-	}
-	agent, _ := cfg["agent"].(map[string]any)
-	agent["verify_on_stop"] = false
-	cfg["_config_version"] = 32
-	if err := persistMigration(t.Context(), h, cfg); err != nil {
-		t.Fatal(err)
-	}
-	raw := Tree(moduleYAML(t, path))
-	if raw.Get("platforms.feishu.extra.app_id") != "cli_xxx" {
-		t.Fatalf("platforms %v", raw["platforms"])
-	}
-	if _, has := raw.Map("agent")["verify_on_stop"]; has {
-		t.Fatalf("default written: %v", raw["agent"])
-	}
-	if !pyEq(raw.Get("agent.max_turns"), 60) || !pyEq(raw["_config_version"], 32) {
-		t.Fatalf("raw %v", raw)
 	}
 }
 

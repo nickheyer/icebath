@@ -2,46 +2,27 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
-	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
-// Deletes a stored session, by the revision fenced session.mutate on the shared gateway, a refusal handing back the read's attachment
-func (a *app) deleteStoredSession(id string, deleted func() tea.Cmd) tea.Cmd {
-	if !a.gw.canonical() {
-		return call(a.gw, tuigateway.SessionDelete, tuigateway.SessionDeleteParams{SessionID: id}, func(result *tuigateway.SessionDeleteResult, err error) tea.Cmd {
-			if err != nil {
-				a.sys(errorLine(rpcErrorMessage(err)))
-				return nil
-			}
-			if result.Deleted != id {
-				a.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, "session.delete"))))
-				return nil
-			}
-			return deleted()
-		})
-	}
-	var release *tuigateway.SessionDetachParams
-	onRead := func(snapshot *tuigateway.CanonicalSnapshot) {
-		resolved := firstText(snapshot.SessionID, id)
-		release = nil
-		if snapshot.SubscriptionID != "" && resolved != a.store.ui.Sid {
-			release = &tuigateway.SessionDetachParams{SessionID: resolved, SubscriptionID: snapshot.SubscriptionID}
-		}
-	}
-	return a.store.mutateCanonicalRead(a.gw, id, "delete", map[string]any{}, func() bool { return false }, onRead, func(m *mutationOutcome, err error) tea.Cmd {
+// Deletes a stored session, by the revision fenced session.mutate on the background service, handing on why it failed
+func (a *app) deleteStoredSession(id string, done func(err error) tea.Cmd) tea.Cmd {
+	return a.mutateStoredSession(id, "delete", map[string]any{}, done)
+}
+
+// Changes the record of any session of the background service, open in a card or not, fenced by the revision read without attaching to it
+func (a *app) mutateStoredSession(id, operation string, payload map[string]any, done func(err error) tea.Cmd) tea.Cmd {
+	return call(a.gw, tuigateway.CanonicalSessionRevision, tuigateway.SessionRevisionParams{SessionID: id}, func(rev *tuigateway.SessionRevisionResult, err error) tea.Cmd {
 		if err != nil {
-			a.sys(errorLine(rpcErrorMessage(err)))
-			if release != nil {
-				return a.events.quietRequest(tuigateway.CanonicalSessionDetach.Name(), wireParams(*release))
-			}
-			return nil
+			return done(err)
 		}
-		if m == nil || m.Result == nil {
-			a.sys(errorLine(misfitText(tr(txt.SessionCommonInvalidResponse, "session.mutate"))))
-			return nil
+		params := tuigateway.SessionMutateParams{SessionID: firstText(rev.SessionID, id), RequestID: uuid.NewString(), ExpectedRevision: rev.Revision,
+			Operation: operation, Payload: payload}
+		if operation != "rename" {
+			params.ExpectedGeneration = ptr(rev.ExecutionGeneration)
 		}
-		return deleted()
+		return call(a.gw, tuigateway.CanonicalSessionMutate, params, func(_ *tuigateway.SessionMutateResult, err error) tea.Cmd { return done(err) })
 	})
 }

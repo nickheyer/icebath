@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -25,6 +26,14 @@ type sendCall struct {
 }
 
 // Installs the config loader, platform send and mirror doubles the tests patch in
+// Writes config.yaml into the test's ICEBATH_HOME
+func writeHomeConfig(t *testing.T, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func installSendSeams(t *testing.T, cfg *gateway.GatewayConfig, send func(sendCall) (map[string]any, error)) *[]sendCall {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -114,8 +123,7 @@ func TestSendMessageToolNtfyTopicTargetBypassesChannelDirectory(t *testing.T) {
 func TestSendMessageToolMediaTagOutsideAllowedRootsIsNotSent(t *testing.T) {
 	cfg, tg := telegramConfig()
 	calls := installSendSeams(t, cfg, nil)
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "1")
-	t.Setenv("ICEBATH_MEDIA_TRUST_RECENT_FILES", "0")
+	writeHomeConfig(t, "gateway:\n  strict: true\n  trust_recent_files: false\n")
 	secret := writeTemp(t, "secret.pdf", []byte("%PDF secret"))
 	res := runTool(t, map[string]any{"action": "send", "target": "telegram:12345", "message": "hello\nMEDIA:" + secret})
 	if res["success"] != false || res["partial_success"] != true {
@@ -131,9 +139,8 @@ func TestSendMessageToolMediaTagOutsideAllowedRootsIsNotSent(t *testing.T) {
 func TestSendMessageToolMissingMediaIsReportedToTheCaller(t *testing.T) {
 	cfg, tg := telegramConfig()
 	calls := installSendSeams(t, cfg, nil)
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "0")
 	dir := t.TempDir()
-	t.Setenv("ICEBATH_MEDIA_ALLOW_DIRS", dir)
+	writeHomeConfig(t, "gateway:\n  media_delivery_allow_dirs: ["+strconv.Quote(dir)+"]\n")
 	report := filepath.Join(dir, "report.pdf")
 	if err := os.WriteFile(report, []byte("%PDF report"), 0o644); err != nil {
 		t.Fatal(err)

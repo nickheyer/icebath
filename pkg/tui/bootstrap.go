@@ -31,4 +31,6 @@ type Host struct {
 	Attach          func(ctx context.Context, start, recover bool) (Grant, error)
 	RestoreSnapshot func(ctx context.Context, id, session string, handoff bool, release func()) SnapshotRestore
 	SettleWorktrees func(ctx context.Context, trees []Worktree, active string)
+	// Stops the home's background service of another build so the next attach starts one of this build, nil where the launcher cannot
+	ReplaceOwner func(ctx context.Context) error
 }

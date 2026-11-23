@@ -79,7 +79,7 @@ func ReceiptOf(ctx context.Context, req ProfileCreateRequest, result *ProvisionR
 	if !req.Fresh() {
 		if !req.CloneAll {
 			receipt.ClonedPlugins = receiptRead("cloned plugins", []string{}, func() ([]string, error) { return ClonedPluginNames(path), nil })
-			if provider := receiptRead("cloned memory provider", "", func() (string, error) { return memory.ClonedMemoryProvider(path), nil }); provider != "" {
+			if provider := receiptRead("cloned memory provider", "", func() (string, error) { return memory.ClonedMemoryProvider(ctx, path), nil }); provider != "" {
 				receipt.MemoryProvider = &provider
 			}
 		}

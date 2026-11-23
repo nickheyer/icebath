@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Acknowledges a slash command that falls through to the agent, onto the local command sink when one is bound
@@ -47,12 +48,7 @@ func commandOriginForSource(source *gateway.SessionSource) map[string]any {
 
 // Gates a destructive session command behind a confirm prompt unless approvals.destructive_slash_confirm is off
 func (r *GatewayRunner) maybeConfirmDestructiveSlash(ctx context.Context, event *gateway.MessageEvent, command, title, detail string, execute func(ctx context.Context) (any, error)) (any, error) {
-	confirmRequired := true
-	if approvals, ok := r.readUserConfig(ctx)["approvals"].(map[string]any); ok {
-		value, present := approvals["destructive_slash_confirm"]
-		confirmRequired = !present || pyrepr.Truthy(value)
-	}
-	if !confirmRequired {
+	if !settings.ConfirmDestructive.Get(ctx) {
 		return execute(ctx)
 	}
 	sessionKey, err := r.sessionKeyForSource(ctx, event.Source)

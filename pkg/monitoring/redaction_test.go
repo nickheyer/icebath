@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func TestSecretKeyAlwaysStripped(t *testing.T) {
@@ -69,31 +69,16 @@ func TestInstallIDPersistsAcrossCalls(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("{}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	load := func() map[string]any {
-		cfg, err := loadConfigForTest(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return cfg
-	}
-	first := EnsureInstallID(t.Context(), load())
+	ctx := home.WithOverride(t.Context(), dir)
+	first := EnsureInstallID(ctx)
 	if first == "" || first == "unknown" {
 		t.Fatalf("minted %q", first)
 	}
-	if second := EnsureInstallID(t.Context(), load()); second != first {
-		t.Fatalf("second load minted %q, want %q", second, first)
+	if second := EnsureInstallID(ctx); second != first {
+		t.Fatalf("second read minted %q, want %q", second, first)
 	}
 	raw, _ := os.ReadFile(filepath.Join(dir, "config.yaml"))
 	if !strings.Contains(string(raw), first) {
 		t.Fatalf("config.yaml lacks the id %s", raw)
 	}
-	cfg := map[string]any{"monitoring": map[string]any{"install_id": "  "}}
-	if got := EnsureInstallID(t.Context(), cfg); got == "" || cfg["monitoring"].(map[string]any)["install_id"] != got {
-		t.Fatalf("blank id not replaced in memory %v", cfg)
-	}
-}
-
-func loadConfigForTest(dir string) (map[string]any, error) {
-	tree, err := config.Load(dir, nil)
-	return map[string]any(tree), err
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -406,18 +406,12 @@ func parseSkillsArgument(skillsArg []string) []string {
 	return out
 }
 
-// SaveConfigValue persists a dot separated key into ICEBATH_HOME config.yaml, true on success
+// SaveConfigValue saves a setting of the home in ctx through the settings writer, true on success
 func SaveConfigValue(ctx context.Context, keyPath string, value any) bool {
-	configPath := filepath.Join(home.Dir(ctx), "config.yaml")
-	if _, err := home.Mkdir(ctx, filepath.Dir(configPath)); err != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to save config: %v", err))
+	if _, err := settings.Set(ctx, keyPath, value, settings.Global); err != nil {
+		pkgLog().Error(fmt.Sprintf("Failed to save %s: %v", keyPath, err))
 		return false
 	}
-	if err := config.WriteConfigKey(ctx, configPath, keyPath, value); err != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to save config: %v", err))
-		return false
-	}
-	_ = os.Chmod(configPath, 0o600)
 	return true
 }
 

@@ -46,7 +46,7 @@ func activeSkinFromConfig(ctx context.Context) (string, error) {
 
 // Persists display.skin through the shared config set writer
 func useSkin(ctx context.Context, name string, src ConfigCommandSources) error {
-	return ConfigCommand(ctx, home.Dir(ctx), ConfigArgs{Command: "set", Key: "display.skin", Value: &name, Force: true}, src)
+	return ConfigCommand(ctx, home.Dir(ctx), ConfigArgs{Command: "set", Key: "display.skin", Value: &name}, src)
 }
 
 // Shallow copy of a mapping keeping its key order

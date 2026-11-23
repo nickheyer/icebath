@@ -83,6 +83,9 @@ func (m *Model) handleIntent(in Intent) tea.Cmd {
 	case intentToast:
 		return m.Toast(in.text, in.level, in.ttl)
 	case intentDismiss:
+		if m.Attached(in.From) {
+			return m.Detach(in.From)
+		}
 		if in.From != nil && (m.overlay == nil || m.overlay.card != in.From) {
 			return nil
 		}
@@ -94,6 +97,9 @@ func (m *Model) handleIntent(in Intent) tea.Cmd {
 		return m.ShowOverlay(in.card)
 	}
 	e := m.entryOf(in.From)
+	if s := m.sheetEntry(in.From); e == nil && s != nil {
+		e = s.host
+	}
 	if e == nil {
 		return nil
 	}

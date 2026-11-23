@@ -5,17 +5,16 @@ package tuiserver
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/media"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -131,8 +130,8 @@ func stopSessionVoiceCapture(ctx context.Context, sessionID string) {
 
 // Flips voice and spoken replies off, optionally halting the loop and cutting live TTS
 func endVoiceChat(ctx context.Context, stopLoop, stopTTS bool) {
-	_ = os.Setenv("ICEBATH_VOICE", "0")
-	_ = os.Setenv("ICEBATH_VOICE_TTS", "0")
+	setVoiceFlag(ctx, settings.VoiceInput.Key, false)
+	setVoiceFlag(ctx, settings.SpeakReplies.Key, false)
 	if stopLoop {
 		suppress(func() { media.StopContinuous(ctx, false) })
 	}
@@ -250,8 +249,7 @@ func voiceArmFullDuplex(ctx context.Context) {
 
 // Arms the listener when voice mode is on and barge in is not disabled
 func armBargeListenerIfEnabled(ctx context.Context) {
-	bargeIn, present := voiceCfgDict(ctx)["barge_in"]
-	if voiceModeEnabled() && (!present || truthy(bargeIn)) {
+	if voiceModeEnabled() && settings.VoiceBargeIn.Get(ctx) {
 		armFullDuplexListener(ctx)
 	}
 }
@@ -290,7 +288,7 @@ func fullDuplexListener(ctx context.Context) {
 	}
 	tripped := &pythread.Event{}
 	var trippedDuring atomic.Value
-	mult, graceMS := fdBargeParams(voiceCfgDict(ctx))
+	mult, graceMS := settings.VoiceBargeInThresholdMultiplier.Get(ctx), max(0, int(settings.VoiceBargeInGraceSeconds.Get(ctx).Milliseconds()))
 	opts := media.DefaultDuplexOptions()
 	opts.IsPlaying, opts.Multiplier, opts.GraceMS = media.IsAudioOutputActive, mult, graceMS
 	opts.OnTrigger = func(phase string) {
@@ -316,35 +314,6 @@ func fullDuplexListener(ctx context.Context) {
 			deliverFDTranscript(ctx, text)
 		}
 	}
-}
-
-// Threshold multiplier and grace milliseconds of the voice config, malformed values reading as defaults
-func fdBargeParams(cfg map[string]any) (float64, int) {
-	num := func(key string, def any, conv func(any) (float64, error)) float64 {
-		raw, present := cfg[key]
-		if !present {
-			raw = def
-		}
-		if v, err := conv(raw); err == nil {
-			return v
-		}
-		v, _ := conv(def)
-		return v
-	}
-	mult := num("barge_in_threshold_multiplier", 0, func(v any) (float64, error) {
-		if !truthy(v) {
-			return 0, nil
-		}
-		return pyint.Float(v)
-	})
-	grace := num("barge_in_grace_seconds", 0.5, func(v any) (float64, error) {
-		f, err := pyint.Float(v)
-		if err != nil {
-			return 0, err
-		}
-		return math.Trunc(f * 1000), nil
-	})
-	return mult, max(0, int(grace))
 }
 
 // Latches the interruption, cuts every TTS path and interrupts running turns when tripped during generation

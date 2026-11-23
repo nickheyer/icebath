@@ -76,18 +76,17 @@ func isolateAccountUsage(t *testing.T) {
 	accountUsageCache.lastTry = map[accountUsageKey]time.Time{}
 	accountUsageCache.inflight = map[accountUsageKey]bool{}
 	accountUsageCache.Unlock()
-	prevResolve, prevRead, prevPool := codexUsageResolveFn, codexUsageReadTokensFn, codexUsageLoadPoolFn
+	prevResolve, prevPool := codexUsageResolveFn, codexUsageLoadPoolFn
 	codexUsageResolveFn = func(PoolEnv, bool) (map[string]any, error) {
 		t.Fatal("legacy codex resolver must not be used")
 		return nil, nil
 	}
-	codexUsageReadTokensFn = func(PoolEnv) (map[string]any, error) { return map[string]any{}, nil }
 	codexUsageLoadPoolFn = func(PoolEnv) codexUsagePool {
 		t.Fatal("pool must not be consulted")
 		return nil
 	}
 	t.Cleanup(func() {
-		codexUsageResolveFn, codexUsageReadTokensFn, codexUsageLoadPoolFn = prevResolve, prevRead, prevPool
+		codexUsageResolveFn, codexUsageLoadPoolFn = prevResolve, prevPool
 	})
 }
 
@@ -231,23 +230,6 @@ func TestAccountUsageCodexInvalidPayloadFailsClosed(t *testing.T) {
 	}
 }
 
-func TestAccountUsageCodexAccountIDReadFailureKeepsSingletonToken(t *testing.T) {
-	isolateAccountUsage(t)
-	rt := useUsageTransport(t, usageResp{200, usageJSONText(codexUsagePayload())})
-	codexUsageResolveFn = func(PoolEnv, bool) (map[string]any, error) {
-		return map[string]any{"api_key": "singleton-token", "base_url": "https://chatgpt.com/backend-api/codex"}, nil
-	}
-	codexUsageReadTokensFn = func(PoolEnv) (map[string]any, error) {
-		return nil, &AuthError{Message: "partial store", Provider: "openai-codex", Code: "codex_auth_invalid_shape"}
-	}
-	if snap := FetchAccountUsage(context.Background(), "openai-codex", AccountUsageFetchOptions{}); snap == nil {
-		t.Fatal("no snapshot")
-	}
-	if rt.calls[0].Headers.Get("Authorization") != "Bearer singleton-token" || rt.calls[0].Headers.Get("ChatGPT-Account-ID") != "" {
-		t.Fatalf("headers %v", rt.calls[0].Headers)
-	}
-}
-
 func TestAccountUsageCodexRetries401WithForcedRefresh(t *testing.T) {
 	isolateAccountUsage(t)
 	rt := useUsageTransport(t, usageResp{401, "{}"}, usageResp{200, usageJSONText(codexUsagePayload())})
@@ -272,9 +254,6 @@ func TestAccountUsageCodexRetries401WithForcedRefresh(t *testing.T) {
 func TestAccountUsageCodex401RetryRefreshesExplicitCredentialNotAnotherAccount(t *testing.T) {
 	isolateAccountUsage(t)
 	rt := useUsageTransport(t, usageResp{401, "{}"}, usageResp{200, usageJSONText(codexUsagePayload())})
-	codexUsageReadTokensFn = func(PoolEnv) (map[string]any, error) {
-		return map[string]any{"access_token": "someone-elses-singleton"}, nil
-	}
 	pool := &fakeCodexPool{refreshEntry: &PooledCredential{Provider: "openai-codex", AccessToken: "refreshed-own-token",
 		BaseURL: "https://chatgpt.com/backend-api/codex"}}
 	codexUsageLoadPoolFn = func(PoolEnv) codexUsagePool { return pool }

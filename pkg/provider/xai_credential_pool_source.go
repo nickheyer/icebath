@@ -16,7 +16,7 @@ func XAICredentialPoolSource() tools.CredentialPoolSource { return xaiCredential
 
 // Pool of a provider for a tool env, the process home when no env is bound
 func toolEnvPool(env *tools.Env, providerID string) *Pool {
-	return LoadPool(toolsPoolEnv(env), providerID)
+	return LoadSelectedPool(toolsPoolEnv(env), providerID)
 }
 
 // Runtime bearer then access token, and runtime base url then stored base url, of one entry

@@ -22,10 +22,6 @@ type connectorBody func(ctx context.Context, rid any, params map[string]any) (ma
 var connectorsRegistry = &handlerRegistry{}
 
 func init() {
-	connectorsRegistry.method("connectors.connect", connectorGuard(connectorsConnect))
-	connectorsRegistry.method("connectors.operation.status", connectorGuard(connectorsOperationStatus))
-	connectorsRegistry.method("connectors.operation.wake", connectorGuard(connectorsOperationWake))
-	connectorsRegistry.method("connection.respond", connectorGuard(connectionRespond))
 	connectorsRegistry.install()
 	names := make([]string, 0, len(connectorRPCMethods))
 	for name := range connectorRPCMethods {

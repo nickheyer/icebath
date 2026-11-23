@@ -215,7 +215,6 @@ func TestCorruptionErrorClassificationRequiresFTSEvidence(t *testing.T) {
 func TestFTSTableProbeAndEnsureSchema(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("ICEBATH_FTS5_CJK_SO", "")
-	t.Setenv("ICEBATH_CJK_FTS", "")
 	conn, path := schemaConn(t)
 	f := newSessionFTSSetup(&fakeFTSHost{path: path})
 	if st, err := f.ftsTableProbe(ctx, conn, "messages_fts"); err != nil || st != ftsTableStatusQueryable {
@@ -296,7 +295,6 @@ func TestFTSTableProbeAndEnsureSchema(t *testing.T) {
 func TestEnsureFTSCJKSchemaLifecycle(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("ICEBATH_FTS5_CJK_SO", "")
-	t.Setenv("ICEBATH_CJK_FTS", "")
 	conn, path := schemaConn(t)
 	f := newSessionFTSSetup(&fakeFTSHost{path: path})
 	f.ftsCJKLoaded.Store(LoadFTS5CJKExtension(ctx, conn))
@@ -392,7 +390,6 @@ func (c failingConn) ExecContext(context.Context, string, ...any) (sql.Result, e
 func TestEnterFTSFailOpenDetachesWithinTheWriteBudget(t *testing.T) {
 	ctx := context.Background()
 	t.Setenv("ICEBATH_FTS5_CJK_SO", "")
-	t.Setenv("ICEBATH_CJK_FTS", "")
 	conn, path := schemaConn(t)
 	LoadFTS5CJKExtension(ctx, conn)
 	mustExecConn(t, conn, FTSCJKTableSQL)

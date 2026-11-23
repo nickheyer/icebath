@@ -84,10 +84,12 @@ type authCLI struct {
 	ns   map[string]any
 	out  io.Writer
 	errw io.Writer
+	// Prompt answers of a hosted sign in, nil reading the terminal
+	input func(prompt string) (string, bool)
 }
 
 func (c *authCLI) with(ns map[string]any) *authCLI {
-	return &authCLI{ctx: c.ctx, env: c.env, ns: ns, out: c.out, errw: c.errw}
+	return &authCLI{ctx: c.ctx, env: c.env, ns: ns, out: c.out, errw: c.errw, input: c.input}
 }
 
 var authCmdInputFn = func(out io.Writer, prompt string) (string, error) { return pickerStdinInput(out, prompt) }
@@ -231,7 +233,7 @@ func (c *authCLI) loadConfig() map[string]any {
 // Configured provider entries with their legacy custom pool key and runtime slug
 func (c *authCLI) customProviderEntries() []map[string]any {
 	var result []map[string]any
-	for _, entry := range CompatibleCustomProviders(c.loadConfig()) {
+	for _, entry := range ProviderEntries(c.loadConfig()) {
 		name, _ := entry["name"].(string)
 		if strings.TrimSpace(name) == "" {
 			continue
@@ -477,10 +479,14 @@ func formatExhaustedStatus(entry PooledCredential) string {
 }
 
 var authCmdAnthropicOAuthLoginFn = func(c *authCLI) map[string]any {
-	return RunIcebathOAuthLoginPure(c.env, func(label string) (string, bool) {
-		answer, err := authCmdInputFn(c.out, label)
-		return answer, err == nil
-	})
+	prompt := c.input
+	if prompt == nil {
+		prompt = func(label string) (string, bool) {
+			answer, err := authCmdInputFn(c.out, label)
+			return answer, err == nil
+		}
+	}
+	return RunIcebathOAuthLoginTo(c.env, c.out, prompt, !nsFlag(c.ns, "no_browser"))
 }
 var authCmdMinimaxOAuthLoginFn = minimaxOAuthLogin
 var authCmdOpenrouterPKCELoginFn = OpenrouterPKCELogin
@@ -593,6 +599,13 @@ var authOAuthAddSpecs = map[string]authOAuthAddSpec{
 		fields: func(c *authCLI, creds map[string]any, provider string, entry *PooledCredential) {
 			entry.RefreshToken = authTextOr(creds["refresh_token"])
 			entry.BaseURL = authTextOr(creds["inference_base_url"])
+			if epoch, ok := ParseISOTimestamp(creds["expires_at"]); ok {
+				entry.ExpiresAtMS = int64(epoch * 1000)
+			}
+			if entry.Extra == nil {
+				entry.Extra = map[string]any{}
+			}
+			entry.Extra["portal_base_url"], entry.Extra["client_id"] = authTextOr(creds["portal_base_url"]), authTextOr(creds["client_id"])
 		}},
 	"openrouter": {
 		login: func(c *authCLI) (map[string]any, error) {
@@ -687,6 +700,10 @@ func (c *authCLI) add() error {
 		}
 		provider = sibling
 	}
+	if err := c.checkRequestedLoginName(provider); err != nil {
+		return err
+	}
+	previousActive := currentLoginID(c.env, provider)
 	pool := LoadPool(c.env, provider)
 	if !isCustom {
 		c.unsuppressProviderSources(provider)
@@ -706,6 +723,9 @@ func (c *authCLI) add() error {
 	if asked != provider {
 		fmt.Fprintf(c.out, "Stored under the provider id %s: `icebath auth list %s` shows it and `--provider %s` uses it.\n",
 			provider, provider, provider)
+	}
+	if err := c.nameAddedLogin(provider, entry, previousActive); err != nil {
+		return err
 	}
 	if wanted, ok := authWantedPriority(c.ns); ok {
 		placed := LoadPool(c.env, provider)
@@ -801,6 +821,12 @@ func (c *authCLI) addCredential(provider string, pool *Pool, requestedType strin
 	if err != nil {
 		return PooledCredential{}, err
 	}
+	return c.storeOAuthCredential(provider, pool, creds)
+}
+
+// Stores the credentials an OAuth sign in returned as a new row of the provider's pool
+func (c *authCLI) storeOAuthCredential(provider string, pool *Pool, creds map[string]any) (PooledCredential, error) {
+	spec := authOAuthAddSpecs[provider]
 	token := spec.token(creds)
 	label := strings.TrimSpace(authTextOr(c.ns["label"]))
 	if label == "" {
@@ -814,7 +840,7 @@ func (c *authCLI) addCredential(provider string, pool *Pool, requestedType strin
 		Source: spec.source(creds), AccessToken: token}
 	spec.fields(c, creds, provider, &entry)
 	existing := pool.Entries()
-	entry, err = pool.AddEntry(entry)
+	entry, err := pool.AddEntry(entry)
 	if err != nil {
 		return PooledCredential{}, err
 	}
@@ -859,7 +885,7 @@ func (c *authCLI) reportPriority(provider string, pool *Pool, moved PooledCreden
 		}
 		fmt.Fprintf(c.errw, "note: requested priority %d; effective priority is %d because %s.\n", requested, moved.Priority, reason)
 	}
-	strategy := GetPoolStrategy(c.env.config(), provider)
+	strategy := GetPoolStrategy(c.env.loginCtx(), provider)
 	if strategy != StrategyFillFirst {
 		fmt.Fprintf(c.errw, "note: %s uses the %s strategy; priority only orders fill_first selection.\n", provider, strategy)
 	}

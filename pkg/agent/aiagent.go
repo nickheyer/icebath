@@ -74,6 +74,11 @@ type AIAgent struct {
 	anthropicBaseURL                 string
 	isAnthropicOAuth                 bool
 	credentialPool                   *provider.Pool
+	loginChoices                     atomic.Pointer[provider.SessionLogins]
+	loginPoolSelected                atomic.Pointer[string]
+	loginExhaustedKey                atomic.Pointer[string]
+	loginExhaustedPending            atomic.Pointer[pendingExhaustion]
+	loginExhaustedSink               atomic.Pointer[func(ctx context.Context, ev provider.LoginExhaustedEvent)]
 	customProviders                  []any
 	apiMaxRetries                    int
 	contextCompressor                ContextEngine
@@ -111,7 +116,6 @@ type AIAgent struct {
 	conversationCompressionState
 	statusOutputState
 	agentInitState
-	credentialRefreshState
 	apiKwargsState
 	fallbackWalkState
 	primaryRestoreState
@@ -385,6 +389,11 @@ func (a *AIAgent) SetToolStartCallback(cb any) { a.toolStartCallback = cb }
 // SetToolCompleteCallback replaces the tool complete callback
 func (a *AIAgent) SetToolCompleteCallback(cb any) { a.toolCompleteCallback = cb }
 
+// SetToolResultMetadataCallback replaces the callback whose fields go into a tool result's display metadata
+func (a *AIAgent) SetToolResultMetadataCallback(cb func(toolCallID, name string, args map[string]any, result string) map[string]any) {
+	a.toolResultMetadataCallback = cb
+}
+
 // SetToolProgressMode replaces the tool progress display mode
 func (a *AIAgent) SetToolProgressMode(mode string) { a.toolProgressMode = mode }
 
@@ -532,10 +541,13 @@ func NewAIAgent(ctx context.Context, o AIAgentOptions) (*AIAgent, error) {
 		o.CheckpointMaxFileSizeMB = new(10)
 	}
 	a := &AIAgent{}
+	choices, _ := provider.SessionLoginsFrom(ctx)
+	a.SetSessionLogins(choices)
 	a.outputCtx.Store(&ctx)
 	if err := initAgent(ctx, a, o); err != nil {
 		return nil, err
 	}
+	a.noteLoginPoolSelected(ctx)
 	return a, nil
 }
 

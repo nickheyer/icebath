@@ -14,9 +14,15 @@ import (
 func captureBroadcasts(t *testing.T) *[][2]any {
 	t.Helper()
 	events := &[][2]any{}
-	prev := broadcastGlobalEvent
+	prev, prevSession := broadcastGlobalEvent, broadcastSessionEvent
 	broadcastGlobalEvent = func(event string, payload map[string]any) { *events = append(*events, [2]any{event, payload}) }
-	t.Cleanup(func() { broadcastGlobalEvent = prev })
+	broadcastSessionEvent = func(event, sid string, payload map[string]any) {
+		if sid != payload["session_id"] {
+			t.Errorf("%s frame names session %q, its payload %v", event, sid, payload["session_id"])
+		}
+		*events = append(*events, [2]any{event, payload})
+	}
+	t.Cleanup(func() { broadcastGlobalEvent, broadcastSessionEvent = prev, prevSession })
 	return events
 }
 
@@ -77,9 +83,9 @@ func TestClientInitiatedClosesStaySilent(t *testing.T) {
 }
 
 func TestBroadcastFailureDoesNotBreakTeardown(t *testing.T) {
-	prev := broadcastGlobalEvent
-	broadcastGlobalEvent = func(string, map[string]any) { panic("transport gone") }
-	t.Cleanup(func() { broadcastGlobalEvent = prev })
+	prev := broadcastSessionEvent
+	broadcastSessionEvent = func(string, string, map[string]any) { panic("transport gone") }
+	t.Cleanup(func() { broadcastSessionEvent = prev })
 	session := reclaimSession(t)
 	teardownSession(context.Background(), session, "ws_orphan_reap")
 	if !truthy(session.Get("_finalized")) || reclaimEndReason(t, session) != "ws_orphan_reap" {

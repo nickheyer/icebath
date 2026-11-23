@@ -3,8 +3,11 @@ package cards
 import (
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/nickheyer/icebath/pkg/ui/field"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/render"
 	"github.com/nickheyer/icebath/pkg/ui/theme"
@@ -326,10 +329,20 @@ func (d *detailPane) wheel(y, n int) bool {
 	return true
 }
 
-// Filter row with a glyph, the query, a cursor while it takes typing and a count at the right
+// Filter row with a glyph, the query edited with the keys every field shares, a cursor while it takes typing and a count at the right
 type searchBar struct {
-	query  string
+	in     *field.Field
 	active bool
+	// Columns the query had in the last view, where its caret was placed
+	room int
+}
+
+// Field of the bar, made on first use
+func (b *searchBar) input() *field.Field {
+	if b.in == nil {
+		b.in = field.New("")
+	}
+	return b.in
 }
 
 // Takes typing, keeping any query it already holds
@@ -341,14 +354,14 @@ func (b *searchBar) Accept() { b.active = false }
 // Drops the query and stops taking typing
 func (b *searchBar) Close() {
 	b.active = false
-	b.query = ""
+	b.in = nil
 }
 
 // Reports whether the bar takes typing
 func (b *searchBar) Active() bool { return b.active }
 
 // Reports whether the bar shows, while it takes typing or holds a query
-func (b *searchBar) Shown() bool { return b.active || b.query != "" }
+func (b *searchBar) Shown() bool { return b.active || b.Query() != "" }
 
 // Shows the bar taking typing, or drops it with its query when it already shows
 func (b *searchBar) Toggle() {
@@ -359,54 +372,37 @@ func (b *searchBar) Toggle() {
 	b.Open()
 }
 
-// Keymap contexts while the bar takes typing, the toggle key closing it again until the first character
+// Keymap contexts while the bar takes typing, the toggle key closing it again until the first character, the field keys last
 func (b *searchBar) Contexts() []string {
-	if b.query == "" {
-		return []string{keys.Search, keys.Filter}
+	if b.Query() == "" {
+		return []string{keys.Search, keys.Filter, keys.Text}
 	}
-	return []string{keys.Search}
+	return []string{keys.Search, keys.Text}
 }
 
 // Text searched for
-func (b *searchBar) Query() string { return b.query }
-
-// Carries out a search editing action, reporting whether the query changed
-func (b *searchBar) Action(id string) bool {
-	switch id {
-	case "search.delete.back":
-		if r := []rune(b.query); len(r) > 0 {
-			b.query = string(r[:len(r)-1])
-			return true
-		}
-	case "search.clear":
-		if b.query != "" {
-			b.query = ""
-			return true
-		}
-	case "search.delete.word":
-		r := []rune(b.query)
-		i := len(r)
-		for i > 0 && r[i-1] == ' ' {
-			i--
-		}
-		for i > 0 && r[i-1] != ' ' {
-			i--
-		}
-		if i != len(r) {
-			b.query = string(r[:i])
-			return true
-		}
+func (b *searchBar) Query() string {
+	if b.in == nil {
+		return ""
 	}
-	return false
+	return b.in.Value()
 }
 
-// Appends typed text to the query, line breaks folded into spaces
-func (b *searchBar) Type(text string) {
-	b.query += strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(text)
+// Carries out an editing action on the query, reporting whether the query changed, with the command it needs
+func (b *searchBar) Action(id string) (bool, tea.Cmd) {
+	before := b.Query()
+	cmd, _ := b.input().Action(id)
+	return b.Query() != before, cmd
 }
+
+// Takes typed or pasted text into the query, reporting whether it changed
+func (b *searchBar) Take(msg tea.Msg) bool { return b.input().Take(msg) }
 
 // Column the terminal cursor sits at inside the bar
-func (b *searchBar) CursorX() int { return 3 + ansi.StringWidth(b.query) }
+func (b *searchBar) CursorX() int {
+	_, caret := b.input().Line(max(b.room, 1))
+	return 3 + caret
+}
 
 // Row at width with the count at the right, lit as a field while it takes typing
 func (b *searchBar) View(w int, count string, placeholder string, t theme.Theme) string {
@@ -415,22 +411,27 @@ func (b *searchBar) View(w int, count string, placeholder string, t theme.Theme)
 	if b.active {
 		base = base.Background(t.Ghost)
 	}
-	text := base.Foreground(t.Text).Render(b.query)
-	if b.query == "" {
-		text = base.Foreground(t.TextDim).Render(placeholder)
-	}
-	mark := t.TextDim
-	if b.active || b.query != "" {
-		mark = t.Accent
-	}
-	left := base.Foreground(mark).Render(" "+glyph+" ") + text
 	right := ""
 	if count != "" {
 		right = base.Foreground(t.TextDim).Render(count + " ")
 	}
+	b.room = max(w-3-ansi.StringWidth(right)-1, 1)
+	query, _ := b.input().Line(b.room)
+	text := base.Foreground(t.Text).Render(query)
+	if b.Query() == "" {
+		text = base.Foreground(t.TextDim).Render(placeholder)
+	}
+	mark := t.TextDim
+	if b.active || b.Query() != "" {
+		mark = t.Accent
+	}
+	left := base.Foreground(mark).Render(" "+glyph+" ") + text
 	lw, rw := ansi.StringWidth(left), ansi.StringWidth(right)
 	if lw+rw+1 > w {
 		return render.Fit(left, w, t)
 	}
 	return left + base.Render(strings.Repeat(" ", w-lw-rw)) + right
 }
+
+// Puts text into the query as if typed, line breaks folded into spaces
+func (b *searchBar) Type(text string) { b.input().Insert(text) }

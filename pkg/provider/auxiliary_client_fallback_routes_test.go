@@ -37,7 +37,7 @@ func TestExpiredCodexFallbackExpiredCodexOpenrouterWins(t *testing.T) {
 	if err := os.MkdirAll(h, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	auth, _ := json.Marshal(map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{
+	auth, _ := json.Marshal(map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{
 		"tokens": map[string]any{"access_token": expired, "refresh_token": "r"}}}})
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), auth, 0o600); err != nil {
 		t.Fatal(err)

@@ -23,14 +23,6 @@ var pendingInputCommands = map[string]bool{"retry": true, "queue": true, "q": tr
 // Snapshot command words, their restore form refused here since it mutates live config and state
 var snapshotCommands = map[string]bool{"snapshot": true, "snap": true}
 
-var toolsSlashExecRegistry = &handlerRegistry{}
-
-func init() {
-	toolsSlashExecRegistry.method("slash.exec", slashExec)
-	toolsSlashExecRegistry.method("shell.exec", shellExec)
-	toolsSlashExecRegistry.install()
-}
-
 // Whether a base is a skill of the session profile, an error when the skill scan failed
 func profileSkillCommand(ctx context.Context, session *tuihost.Session, base string) (hit bool, scanErr any) {
 	scanErr = catchPanic(func() {

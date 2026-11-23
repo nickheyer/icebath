@@ -150,7 +150,6 @@ type runnerCoreState struct {
 	pairingStore                    *gateway.PairingStore
 	pairingStores                   map[string]*gateway.PairingStore
 	hooks                           *ProfileHookRegistries
-	voiceMode                       *pydict.Dict[string, string]
 	recentVoiceTranscripts          map[[4]any][]voiceTranscriptSeen
 	backgroundTasks                 map[*gatewayTask]struct{}
 	releaseWriters                  homeWriters

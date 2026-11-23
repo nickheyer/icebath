@@ -46,6 +46,14 @@ func StyleConfig(t theme.Theme) ansi.StyleConfig {
 	cfg.Document.Margin = &zero
 	cfg.Document.BlockPrefix = ""
 	cfg.Document.BlockSuffix = ""
+	// Headings below the first read by their weight and color, never by the hash marks of the source
+	bold := true
+	for _, h := range []*ansi.StyleBlock{&cfg.H2, &cfg.H3, &cfg.H4, &cfg.H5, &cfg.H6} {
+		h.Prefix = ""
+		h.Bold = &bold
+	}
+	underline := true
+	cfg.H2.Underline = &underline
 	if t.Plain {
 		return cfg
 	}

@@ -55,3 +55,17 @@ func CronList(ctx context.Context, h string, w io.Writer, showAll bool) error {
 func CronStatus(ctx context.Context, h string, w io.Writer) error {
 	return openCronStore(h, nil).cronStatus(ctx, w)
 }
+
+// Durable run attempts of the home's jobs, newest first, one job's when jobID is set, at most limit rows
+func ListExecutions(ctx context.Context, h, jobID string, limit int) ([]map[string]any, error) {
+	var id *string
+	if jobID != "" {
+		id = &jobID
+	}
+	return openExecutionsLedger(openCronStore(h, nil)).List(ctx, id, limit, nil)
+}
+
+// Failure incidents of the home, those in a state when one is named
+func ListIncidents(h string, state *string) ([]*Incident, error) {
+	return openIncidents(openCronStore(h, nil)).ListIncidents(state)
+}

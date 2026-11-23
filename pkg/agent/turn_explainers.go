@@ -7,13 +7,13 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -113,10 +113,8 @@ func (f *FileMutationFailures) Pop(path string) {
 
 // Per agent turn explainer state, the failed mutation record is nil outside run_conversation
 type turnExplainersState struct {
-	turnFailedFileMutations             *FileMutationFailures
-	turnFileMutationPaths               map[string]bool
-	fileMutationVerifierEnabledCache    *bool
-	turnCompletionExplainerEnabledCache *bool
+	turnFailedFileMutations *FileMutationFailures
+	turnFileMutationPaths   map[string]bool
 }
 
 // One key per on disk target, the task resolved absolute path case folded on case insensitive hosts
@@ -140,36 +138,6 @@ func fileStatSignature(identity string) *FileStat {
 		return nil
 	}
 	return &FileStat{MtimeNS: st.ModTime().UnixNano(), Size: st.Size()}
-}
-
-// Reads display.<key> defaulting on, with the env var overriding every call and the config answer cached
-func displayFlagEnabled(ctx context.Context, envVar, configKey string, cache **bool) bool {
-	if env, ok := os.LookupEnv(envVar); ok {
-		switch pystr.Lower(pystr.Strip(env)) {
-		case "0", "false", "no", "off":
-			return false
-		}
-		return true
-	}
-	if *cache != nil {
-		return **cache
-	}
-	cfg, err := config.Load(home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		cfg = config.Tree{}
-	}
-	enabled := true
-	display, ok := cfg["display"].(map[string]any)
-	if tree, isTree := cfg["display"].(config.Tree); isTree {
-		display, ok = tree, true
-	}
-	if ok {
-		if v, present := display[configKey]; present {
-			enabled = pyrepr.Truthy(v)
-		}
-	}
-	*cache = &enabled
-	return enabled
 }
 
 // Records a write_file or patch outcome for the turn end verifier, a later success on the same target clears it
@@ -264,14 +232,14 @@ func sameFileStat(a, b *FileStat) bool {
 	return *a == *b
 }
 
-// Reads display.file_mutation_verifier with ICEBATH_FILE_MUTATION_VERIFIER overriding
+// Whether display.file_mutation_verifier is on
 func (a *AIAgent) fileMutationVerifierEnabled(ctx context.Context) bool {
-	return displayFlagEnabled(ctx, "ICEBATH_FILE_MUTATION_VERIFIER", "file_mutation_verifier", &a.fileMutationVerifierEnabledCache)
+	return settings.DisplayFileMutationVerifier.Get(ctx)
 }
 
-// Reads display.turn_completion_explainer with ICEBATH_TURN_COMPLETION_EXPLAINER overriding
+// Whether display.turn_completion_explainer is on
 func (a *AIAgent) turnCompletionExplainerEnabled(ctx context.Context) bool {
-	return displayFlagEnabled(ctx, "ICEBATH_TURN_COMPLETION_EXPLAINER", "turn_completion_explainer", &a.turnCompletionExplainerEnabledCache)
+	return settings.DisplayTurnCompletionExplainer.Get(ctx)
 }
 
 var footerPathRE = regexp2.MustCompile(

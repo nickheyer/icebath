@@ -2,10 +2,14 @@ package slack
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Messages the adapter handed to the gateway during a test
@@ -24,10 +28,7 @@ func (c *capturedEvents) all() []*gateway.MessageEvent {
 func newHarnessAdapter(t *testing.T, extra map[string]any) (*SlackAdapter, *fakeSlackAPI, *capturedEvents) {
 	t.Helper()
 	f := newFakeSlackAPI(t)
-	if extra == nil {
-		extra = map[string]any{}
-	}
-	a := NewSlackAdapter(context.Background(), &gateway.PlatformConfig{Enabled: true, Token: "xoxb-fake-token", Extra: extra})
+	a := NewSlackAdapter(context.Background(), &gateway.PlatformConfig{Enabled: true, Token: "xoxb-fake-token", Extra: slackSettingsHome(t, extra)})
 	bot := "U_BOT"
 	a.app = &slackApp{client: newWebClient("xoxb-fake-token", "")}
 	a.botUserID = &bot
@@ -42,6 +43,29 @@ func newHarnessAdapter(t *testing.T, extra map[string]any) (*SlackAdapter, *fake
 	}
 	t.Cleanup(func() { handleMessageFn = prev })
 	return a, f, captured
+}
+
+// Points ICEBATH_HOME at a fresh home whose config.yaml holds the slack settings of extra, returning the other keys
+func slackSettingsHome(t *testing.T, extra map[string]any) map[string]any {
+	t.Helper()
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	block, rest := map[string]any{}, map[string]any{}
+	for k, v := range extra {
+		if settings.Lookup("slack."+k) != nil {
+			block[k] = v
+		} else {
+			rest[k] = v
+		}
+	}
+	doc, err := json.Marshal(map[string]any{"slack": block})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return rest
 }
 
 // Unwrapped string of an optional value

@@ -105,7 +105,7 @@ func (b *WhatsAppBehaviorMixin) extra() map[string]any {
 	return b.Config.Extra
 }
 
-// Scoped secret read, false when the profile has no such key
+// Value of a name the profile holds through the scoped reader, the setting a folded name moved to included; false when the profile has none
 func whatsappSecret(ctx context.Context, name string) (string, bool, error) {
 	value, err := gateway.GetScopedSecret(ctx, name, whatsappMissingDefault, false)
 	if err != nil || value == whatsappMissingDefault {

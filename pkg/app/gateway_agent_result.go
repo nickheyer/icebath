@@ -389,25 +389,6 @@ func clarifyReply(callback func(questions []any) map[string]any, params map[stri
 	return out
 }
 
-// Binds one foreground notification config for the turn, restored by the returned func
-func (a *GatewayAgent) NotificationPolicySnapshot(cfg map[string]any) func() {
-	a.mu.Lock()
-	saved := a.notificationConfig
-	a.notificationConfig = cfg
-	a.mu.Unlock()
-	return func() {
-		a.mu.Lock()
-		a.notificationConfig = saved
-		a.mu.Unlock()
-	}
-}
-
-// Foreground notification config bound for the running turn, nil outside one
-func (a *GatewayAgent) NotificationConfig() map[string]any {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.notificationConfig
-}
 
 // Whether the running notification turn mutes its reply on every surface
 func (a *GatewayAgent) MuteNotificationReply() bool {

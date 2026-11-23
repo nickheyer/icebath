@@ -140,7 +140,7 @@ func sessionDir(ctx context.Context, extra map[string]any) string {
 	return abs
 }
 
-// Scoped WHATSAPP env read with a default, the profile's own .env under multiplexing
+// WhatsApp value of the profile with a default through the scoped reader, the setting a folded name moved to included
 func wenv(ctx context.Context, name, def string) (string, error) {
 	return gateway.GetScopedSecret(ctx, name, def, false)
 }

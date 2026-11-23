@@ -137,7 +137,7 @@ func (c *authCLI) interactiveStrategy() error {
 	if err != nil {
 		return err
 	}
-	current := GetPoolStrategy(c.env.config(), provider)
+	current := GetPoolStrategy(c.env.loginCtx(), provider)
 	fmt.Fprintf(c.out, "\nCurrent strategy for %s: %s\n", provider, current)
 	fmt.Fprintln(c.out)
 	for i, s := range authStrategyOrder {
@@ -161,7 +161,7 @@ func (c *authCLI) interactiveStrategy() error {
 		return nil
 	}
 	strategy := authStrategyOrder[index]
-	if err := c.saveStrategy(provider, strategy); err != nil {
+	if err := SetLoginStrategy(c.env, provider, strategy); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.out, "Set %s strategy to: %s\n", provider, strategy)
@@ -187,6 +187,12 @@ func (c *authCLI) run() error {
 		return c.status()
 	case "logout":
 		return c.logout()
+	case "use":
+		return c.use()
+	case "rename":
+		return c.rename()
+	case "rotation":
+		return c.rotation()
 	}
 	return c.interactiveAuth()
 }

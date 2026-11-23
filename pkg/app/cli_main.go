@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -317,8 +318,7 @@ func (c *CLI) showSecurityAdvisories() {
 
 // Starts worktree creation and the tool prewarm in the background, nil when no worktree is wanted
 func startWorktreeSetup(ctx context.Context, worktree bool) func() map[string]string {
-	cfg := CLIConfig(ctx)
-	if !(worktree || cliTruthy(cfg["worktree"])) {
+	if !(worktree || settings.Worktree.Get(ctx)) {
 		return nil
 	}
 	env := tools.ToolEnvFrom(ctx)
@@ -330,7 +330,7 @@ func startWorktreeSetup(ctx context.Context, worktree bool) func() map[string]st
 		}()
 		tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Quiet: true})
 	}()
-	syncBase := displayFlag(cfg, "worktree_sync", true)
+	syncBase := settings.WorktreeSync.Get(ctx)
 	result := make(chan map[string]string, 1)
 	go func() {
 		defer func() {

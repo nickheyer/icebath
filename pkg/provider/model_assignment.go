@@ -136,7 +136,7 @@ func modelsNormalizeProvider(provider string) string {
 
 // Deduplicated custom provider view of a config as the list the resolvers take
 func compatibleCustomProvidersList(cfg map[string]any) []any {
-	rows := CompatibleCustomProviders(cfg)
+	rows := ProviderEntries(cfg)
 	out := make([]any, len(rows))
 	for i, row := range rows {
 		out[i] = row
@@ -270,7 +270,7 @@ func resolveAssignmentCredentials(ctx context.Context, modelCfg map[string]any, 
 	return nil
 }
 
-// Whether base_url is already an endpoint of the inline model block, a providers entry or a custom_providers row
+// Whether base_url is already an endpoint of the inline model block or a providers entry
 func endpointKnownToConfig(cfg map[string]any, baseURL string) bool {
 	wanted := pystr.Lower(strings.TrimRight(pystr.Strip(baseURL), "/"))
 	if wanted == "" {
@@ -282,30 +282,20 @@ func endpointKnownToConfig(cfg map[string]any, baseURL string) bool {
 	if modelCfg, ok := cfg["model"].(map[string]any); ok && matches(modelCfg["base_url"]) {
 		return true
 	}
-	for _, sectionKey := range []string{"providers", "custom_providers"} {
-		var entries []any
-		switch section := cfg[sectionKey].(type) {
-		case []any:
-			entries = section
-		case map[string]any:
-			for _, k := range config.MappingKeys(section) {
-				entries = append(entries, section[k])
-			}
-		}
-		for _, raw := range entries {
-			if entry, ok := raw.(map[string]any); ok && matches(pyOr(entry["base_url"], entry["url"], entry["api"])) {
-				return true
-			}
+	providers, _ := cfg["providers"].(map[string]any)
+	for _, raw := range providers {
+		if entry, ok := raw.(map[string]any); ok && matches(entry["base_url"]) {
+			return true
 		}
 	}
 	return false
 }
 
-// Registers a named custom_providers row for a genuinely new custom endpoint, never failing the saved assignment
+// Registers a providers entry for a genuinely new custom endpoint, never failing the saved assignment
 func registerCustomEndpoint(ctx context.Context, baseURL, apiKey, model string) {
 	run := &ModelFlowRun{Ctx: ctx, Env: modelsPoolEnv(ctx), Out: assignmentOut}
 	if err := saveCustomProvider(run, baseURL, apiKey, model, 0, autoProviderName(baseURL), "", ""); err != nil {
-		pkgLog().Debug(fmt.Sprintf("custom_providers registration skipped: %v", err))
+		pkgLog().Debug(fmt.Sprintf("providers registration skipped: %v", err))
 	}
 }
 

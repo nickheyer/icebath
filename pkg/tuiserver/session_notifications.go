@@ -10,7 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -274,17 +274,7 @@ func notifDeferEvent(ctx context.Context, evt map[string]any, claim string, put 
 
 // Whether the owning profile set display.background_process_notifications off
 func backgroundNotificationsOff(ctx context.Context, session *tuihost.Session) bool {
-	scoped := sessionProfileRuntimeScope(ctx, session, true)
-	display, _ := loadCfg(scoped)["display"].(map[string]any)
-	raw := display["background_process_notifications"]
-	if raw == false {
-		return true
-	}
-	text := ""
-	if truthy(raw) {
-		text = pyrepr.Str(raw)
-	}
-	return strings.ToLower(pystr.Strip(text)) == "off"
+	return settings.DisplayBackgroundProcessNotifications.Get(sessionProfileRuntimeScope(ctx, session, true)) == "off"
 }
 
 // Display only metadata of an async delegation completion

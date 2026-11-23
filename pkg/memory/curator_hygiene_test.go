@@ -80,7 +80,7 @@ func TestCuratorPruneOnlyPassTakesNoSnapshotButAgesOldOnesOut(t *testing.T) {
 	if n := len(curSnapshotNames(t, dir)); n != 3 {
 		t.Fatalf("%d snapshots", n)
 	}
-	curatorBackupConfig = func(context.Context) map[string]any { return map[string]any{"keep": 1} }
+	curWriteConfigDoc(t, filepath.Dir(dir), map[string]any{"curator": map[string]any{"backup": map[string]any{"keep": 1}}})
 	off, on := false, true
 	if _, err := RunCuratorReview(ctx, CuratorRunOptions{Synchronous: true, Consolidate: &off}); err != nil {
 		t.Fatal(err)
@@ -107,7 +107,7 @@ func TestCuratorPruneOnlyPassTakesNoSnapshotButAgesOldOnesOut(t *testing.T) {
 }
 
 func TestCuratorOnlyOneProcessClaimsADuePass(t *testing.T) {
-	ctx, _ := curTestHome(t, nil)
+	ctx, _ := curTestHome(t, map[string]any{"consolidate": true})
 	due := func() {
 		st := pyjson.NewObject()
 		st.Set("last_run_at", "2020-01-01T00:00:00+00:00")
@@ -116,12 +116,14 @@ func TestCuratorOnlyOneProcessClaimsADuePass(t *testing.T) {
 	due()
 	started, release := make(chan struct{}), make(chan struct{})
 	var blocked atomic.Bool
-	curatorConfig = func(ctx context.Context) map[string]any {
+	prevSnap := curatorSnapshotSkills
+	t.Cleanup(func() { curatorSnapshotSkills = prevSnap })
+	curatorSnapshotSkills = func(ctx context.Context, _ string, _ map[string]bool) (string, bool, error) {
 		if curatorExists(curatorRunClaimPath(ctx)) && blocked.CompareAndSwap(false, true) {
 			close(started)
 			<-release
 		}
-		return map[string]any{}
+		return "", false, nil
 	}
 	done := make(chan *pyjson.Object)
 	go func() { done <- MaybeRunCurator(ctx, nil, nil) }()

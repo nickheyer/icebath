@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"log/slog"
 	"math"
 	"math/big"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
@@ -45,11 +46,6 @@ func cmdSources() config.ConfigCommandSources {
 			return config.RemoveHomeEnvValue(context.Background(), h, key)
 		},
 		DropStaleModelRoute: func(map[string]any, string, map[string]any) (map[string]any, bool) { return nil, false },
-		RuntimeKeyOwners: config.RuntimeKeyOwners{
-			IsPresetFieldPath:   func([]string) bool { return false },
-			SelectionConfigKeys: func() map[string]bool { return nil },
-			ActiveManifests:     func() []config.PluginConfigKeys { return nil },
-		},
 	}
 }
 
@@ -67,7 +63,7 @@ func writeKey(p *configplane.Plane, key string, value any) error {
 }
 
 func setValue(p *configplane.Plane, key, value string) error {
-	return config.SetConfigValue(context.Background(), p.Home, key, value, false, cmdSources())
+	return config.SetConfigValue(context.Background(), p.Home, key, value, cmdSources())
 }
 
 func mustEqualJSON(t *testing.T, label string, got, want any) {
@@ -492,53 +488,6 @@ func TestNamedProfileFetchesItsOwnLayer(t *testing.T) {
 		if g.Profile != "work" {
 			t.Fatalf("profile %s fetched", g.Profile)
 		}
-	}
-}
-
-func TestOldWriterVersionMigratesInMemoryOnly(t *testing.T) {
-	p := setupPlane(t)
-	latest := config.LatestConfigVersion()
-	old := max(config.SupportFloorVersion, latest-1)
-	prof := p.Profile("default")
-	prof.Values, prof.Version, prof.Writer = map[string]any{"display": map[string]any{"personality": "pirate"}}, 1, old
-	doc, err := config.ReadRawConfig(context.Background(), p.Home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if doc["_config_version"] != latest || doc["display"].(map[string]any)["personality"] != "pirate" || len(p.Patches()) != 0 {
-		t.Fatalf("doc %v", doc)
-	}
-	if _, err := os.Stat(filepath.Join(p.Home, "config.yaml")); err == nil {
-		t.Fatal("config.yaml written")
-	}
-}
-
-func TestMigrationStepsPersistIntoMemory(t *testing.T) {
-	p := setupPlane(t)
-	latest := config.LatestConfigVersion()
-	prof := p.Profile("default")
-	prof.Values, prof.Version, prof.Writer = map[string]any{"old_key": 1}, 1, latest-1
-	saved := runMigrations
-	runMigrations = func(ctx context.Context, h string, current int) {
-		doc, err := config.ReadRawConfig(ctx, h)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		doc["new_key"] = doc["old_key"]
-		delete(doc, "old_key")
-		b, _ := config.GetConfigBackend(ctx)
-		if err := b.ApplyInMemory(ctx, h, doc); err != nil {
-			t.Error(err)
-		}
-	}
-	t.Cleanup(func() { runMigrations = saved })
-	doc, err := config.ReadRawConfig(context.Background(), p.Home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, has := doc["old_key"]; doc["new_key"] != 1 || has || len(p.Patches()) != 0 {
-		t.Fatalf("doc %v", doc)
 	}
 }
 

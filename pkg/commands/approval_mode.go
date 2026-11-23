@@ -63,7 +63,7 @@ func RunApprovalModeCommand(ctx context.Context, h string, env *tools.Env, reque
 		return ApprovalModeResult{false, current, false, "Usage: /approvals [manual|smart|off]"}, nil
 	}
 	output, err := captureFacadeOutput(func() error {
-		return config.SetConfigValue(ctx, h, "approvals.mode", requested, false, configCommandSources(h))
+		return config.SetConfigValue(ctx, h, "approvals.mode", requested, configCommandSources(h))
 	})
 	var exit *config.ConfigExit
 	if errors.As(err, &exit) {

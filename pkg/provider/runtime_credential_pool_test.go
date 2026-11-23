@@ -24,7 +24,7 @@ func TestRuntimeCredentialPoolSetOnlyByPoolPaths(t *testing.T) {
 
 func TestPoolCredentialsHandBackTheSelectingPool(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"openrouter": []any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"openrouter": []any{
 		map[string]any{"id": "p1", "label": "pool", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-or-pooled-key-12345"},
 	}}})
 	creds := NewPoolCredentials(testEnv(t, h))

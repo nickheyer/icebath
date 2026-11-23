@@ -16,12 +16,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // ---- routed profile credentials ----
@@ -81,12 +81,7 @@ var (
 
 // Configured request timeout for a Bedrock model, model override over the provider value
 func bedrockRequestTimeout(ctx context.Context, model string) (time.Duration, bool) {
-	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return 0, false
-	}
-	providers, _ := map[string]any(tree)["providers"].(map[string]any)
-	return configuredProviderTimeout(providers, "bedrock", model, "timeout_seconds", "request_timeout_seconds")
+	return configuredProviderTimeout(settings.Providers.Get(ctx), "bedrock", model, "timeout_seconds", "request_timeout_seconds")
 }
 
 // Cached client per home, service, region and read timeout, built from the routed profile's own credentials
@@ -202,7 +197,7 @@ func mergeBedrockOpenAIModelIDs(ids []string) []string {
 func bedrockOpenAIBaseURL(region string) string {
 	resolved := strings.TrimSpace(region)
 	if resolved == "" {
-		resolved = resolveBedrockRuntimeRegion(nil)
+		resolved = resolveBedrockRuntimeRegion(context.Background())
 	}
 	return "https://bedrock-mantle." + resolved + ".api.aws/openai/v1"
 }
@@ -235,7 +230,7 @@ func isBedrockOpenAIBaseURL(baseURL string) bool {
 
 // Bedrock API key pooled by icebath auth add bedrock, empty when the pool holds none
 func pooledBedrockBearer(ctx context.Context) string {
-	if entry, ok := LoadPool(modelsPoolEnv(ctx), "bedrock").Select(""); ok {
+	if entry, ok := LoadSelectedPool(modelsPoolEnv(ctx), "bedrock").Select(""); ok {
 		return strings.TrimSpace(entry.RuntimeAPIKey())
 	}
 	return ""
@@ -285,7 +280,7 @@ func (m bedrockMantleCredentials) Retrieve(ctx context.Context) (awsCredentials,
 func NewBedrockOpenAISigV4Auth(ctx context.Context, region string, base http.RoundTripper) (http.RoundTripper, error) {
 	resolved := strings.TrimSpace(region)
 	if resolved == "" {
-		resolved = resolveBedrockRuntimeRegionCtx(ctx)
+		resolved = resolveBedrockRuntimeRegion(ctx)
 	}
 	opts, err := scopedAWSSessionOptions(ctx)
 	if err != nil {
@@ -343,7 +338,7 @@ func ConfigureBedrockOpenAIRoute(ctx context.Context, route Route, timeout time.
 	}
 	region, ok := bedrockOpenAIRegionFromBaseURL(route.BaseURL)
 	if !ok {
-		region = resolveBedrockRuntimeRegionCtx(ctx)
+		region = resolveBedrockRuntimeRegion(ctx)
 	}
 	base := route.Transport
 	if base == nil {
@@ -372,7 +367,7 @@ func ConfigureBedrockOpenAIClientKwargs(ctx context.Context, clientKwargs map[st
 	}
 	region, ok := bedrockOpenAIRegionFromBaseURL(baseURL)
 	if !ok || region == "" {
-		region = resolveBedrockRuntimeRegionCtx(ctx)
+		region = resolveBedrockRuntimeRegion(ctx)
 	}
 	var limit time.Duration
 	if timeout != nil && *timeout > 0 {
@@ -522,35 +517,17 @@ func resolveBedrockRegionLive() string {
 // ResolveBedrockRegion is the AWS region the environment and shared config select
 func ResolveBedrockRegion() string { return resolveBedrockRegionFn() }
 
-// Process home config document, empty on any load failure
-func bedrockProcessConfig(ctx context.Context) map[string]any {
-	tree, err := config.Load(home.Dir(ctx), nil)
-	if err != nil {
-		return map[string]any{}
-	}
-	return map[string]any(tree)
-}
-
-// Configured bedrock.region, else the environment and shared config region, the process config when nil
-func resolveBedrockRuntimeRegion(cfg map[string]any) string {
-	if cfg == nil {
-		cfg = bedrockProcessConfig(context.Background())
-	}
-	section, _ := cfg["bedrock"].(map[string]any)
-	if r := strings.TrimSpace(stringOf(section["region"])); r != "" && section["region"] != nil {
+// Configured bedrock.region of the home in ctx, else the environment and shared config region
+func resolveBedrockRuntimeRegion(ctx context.Context) string {
+	if r := strings.TrimSpace(settings.BedrockRegion.Get(ctx)); r != "" {
 		return r
 	}
 	return resolveBedrockRegionFn()
 }
 
-// Runtime region read from the config of the home the context serves
-func resolveBedrockRuntimeRegionCtx(ctx context.Context) string {
-	return resolveBedrockRuntimeRegion(bedrockProcessConfig(ctx))
-}
-
 // ResolveBedrockRuntimeRegion is the region every Bedrock endpoint of the home must use
 func ResolveBedrockRuntimeRegion(ctx context.Context) string {
-	return resolveBedrockRuntimeRegionCtx(ctx)
+	return resolveBedrockRuntimeRegion(ctx)
 }
 
 var bedrockRuntimeRegionRe = regexp.MustCompile(`bedrock-runtime\.([a-z0-9-]+)\.`)
@@ -563,33 +540,24 @@ func bedrockRegionFromRuntimeURL(baseURL string) string {
 	return "us-east-1"
 }
 
-// Converse guardrailConfig from bedrock.guardrail, nil when identifier or version is unset
-func bedrockGuardrailConfig(cfg map[string]any) map[string]any {
-	if cfg == nil {
-		cfg = bedrockProcessConfig(context.Background())
-	}
-	section, _ := cfg["bedrock"].(map[string]any)
-	gr, _ := section["guardrail"].(map[string]any)
-	if !truthy(gr["guardrail_identifier"]) || !truthy(gr["guardrail_version"]) {
+// Converse guardrailConfig from bedrock.guardrail of the home in ctx, nil when identifier or version is unset
+func bedrockGuardrailConfig(ctx context.Context) map[string]any {
+	id, version := settings.BedrockGuardrailGuardrailIdentifier.Get(ctx), settings.BedrockGuardrailGuardrailVersion.Get(ctx)
+	if id == "" || version == "" {
 		return nil
 	}
-	out := map[string]any{"guardrailIdentifier": gr["guardrail_identifier"], "guardrailVersion": gr["guardrail_version"]}
-	for _, pair := range [][2]string{{"stream_processing_mode", "streamProcessingMode"}, {"trace", "trace"}} {
-		if truthy(gr[pair[0]]) {
-			out[pair[1]] = gr[pair[0]]
-		}
-	}
-	return out
+	return map[string]any{"guardrailIdentifier": id, "guardrailVersion": version,
+		"streamProcessingMode": settings.BedrockGuardrailStreamProcessingMode.Get(ctx), "trace": settings.BedrockGuardrailTrace.Get(ctx)}
 }
 
 // BedrockGuardrailConfig is the configured Converse guardrail of the home the context serves
 func BedrockGuardrailConfig(ctx context.Context) map[string]any {
-	return bedrockGuardrailConfig(bedrockProcessConfig(ctx))
+	return bedrockGuardrailConfig(ctx)
 }
 
 // InvokeModel header form of the configured guardrail, the only channel the Messages wire has
-func bedrockGuardrailHeaders(cfg map[string]any) map[string]string {
-	gr := bedrockGuardrailConfig(cfg)
+func bedrockGuardrailHeaders(ctx context.Context) map[string]string {
+	gr := bedrockGuardrailConfig(ctx)
 	if gr == nil {
 		return map[string]string{}
 	}
@@ -661,7 +629,7 @@ func isAnthropicBedrockModel(model string) bool {
 
 // Live discovered model ids of the runtime region merged with the Mantle ids, false on failure or empty
 func bedrockModelIDsOrNone(ctx context.Context) ([]string, bool) {
-	discovered := discoverBedrockModelsFn(ctx, resolveBedrockRuntimeRegionCtx(ctx), nil)
+	discovered := discoverBedrockModelsFn(ctx, resolveBedrockRuntimeRegion(ctx), nil)
 	if len(discovered) == 0 {
 		return nil, false
 	}

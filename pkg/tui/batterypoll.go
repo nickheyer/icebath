@@ -42,17 +42,17 @@ func toBatteryInfo(r *tuigateway.SystemBatteryResult) *batteryInfo {
 }
 
 // Restarts polling after the battery setting changed, clearing the reading when it turned off
-func (b *batteryPoller) sync(store *tuiStore, gw turnGateway) tea.Cmd {
-	if b.started && b.enabled == store.ui.Battery {
+func (b *batteryPoller) sync(ui *sharedUI, gw turnGateway) tea.Cmd {
+	if b.started && b.enabled == ui.Battery {
 		return nil
 	}
-	b.started, b.enabled = true, store.ui.Battery
+	b.started, b.enabled = true, ui.Battery
 	b.gen++
 	if !b.enabled {
-		store.ui.BatteryStatus = nil
+		ui.BatteryStatus = nil
 		return nil
 	}
-	return tea.Batch(b.poll(store, gw), b.interval())
+	return tea.Batch(b.poll(ui, gw), b.interval())
 }
 
 func (b *batteryPoller) interval() tea.Cmd {
@@ -61,20 +61,20 @@ func (b *batteryPoller) interval() tea.Cmd {
 }
 
 // One system.battery request whose answer lands while the generation is current, failures ignored
-func (b *batteryPoller) poll(store *tuiStore, gw turnGateway) tea.Cmd {
+func (b *batteryPoller) poll(ui *sharedUI, gw turnGateway) tea.Cmd {
 	gen := b.gen
 	return call(gw, tuigateway.SystemBattery, tuigateway.ProfileParams{}, func(r *tuigateway.SystemBatteryResult, err error) tea.Cmd {
 		if err == nil && gen == b.gen {
-			store.ui.BatteryStatus = toBatteryInfo(r)
+			ui.BatteryStatus = toBatteryInfo(r)
 		}
 		return nil
 	})
 }
 
 // Next poll and interval of a tick from the current generation
-func (b *batteryPoller) onTick(m batteryPollMsg, store *tuiStore, gw turnGateway) tea.Cmd {
+func (b *batteryPoller) onTick(m batteryPollMsg, ui *sharedUI, gw turnGateway) tea.Cmd {
 	if m.gen != b.gen || !b.enabled {
 		return nil
 	}
-	return tea.Batch(b.poll(store, gw), b.interval())
+	return tea.Batch(b.poll(ui, gw), b.interval())
 }

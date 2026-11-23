@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -78,103 +79,44 @@ func ManagerFor(ctx context.Context, env *tools.Env) Manager {
 	return m
 }
 
-// Built in store the agent creates at init from the session config, nil when both stores are disabled
+// Built in store the agent creates at init from the home's settings, nil when both stores are disabled
 func sessionStore(ctx context.Context, env *tools.Env) *Store {
-	var tree config.Tree
-	if env != nil {
-		tree = env.Config
-	}
-	section := builtinMemoryConfig(tree)
-	memoryEnabled, userEnabled := builtinMemoryStoreFlags(section)
-	if !memoryEnabled && !userEnabled {
+	sctx := home.WithOverride(ctx, envHome(env))
+	if memoryEnabled, userEnabled := BuiltinMemoryStoreFlags(sctx); !memoryEnabled && !userEnabled {
 		return nil
 	}
-	store, ok := storeFromSection(env, section)
-	if !ok {
-		store = NewStore(home.MemoriesDir(envHome(env)), DefaultMemoryCharLimit, DefaultUserCharLimit, memoryEnabled, userEnabled)
-	}
-	store.Log = envLog(env)
+	store := configuredStore(sctx, env)
 	if err := store.LoadFromDisk(tools.WithEnvHome(ctx, env)); err != nil {
 		store.log().Debug("Memory store load failed at session start", "error", err)
 	}
 	return store
 }
 
-// Store with the configured limits and flags, false when a limit is not an integer
-func storeFromSection(env *tools.Env, section map[string]any) (*Store, bool) {
-	memoryEnabled, userEnabled := builtinMemoryStoreFlags(section)
-	memoryLimit, ok1 := pyInt(sectionValue(section, "memory_char_limit", DefaultMemoryCharLimit))
-	userLimit, ok2 := pyInt(sectionValue(section, "user_char_limit", DefaultUserCharLimit))
-	if !ok1 || !ok2 {
-		envLog(env).Warn("Memory char limits in config are not integers, using defaults",
-			"memory_char_limit", pyStr(section["memory_char_limit"]), "user_char_limit", pyStr(section["user_char_limit"]))
-		return nil, false
-	}
-	return NewStore(home.MemoriesDir(envHome(env)), memoryLimit, userLimit, memoryEnabled, userEnabled), true
-}
-
-func sectionValue(section map[string]any, key string, fallback any) any {
-	if v, ok := section[key]; ok {
-		return v
-	}
-	return fallback
-}
-
-// Fresh on disk store with configured limits and flags for contexts with no live agent, defaults when config fails
-func LoadOnDiskStore(ctx context.Context, env *tools.Env) (*Store, error) {
-	var store *Store
-	if tree, err := config.Load(envHome(env), configLookup(env)); err == nil {
-		store, _ = storeFromSection(env, builtinMemoryConfig(tree))
-	}
-	if store == nil {
-		store = NewStore(home.MemoriesDir(envHome(env)), DefaultMemoryCharLimit, DefaultUserCharLimit, true, true)
-	}
+// Store with the limits and flags of the home in sctx
+func configuredStore(sctx context.Context, env *tools.Env) *Store {
+	memoryEnabled, userEnabled := BuiltinMemoryStoreFlags(sctx)
+	store := NewStore(home.MemoriesDir(envHome(env)), settings.MemoryMemoryCharLimit.Get(sctx), settings.MemoryUserCharLimit.Get(sctx), memoryEnabled, userEnabled)
 	store.Log = envLog(env)
+	return store
+}
+
+// Fresh on disk store with the home's limits and flags for contexts with no live agent
+func LoadOnDiskStore(ctx context.Context, env *tools.Env) (*Store, error) {
+	store := configuredStore(home.WithOverride(ctx, envHome(env)), env)
 	if err := store.LoadFromDisk(tools.WithEnvHome(ctx, env)); err != nil {
 		return nil, err
 	}
 	return store, nil
 }
 
-// Normalized memory config section, empty when missing or malformed so flags default to enabled
-func builtinMemoryConfig(tree config.Tree) map[string]any {
-	if tree == nil {
-		return map[string]any{}
-	}
-	if section, ok := tree.Get("memory").(map[string]any); ok {
-		return section
-	}
-	return map[string]any{}
+// Memory and user profile store flags of the home in ctx
+func BuiltinMemoryStoreFlags(ctx context.Context) (bool, bool) {
+	return settings.Memory.Get(ctx), settings.LearnAboutMe.Get(ctx)
 }
 
-// Memory and user profile store flags, each enabled unless set to a falsy value
-func builtinMemoryStoreFlags(section map[string]any) (bool, bool) {
-	return isTruthyValue(section["memory_enabled"], true), isTruthyValue(section["user_profile_enabled"], true)
-}
-
-// Store flags from the live config, both enabled when the config cannot load
+// Store flags of the environment's home as they are now
 func liveStoreFlags(env *tools.Env) (bool, bool) {
-	tree, err := config.LoadReadonly(context.Background(), envHome(env), configLookup(env))
-	if err != nil {
-		envLog(env).Debug("Could not read memory config for availability", "error", err)
-		return builtinMemoryStoreFlags(map[string]any{})
-	}
-	return builtinMemoryStoreFlags(builtinMemoryConfig(tree))
-}
-
-// Shared truthy coercion, None takes the default and strings match the truthy set
-func isTruthyValue(v any, def bool) bool {
-	if v == nil {
-		return def
-	}
-	if s, ok := v.(string); ok {
-		switch strings.ToLower(pyStrip(s)) {
-		case "1", "true", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return pyTruthy(v)
+	return BuiltinMemoryStoreFlags(home.WithOverride(context.Background(), envHome(env)))
 }
 
 // Python int of a config value, false when the value cannot convert

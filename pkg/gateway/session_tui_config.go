@@ -2,46 +2,35 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-var sessionControlKeys = map[string]bool{"busy": true, "verbose": true, "yolo": true, "show_reasoning": true, "service_tier": true, "model": true}
-
-var detailSections = []string{"thinking", "tools", "subagents", "activity"}
-
-var detailModes = map[string]bool{"hidden": true, "collapsed": true, "expanded": true}
-
-var statusbarModes = []string{"off", "top", "bottom"}
+var sessionControlKeys = map[string]bool{"busy": true, "yolo": true, "show_reasoning": true, "service_tier": true, "model": true}
 
 var boolWords = map[string]bool{"on": true, "true": true, "yes": true, "off": false, "false": false, "no": false}
+
+// Aliases whose answer reports the setting as on or off
+var onOffSettings = map[string]bool{"density": true, "battery": true, "timestamps": true}
 
 // Show and hide words of the reasoning command that toggle display rather than effort
 var ReasoningDisplayToggles = map[string]bool{"show": true, "on": true, "hide": false, "off": false}
 
-// One read modify write of a profile config.yaml at a time
-var profileConfigWriteLock sync.Mutex
-
-// and persist_personality, assigned in cmd/icebath/wiring.go
-var (
-	ResolvePersonality func(value any, cfg config.Tree) (string, string, error)
-	PersistPersonality func(ctx context.Context, value any) bool
-)
-
-// as ok and mode, assigned in cmd/icebath/wiring.go
-var RunApprovalModeCommand func(ctx context.Context, h string, env *tools.Env, requestedMode string) (bool, string, error)
+// Resolves a personality name against the config, assigned in cmd/icebath/wiring.go
+var ResolvePersonality func(value any, cfg config.Tree) (string, string, error)
 
 // Runner resolving the routed profile's tier, GatewayRunner._resolve_session_service_tier
 type sessionTierRunner interface {
@@ -64,164 +53,81 @@ func settingWord(value any) string {
 	return pystr.Lower(pystr.Strip(pyrepr.Str(value)))
 }
 
-// Status bar placement of a raw value, off for false and top for anything unknown
-func statusbarPlacement(raw any) string {
-	if raw == false {
-		return "off"
+// Refusal of a settings write: a bad value invalid_params, a pinned setting permission_denied, else storage_unavailable
+func settingsRefusal(err error) error {
+	var bad *settings.ValueError
+	switch {
+	case errors.As(err, &bad), errors.Is(err, settings.ErrUnknownKey), errors.Is(err, settings.ErrScope):
+		return runtimeRefusal("invalid_params")
+	case errors.Is(err, settings.ErrLocked):
+		return runtimeRefusal("permission_denied")
 	}
-	if s, ok := raw.(string); ok && slices.Contains(statusbarModes, pystr.Lower(pystr.Strip(s))) {
-		return pystr.Lower(pystr.Strip(s))
-	}
-	return "top"
+	return runtimeRefusal("storage_unavailable")
 }
 
-// One display toggle, its field, accepted words, flipped value and reported word
-type displayToggle struct {
-	field   string
-	aliases map[string]any
-	flipped func(display map[string]any) any
-	report  func(value any) string
+// Writes one setting of the owning profile through the settings writer
+func setOwnerSetting(sctx context.Context, key string, value any) (settings.Change, error) {
+	change, err := settings.Set(sctx, key, value, settings.Global)
+	if err != nil {
+		return settings.Change{}, settingsRefusal(err)
+	}
+	return change, nil
 }
 
-// Display toggles keyed by setting, an empty word or toggle flipping the current value
-func displayToggles() map[string]displayToggle {
-	onOff := func(value any) string {
-		if pyrepr.Truthy(value) {
+// Word a config.set answer reports for a setting's new value
+func settingAnswerWord(key string, value any) any {
+	if on, isBool := value.(bool); isBool && onOffSettings[key] {
+		if on {
 			return "on"
 		}
 		return "off"
 	}
-	boolAliases := map[string]any{}
-	for word, value := range boolWords {
-		boolAliases[word] = value
+	if value == nil {
+		return ""
 	}
-	statusAliases := map[string]any{"on": "top"}
-	for _, mode := range statusbarModes {
-		statusAliases[mode] = mode
+	if _, isBool := value.(bool); isBool {
+		return value
 	}
-	mouseAliases := map[string]any{}
-	for word, mode := range tuihost.MouseTrackingAliases {
-		mouseAliases[word] = mode
-	}
-	notFlag := func(field string) func(map[string]any) any {
-		return func(d map[string]any) any { return !pyrepr.Truthy(d[field]) }
-	}
-	return map[string]displayToggle{
-		"density":    {"tui_compact", map[string]any{"on": true, "off": false}, notFlag("tui_compact"), onOff},
-		"battery":    {"battery", boolAliases, notFlag("battery"), onOff},
-		"timestamps": {"timestamps", boolAliases, notFlag("timestamps"), onOff},
-		"statusbar": {"tui_statusbar", statusAliases, func(d map[string]any) any {
-			current, ok := d["tui_statusbar"]
-			if !ok {
-				current = "top"
-			}
-			if statusbarPlacement(current) == "off" {
-				return "top"
-			}
-			return "off"
-		}, func(value any) string { return pyrepr.Str(value) }},
-		"mouse": {"mouse_tracking", mouseAliases, func(d map[string]any) any {
-			if tuihost.DisplayMouseTracking(d) == "off" {
-				return "all"
-			}
-			return "off"
-		}, func(value any) string { return pyrepr.Str(value) }},
-	}
+	return pyrepr.Str(value)
 }
 
-// Display field and accepted words of one word setting
-type displayWord struct {
-	field   string
-	allowed []string
-}
-
-// Word settings of the display section keyed by setting
-func displayWords() map[string]displayWord {
-	return map[string]displayWord{"theme": {"tui_theme", []string{"auto", "light", "dark"}},
-		"indicator": {"tui_status_indicator", home.IndicatorStyles}}
-}
-
-// Display section of a raw config, created when absent or not a dict
-func displaySection(cfg map[string]any) map[string]any {
-	display, ok := cfg["display"].(map[string]any)
-	if !ok {
-		display = map[string]any{}
-		cfg["display"] = display
-	}
-	return display
-}
-
-// Detail sections of a display block, created when absent or not a dict
-func displaySections(display map[string]any) map[string]any {
-	sections, ok := display["sections"].(map[string]any)
-	if !ok {
-		sections = map[string]any{}
-		display["sections"] = sections
-	}
-	return sections
-}
-
-// One display preference on the raw config with main's semantics, the result extras returned
-func setDisplay(cfg map[string]any, key string, value any) (map[string]any, error) {
-	display, raw := displaySection(cfg), settingWord(value)
-	if toggle, ok := displayToggles()[key]; ok {
-		var next any
-		if raw == "" || raw == "toggle" {
-			next = toggle.flipped(display)
-		} else if alias, known := toggle.aliases[raw]; known {
-			next = alias
-		}
-		if next == nil {
-			return nil, runtimeRefusal("invalid_params")
-		}
-		display[toggle.field] = next
-		return map[string]any{"value": toggle.report(next)}, nil
-	}
-	if entry, ok := displayWords()[key]; ok {
-		if !slices.Contains(entry.allowed, raw) {
-			return nil, runtimeRefusal("invalid_params")
-		}
-		display[entry.field] = raw
-		return map[string]any{"value": raw}, nil
-	}
-	if key == "details_mode" {
-		if !detailModes[raw] {
-			return nil, runtimeRefusal("invalid_params")
-		}
-		display["details_mode"] = raw
-		sections := displaySections(display)
-		for _, section := range detailSections {
-			sections[section] = raw
-		}
-		return map[string]any{"value": raw}, nil
-	}
+// Writes the setting a config.set key or alias names in the owning profile, returning the answer fields
+func setProfileSetting(ctx context.Context, c *AuthorityConnection, key string, value any) (map[string]any, error) {
+	sctx := profileRuntimeScope(ctx, c.authority.ProfileID, true)
+	raw := settingWord(value)
 	if section, ok := strings.CutPrefix(key, "details_mode."); ok {
-		if !slices.Contains(detailSections, section) || (raw != "" && !detailModes[raw]) {
+		if !slices.Contains(settings.DetailSections, section) {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		if raw != "" {
-			displaySections(display)[section] = raw
-		} else {
-			delete(displaySections(display), section)
+		if raw == "" {
+			if _, err := settings.Reset(sctx, "display.sections."+section, settings.Global); err != nil {
+				return nil, settingsRefusal(err)
+			}
+			return map[string]any{"value": ""}, nil
 		}
-		return map[string]any{"value": raw}, nil
+		key = "display.sections." + section
 	}
-	if key == "focus" {
-		return setFocus(display, raw)
+	if key == "skin" && raw == "" {
+		return nil, runtimeRefusal("invalid_params")
 	}
-	if key == "skin" {
-		text, ok := value.(string)
-		if !ok || pystr.Strip(text) == "" {
-			return nil, runtimeRefusal("invalid_params")
+	e := settings.Find(key)
+	if e == nil {
+		return nil, runtimeRefusal("invalid_params")
+	}
+	next := value
+	if raw == "" || raw == "toggle" {
+		if flipped := settings.Flipped(sctx, e); flipped != nil {
+			next = flipped
 		}
-		display["skin"] = pystr.Strip(text)
-		return map[string]any{"value": pystr.Strip(text)}, nil
 	}
-	return nil, runtimeRefusal("invalid_params")
+	change, err := setOwnerSetting(sctx, e.Info().Key, next)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"value": settingAnswerWord(key, change.New.Value)}, nil
 }
 
-// Display language of the owning profile, a language one of its layers supplies, stored as its canonical id; the answer warns when
-// ICEBATH_LANGUAGE keeps another language in effect
+// Display language of the owning profile, a language one of its layers supplies, stored as its canonical id
 func setDisplayLanguage(ctx context.Context, c *AuthorityConnection, value any) (map[string]any, error) {
 	sctx := profileRuntimeScope(ctx, c.authority.ProfileID, true)
 	i18n.ResetLanguageCache()
@@ -229,85 +135,11 @@ func setDisplayLanguage(ctx context.Context, c *AuthorityConnection, value any) 
 	if id == "" {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	result, err := writeOwnerProfileConfig(ctx, c, func(cfg map[string]any) (map[string]any, error) {
-		displaySection(cfg)["language"] = id
-		return map[string]any{"value": id}, nil
-	})
-	if err != nil {
+	if _, err := setOwnerSetting(sctx, settings.Language.Key, id); err != nil {
 		return nil, err
 	}
 	i18n.ResetLanguageCache()
-	if effective := i18n.GetLanguage(sctx); effective != id {
-		result["warning"] = "ICEBATH_LANGUAGE is set to " + effective + " and overrides display.language for this profile"
-	}
-	return result, nil
-}
-
-// Focus on stashes the configured tool progress mode and pins it off, off restores it
-func setFocus(display map[string]any, raw string) (map[string]any, error) {
-	current := pyrepr.Truthy(display["focus_view"])
-	progress, ok := display["tool_progress"]
-	if !ok {
-		progress = "all"
-	}
-	configured := tuihost.NormalizeToolProgressMode(progress, "all")
-	action, target := tuihost.ResolveFocusArg(raw, current)
-	if action == "usage" {
-		return nil, runtimeRefusal("invalid_params")
-	}
-	onOff := func(on bool) string {
-		if on {
-			return "on"
-		}
-		return "off"
-	}
-	if action == "status" || target == nil {
-		return map[string]any{"value": onOff(current), "tool_progress": configured}, nil
-	}
-	var effective string
-	if *target {
-		var saved any = configured
-		if stashed := display["focus_saved_tool_progress"]; current && pyrepr.Truthy(stashed) {
-			saved = stashed
-		}
-		display["focus_saved_tool_progress"] = tuihost.NormalizeToolProgressMode(saved, "all")
-		effective = tuihost.FocusToolProgressMode
-	} else {
-		var saved any = "all"
-		if stashed := display["focus_saved_tool_progress"]; pyrepr.Truthy(stashed) {
-			saved = stashed
-		}
-		effective = tuihost.NormalizeToolProgressMode(saved, "all")
-	}
-	display["tool_progress"], display["focus_view"] = effective, *target
-	return map[string]any{"value": onOff(*target), "tool_progress": effective}, nil
-}
-
-// Edits the owning profile's config.yaml exactly as written, saving only when the edit changed it
-func writeOwnerProfileConfig(ctx context.Context, c *AuthorityConnection, edit func(cfg map[string]any) (map[string]any, error)) (map[string]any, error) {
-	sctx := profileRuntimeScope(ctx, c.authority.ProfileID, true)
-	profileConfigWriteLock.Lock()
-	defer profileConfigWriteLock.Unlock()
-	h := home.Dir(sctx)
-	path := home.ConfigPath(h)
-	cfg, err := config.ReadUserConfigRaw(sctx, path)
-	if err != nil {
-		return nil, runtimeRefusal("storage_unavailable")
-	}
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	before := pycopy.DeepCopy(cfg)
-	result, err := edit(cfg)
-	if err != nil {
-		return nil, err
-	}
-	if !pyrepr.Equal(cfg, before) {
-		if err := config.AtomicConfigReplace(sctx, h, path, cfg, ""); err != nil {
-			return nil, runtimeRefusal("storage_unavailable")
-		}
-	}
-	return result, nil
+	return map[string]any{"value": id}, nil
 }
 
 // Profile level settings authorization plus the control capability
@@ -451,8 +283,6 @@ func setFast(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy
 // Validates and persists the profile personality the next turn of each session resolves
 func setPersonality(ctx context.Context, c *AuthorityConnection, value any) (map[string]any, error) {
 	sctx := profileRuntimeScope(ctx, c.authority.ProfileID, true)
-	profileConfigWriteLock.Lock()
-	defer profileConfigWriteLock.Unlock()
 	text := ""
 	if pyrepr.Truthy(value) {
 		text = pyrepr.Str(value)
@@ -465,8 +295,8 @@ func setPersonality(ctx context.Context, c *AuthorityConnection, value any) (map
 	if err != nil {
 		return nil, runtimeRefusal("unknown_personality")
 	}
-	if !PersistPersonality(sctx, name) {
-		return nil, runtimeRefusal("storage_unavailable")
+	if _, err := setOwnerSetting(sctx, settings.Personality.Key, name); err != nil {
+		return nil, err
 	}
 	reported := "none"
 	if pyrepr.Truthy(value) {
@@ -475,47 +305,16 @@ func setPersonality(ctx context.Context, c *AuthorityConnection, value any) (map
 	return map[string]any{"key": "personality", "value": reported, "history_reset": false}, nil
 }
 
-// One boolean section leaf of the profile config, set from an on or off word
-func setProfileLeaf(cfg map[string]any, key string, value any) (map[string]any, error) {
-	section, leaf, _ := strings.Cut(key, ".")
-	word := settingWord(value)
-	on, known := boolWords[word]
-	switch word {
-	case "1":
-		on, known = true, true
-	case "0":
-		on, known = false, true
-	}
-	if !known {
-		return nil, runtimeRefusal("invalid_params")
-	}
-	block, ok := cfg[section].(map[string]any)
-	if !ok {
-		block = map[string]any{}
-		cfg[section] = block
-	}
-	block[leaf] = on
-	return map[string]any{"value": on}, nil
-}
-
-// The approvals command's own write of approvals.mode for this profile
+// Sets the owning profile's approval mode when a value is given, answered with the mode in effect
 func setApprovalMode(ctx context.Context, c *AuthorityConnection, value any) (map[string]any, error) {
 	sctx := profileRuntimeScope(ctx, c.authority.ProfileID, true)
-	profileConfigWriteLock.Lock()
-	h := home.Dir(sctx)
-	ok, mode, err := RunApprovalModeCommand(sctx, h, tools.EnvForProfileHome(sctx, nil, h), settingWord(value))
-	profileConfigWriteLock.Unlock()
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		switch settingWord(value) {
-		case "manual", "smart", "off":
-			return nil, runtimeRefusal("storage_unavailable")
+	if word := settingWord(value); word != "" {
+		if _, err := setOwnerSetting(sctx, settings.ApprovalMode.Key, word); err != nil {
+			return nil, err
 		}
-		return nil, runtimeRefusal("invalid_params")
 	}
-	return map[string]any{"key": "approvals.mode", "value": mode}, nil
+	h := home.Dir(sctx)
+	return map[string]any{"key": "approvals.mode", "value": tools.GetApprovalMode(tools.EnvForProfileHome(sctx, nil, h))}, nil
 }
 
 // Settings a slash command owns, reasoning and the global yolo zap, through that command's own code
@@ -608,7 +407,138 @@ func tuiConfigHandlers(c *AuthorityConnection) map[string]controlHandler {
 		"config.set": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
 			return configSet(ctx, c, ref, params)
 		},
+		"settings.groups": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+			if _, err := authorizeSettingsRead(ctx, c, ref, params); err != nil {
+				return nil, err
+			}
+			return tuigateway.Plain(map[string]any{"groups": settings.Groups()}), nil
+		},
+		"settings.list": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+			return settingsList(ctx, c, ref, params)
+		},
+		"settings.set": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+			return settingsWrite(ctx, c, ref, params, false)
+		},
+		"settings.reset": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+			return settingsWrite(ctx, c, ref, params, true)
+		},
 	}
+}
+
+// Session controls a session scoped settings write goes through, keyed by setting
+var sessionControlOf = map[string]string{settings.BusyMode.Key: "busy", settings.ToolProgress.Key: "verbose",
+	settings.ShowThinking.Key: "show_reasoning", settings.FastMode.Key: "service_tier"}
+
+// Drops a session's fast pick from the runner so its next turn follows the profile again
+func clearSessionTier(a *SessionAuthority, sessionID string) error {
+	live, err := liveSession(a, sessionID)
+	if err != nil {
+		return err
+	}
+	runner, ok := a.Runner.(serviceTierRunner)
+	if !ok {
+		return runnerLacks("set a session service tier override")
+	}
+	runner.SetSessionServiceTierOverride(live.Route, nil, true)
+	return nil
+}
+
+// Rows of the settings a query selects in the owning profile, session values included when a session is named
+func settingsList(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+	if paramsOutside(params, "session_id", "profile", "group", "prefix", "search", "keys", "advanced") {
+		return nil, runtimeRefusal("invalid_params")
+	}
+	if _, err := authorizeSettingsRead(ctx, c, ref, params); err != nil {
+		return nil, err
+	}
+	var q settings.Query
+	group, _ := params.Get("group")
+	prefix, _ := params.Get("prefix")
+	search, _ := params.Get("search")
+	q.Group, q.Prefix, q.Search = settings.GroupID(pyrepr.Str(pyrepr.Or(group, ""))), pyrepr.Str(pyrepr.Or(prefix, "")), pyrepr.Str(pyrepr.Or(search, ""))
+	if advanced, _ := params.Get("advanced"); advanced == true {
+		q.Advanced = true
+	}
+	if keys, _ := params.Get("keys"); keys != nil {
+		q.Keys = config.AsStrings(keys)
+	}
+	return forwardOffThread(ctx, func() (any, error) {
+		sctx := settings.WithSession(profileRuntimeScope(ctx, c.authority.ProfileID, true), ref.SessionID)
+		rows := settings.Rows(sctx, q)
+		if rows == nil {
+			rows = []settings.Row{}
+		}
+		return tuigateway.Plain(map[string]any{"rows": rows}), nil
+	})
+}
+
+// Sets or resets one setting of the owning profile or session, session controls going through their own handler
+func settingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, reset bool) (any, error) {
+	if paramsOutside(params, "session_id", "profile", "key", "value", "scope") {
+		return nil, runtimeRefusal("invalid_params")
+	}
+	if _, err := authorizeSettingsWrite(ctx, c, ref, params); err != nil {
+		return nil, err
+	}
+	rawKey, _ := params.Get("key")
+	e := settings.Find(pyrepr.Str(pyrepr.Or(rawKey, "")))
+	if e == nil {
+		return nil, runtimeRefusal("invalid_params")
+	}
+	key := e.Info().Key
+	rawScope, _ := params.Get("scope")
+	scopeWord := settingWord(rawScope)
+	scope := settings.ParseScope(scopeWord)
+	if scope == 0 && scopeWord != "" {
+		return nil, runtimeRefusal("invalid_params")
+	}
+	raw, _ := params.Get("value")
+	// A list or mapping arrives as wire objects; the registry checks plain values
+	value := pyjson.Plain(raw)
+	if control, ok := sessionControlOf[key]; ok && scope == settings.Session && !reset {
+		if ref.SessionID == "" {
+			return nil, runtimeRefusal("invalid_params")
+		}
+		word := settingWord(value)
+		if on, isBool := value.(bool); isBool {
+			word = map[bool]string{true: "1", false: "0"}[on]
+		}
+		if _, err := busyConfig(ctx, c.authority, c.actor, ref, pyjson.ObjectOf("session_id", ref.SessionID, "key", control, "value", word), true); err != nil {
+			return nil, err
+		}
+	} else {
+		_, err := forwardOffThread(ctx, func() (settings.Change, error) {
+			sctx := settings.WithSession(profileRuntimeScope(ctx, c.authority.ProfileID, true), ref.SessionID)
+			var change settings.Change
+			var err error
+			if reset {
+				change, err = settings.Reset(sctx, key, scope)
+			} else {
+				change, err = settings.Set(sctx, key, value, scope)
+			}
+			if err != nil {
+				return change, settingsRefusal(err)
+			}
+			return change, nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		if key == settings.FastMode.Key && scope == settings.Session && reset {
+			if err := clearSessionTier(c.authority, ref.SessionID); err != nil {
+				return nil, err
+			}
+		}
+		if key == settings.Skin.Key {
+			if err := broadcastSkin(ctx, c); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return forwardOffThread(ctx, func() (any, error) {
+		sctx := settings.WithSession(profileRuntimeScope(ctx, c.authority.ProfileID, true), ref.SessionID)
+		return tuigateway.Plain(map[string]any{"row": settings.Describe(sctx, e), "apply": e.Info().Apply.String()}), nil
+	})
 }
 
 // Owner config.set, the session controls for their keys and the owning profile's config.yaml for the rest
@@ -645,29 +575,14 @@ func configSet(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 		return setFast(ctx, c, ref, policy, value)
 	case key == "personality":
 		return forwardOffThread(ctx, func() (map[string]any, error) { return setPersonality(ctx, c, value) })
-	case key == "approvals.mode" || key == "approval_mode":
+	case key == "approvals.mode":
 		return forwardOffThread(ctx, func() (map[string]any, error) { return setApprovalMode(ctx, c, value) })
-	case key == "daybreak":
-		return keyed(forwardOffThread(ctx, func() (map[string]any, error) {
-			return writeOwnerProfileConfig(ctx, c, func(cfg map[string]any) (map[string]any, error) {
-				return setProfileLeaf(cfg, "agent.daybreak", value)
-			})
-		}))
 	case key == "language":
 		return keyed(forwardOffThread(ctx, func() (map[string]any, error) { return setDisplayLanguage(ctx, c, value) }))
 	}
-	result, err := forwardOffThread(ctx, func() (map[string]any, error) {
-		return writeOwnerProfileConfig(ctx, c, func(cfg map[string]any) (map[string]any, error) { return setDisplay(cfg, key, value) })
-	})
+	result, err := forwardOffThread(ctx, func() (map[string]any, error) { return setProfileSetting(ctx, c, key, value) })
 	if err != nil {
 		return nil, err
-	}
-	if progress, ok := result["tool_progress"]; key == "focus" && ref.SessionID != "" && ok {
-		live, err := liveSession(c.authority, ref.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		live.ToolProgressMode = pyrepr.Str(progress)
 	}
 	if key == "skin" {
 		if err := broadcastSkin(ctx, c); err != nil {

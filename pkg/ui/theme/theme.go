@@ -381,8 +381,6 @@ type Glyphs struct {
 	Ramp []rune
 	// Frames of the working spinner
 	Spinner []string
-	// Characters text boils through while it materializes
-	Churn []rune
 	// One cell symbols of bare navigation chords such as pgup, text labels stand in for chords missing here
 	Chords map[string]string
 }
@@ -399,7 +397,6 @@ func IcebathGlyphs() Glyphs {
 		Rule: "─", Dashed: "┈", Bar: "▎", Fill: "━", Slide: "┈", Thumb: "◆", SwitchOn: "━━●", SwitchOff: "●┈┈", Caret: "▎", Up: "⌃", Down: "⌄", Track: "┊", Heavy: "┃", Tick: "╂", HeavyTick: "╋", Hit: "◈", Full: "━", Empty: "─",
 		Ramp:    []rune("▁▂▃▄▅▆▇█"),
 		Spinner: []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"},
-		Churn:   []rune("░▒▓█▙▚▛▜▝▞▟╳╱╲01"),
 		Chords:  map[string]string{"pgup": "⇞", "pgdown": "⇟", "home": "⇱", "end": "⇲", "up": "⇡", "down": "⇣"},
 	}
 }
@@ -416,7 +413,6 @@ func ASCIIGlyphs() Glyphs {
 		Rule: "-", Dashed: "-", Bar: "|", Fill: "=", Slide: "-", Thumb: "O", SwitchOn: "==O", SwitchOff: "O--", Caret: "|", Up: "^", Down: "v", Track: "|", Heavy: "#", Tick: "+", HeavyTick: "+", Hit: "*", Full: "#", Empty: "-",
 		Ramp:    []rune(".:-=+*#%"),
 		Spinner: []string{"|", "/", "-", "\\"},
-		Churn:   []rune("#%&*+-=01"),
 		Chords:  map[string]string{},
 	}
 }

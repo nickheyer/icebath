@@ -19,7 +19,7 @@ func RowOwnedByEntry(row PooledCredential, entry map[string]any) bool {
 	return isManualSource(source)
 }
 
-// EntryScopedPool is the rows the custom entry owns, the pool itself when it owns all, nil when none
+// EntryScopedPool is the rows the custom entry owns with the login choice the pool was narrowed to, the pool itself when it owns all, nil when none
 func EntryScopedPool(pool *Pool, poolKey string, entry map[string]any) *Pool {
 	if pool == nil || strings.HasPrefix(poolKey, CustomPoolPrefix) || !EntryDeclaresCredential(entry) {
 		return pool
@@ -39,7 +39,18 @@ func EntryScopedPool(pool *Pool, poolKey string, entry map[string]any) *Pool {
 	}
 	view := NewPool(pool.env, pool.provider, owned)
 	pool.mu.Lock()
-	view.persistedTokenPairs = pool.persistedTokenPairs
+	for id, pair := range pool.persistedTokenPairs {
+		view.persistedTokenPairs[id] = pair
+	}
+	if pool.choice != nil {
+		choice := *pool.choice
+		view.choice = &choice
+	}
+	for _, e := range pool.spare {
+		if RowOwnedByEntry(e, entry) {
+			view.spare = append(view.spare, e)
+		}
+	}
 	pool.mu.Unlock()
 	return view
 }
@@ -164,28 +175,24 @@ func RuntimeEntryOwner(ctx context.Context, provider, requestedProvider, baseURL
 	return owner
 }
 
-// LoadRuntimePool is the pool for a runtime identity, entry scoped for a custom runtime
+// LoadRuntimePool is the pool for a runtime identity, entry scoped for a custom runtime and narrowed to the selected login
 func LoadRuntimePool(env PoolEnv, provider, baseURL, requestedProvider string, snapshot map[string]any) *Pool {
-	return LoadRuntimePoolWith(env, LoadPool, provider, baseURL, requestedProvider, snapshot)
+	return LoadRuntimePoolWith(env, LoadSelectedPool, provider, baseURL, requestedProvider, snapshot)
 }
 
-// LoadRuntimePoolWith is LoadRuntimePool reading the resolved pool key through load
-func LoadRuntimePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider, baseURL, requestedProvider string, snapshot map[string]any) *Pool {
+// Pool key of a runtime identity and the custom entry owning it, empty when no pool fits
+func runtimePoolKey(env PoolEnv, provider, baseURL, requestedProvider string, snapshot map[string]any) (string, map[string]any, bool) {
 	cfg := env.config()
 	custom, name := customIdentity(env.hookContext(), provider, requestedProvider, baseURL, cfg)
 	if !custom {
-		key := ResolveRuntimePoolKey(provider, baseURL, cfg)
-		if key == "" {
-			return nil
-		}
-		return load(env, key)
+		return ResolveRuntimePoolKey(provider, baseURL, cfg), nil, false
 	}
 	var owner map[string]any
 	if snapshot != nil {
 		owner, _ = snapshot[SnapshotOwnerKey].(map[string]any)
 	}
 	if snapshot != nil && name != "" && owner == nil {
-		return nil
+		return "", nil, true
 	}
 	var match *namedEntry
 	if owner != nil {
@@ -194,7 +201,7 @@ func LoadRuntimePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider
 		match = customEntryForEndpoint(baseURL, name, cfg)
 	}
 	if name != "" && match == nil {
-		return nil
+		return "", nil, true
 	}
 	key := ""
 	if match != nil && (name != "" || owner != nil) {
@@ -204,22 +211,47 @@ func LoadRuntimePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider
 	} else {
 		key = ResolveRuntimePoolKey(provider, baseURL, cfg)
 	}
-	if key == "" {
-		return nil
-	}
 	var entry map[string]any
 	if match != nil {
 		entry = match.entry
 	}
+	return key, entry, true
+}
+
+// RoutePoolKey is the pool key of the logins a route's requests use, a named custom entry's own key when the route names no endpoint, empty when none fits
+func RoutePoolKey(env PoolEnv, provider, baseURL, requestedProvider string) string {
+	key, _, _ := runtimePoolKey(env, provider, baseURL, requestedProvider, nil)
+	if key != "" || baseURL != "" {
+		return key
+	}
+	for _, name := range []string{provider, requestedProvider} {
+		if named := namedCustomEntry(name, env.config()); named != nil {
+			if keys := poolKeysForCustomEntry(named.name, named.entry); len(keys) > 0 {
+				return keys[0]
+			}
+		}
+	}
+	return ""
+}
+
+// LoadRuntimePoolWith is LoadRuntimePool reading the resolved pool key through load
+func LoadRuntimePoolWith(env PoolEnv, load func(PoolEnv, string) *Pool, provider, baseURL, requestedProvider string, snapshot map[string]any) *Pool {
+	key, entry, custom := runtimePoolKey(env, provider, baseURL, requestedProvider, snapshot)
+	if key == "" {
+		return nil
+	}
+	if !custom {
+		return load(env, key)
+	}
 	return EntryScopedPool(load(env, key), key, entry)
 }
 
-// LoadRoutePool is the pool to attach when a live agent moves onto a route, a custom identity's entry scoped view or a built-in's own pool
+// LoadRoutePool is the selected login's pool to attach when a live agent moves onto a route, entry scoped for a custom identity
 func LoadRoutePool(env PoolEnv, provider, baseURL, requestedProvider string) *Pool {
 	if IsCustomRuntime(env, provider, requestedProvider, baseURL) {
 		return LoadRuntimePool(env, provider, baseURL, requestedProvider, nil)
 	}
-	return LoadPool(env, strings.ToLower(strings.TrimSpace(provider)))
+	return LoadSelectedPool(env, strings.ToLower(strings.TrimSpace(provider)))
 }
 
 // LoadRoutePoolWith is LoadRoutePool reading every pool through load

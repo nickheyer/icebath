@@ -131,22 +131,13 @@ func (a *DiscordAdapter) componentLiveAuth(i *discordgo.Interaction) *bool {
 	return a.IsSenderAuthorized(userID, &chatType, chatID, gateway.AuthorizationOpts{ThreadID: threadID})
 }
 
-// Whether a gate env flag reads as an allow all switch
-func truthyGate(v string) bool {
-	switch strings.ToLower(pystr.Strip(v)) {
-	case "true", "1", "yes":
-		return true
-	}
-	return false
-}
-
 // User or role OR authorization of a component click, snapshot users confirmed by the live check
 func (a *DiscordAdapter) componentCheckAuth(ctx context.Context, i *discordgo.Interaction, allowedUserIDs, allowedRoleIDs strSet, liveAuth func(*discordgo.Interaction) *bool) bool {
 	user := interactionUser(i)
 	if user == nil || user.ID == "" {
 		return false
 	}
-	if truthyGate(gateway.PlatformGateEnv(ctx, "DISCORD_ALLOW_ALL_USERS", "")) || truthyGate(gateway.PlatformGateEnv(ctx, "GATEWAY_ALLOW_ALL_USERS", "")) {
+	if a.discordAllowAllUsers(ctx) || a.gatewayAllowAllUsers(ctx) {
 		return true
 	}
 	userSet := strSet{}

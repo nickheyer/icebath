@@ -239,11 +239,11 @@ func askHostedChoice(ask SetupAsker, title string, rows []string, def int, descr
 	return answer.Index
 }
 
-// Ticked row indices of a hosted checklist, the preselection when the user backed out
+// Ticked row indices of a hosted checklist, stopping the flow when the user backs out
 func askHostedChecklist(ask SetupAsker, title string, rows []string, pre []int) []int {
 	answer := ask(HostedPrompt{Kind: HostedChecklist, Title: strings.TrimSpace(title), Rows: rows, Picked: pre})
 	if answer.Cancelled {
-		return pre
+		panic(SetupExit{Code: 1})
 	}
 	picked := []int{}
 	for _, i := range answer.Picked {
@@ -449,8 +449,13 @@ func HostSetupFlow(asker SetupAsker, out io.Writer, fn func() error) (err error)
 	radiolist := func(title string, items [][]PickerSegment, opts PickerRadiolistOptions) (int, error) {
 		return askHostedChoice(ask, title, pickerRowTexts(items), opts.Selected, opts.Description, opts.Headings, opts.CancelReturns), nil
 	}
+	// A backed out menu stops the flow
 	choice := func(question string, choices []string, def int, description string) int {
-		return askHostedChoice(ask, question, choices, def, description, nil, -1)
+		idx := askHostedChoice(ask, question, choices, def, description, nil, -1)
+		if idx < 0 {
+			panic(SetupExit{Code: 1})
+		}
+		return idx
 	}
 	checklist := func(title string, items []string, pre []int) []int { return askHostedChecklist(ask, title, items, pre) }
 	saved := struct {

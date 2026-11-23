@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -169,21 +170,11 @@ func loadSettings(ctx context.Context, extra map[string]any) (FeishuAdapterSetti
 			groupRules[chatID] = rule
 		}
 	}
-	allowBots := extraOrSecret("allow_bots", "FEISHU_ALLOW_BOTS", "none")
-	if allowBots == "" {
-		allowBots = "none"
-	}
-	allowBots = pystr.Lower(pystr.Strip(allowBots))
-	if allowBots != "none" && allowBots != "mentions" && allowBots != "all" {
-		pkgLog().Warn(fmt.Sprintf("[Feishu] Unknown allow_bots=%s, falling back to 'none'. Valid: none, mentions, all.", pyrepr.Repr(allowBots)))
-		allowBots = "none"
-	}
-	allowAllDM := false
-	for _, name := range []string{"FEISHU_ALLOW_ALL_USERS", "GATEWAY_ALLOW_ALL_USERS"} {
-		switch pystr.Lower(secret(name, "")) {
-		case "true", "1", "yes":
-			allowAllDM = true
-		}
+	allowBots := settings.FeishuAllowBots.Get(gateway.SettingsContext(ctx))
+	allowAllDM := settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx))
+	switch pystr.Lower(secret("FEISHU_ALLOW_ALL_USERS", "")) {
+	case "true", "1", "yes":
+		allowAllDM = true
 	}
 	allowedRaw, err := gateway.GetScopedSecret(ctx, "FEISHU_ALLOWED_USERS", "", false)
 	keep(err)
@@ -204,8 +195,8 @@ func loadSettings(ctx context.Context, extra map[string]any) (FeishuAdapterSetti
 	s := FeishuAdapterSettings{
 		AppID:                      extraOrSecret("app_id", "FEISHU_APP_ID", ""),
 		AppSecret:                  extraOrSecret("app_secret", "FEISHU_APP_SECRET", ""),
-		DomainName:                 pystr.Lower(extraOrSecret("domain", "FEISHU_DOMAIN", "feishu")),
-		ConnectionMode:             pystr.Lower(extraOrSecret("connection_mode", "FEISHU_CONNECTION_MODE", "websocket")),
+		DomainName:                 settings.FeishuDomain.Get(gateway.SettingsContext(ctx)),
+		ConnectionMode:             settings.FeishuConnectionMode.Get(gateway.SettingsContext(ctx)),
 		EncryptKey:                 extraOrSecret("encrypt_key", "FEISHU_ENCRYPT_KEY", ""),
 		VerificationToken:          extraOrSecret("verification_token", "FEISHU_VERIFICATION_TOKEN", ""),
 		GroupPolicy:                pystr.Lower(secret("FEISHU_GROUP_POLICY", "allowlist")),
@@ -559,7 +550,7 @@ func (a *FeishuAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 		return false, nil
 	}
 	if s.ConnectionMode != "websocket" && s.ConnectionMode != "webhook" {
-		pkgLog().Error(fmt.Sprintf("[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook.", s.ConnectionMode))
+		pkgLog().Error(fmt.Sprintf("[Feishu] Unsupported connection mode %s. Supported modes: websocket, webhook.", s.ConnectionMode))
 		return false, nil
 	}
 	if s.ConnectionMode == "webhook" && s.VerificationToken == "" && s.EncryptKey == "" {

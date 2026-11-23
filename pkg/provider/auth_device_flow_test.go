@@ -365,7 +365,7 @@ func TestPrintDeviceCodeInstructions(t *testing.T) {
 
 func TestOfferExistingOAuthCredentials(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	prev := oauthPromptFn
 	oauthPromptFn = func(string) (string, error) { return "y\n", nil }
 	t.Cleanup(func() { oauthPromptFn = prev })

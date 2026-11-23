@@ -78,12 +78,7 @@ func TestSyncFailureRealRunToSpinnerThreeModes(t *testing.T) {
 		parent.toolProgressCallback = rec.cb
 		child := crashingDelegateChild(t, env, "SYNC_REAL_CHILD_CRASH")
 		child.toolProgressCallback = buildChildProgressCallback(0, "actual failing child", parent, 1, "", "", nil, "", nil, nil, nil)
-		cfg := NotificationConfigSnapshot(context.Background())
-		display, _ := cfg["display"].(map[string]any)
-		if got := display["suppress_warning_notifications"]; got != setting {
-			t.Fatalf("setting %v snapshot reads %v", setting, got)
-		}
-		restore := parent.NotificationPolicySnapshot("cli", cfg)
+		restore := parent.NotificationPolicySnapshot("cli")
 		result := runSingleChild(context.Background(), 0, "actual failing child", child, parent, "", nil, nil)
 		restore()
 		text, err := pyjson.Dumps(result)

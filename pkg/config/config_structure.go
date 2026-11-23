@@ -126,9 +126,9 @@ func ValidateConfigStructure(cfg map[string]any, removedNote func(section, name 
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
-		if !strings.HasPrefix(key, "_") && !KnownRootKey(key) && customProviderLikeFields[key] {
+		if !(settingsHooks.Known != nil && settingsHooks.Known(key)) && customProviderLikeFields[key] {
 			AddIssue(&issues, "warning",
-				fmt.Sprintf("Root-level key '%s' looks misplaced — should it be under 'model:' or inside a 'custom_providers' entry?", key),
+				fmt.Sprintf("Root-level key '%s' looks misplaced — should it be under 'model:' or inside a 'providers' entry?", key),
 				fmt.Sprintf("Move '%s' under the appropriate section", key))
 		}
 	}

@@ -27,7 +27,16 @@ func IsRemoteTerminalBackend(backend string) bool { return envProbeRemoteBackend
 // Whether a plugin registered backend declares itself remote
 func PluginBackendIsRemote(backend string) bool { return pluginBackendIsRemote(backend) }
 
-// Terminal setting of the env profile, a refused terminal scope returned as the error
+// Terminal setting key of the env profile through its bound policy, a refused terminal scope returned as the error
+func TerminalSetting(env *Env, key string) (string, error) {
+	policy, err := terminalPolicy(env)
+	if err != nil {
+		return "", err
+	}
+	return policy.Setting(key), nil
+}
+
+// Terminal policy value by its policy name, a refused terminal scope returned as the error
 func TerminalEnvRead(env *Env, name, def string) (string, error) {
 	policy, err := terminalPolicy(env)
 	if err != nil {
@@ -110,7 +119,7 @@ func formatBackendProbe(output string) string {
 
 // Cached live description of a non local backend, false when the probe failed or returned nothing
 func ProbeRemoteBackend(ctx context.Context, env *Env, envType string) (string, bool, error) {
-	cwd, err := TerminalEnvRead(env, "TERMINAL_CWD", "")
+	cwd, err := TerminalSetting(env, "cwd")
 	if err != nil {
 		return "", false, err
 	}

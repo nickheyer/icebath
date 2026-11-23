@@ -64,6 +64,8 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 	a := c.authority
 	hidden, _ := params.Get("hidden")
 	params.Delete("hidden")
+	loginsFrom, _ := params.Get("logins_from")
+	params.Delete("logins_from")
 	if hidden == nil {
 		hidden = false
 	}
@@ -98,6 +100,9 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 		}
 	}
 	if ref == nil {
+		if err := sessionLimitRefusal(ctx, c, ""); err != nil {
+			return nil, err
+		}
 		var skillsPrompt *string
 		if _, named := params.Get("skills"); named {
 			if _, set := params.Get("request_id"); !set {
@@ -163,6 +168,11 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 			}
 		}
 		created := *ref
+		if from, named := loginsFrom.(string); named && from != "" {
+			if err := inheritLogins(ctx, c, from, created); err != nil {
+				return nil, err
+			}
+		}
 		if title != "" {
 			if _, err := trackedWrite(ctx, a, func(taskCtx context.Context) (any, error) {
 				return nil, titleNewSession(taskCtx, a, created, title)
@@ -190,6 +200,38 @@ func (c *AuthorityConnection) info(ctx context.Context, ref SessionRef, params *
 		return nil, err
 	}
 	return snapshotInfo(ctx, c.authority, ref)
+}
+
+// Session revision verb, the revision, generation and execution state read without attaching, refreshing or subscribing
+func (c *AuthorityConnection) revision(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+	if paramsOutside(params, "session_id") || ref.SessionID == "" {
+		return nil, runtimeRefusal("invalid_params")
+	}
+	handle, err := c.authority.Resolve(ctx, c.actor, ref)
+	if err != nil {
+		return nil, err
+	}
+	return pyjson.ObjectOf("session_id", ref.SessionID, "revision", handle.Revision, "execution_generation", handle.ExecutionGeneration,
+		"running", handle.ExecutionState == "running", "authority_epoch", handle.AuthorityEpoch), nil
+}
+
+// Replay cursor a resume names, nil when it names none and a refusal when the cursor is malformed
+func replayCursorParam(params *pyjson.Object) (*ReplayCursor, error) {
+	raw, named := params.Get("replay_from")
+	if !named || raw == nil {
+		return nil, nil
+	}
+	field := "replay_from"
+	cursor, isObj := raw.(*pyjson.Object)
+	if !isObj {
+		return nil, state.NewRuntimeStoreError("invalid_params", &field, nil)
+	}
+	epoch, epochText := cursor.GetOr("epoch", nil).(string)
+	sequence, sequenced := pathIndex(cursor.GetOr("sequence", nil))
+	if !epochText || !sequenced {
+		return nil, state.NewRuntimeStoreError("invalid_params", &field, nil)
+	}
+	return &ReplayCursor{Epoch: epoch, Sequence: int64(sequence)}, nil
 }
 
 // Session a resume names, latest or titled, a local id hint expanded and a lineage resolved to its owner
@@ -249,13 +291,16 @@ func (c *AuthorityConnection) resumeTarget(ctx context.Context, ref SessionRef, 
 // Session resume verb, the attach snapshot with transcript, pending rows, open prompts and local info
 func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
 	a := c.authority
-	c.mu.Lock()
-	cursor, hasCursor := c.replayCursors[ref.SessionID]
-	delete(c.replayCursors, ref.SessionID)
-	c.mu.Unlock()
-	requested := ref.SessionID
-	ref, err := c.resumeTarget(ctx, ref, params)
+	cursor, err := replayCursorParam(params)
 	if err != nil {
+		return nil, err
+	}
+	requested := ref.SessionID
+	ref, err = c.resumeTarget(ctx, ref, params)
+	if err != nil {
+		return nil, err
+	}
+	if err := sessionLimitRefusal(ctx, c, ref.SessionID); err != nil {
 		return nil, err
 	}
 	if editor := params.GetOr("editor", nil); editor != nil {
@@ -289,8 +334,15 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 	}
 	omit := params.GetOr("omit_messages", nil) == true
 	var replayFrom *ReplayCursor
-	if hasCursor && ref.SessionID == requested {
-		replayFrom = &cursor
+	replayed := false
+	if cursor != nil && ref.SessionID == requested {
+		replay := mounted.EventStream.Since(cursor.Epoch, int(cursor.Sequence))
+		if required, _ := replay.Get("snapshot_required"); required != true {
+			replayFrom, replayed = cursor, true
+		}
+	}
+	if cursor != nil && !replayed {
+		omit = false
 	}
 	snapshot, err := a.Attach(ctx, c.actor, ref, !omit, replayFrom)
 	if err != nil {
@@ -327,6 +379,9 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 		}
 		rows, err := displayProjection(ctx, shown, a.ProfileID)
 		if err != nil {
+			return nil, err
+		}
+		if rows, err = withShellLines(rows, a.ProfileID, ref.SessionID); err != nil {
 			return nil, err
 		}
 		display.Set("display_messages", rows)
@@ -368,6 +423,9 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 		{"pending", pending}, {"prompts", prompts}, {"info", info}, {"pending_connection", connectionValue},
 		{"open_requests", open}} {
 		result.Set(kv[0].(string), kv[1])
+	}
+	if cursor != nil {
+		result.Set("replayed", replayed)
 	}
 	return result, nil
 }

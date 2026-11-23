@@ -114,7 +114,7 @@ func minimaxState(expiresIn time.Duration) map[string]any {
 func TestMinimaxRefreshSkipsWhenNotExpiredAndRotatesNearExpiry(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "openai-codex", "providers": map[string]any{"minimax-oauth": minimaxState(time.Hour)}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openai-codex", "providers": map[string]any{"minimax-oauth": minimaxState(time.Hour)}})
 	calls := 0
 	var mu sync.Mutex
 	scriptClient(t, &minimaxHTTPClientFn, func(req *http.Request) (*http.Response, error) {
@@ -127,7 +127,7 @@ func TestMinimaxRefreshSkipsWhenNotExpiredAndRotatesNearExpiry(t *testing.T) {
 	if err != nil || creds["api_key"] != "old" || creds["base_url"] != "https://api.minimax.io/anthropic" || calls != 0 {
 		t.Fatalf("%v %v %d", creds, err, calls)
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "openai-codex", "providers": map[string]any{"minimax-oauth": minimaxState(10 * time.Second)}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openai-codex", "providers": map[string]any{"minimax-oauth": minimaxState(10 * time.Second)}})
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
@@ -151,7 +151,7 @@ func TestMinimaxRefreshSkipsWhenNotExpiredAndRotatesNearExpiry(t *testing.T) {
 func TestMinimaxResolveQuarantinesDeadTokensOnTerminalRefreshFailure(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"minimax-oauth": minimaxState(0)}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"minimax-oauth": minimaxState(0)}})
 	long := `{"error":"invalid_grant","pad":"` + strings.Repeat("x", 20000) + `"}`
 	scriptClient(t, &minimaxHTTPClientFn, func(*http.Request) (*http.Response, error) { return textResponse(400, long), nil })
 	_, err := resolveMinimaxOAuthRuntimeCredentials(env)

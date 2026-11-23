@@ -20,20 +20,28 @@ const CodexQuotaProbeMinInterval = 300 * time.Second
 // SingleUseRefreshPoolProviders rotate a single use refresh token on every refresh
 var SingleUseRefreshPoolProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true}
 
-type tokensSingletonSpec struct {
-	display, short string
-	refresh        func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error)
-	terminal       func(err error) bool
+// Refresh of one provider's OAuth login rows and the failures that end its grant
+type oauthRefreshSpec struct {
+	short    string
+	refresh  func(ctx context.Context, entry PooledCredential, timeout time.Duration) (map[string]any, error)
+	terminal func(err error) bool
 }
 
-// Providers whose OAuth singleton lives under providers.<id>.tokens in auth.json
-var tokensSingletonProviders = map[string]tokensSingletonSpec{
-	"openai-codex": {display: "Codex", short: "Codex", refresh: refreshCodexOAuthPure, terminal: isTerminalCodexOAuthRefreshError},
-	"xai-oauth":    {display: "xAI OAuth", short: "xAI", refresh: refreshXAIOAuthPure, terminal: isTerminalXAIOAuthRefreshError},
+// Providers whose OAuth login rows the pool refreshes through a token POST of their own
+var oauthRefreshProviders = map[string]oauthRefreshSpec{
+	"openai-codex": {short: "Codex", terminal: isTerminalCodexOAuthRefreshError,
+		refresh: func(ctx context.Context, e PooledCredential, timeout time.Duration) (map[string]any, error) {
+			return refreshCodexOAuthPure(ctx, e.AccessToken, e.RefreshToken, timeout)
+		}},
+	"xai-oauth": {short: "xAI", terminal: isTerminalXAIOAuthRefreshError,
+		refresh: func(ctx context.Context, e PooledCredential, timeout time.Duration) (map[string]any, error) {
+			return refreshXAIOAuthPure(ctx, e.AccessToken, e.RefreshToken, timeout)
+		}},
+	"minimax-oauth": {short: "MiniMax", terminal: isTerminalMinimaxOAuthRefreshError, refresh: refreshMinimaxLogin},
 }
 
 // RefreshableOAuthProviders are the built in providers whose pooled OAuth rows the pool can refresh
-var RefreshableOAuthProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true}
+var RefreshableOAuthProviders = map[string]bool{"anthropic": true, "openai-codex": true, "xai-oauth": true, "minimax-oauth": true}
 
 var singleUseRefreshProviders = map[string]bool{"openai-codex": true, "xai-oauth": true, "anthropic": true}
 
@@ -42,8 +50,8 @@ const refreshSweepSpacing = 500 * time.Millisecond
 
 var refreshTimeoutEnvVars = map[string]string{"openai-codex": "ICEBATH_CODEX_REFRESH_TIMEOUT_SECONDS", "xai-oauth": "ICEBATH_XAI_REFRESH_TIMEOUT_SECONDS"}
 
-// Singleton seeded source whose exhausted or DEAD row a re-auth in another process may revive
-var resyncSource = map[string]string{"anthropic": "claude_code", "openai-codex": "device_code", "xai-oauth": "device_code"}
+// Linked source whose exhausted or DEAD row a re-auth in the tool that owns it may revive
+var resyncSource = map[string]string{"anthropic": "claude_code"}
 
 // PoolEnv is the per home dependency set a credential pool reads and writes through
 type PoolEnv struct {
@@ -126,6 +134,10 @@ type Pool struct {
 	maxConcurrent           int
 	lastNoEntriesLogAt      time.Time
 	unmatchedRotationStreak int
+	// Login selection a view was narrowed to, nil for a whole pool
+	choice *LoginChoice
+	// Logins an exhausted pinned view falls over to under on_exhausted rotate
+	spare []PooledCredential
 }
 
 // NewPool builds a pool over entries sorted by priority
@@ -136,7 +148,7 @@ func NewPool(env PoolEnv, provider string, entries []PooledCredential) *Pool {
 		sorted[i].scope = env.Scope
 	}
 	return &Pool{provider: provider, env: env, entries: sorted, borrowedRootIDs: map[string]bool{},
-		persistedTokenPairs: map[string]TokenPair{}, strategy: GetPoolStrategy(env.config(), provider),
+		persistedTokenPairs: map[string]TokenPair{}, strategy: GetPoolStrategy(env.loginCtx(), provider),
 		activeLeases: map[string]int{}, maxConcurrent: DefaultMaxConcurrentPerCredential}
 }
 
@@ -325,6 +337,7 @@ func (p *Pool) persist(held bool, removedIDs, statusClearedIDs []string) {
 	}
 	rows := entryIDs(written)
 	p.persistedTokenPairs = TokenPairsByID(written)
+	p.dropUnwritten(rows)
 	for _, e := range p.entries {
 		row, present := rows[e.ID]
 		pair, has := p.persistedTokenPairs[e.ID]
@@ -474,124 +487,6 @@ func (p *Pool) syncEntryFromPoolStore(entry PooledCredential, held bool) PooledC
 	return entry
 }
 
-// Syncs a Codex or xAI device_code entry from the auth.json tokens singleton
-func (p *Pool) syncEntryFromAuthStore(entry PooledCredential, held bool) PooledCredential {
-	spec, ok := tokensSingletonProviders[p.provider]
-	if !ok {
-		return entry
-	}
-	isCodex := p.provider == "openai-codex"
-	if entry.Source != "device_code" && !(isCodex && entry.Source == SourceManualDeviceCode) {
-		return entry
-	}
-	state, err := p.lockedProviderState(p.provider)
-	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to sync %s entry from auth.json: %v", spec.display, err))
-		return entry
-	}
-	tokens, ok := state["tokens"].(map[string]any)
-	if !ok {
-		return entry
-	}
-	if isCodex && !codexEntryTracksSingleton(entry, tokens) {
-		return entry
-	}
-	storeAccess, storeRefresh := anyString(tokens["access_token"]), anyString(tokens["refresh_token"])
-	shouldAdopt := storeAccess != "" && (storeAccess != entry.AccessToken || (storeRefresh != "" && storeRefresh != entry.RefreshToken))
-	if !shouldAdopt && isCodex && storeRefresh != "" && storeRefresh != entry.RefreshToken && storeAccess == "" {
-		p.env.log().Info(fmt.Sprintf("Pool entry %s: auth.json has newer refresh_token but no access_token; adopting refresh_token to avoid replaying consumed token", entry.ID))
-		shouldAdopt = true
-	}
-	if shouldAdopt && singletonPredatesEntry(state, entry) {
-		p.env.log().Info(fmt.Sprintf("Pool entry %s: auth.json singleton predates this entry's rotation (last_refresh %v < %s); keeping pool chain to avoid replaying the consumed refresh token", entry.ID, state["last_refresh"], entry.LastRefresh))
-		shouldAdopt = false
-	}
-	if !shouldAdopt {
-		return entry
-	}
-	p.env.log().Debug(fmt.Sprintf("Pool entry %s: syncing %s tokens from auth.json (refreshed by another process)", entry.ID, spec.display))
-	u := entry.Clone().ClearStatus()
-	if storeAccess != "" {
-		u.AccessToken = storeAccess
-	}
-	if storeRefresh != "" {
-		u.RefreshToken = storeRefresh
-	}
-	if lr := anyString(state["last_refresh"]); lr != "" {
-		u.LastRefresh = lr
-	}
-	return p.adopt(u, held, true)
-}
-
-// Provider state read under the auth store lock
-func (p *Pool) lockedProviderState(provider string) (map[string]any, error) {
-	unlock, err := p.env.Store.Lock(AuthLockTimeout)
-	if err != nil {
-		return nil, err
-	}
-	defer unlock()
-	data, err := p.env.Store.Load()
-	if err != nil {
-		return nil, err
-	}
-	return p.env.Store.ProviderState(data, provider), nil
-}
-
-// Writes refreshed device_code tokens back to the provider's auth.json state, root only when the grant came from root
-func (p *Pool) syncDeviceCodeEntryToAuthStore(entry PooledCredential) {
-	_, tokensProvider := tokensSingletonProviders[p.provider]
-	if entry.Source != "device_code" || !tokensProvider {
-		return
-	}
-	err := func() error {
-		unlock, err := p.env.Store.Lock(AuthLockTimeout)
-		if err != nil {
-			return err
-		}
-		defer unlock()
-		data, err := p.env.Store.Load()
-		if err != nil {
-			return err
-		}
-		state, sourcePath := p.env.Store.ProviderStateWithSource(data, p.provider)
-		if state == nil {
-			return nil
-		}
-		globalRoot := p.env.Store.globalPath
-		fromRoot := sourcePath != "" && globalRoot != "" && samePath(sourcePath, globalRoot)
-		if !p.applyEntryToSingletonState(entry, state) {
-			return nil
-		}
-		if fromRoot {
-			writeThroughProviderStateToGlobalRoot(p.env, p.provider, state)
-			return nil
-		}
-		if err := p.env.Store.StoreProviderState(data, p.provider, state, false); err != nil {
-			return err
-		}
-		return p.env.Store.Save(data)
-	}()
-	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to sync %s pool entry back to auth store: %v", p.provider, err))
-	}
-}
-
-// Copies the entry tokens into the provider's auth.json state in place
-func (p *Pool) applyEntryToSingletonState(entry PooledCredential, state map[string]any) bool {
-	tokens, ok := state["tokens"].(map[string]any)
-	if !ok {
-		return false
-	}
-	tokens["access_token"] = entry.AccessToken
-	if entry.RefreshToken != "" {
-		tokens["refresh_token"] = entry.RefreshToken
-	}
-	if entry.LastRefresh != "" {
-		state["last_refresh"] = entry.LastRefresh
-	}
-	return true
-}
-
 // ---- refresh ----
 
 type refreshDone struct {
@@ -618,13 +513,6 @@ func (p *Pool) refreshEntry(entry PooledCredential, force bool, failedKey string
 		return p.recoverFailedRefresh(entry, err, held)
 	}
 	defer unlock()
-	if p.provider == "openai-codex" {
-		synced := p.syncEntryFromAuthStore(entry, held)
-		if !sameTokens(synced, entry) && !force && !p.entryNeedsRefresh(synced) {
-			return synced, true
-		}
-		return p.refreshEntryImpl(synced, force, "", held)
-	}
 	synced := p.syncEntryFromPoolStore(entry, held)
 	if p.provider == "anthropic" && synced.Source == "claude_code" {
 		unlockFile, err := p.env.Store.fileLock(ClaudeCodeCredentialsPath(), p.singleUseRefreshLockTimeout())
@@ -679,38 +567,17 @@ func (p *Pool) refreshTimeout() time.Duration {
 	return time.Duration(envFloat(envVar, 20) * float64(time.Second))
 }
 
-// Writes a rotated Anthropic pair to its authoritative singleton or fails closed
+// Writes a rotated pair of the linked Claude Code login back to its credentials file or fails closed
 func (p *Pool) commitAnthropicRotation(entry PooledCredential, refreshed map[string]any, held bool) error {
-	var store string
-	switch entry.Source {
-	case "claude_code":
-		store = "~/.claude/.credentials.json"
-	case IcebathPKCESource:
-		store = "~/.icebath/.anthropic_oauth.json"
-	default:
+	if entry.Source != "claude_code" {
 		return nil
 	}
-	access, refresh := anyString(refreshed["access_token"]), anyString(refreshed["refresh_token"])
 	ms, _ := anyFloat(refreshed["expires_at_ms"])
-	var err error
-	if entry.Source == "claude_code" {
-		err = WriteClaudeCodeCredentials(p.env, access, refresh, int64(ms), nil, entry.RefreshToken)
-	} else {
-		err = WriteIcebathOAuthCredentials(p.env, access, refresh, int64(ms), singletonTargetForEntry(p, entry))
-	}
-	if err != nil {
-		p.failClosedUnpersistedRotation(entry, err, store, held)
+	if err := WriteClaudeCodeCredentials(p.env, anyString(refreshed["access_token"]), anyString(refreshed["refresh_token"]), int64(ms), nil, entry.RefreshToken); err != nil {
+		p.failClosedUnpersistedRotation(entry, err, "~/.claude/.credentials.json", held)
 		return refreshDone{}
 	}
 	return nil
-}
-
-// Root .anthropic_oauth.json when the entry is a borrowed row, else empty
-func singletonTargetForEntry(p *Pool, entry PooledCredential) string {
-	if entry.Source != IcebathPKCESource || !p.borrowedRootIDs[entry.ID] {
-		return ""
-	}
-	return RootIcebathOAuthFile(p.env)
 }
 
 // POSTs the Anthropic refresh, commits to the singleton and returns the rotated unpersisted entry
@@ -739,10 +606,9 @@ func (p *Pool) refreshAnthropic(entry PooledCredential, held bool) (PooledCreden
 	return u, nil
 }
 
-// Codex and xAI refresh POST returning the rotated unpersisted entry
+// Token POST of an OAuth login row returning the rotated unpersisted entry
 func (p *Pool) postTokensRefresh(entry PooledCredential) (PooledCredential, error) {
-	spec := tokensSingletonProviders[p.provider]
-	refreshed, err := spec.refresh(p.env.ctx(), entry.AccessToken, entry.RefreshToken, p.refreshTimeout())
+	refreshed, err := oauthRefreshProviders[p.provider].refresh(p.env.ctx(), entry, p.refreshTimeout())
 	if err != nil {
 		return PooledCredential{}, err
 	}
@@ -750,6 +616,9 @@ func (p *Pool) postTokensRefresh(entry PooledCredential) (PooledCredential, erro
 	u.AccessToken = anyString(refreshed["access_token"])
 	u.RefreshToken = anyString(refreshed["refresh_token"])
 	u.LastRefresh = anyString(refreshed["last_refresh"])
+	if ms, ok := anyFloat(refreshed["expires_at_ms"]); ok {
+		u.ExpiresAtMS = int64(ms)
+	}
 	return u, nil
 }
 
@@ -759,8 +628,7 @@ func (p *Pool) refreshEntryImpl(entry PooledCredential, force bool, failedKey st
 	switch {
 	case p.provider == "anthropic":
 		updated, err = p.refreshAnthropic(entry, held)
-	case tokensSingletonProviders[p.provider].refresh != nil:
-		entry = p.syncEntryFromAuthStore(entry, held)
+	case oauthRefreshProviders[p.provider].refresh != nil:
 		updated, err = p.postTokensRefresh(entry)
 	case pluginRefreshHook(p.env.ctx(), p.provider) != nil:
 		var rotated map[string]any
@@ -785,7 +653,6 @@ func (p *Pool) refreshEntryImpl(entry PooledCredential, force bool, failedKey st
 	updated = updated.MarkOK()
 	p.replaceEntry(updated, held)
 	p.persist(held, nil, []string{updated.ID})
-	p.syncDeviceCodeEntryToAuthStore(updated)
 	return updated, true
 }
 
@@ -833,17 +700,15 @@ func (p *Pool) recoverFailedRefresh(entry PooledCredential, cause error, held bo
 			p.markDeadRefreshGrant(entry, cause, held)
 			return PooledCredential{}, false
 		}
-	case tokensSingletonProviders[p.provider].refresh != nil:
-		spec := tokensSingletonProviders[p.provider]
-		synced := p.syncEntryFromAuthStore(entry, held)
+	case oauthRefreshProviders[p.provider].refresh != nil:
+		spec := oauthRefreshProviders[p.provider]
+		synced := p.syncEntryFromPoolStore(entry, held)
 		if synced.RefreshToken != entry.RefreshToken {
-			log.Debug(fmt.Sprintf("%s OAuth refresh failed but auth.json has newer tokens — adopting", spec.short))
+			log.Debug(fmt.Sprintf("%s OAuth refresh failed but auth.json has newer tokens for the login — adopting", spec.short))
 			return p.adopt(synced.MarkOK(), held, true), true
 		}
 		if spec.terminal(cause) {
-			log.Warn(fmt.Sprintf("%s OAuth refresh token is terminally invalid (%v); clearing local token state. Re-run 'icebath auth add %s' to sign in again.", spec.short, cause, p.provider))
-			p.clearTerminalTokensState(entry, cause)
-			p.quarantineSources(entry, map[string]bool{"device_code": true}, held)
+			log.Warn(fmt.Sprintf("%s OAuth refresh token of %s is terminally invalid (%v); the login leaves rotation. Re-run 'icebath auth add %s' to sign in again.", spec.short, entryLabel(entry), cause, p.provider))
 			p.markDeadRefreshGrant(entry, cause, held)
 			return PooledCredential{}, false
 		}
@@ -891,50 +756,6 @@ func (p *Pool) markDeadRefreshGrant(entry PooledCredential, cause error, held bo
 	p.adopt(u, true, true)
 }
 
-// Drops the dead Codex or xAI token pair from auth.json unless a peer already rotated it
-func (p *Pool) clearTerminalTokensState(entry PooledCredential, cause error) {
-	spec := tokensSingletonProviders[p.provider]
-	err := func() error {
-		unlock, err := p.env.Store.Lock(AuthLockTimeout)
-		if err != nil {
-			return err
-		}
-		defer unlock()
-		data, err := p.env.Store.Load()
-		if err != nil {
-			return err
-		}
-		state := p.env.Store.ProviderState(data, p.provider)
-		if state == nil {
-			state = map[string]any{}
-		}
-		tokens, ok := state["tokens"].(map[string]any)
-		if !ok {
-			return nil
-		}
-		storeRefresh := strings.TrimSpace(anyString(tokens["refresh_token"]))
-		if storeRefresh != "" && storeRefresh != strings.TrimSpace(entry.RefreshToken) {
-			return nil
-		}
-		delete(tokens, "access_token")
-		delete(tokens, "refresh_token")
-		state["tokens"] = tokens
-		code := authErrorCode(cause)
-		if code == "" {
-			code = "unknown"
-		}
-		state["last_auth_error"] = map[string]any{"provider": p.provider, "code": code, "message": cause.Error(),
-			"reason": "credential_pool_refresh_failure", "relogin_required": true, "at": utcNowISO()}
-		if err := p.env.Store.StoreProviderState(data, p.provider, state, true); err != nil {
-			return err
-		}
-		return p.env.Store.Save(data)
-	}()
-	if err != nil {
-		p.env.log().Debug(fmt.Sprintf("Failed to clear terminal %s OAuth state: %v", spec.short, err))
-	}
-}
-
 // True when persisted pool entry error metadata describes a 429 or quota stop
 func isCodexRateLimitShaped(code int, reason, message string) bool {
 	reasonL, messageL := strings.ToLower(reason), strings.ToLower(message)
@@ -974,7 +795,6 @@ func (p *Pool) codexQuotaRestoredUpstream(entry PooledCredential, held bool) boo
 			u.LastRefresh = lr
 		}
 		entry = p.adopt(u, held, true)
-		p.syncDeviceCodeEntryToAuthStore(entry)
 		if entry.AccessToken != "" {
 			token = entry.AccessToken
 		}
@@ -995,6 +815,8 @@ func (p *Pool) entryNeedsRefresh(entry PooledCredential) bool {
 		return codexAccessTokenIsExpiring(entry.AccessToken, CodexAccessTokenRefreshSkew)
 	case "xai-oauth":
 		return xaiAccessTokenIsExpiring(entry.AccessToken, xaiProactiveRefreshSkew(entry.AccessToken))
+	case "minimax-oauth":
+		return entry.ExpiresAtMS != 0 && entry.ExpiresAtMS <= nowFunc().Add(MinimaxOAuthRefreshSkew).UnixMilli()
 	}
 	return false
 }

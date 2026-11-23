@@ -14,15 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-var toolsRollbackRegistry = &handlerRegistry{}
-
-func init() {
-	guardedRPC(toolsRollbackRegistry, "rollback.list", 5020, rpcShape{liveSession: true}, rollbackList)
-	guardedRPC(toolsRollbackRegistry, "rollback.restore", 5021, rpcShape{liveSession: true}, rollbackRestore)
-	guardedRPC(toolsRollbackRegistry, "rollback.diff", 5022, rpcShape{liveSession: true}, rollbackDiff)
-	toolsRollbackRegistry.install()
-}
-
 // Checkpoints of the session working directory with their reason as the message
 func rollbackList(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error) {
 	return withCheckpoints(ctx, session, func(mgr *tools.CheckpointManager, cwd string) map[string]any {

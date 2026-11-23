@@ -129,8 +129,3 @@ func terminalCwd(ctx context.Context) (string, error) {
 	}
 	return terminalScopeCwd(ctx, userHome)
 }
-
-// Gateway config.yaml path and the platform key of the event's per platform display settings
-func displayConfigTarget(ctx context.Context, event *gateway.MessageEvent) (string, string) {
-	return filepath.Join(home.Dir(ctx), "config.yaml"), platformConfigKey(event.Source.Platform)
-}

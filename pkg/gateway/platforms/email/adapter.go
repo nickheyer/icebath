@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -778,16 +779,14 @@ func (a *EmailAdapter) parseFetchedMessage(ctx context.Context, uid string, rawE
 
 // Whether the operator opted into any sender through the scoped allow all settings
 func allowAllSenders(ctx context.Context) (bool, error) {
-	for _, name := range []string{"EMAIL_ALLOW_ALL_USERS", "GATEWAY_ALLOW_ALL_USERS"} {
-		value, err := secret(ctx, name)
-		if err != nil {
-			return false, err
-		}
-		if truthyValues[pystr.Lower(pystr.Strip(value))] {
-			return true, nil
-		}
+	if settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx)) {
+		return true, nil
 	}
-	return false, nil
+	value, err := secret(ctx, "EMAIL_ALLOW_ALL_USERS")
+	if err != nil {
+		return false, err
+	}
+	return truthyValues[pystr.Lower(pystr.Strip(value))], nil
 }
 
 // Whether the config answers unknown senders with a pairing code or a decline

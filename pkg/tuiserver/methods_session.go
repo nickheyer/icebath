@@ -21,16 +21,7 @@ import (
 var sessionRegistry = &handlerRegistry{}
 
 func init() {
-	sessionRegistry.method("session.create", func(ctx context.Context, rid any, params map[string]any) map[string]any {
-		return createSession(ctx, rid, params, false)
-	})
-	registerSessionBranchHandlers()
 	registerSessionListHandlers()
-	registerSessionResumeHandlers()
-	registerSessionWorkspaceHandlers()
-	registerSessionMetaHandlers()
-	registerSessionUsageHandlers()
-	registerSessionRuntimeHandlers()
 	sessionRegistry.install()
 }
 
@@ -44,7 +35,7 @@ func withSession(fn sessionHandler) Handler {
 		if errResp != nil {
 			return errResp
 		}
-		return fn(ctx, rid, params, session)
+		return fn(sessionSettings(ctx, strOr(params["session_id"])), rid, params, session)
 	}
 }
 
@@ -55,7 +46,7 @@ func withLiveSession(fn sessionHandler) Handler {
 		if errResp != nil {
 			return errResp
 		}
-		return fn(ctx, rid, params, session)
+		return fn(sessionSettings(ctx, strOr(params["session_id"])), rid, params, session)
 	}
 }
 
@@ -479,9 +470,9 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 		"parent_session_id": parentValue, "pending_title": pendingTitle,
 		"pending_hidden": flagParam(params, "hidden"), "room_plumbing": flagParam(params, "room_plumbing"),
 		"follow_profile_config": flagParam(params, "follow_profile_config"), "profile_home": profileValue,
-		"running": false, "session_key": key, "show_reasoning": loadShowReasoning(ctx), "source": source,
-		"tool_progress_mode": loadToolProgressMode(ctx), "tool_started_at": map[string]any{},
+		"running": false, "session_key": key, "source": source, "tool_started_at": map[string]any{},
 		"transport": callerTransport(ctx), "auth_user_id": authUserID})
+	rememberCreateLogin(ctx, record, params)
 	func() {
 		sessionsLock.Lock()
 		defer sessionsLock.Unlock()
@@ -491,6 +482,9 @@ func createSession(ctx context.Context, rid any, params map[string]any, copyPare
 			idempotencyKeys[idemKey] = idempotencyEntry{sid: sid, at: now}
 		}
 	}()
+	if err := applyLaunchToolProgress(ctx, sid); err != nil {
+		return rpcErr(rid, 4002, err.Error(), nil)
+	}
 	if len(modelOverride) > 0 {
 		providerName := strOr(modelOverride["provider"])
 		if !truthy(modelOverride["provider"]) {

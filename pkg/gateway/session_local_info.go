@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	"github.com/nickheyer/icebath/pkg/tuigateway"
 )
 
 // Route and effort a built agent reports as its session's own, mid voice turn included
@@ -228,6 +229,16 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 		}
 	}
 	mergeObject(info, classicCLIFields(ctx, a, ref, live, agent, policy))
+	activeID := ""
+	if reporting, ok := agent.(loginReportingAgent); ok {
+		activeID = reporting.CurrentLoginID()
+	}
+	if poolKey, login := sessionInfoLogin(ctx, a, ref, live, activeID); poolKey != "" {
+		info.Set("pool_key", poolKey)
+		if login != nil {
+			info.Set("login", tuigateway.Plain(*login))
+		}
+	}
 	return info, nil
 }
 

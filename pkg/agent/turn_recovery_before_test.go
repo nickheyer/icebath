@@ -57,7 +57,6 @@ func setASCIILocale(t *testing.T, ascii bool) {
 func quietAgent() (*AIAgent, *[]string) {
 	printed := &[]string{}
 	a := &AIAgent{suppressStatusOutput: false, printFn: func(s string) { *printed = append(*printed, s) }}
-	a.notificationConfig = map[string]any{}
 	return a, printed
 }
 

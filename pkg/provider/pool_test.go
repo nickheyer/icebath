@@ -13,7 +13,7 @@ func authWithPool(provider string, rows ...map[string]any) map[string]any {
 	for _, r := range rows {
 		list = append(list, r)
 	}
-	return map[string]any{"version": 1, "credential_pool": map[string]any{provider: list}}
+	return map[string]any{"version": 2, "credential_pool": map[string]any{provider: list}}
 }
 
 func TestExplicitResetTimestampOverridesDefault429TTL(t *testing.T) {
@@ -182,7 +182,7 @@ func TestDeadManualEntryPrunedAfter24h(t *testing.T) {
 func TestLoadPoolSeedsEnvAPIKey(t *testing.T) {
 	h := newTestHome(t)
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-seeded")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	entry := mustSelect(t, LoadPool(testEnv(t, h), "openrouter"), "")
 	if entry.Source != "env:OPENROUTER_API_KEY" || entry.AccessToken != "sk-or-seeded" {
 		t.Fatalf("env key not seeded: %+v", entry)
@@ -193,7 +193,7 @@ func TestLoadPoolDoesNotPersistEnvSeededSecretValue(t *testing.T) {
 	h := newTestHome(t)
 	sentinel := "S3NTINEL_DO_NOT_PERSIST_OPENROUTER"
 	t.Setenv("OPENROUTER_API_KEY", sentinel)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	entry := mustSelect(t, LoadPool(testEnv(t, h), "openrouter"), "")
 	if entry.Source != "env:OPENROUTER_API_KEY" || entry.AccessToken != sentinel {
 		t.Fatalf("unexpected entry %+v", entry)
@@ -255,7 +255,7 @@ func TestLoadPoolPersistsBitwardenOriginMetadataWithoutSecret(t *testing.T) {
 		delete(secretSourceOfVar, "OPENROUTER_API_KEY")
 		secretSourceCacheMu.Unlock()
 	})
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	entry := mustSelect(t, LoadPool(testEnv(t, h), "openrouter"), "")
 	if entry.AccessToken != sentinel || entry.Source != "env:OPENROUTER_API_KEY" {
 		t.Fatalf("unexpected entry %+v", entry)
@@ -404,7 +404,7 @@ func TestLoadPoolPrefersDotenvOverStaleOSEnviron(t *testing.T) {
 	h := newTestHome(t)
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-STALE-from-shell")
 	writeEnvFile(t, h, "OPENROUTER_API_KEY=sk-or-FRESH-from-dotenv\n")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	entry := mustSelect(t, LoadPool(testEnv(t, h), "openrouter"), "")
 	if entry.Source != "env:OPENROUTER_API_KEY" || entry.AccessToken != "sk-or-FRESH-from-dotenv" {
 		t.Fatalf("the .env key must win, got %q", entry.AccessToken)
@@ -415,51 +415,16 @@ func TestLoadPoolFallsBackToOSEnvironWhenDotenvEmpty(t *testing.T) {
 	h := newTestHome(t)
 	t.Setenv("OPENROUTER_API_KEY", "sk-or-from-runtime-env")
 	writeEnvFile(t, h, "SOME_OTHER_VAR=unrelated\n")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	if entry := mustSelect(t, LoadPool(testEnv(t, h), "openrouter"), ""); entry.AccessToken != "sk-or-from-runtime-env" {
 		t.Fatalf("runtime env key expected, got %q", entry.AccessToken)
-	}
-}
-
-func TestLoadPoolAPIKeyPathSkipsOAuthAutodiscovery(t *testing.T) {
-	h := newTestHome(t)
-	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-explicit-user-key")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
-	writeClaudeCodeCredentials(t, "sk-ant-oat01-claude-code-token", "cc-refresh", time.Now().UnixMilli()+3_600_000)
-	env := testEnv(t, h)
-	if err := WriteIcebathOAuthCredentials(env, "sk-ant-oat01-pkce-token", "pkce-refresh", time.Now().UnixMilli()+3_600_000, ""); err != nil {
-		t.Fatal(err)
-	}
-	pool := LoadPool(env, "anthropic")
-	sources := map[string]bool{}
-	for _, e := range pool.Entries() {
-		sources[e.Source] = true
-	}
-	if len(sources) != 1 || !sources["env:ANTHROPIC_API_KEY"] {
-		t.Fatalf("only the explicit API key may be pooled: %v", sources)
-	}
-}
-
-func TestLoadPoolAPIKeyPathPrunesStaleOAuthEntries(t *testing.T) {
-	h := newTestHome(t)
-	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-explicit-user-key")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{"anthropic": []any{
-		row(map[string]any{"id": "stale1", "source": "claude_code", "auth_type": "oauth", "access_token": "sk-ant-oat01-stale-claude-code", "refresh_token": "stale-refresh",
-			"expires_at_ms": time.Now().UnixMilli() + 3_600_000, "priority": 0, "label": "stale-claude-code", "request_count": 0})}}})
-	pool := LoadPool(testEnv(t, h), "anthropic")
-	sources := map[string]bool{}
-	for _, e := range pool.Entries() {
-		sources[e.Source] = true
-	}
-	if sources["claude_code"] || !sources["env:ANTHROPIC_API_KEY"] {
-		t.Fatalf("stale claude_code must be pruned and the key kept: %v", sources)
 	}
 }
 
 func TestLoadPoolOAuthPathStillAutodiscovers(t *testing.T) {
 	h := newTestHome(t)
 	t.Setenv("ANTHROPIC_TOKEN", "sk-ant-oat01-explicit-oauth-token")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	writeClaudeCodeCredentials(t, "sk-ant-oat01-autodiscovered-cc", "cc-refresh", time.Now().UnixMilli()+3_600_000)
 	pool := LoadPool(testEnv(t, h), "anthropic")
 	sources := map[string]bool{}
@@ -486,7 +451,7 @@ func TestLeastUsedStrategySelectsLowestCount(t *testing.T) {
 
 func TestCustomEndpointPoolSeedsFromConfig(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1})
+	writeAuthStore(t, h, map[string]any{"version": 2})
 	writeConfigYAML(t, h, "custom_providers:\n  - name: Together.ai\n    base_url: https://api.together.ai/v1\n    api_key: sk-config-seeded\n")
 	pool := LoadPool(testEnv(t, h), "custom:together.ai")
 	entries := pool.Entries()
@@ -497,7 +462,7 @@ func TestCustomEndpointPoolSeedsFromConfig(t *testing.T) {
 
 func TestCustomEndpointPoolSeedsFromModelConfig(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1})
+	writeAuthStore(t, h, map[string]any{"version": 2})
 	writeConfigYAML(t, h, "custom_providers:\n  - name: Together.ai\n    base_url: https://api.together.ai/v1\nmodel:\n  provider: custom\n  base_url: https://api.together.ai/v1\n  api_key: sk-model-key\n")
 	pool := LoadPool(testEnv(t, h), "custom:together.ai")
 	var modelEntries []PooledCredential
@@ -513,7 +478,7 @@ func TestCustomEndpointPoolSeedsFromModelConfig(t *testing.T) {
 
 func TestLoadPoolDoesNotSeedClaudeCodeWhenAnthropicNotConfigured(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{}})
 	writeClaudeCodeCredentials(t, "sk-ant...oken", "rt", 9999999999999)
 	if entries := LoadPool(testEnv(t, h), "anthropic").Entries(); len(entries) != 0 {
 		t.Fatalf("claude_code must not be seeded without explicit anthropic config: %+v", entries)
@@ -522,7 +487,7 @@ func TestLoadPoolDoesNotSeedClaudeCodeWhenAnthropicNotConfigured(t *testing.T) {
 
 func TestLoadPoolSeedsQwenOAuthViaCLITokens(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{}})
 	prev := qwenCredentialsForSeed
 	qwenCredentialsForSeed = func(env PoolEnv, refresh bool) (map[string]any, error) {
 		return map[string]any{"provider": "qwen-oauth", "base_url": "https://portal.qwen.ai/v1", "api_key": "qwen_fake_token_xyz", "source": "qwen-cli",
@@ -538,7 +503,7 @@ func TestLoadPoolSeedsQwenOAuthViaCLITokens(t *testing.T) {
 
 func TestLoadPoolDoesNotSeedQwenOAuthWhenNoToken(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{}})
 	prev := qwenCredentialsForSeed
 	qwenCredentialsForSeed = func(env PoolEnv, refresh bool) (map[string]any, error) {
 		return nil, &AuthError{Message: "Qwen CLI credentials not found.", Provider: "qwen-oauth", Code: "qwen_auth_missing"}
@@ -585,7 +550,7 @@ func TestPersistPreservesConcurrentDiskOnlyEntry(t *testing.T) {
 
 func makeAnthropicClaudeCodePool(t *testing.T, h, access, refresh string, expiresAtMS int64) (*Pool, PooledCredential) {
 	t.Helper()
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "credential_pool": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic", "credential_pool": map[string]any{}})
 	writeClaudeCodeCredentials(t, access, refresh, expiresAtMS)
 	pool := LoadPool(testEnv(t, h), "anthropic")
 	entry := mustSelect(t, pool, "")
@@ -1279,21 +1244,21 @@ func writeCodexStore(t *testing.T, h string, singletonTokens map[string]any, las
 	for k, v := range manual {
 		manualRow[k] = v
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "openai-codex",
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openai-codex",
 		"providers":       map[string]any{"openai-codex": map[string]any{"tokens": singletonTokens, "last_refresh": lastRefresh, "auth_mode": "chatgpt"}},
 		"credential_pool": map[string]any{"openai-codex": []any{seeded, manualRow}}})
 }
 
 func scriptCodexRefresh(t *testing.T, minted, mintedRT string, posted *[]string) {
 	t.Helper()
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
+	spec.refresh = pairRefresh(func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		*posted = append(*posted, refreshToken)
 		return map[string]any{"access_token": minted, "refresh_token": mintedRT, "last_refresh": isoAt(nowEpoch())}, nil
-	}
-	tokensSingletonProviders["openai-codex"] = spec
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	})
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 }
 
 func TestIndependentManualAccountRefreshesWithItsOwnPair(t *testing.T) {
@@ -1325,27 +1290,6 @@ func TestIndependentManualAccountRefreshesWithItsOwnPair(t *testing.T) {
 	}
 }
 
-func TestSameAccountAliasAdoptsOnlyANewerSingleton(t *testing.T) {
-	h := newTestHome(t)
-	now := nowEpoch()
-	aliasAT := codexPoolJWT("acct-A", "user-A", now+8*3600)
-	staleSingleton := codexPoolJWT("acct-A", "user-A", now+3600)
-	writeCodexStore(t, h, map[string]any{"access_token": staleSingleton, "refresh_token": "rt-consumed"}, isoAt(now-7200), map[string]any{"access_token": aliasAT, "refresh_token": "rt-alias", "last_refresh": isoAt(now - 60)})
-	env := testEnv(t, h)
-	pool := LoadPool(env, "openai-codex")
-	alias, _ := entryByID(pool, "manual")
-	synced := pool.syncEntryFromAuthStore(alias, false)
-	if synced.AccessToken != aliasAT || synced.RefreshToken != "rt-alias" {
-		t.Fatalf("an older singleton must not be adopted: %+v", synced)
-	}
-	freshAT := codexPoolJWT("acct-A", "user-A", now+9*3600)
-	writeCodexStore(t, h, map[string]any{"access_token": freshAT, "refresh_token": "rt-fresh"}, isoAt(now+5), map[string]any{"access_token": aliasAT, "refresh_token": "rt-alias", "last_refresh": isoAt(now - 60)})
-	synced = LoadPool(env, "openai-codex").syncEntryFromAuthStore(alias, false)
-	if synced.AccessToken != freshAT || synced.RefreshToken != "rt-fresh" {
-		t.Fatalf("a newer re-auth must be followed: %+v", synced)
-	}
-}
-
 // ---- test_credential_pool_sole_rotate_recovery.py ----
 
 func codexDeviceEntry(idx int, token, refresh string) map[string]any {
@@ -1354,13 +1298,59 @@ func codexDeviceEntry(idx int, token, refresh string) map[string]any {
 
 func TestRevivedSoleEntryIsNoRecovery(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"openai-codex": []any{codexDeviceEntry(1, "tok-a", "rf-a")}},
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"openai-codex": []any{codexDeviceEntry(1, "tok-a", "rf-a")}},
 		"providers": map[string]any{"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "tok-a", "refresh_token": "rf-a"}}}})
 	pool := LoadPool(testEnv(t, h), "openai-codex")
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"openai-codex": []any{codexDeviceEntry(1, "tok-a", "rf-a")}},
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"openai-codex": []any{codexDeviceEntry(1, "tok-a", "rf-a")}},
 		"providers": map[string]any{"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "tok-a-adopted", "refresh_token": "rf-a-adopted"}}}})
 	if _, ok := pool.MarkExhaustedAndRotate(RotationRequest{StatusCode: 429, ErrorContext: map[string]any{"reason": "usage_limit_reached", "reset_at": nowEpoch() + 95.5*3600}, CredentialID: "codex-1"}); ok {
 		t.Fatal("a rotation that hands back the just marked entry is no recovery")
+	}
+}
+
+func TestActiveLeasesCopiesTheLiveCounts(t *testing.T) {
+	pool := NewPool(testEnv(t, t.TempDir()), "openai", []PooledCredential{
+		{Provider: "openai", ID: "a", Label: "a", AuthType: "api_key", Priority: 0, Source: "env:A", AccessToken: "key-a"},
+		{Provider: "openai", ID: "b", Label: "b", AuthType: "api_key", Priority: 0, Source: "env:B", AccessToken: "key-b"},
+	})
+	if _, ok := pool.AcquireLease("a"); !ok {
+		t.Fatal("lease refused")
+	}
+	if _, ok := pool.AcquireLease("a"); !ok {
+		t.Fatal("second lease refused")
+	}
+	counts := pool.ActiveLeases()
+	counts["b"] = 9
+	if live := pool.ActiveLeases(); live["a"] != 2 || live["b"] != 0 || len(live) != 1 {
+		t.Fatalf("live leases %v", live)
+	}
+	pool.ReleaseLease("a")
+	pool.ReleaseLease("a")
+	if live := pool.ActiveLeases(); len(live) != 0 {
+		t.Fatalf("leases after release %v", live)
+	}
+}
+
+// Entry based pool refresh of a test's token pair refresh function
+func pairRefresh(fn func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error)) func(context.Context, PooledCredential, time.Duration) (map[string]any, error) {
+	return func(ctx context.Context, e PooledCredential, timeout time.Duration) (map[string]any, error) {
+		return fn(ctx, e.AccessToken, e.RefreshToken, timeout)
+	}
+}
+
+func TestLoadPoolAPIKeyPathPrunesStaleOAuthEntries(t *testing.T) {
+	h := newTestHome(t)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-explicit-user-key")
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{"anthropic": []any{
+		row(map[string]any{"id": "stale1", "source": "claude_code", "auth_type": "oauth", "access_token": "sk-ant-oat01-stale-claude-code", "refresh_token": "stale-refresh",
+			"expires_at_ms": time.Now().UnixMilli() + 3_600_000, "priority": 0, "label": "stale-claude-code", "request_count": 0})}}})
+	pool := LoadPool(testEnv(t, h), "anthropic")
+	sources := map[string]bool{}
+	for _, e := range pool.Entries() {
+		sources[e.Source] = true
+	}
+	if sources["claude_code"] || !sources["env:ANTHROPIC_API_KEY"] {
+		t.Fatalf("stale claude_code must be pruned and the key kept: %v", sources)
 	}
 }
 
@@ -1387,25 +1377,18 @@ func TestSetPoolClockSwapsAndRestoresTheWallClock(t *testing.T) {
 	}
 }
 
-func TestActiveLeasesCopiesTheLiveCounts(t *testing.T) {
-	pool := NewPool(testEnv(t, t.TempDir()), "openai", []PooledCredential{
-		{Provider: "openai", ID: "a", Label: "a", AuthType: "api_key", Priority: 0, Source: "env:A", AccessToken: "key-a"},
-		{Provider: "openai", ID: "b", Label: "b", AuthType: "api_key", Priority: 0, Source: "env:B", AccessToken: "key-b"},
-	})
-	if _, ok := pool.AcquireLease("a"); !ok {
-		t.Fatal("lease refused")
+func TestLoadPoolAPIKeyPathSkipsOAuthAutodiscovery(t *testing.T) {
+	h := newTestHome(t)
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-explicit-user-key")
+	writeAuthStore(t, h, map[string]any{"version": AuthStoreVersion, "providers": map[string]any{}})
+	writeClaudeCodeCredentials(t, "sk-ant-oat01-claude-code-token", "cc-refresh", time.Now().UnixMilli()+3_600_000)
+	env := testEnv(t, h)
+	pool := LoadPool(env, "anthropic")
+	sources := map[string]bool{}
+	for _, e := range pool.Entries() {
+		sources[e.Source] = true
 	}
-	if _, ok := pool.AcquireLease("a"); !ok {
-		t.Fatal("second lease refused")
-	}
-	counts := pool.ActiveLeases()
-	counts["b"] = 9
-	if live := pool.ActiveLeases(); live["a"] != 2 || live["b"] != 0 || len(live) != 1 {
-		t.Fatalf("live leases %v", live)
-	}
-	pool.ReleaseLease("a")
-	pool.ReleaseLease("a")
-	if live := pool.ActiveLeases(); len(live) != 0 {
-		t.Fatalf("leases after release %v", live)
+	if len(sources) != 1 || !sources["env:ANTHROPIC_API_KEY"] {
+		t.Fatalf("only the explicit API key may be pooled: %v", sources)
 	}
 }

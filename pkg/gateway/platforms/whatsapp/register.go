@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // System prompt platform hint, cached prompt bytes kept stable
@@ -71,7 +72,7 @@ func interactiveSetup(ctx context.Context) error {
 	}
 	con.PrintSuccess("WhatsApp enabled")
 	if allowed := con.Prompt("Allowed user IDs (comma-separated, leave empty for no allowlist)", "", false); allowed != "" {
-		if err := config.SaveEnvValue(h, "WHATSAPP_ALLOWED_USERS", strings.ReplaceAll(allowed, " ", "")); err != nil {
+		if _, err := settings.Set(gateway.SettingsContext(ctx), settings.WhatsappAllowFrom.Key, strings.ReplaceAll(allowed, " ", ""), settings.Global); err != nil {
 			return err
 		}
 		con.PrintSuccess("WhatsApp allowlist configured")
@@ -107,7 +108,6 @@ func (whatsappPlugin) Register(ctx *plugins.Context) error {
 			ForwardForceDocument: true, Mentions: true, TextDirect: true},
 		"is_connected":           isConnected,
 		"setup_fn":               interactiveSetup,
-		"apply_yaml_config_fn":   applyYAMLConfig,
 		"cron_deliver_env_var":   "WHATSAPP_HOME_CHANNEL",
 		"standalone_sender_fn":   standaloneSend,
 		"max_message_length":     whatsappMaxMessageLength,

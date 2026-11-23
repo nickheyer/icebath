@@ -53,12 +53,6 @@ type LiveSession struct {
 	CompressionCount int
 	// Context breakdown payload and the inputs it was built from
 	contextBreakdown *contextBreakdownCache
-	// Tool progress mode a viewer set for this session, empty when none was set
-	ToolProgressMode string
-	// Busy input mode a viewer negotiated for this session, empty when none was set
-	BusyInputMode string
-	// Reasoning display a viewer or the reasoning command set for this session, nil when unset
-	ShowReasoning *bool
 	// Control card publish tickets and the revision last painted, guarded by ControlMu
 	ControlMu           sync.Mutex
 	ControlSeq          int

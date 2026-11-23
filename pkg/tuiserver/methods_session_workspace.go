@@ -12,14 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Declares the cwd, workspace and live session bookkeeping methods on the session module registry
-func registerSessionWorkspaceHandlers() {
-	sessionRegistry.method("session.workspace.move", sessionWorkspaceMove)
-	sessionRegistry.method("session.active_list", sessionActiveList)
-	sessionMethod("session.activate", false, sessionActivate)
-	sessionRegistry.method("session.delete", sessionDelete)
-}
-
 // Session info after a cwd change, the full agent view or the lazy shape
 func cwdInfo(ctx context.Context, session *tuihost.Session, cwd string, branch *string) map[string]any {
 	if session.Get("agent") != nil {

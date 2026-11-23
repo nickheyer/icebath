@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,6 +13,14 @@ import (
 )
 
 var _ SystemExitError = (*ConfigBackendUnavailable)(nil)
+
+// Silences the once-per-file parse failure notice for one test
+func quietParseFailures(t *testing.T) {
+	saved := ParseFailureOut
+	ParseFailureOut = io.Discard
+	ResetConfigParseFailures()
+	t.Cleanup(func() { ParseFailureOut = saved; ResetConfigParseFailures() })
+}
 
 // Fresh profile home with no backend selector in the environment
 func backendHome(t *testing.T) string {

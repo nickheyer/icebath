@@ -23,25 +23,26 @@ func TestToTranscriptMessages(t *testing.T) {
 	t.Run("preserves assistant tool-call rows so resume does not drop prior turns", func(t *testing.T) {
 		rows := rowsOf(map[string]any{"role": "user", "text": "first prompt"}, map[string]any{"role": "tool", "context": "repo", "name": "search_files", "text": "ignored raw result"},
 			map[string]any{"role": "assistant", "text": "first answer"}, map[string]any{"role": "user", "text": "second prompt"})
-		got := toTranscriptMessages(rows)
+		got := toTranscriptMessages(rows, newUIState())
 		var pairs [][2]string
 		for _, m := range got {
-			pairs = append(pairs, [2]string{m.Role, m.Text})
+			pairs = append(pairs, [2]string{m.Kind, m.Text})
 		}
-		if !reflect.DeepEqual(pairs, [][2]string{{"user", "first prompt"}, {"assistant", "first answer"}, {"user", "second prompt"}}) || !strings.Contains(got[1].Tools[0], "Search Files") {
+		want := [][2]string{{"", "first prompt"}, {"trail", ""}, {"", "first answer"}, {"event", "⋯ 0.0s · searched 1 path"}, {"", "second prompt"}}
+		if !reflect.DeepEqual(pairs, want) || !strings.Contains(got[1].Tools[0].Call, `Search Files("repo")`) {
 			t.Fatalf("got %#v", got)
 		}
 	})
 	t.Run("skips hidden display_kind rows entirely", func(t *testing.T) {
 		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": "visible prompt"},
-			map[string]any{"role": "user", "text": "[CONTEXT COMPACTION — REFERENCE ONLY]", "display_kind": "hidden"}, map[string]any{"role": "assistant", "text": "visible reply"}))
+			map[string]any{"role": "user", "text": "[CONTEXT COMPACTION — REFERENCE ONLY]", "display_kind": "hidden"}, map[string]any{"role": "assistant", "text": "visible reply"}), newUIState())
 		if len(got) != 2 || got[0].Text != "visible prompt" || got[1].Text != "visible reply" {
 			t.Fatalf("got %#v", got)
 		}
 	})
 	t.Run("projects model_switch as an event with replaced text", func(t *testing.T) {
 		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": "hello"},
-			map[string]any{"role": "user", "text": "[System: model changed to gpt-5]", "display_kind": "model_switch"}, map[string]any{"role": "assistant", "text": "hi"}))
+			map[string]any{"role": "user", "text": "[System: model changed to gpt-5]", "display_kind": "model_switch"}, map[string]any{"role": "assistant", "text": "hi"}), newUIState())
 		if len(got) != 3 || got[0].Kind != "" || got[1].Kind != "event" || got[1].Role != "system" || strings.Contains(got[1].Text, "[System:") || got[2].Text != "hi" {
 			t.Fatalf("got %#v", got)
 		}
@@ -49,7 +50,7 @@ func TestToTranscriptMessages(t *testing.T) {
 	t.Run("projects async_delegation_complete with task_count metadata", func(t *testing.T) {
 		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": "do work"}, map[string]any{"role": "assistant", "text": "done"},
 			map[string]any{"role": "user", "text": "[IMPORTANT: delegation done]", "display_kind": "async_delegation_complete", "display_metadata": map[string]any{"task_count": float64(3)}},
-			map[string]any{"role": "assistant", "text": "merged"}))
+			map[string]any{"role": "assistant", "text": "merged"}), newUIState())
 		if len(got) != 4 || got[2].Kind != "delegation" || !strings.Contains(got[2].Label, "3") || got[2].Text != "[IMPORTANT: delegation done]" || got[3].Text != "merged" {
 			t.Fatalf("got %#v", got)
 		}
@@ -57,16 +58,16 @@ func TestToTranscriptMessages(t *testing.T) {
 	t.Run("heads the folded result with the display-only completion title", func(t *testing.T) {
 		text := "[ASYNC DELEGATION BATCH COMPLETE — private]\nFull result evidence"
 		title := "Subagent Task Failed: Review changes"
-		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": text, "display_kind": "async_delegation_complete", "display_metadata": map[string]any{"display_text": title}}))
+		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": text, "display_kind": "async_delegation_complete", "display_metadata": map[string]any{"display_text": title}}), newUIState())
 		if got[0].Kind != "delegation" || got[0].Role != "system" || got[0].Label != title || got[0].Text != text {
 			t.Fatalf("got %#v", got)
 		}
-		if plain := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": text})); plain[0].Text != text {
+		if plain := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": text}), newUIState()); plain[0].Text != text {
 			t.Fatalf("plain %#v", plain)
 		}
 	})
 	t.Run("projects async_delegation_complete without metadata under the generic title", func(t *testing.T) {
-		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": "event", "display_kind": "async_delegation_complete"}))
+		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": "event", "display_kind": "async_delegation_complete"}), newUIState())
 		if got[0].Kind != "delegation" || got[0].Label == "" || got[0].Label == "event" || got[0].Text != "event" {
 			t.Fatalf("got %#v", got)
 		}
@@ -89,7 +90,7 @@ func TestCapTranscriptHistory(t *testing.T) {
 func TestDisplayTimestamps(t *testing.T) {
 	t.Run("threads persisted transcript timestamps onto rehydrated rows", func(t *testing.T) {
 		got := toTranscriptMessages(rowsOf(map[string]any{"role": "user", "text": "when was this", "timestamp": float64(1_750_000_000)},
-			map[string]any{"role": "assistant", "text": "right then", "timestamp": float64(1_750_000_060)}))
+			map[string]any{"role": "assistant", "text": "right then", "timestamp": float64(1_750_000_060)}), newUIState())
 		if *got[0].CreatedAt != 1_750_000_000 || *got[1].CreatedAt != 1_750_000_060 {
 			t.Fatalf("got %#v", got)
 		}
@@ -166,7 +167,7 @@ func TestHasLeadGap(t *testing.T) {
 }
 
 func TestBlockRenders(t *testing.T) {
-	trail := msg{Role: "system", Kind: "trail", Tools: []string{"Edit foo.ts"}}
+	trail := msg{Role: "system", Kind: "trail", Tools: []toolRow{{Call: "Edit foo.ts"}}}
 	todos := msg{Role: "system", Kind: "trail", Todos: []todoItem{{Content: "a", ID: "1", Status: "pending"}}}
 	t.Run("always renders non-trail blocks", func(t *testing.T) {
 		if !blockRenders(msg{Role: "assistant", Text: "hi"}, detailsCtx{DetailsMode: "hidden", CommandOverride: true}) {

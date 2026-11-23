@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -150,8 +149,6 @@ func SpentRotationSourcePath(env PoolEnv, source string) string {
 	switch source {
 	case "claude_code":
 		return ClaudeCodeCredentialsPath()
-	case IcebathPKCESource:
-		return IcebathOAuthFile(env)
 	}
 	return ""
 }
@@ -757,7 +754,7 @@ func preferRefreshableClaudeCodeToken(env PoolEnv, envToken string, creds map[st
 
 // First available Anthropic OAuth token from the pool, read only and never selecting
 func resolveAnthropicPoolToken(env PoolEnv, skipBorrowed bool) string {
-	pool := LoadPool(env, "anthropic")
+	pool := LoadSelectedPool(env, "anthropic")
 	pool.mu.Lock()
 	entries, _ := pool.availableEntries(false, false, "")
 	pool.mu.Unlock()
@@ -866,20 +863,6 @@ func claudeSetupTokenResult(env PoolEnv) string {
 	return ""
 }
 
-// The icebath owned Anthropic PKCE credential file of the home
-func IcebathOAuthFile(env PoolEnv) string {
-	return filepath.Join(env.Store.Home(), ".anthropic_oauth.json")
-}
-
-// The global root PKCE file inside a named profile, empty in classic mode
-func RootIcebathOAuthFile(env PoolEnv) string {
-	root := home.RootOf(env.Store.Home())
-	if samePath(root, env.Store.Home()) {
-		return ""
-	}
-	return filepath.Join(root, ".anthropic_oauth.json")
-}
-
 func generatePKCE() (string, string) {
 	var raw [32]byte
 	fillRandom(raw[:])
@@ -888,8 +871,8 @@ func generatePKCE() (string, string) {
 	return verifier, base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// Runs the icebath native PKCE flow and returns the credential state
-func RunIcebathOAuthLoginPure(env PoolEnv, prompt func(label string) (string, bool)) map[string]any {
+// RunIcebathOAuthLoginTo runs the Claude Pro/Max PKCE sign in, printing its link and messages to out and opening a browser only when asked
+func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string) (string, bool), openBrowser bool) map[string]any {
 	verifier, challenge := generatePKCE()
 	var stateRaw [32]byte
 	fillRandom(stateRaw[:])
@@ -899,7 +882,7 @@ func RunIcebathOAuthLoginPure(env PoolEnv, prompt func(label string) (string, bo
 		{"redirect_uri", anthropicOAuthRedirectURI}, {"scope", anthropicOAuthScopes}, {"code_challenge", challenge},
 		{"code_challenge_method", "S256"}, {"state", oauthState},
 	})
-	fmt.Println(strings.Join([]string{
+	fmt.Fprintln(out, strings.Join([]string{
 		"", "Authorize Icebath with your Claude Pro/Max subscription.", "",
 		"╭─ Claude Pro/Max Authorization ────────────────────╮",
 		"│                                                   │",
@@ -907,19 +890,19 @@ func RunIcebathOAuthLoginPure(env PoolEnv, prompt func(label string) (string, bo
 		"╰───────────────────────────────────────────────────╯",
 		"", "  " + authURL, "",
 	}, "\n"))
-	if canOpenGraphicalBrowser() {
+	if openBrowser && canOpenGraphicalBrowser() {
 		if _, err := pywebbrowser.Open(authURL, 0); err == nil {
-			fmt.Println("  (Browser opened automatically)")
+			fmt.Fprintln(out, "  (Browser opened automatically)")
 		}
 	}
-	fmt.Print("\nAfter authorizing, you'll see a code. Paste it below.\n\n")
+	fmt.Fprint(out, "\nAfter authorizing, you'll see a code. Paste it below.\n\n")
 	authCode, ok := prompt("Authorization code: ")
 	if !ok {
 		return nil
 	}
 	authCode = pystr.Strip(authCode)
 	if authCode == "" {
-		fmt.Println("No code entered.")
+		fmt.Fprintln(out, "No code entered.")
 		return nil
 	}
 	splits := strings.Split(authCode, "#")
@@ -934,36 +917,19 @@ func RunIcebathOAuthLoginPure(env PoolEnv, prompt func(label string) (string, bo
 	exchangeBody, err := pyhttpx.JSONBody(pyjson.ObjectOf("grant_type", "authorization_code", "client_id", anthropicOAuthClientID,
 		"code", code, "state", receivedState, "redirect_uri", anthropicOAuthRedirectURI, "code_verifier", verifier))
 	if err != nil {
-		fmt.Printf("Token exchange failed: %v\n", err)
+		fmt.Fprintf(out, "Token exchange failed: %v\n", err)
 		return nil
 	}
 	result, err := postAnthropicOAuthToken(env, exchangeBody, "application/json", 15*time.Second, "exchange", anthropicOAuthTokenUserAgent)
 	if err != nil {
-		fmt.Printf("Token exchange failed: %v\n", err)
+		fmt.Fprintf(out, "Token exchange failed: %v\n", err)
 		return nil
 	}
 	if anyString(result["access_token"]) == "" {
-		fmt.Println("No access token in response.")
+		fmt.Fprintln(out, "No access token in response.")
 		return nil
 	}
 	return oauthTokenState(result, "")
-}
-
-// Reads the icebath managed PKCE credentials of the home
-func ReadIcebathOAuthCredentials(env PoolEnv) map[string]any {
-	data := loadJSONIfExists(env, IcebathOAuthFile(env), "Icebath OAuth credentials")
-	if data == nil || anyString(data["accessToken"]) == "" {
-		return nil
-	}
-	return data
-}
-
-// Commits refreshed PKCE tokens to the home file or the borrowed root target
-func WriteIcebathOAuthCredentials(env PoolEnv, accessToken, refreshToken string, expiresAtMS int64, target string) error {
-	if target == "" {
-		target = IcebathOAuthFile(env)
-	}
-	return commitPrivateJSON(env, target, map[string]any{"accessToken": accessToken, "refreshToken": refreshToken, "expiresAt": expiresAtMS}, "Icebath OAuth credentials")
 }
 
 // Browser registry answer that no registered browser took the URL

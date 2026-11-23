@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/term"
 	"github.com/nickheyer/icebath/pkg/ui/clip"
+	"github.com/nickheyer/icebath/pkg/ui/field"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
@@ -59,13 +60,14 @@ type Terminal struct {
 	hostFocus bool
 	locked    bool
 	searching bool
-	query     string
-	matches   []term.Match
-	current   int
-	spans     map[uint64][]term.Span
-	exit      *term.Exit
-	starting  bool
-	closed    bool
+	// Text searched for, edited with the keys every field shares
+	query    *field.Field
+	matches  []term.Match
+	current  int
+	spans    map[uint64][]term.Span
+	exit     *term.Exit
+	starting bool
+	closed   bool
 	// Line to type once the shell is up again
 	pending string
 	paste   bool
@@ -81,6 +83,8 @@ type Terminal struct {
 	// Called once when the program ends, the window closes first or the program fails to start, with what the program left on screen
 	OnEnd func(TerminalEnd) tea.Cmd
 	ended bool
+	// Reading mode over the scrollback and the screen, made on first use
+	reader *Reader
 }
 
 // How the program of a window ended, the text it left on screen and in the scrollback and its exit, nil when it never got to exit
@@ -155,18 +159,28 @@ func (t *Terminal) MinSize() (int, int) { return 20, 5 }
 func (t *Terminal) Selectable() bool    { return false }
 func (t *Terminal) Tracks() bool        { return true }
 
-// Takes every key as typed while the shell runs and no search bar is open
-func (t *Terminal) Raw() bool { return t.live() && !t.searching }
+// Takes every key as typed while the shell runs and neither the search bar nor reading mode is open
+func (t *Terminal) Raw() bool { return t.live() && !t.searching && !t.reading() }
 
-// Lets alt, super, hyper, meta and Option typed keys reach the window manager unless the keys are locked
+// Whether reading mode holds the keys
+func (t *Terminal) reading() bool { return t.reader != nil && t.reader.Active() }
+
+// Lets the window manager have an alt or command key only while a global window key holds it, every other key going to the program, so readline's
+// meta keys reach the shell; nothing passes while the keys are locked
 func (t *Terminal) Passes(k tea.KeyPressMsg) bool {
-	return !t.locked && (k.Mod&(tea.ModAlt|tea.ModSuper|tea.ModHyper|tea.ModMeta) != 0 || keys.OptionAlt(k))
+	if t.locked || (k.Mod&(tea.ModAlt|tea.ModSuper|tea.ModHyper|tea.ModMeta) == 0 && !keys.OptionAlt(k)) {
+		return false
+	}
+	return len(t.env.Keys.Lookup([]string{keys.Global}, k)) > 0
 }
 
-// Keymap contexts, the search bar ahead of the terminal keys while it is open
+// Keymap contexts, the search bar ahead of the terminal keys and the field keys after them while it is open
 func (t *Terminal) Contexts() []string {
+	if t.reading() {
+		return t.reader.Contexts()
+	}
 	if t.searching {
-		return []string{keys.Search, keys.Terminal}
+		return []string{keys.Search, keys.Terminal, keys.Text}
 	}
 	return []string{keys.Terminal}
 }
@@ -433,8 +447,22 @@ func (t *Terminal) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		return t, nil
 	case tea.PasteMsg:
+		if t.reading() {
+			t.reader.Take(msg)
+			return t, nil
+		}
+		if t.searching {
+			if t.input().Take(msg) {
+				t.find(true)
+			}
+			return t, nil
+		}
 		return t, t.pasteText(msg.Content)
 	case tea.ClipboardMsg:
+		if t.searching && t.input().Take(msg) {
+			t.find(true)
+			return t, nil
+		}
 		if !t.paste {
 			return t, nil
 		}
@@ -492,7 +520,7 @@ func (t *Terminal) drain() tea.Cmd {
 	if e.AltScreen() {
 		t.scroll = 0
 	}
-	if t.query != "" {
+	if t.searched() != "" {
 		t.find(false)
 	}
 	var cmds []tea.Cmd
@@ -532,9 +560,12 @@ func keyOf(k tea.Key, release bool) term.Key {
 
 // Sends a key to the shell, types into the search bar, or starts the shell again with enter once it ended
 func (t *Terminal) key(msg tea.KeyPressMsg) tea.Cmd {
+	if t.reading() {
+		t.reader.Take(msg)
+		return nil
+	}
 	if t.searching {
-		if msg.Text != "" {
-			t.query += msg.Text
+		if t.input().Take(msg) {
 			t.find(true)
 		}
 		return nil
@@ -570,8 +601,30 @@ func (t *Terminal) pasteText(text string) tea.Cmd {
 
 // Carries out a keymap action
 func (t *Terminal) act(id string) tea.Cmd {
+	switch {
+	case id == "view.start" || id == "view.find":
+		if t.sess == nil {
+			return nil
+		}
+		if t.reader == nil {
+			t.reader = NewReader(t, t.env.Keys)
+		}
+		t.reader.Start(id == "view.find")
+		return nil
+	case t.reading():
+		cmd, _ := t.reader.Action(id)
+		return cmd
+	}
 	if strings.HasPrefix(id, "search.") {
 		return t.searchAction(id)
+	}
+	if strings.HasPrefix(id, "text.") && t.searching {
+		before := t.searched()
+		cmd, _ := t.input().Action(id)
+		if t.searched() != before {
+			t.find(true)
+		}
+		return cmd
 	}
 	switch id {
 	case "terminal.copy":
@@ -848,38 +901,38 @@ func (t *Terminal) searchAction(id string) tea.Cmd {
 		t.searching = false
 	case "search.close":
 		t.searching = false
-		t.query, t.matches, t.spans = "", nil, nil
+		t.query, t.matches, t.spans = nil, nil, nil
 	case "search.next":
 		t.step(1)
 	case "search.prev":
 		t.step(-1)
-	case "search.delete.back":
-		if r := []rune(t.query); len(r) > 0 {
-			t.query = string(r[:len(r)-1])
-			t.find(true)
-		}
-	case "search.clear":
-		t.query = ""
-		t.find(true)
-	case "search.delete.word":
-		t.query = strings.TrimRight(t.query, " ")
-		if i := strings.LastIndex(t.query, " "); i >= 0 {
-			t.query = t.query[:i+1]
-		} else {
-			t.query = ""
-		}
-		t.find(true)
 	}
 	return nil
 }
 
+// Field of the search query, made on first use
+func (t *Terminal) input() *field.Field {
+	if t.query == nil {
+		t.query = field.New("")
+	}
+	return t.query
+}
+
+// Text searched for, empty while no search is set
+func (t *Terminal) searched() string {
+	if t.query == nil {
+		return ""
+	}
+	return t.query.Value()
+}
+
 // Finds the query again, moving to the match nearest the view when asked
 func (t *Terminal) find(move bool) {
-	if t.sess == nil || t.query == "" {
+	if t.sess == nil || t.searched() == "" {
 		t.matches, t.spans = nil, nil
 		return
 	}
-	t.matches = t.sess.Emu.Find(t.query)
+	t.matches = t.sess.Emu.Find(t.searched())
 	t.spans = make(map[uint64][]term.Span, len(t.matches))
 	for _, m := range t.matches {
 		t.spans[m.Row] = append(t.spans[m.Row], term.Span{From: m.From, To: m.To})
@@ -939,7 +992,7 @@ func (t *Terminal) fit(w, h int) {
 	t.sel, t.drag = nil, false
 	t.scroll = min(t.scroll, e.ScrollbackLen())
 	t.scrolled = e.Scrolled()
-	if t.query != "" {
+	if t.searched() != "" {
 		t.find(false)
 	}
 }
@@ -963,7 +1016,7 @@ func (t *Terminal) Paint(buf *uv.Buffer) {
 		return
 	}
 	var current *term.Match
-	if t.query != "" && t.current < len(t.matches) {
+	if t.searched() != "" && t.current < len(t.matches) {
 		m := t.matches[t.current]
 		current = &m
 	}
@@ -980,6 +1033,11 @@ func (t *Terminal) Paint(buf *uv.Buffer) {
 	}
 	if t.searching {
 		t.paintSearch(buf)
+	}
+	if t.reading() {
+		t.reader.MarkBuffer(buf, e.ScrollbackLen()-t.scroll, th)
+		line, _ := t.reader.Line(w, th)
+		t.paintText(buf, h-1, line)
 	}
 	if t.frame == nil || t.frame.Width() != w || t.frame.Height() != h {
 		t.frame = uv.NewBuffer(w, h)
@@ -998,7 +1056,7 @@ func copyBuffer(dst, src *uv.Buffer) {
 func (t *Terminal) startText() string {
 	th := t.env.Theme
 	if t.err != nil {
-		return lipgloss.NewStyle().Foreground(th.Alarm).Render(th.Glyphs.Fail+" "+t.err.Error()) + lipgloss.NewStyle().Foreground(th.TextDim).Render(", enter starts it again")
+		return lipgloss.NewStyle().Foreground(th.Alarm).Render(th.Glyphs.Fail+" "+t.err.Error()) + lipgloss.NewStyle().Foreground(th.TextDim).Render(", "+lang.T(txt.KitTerminalEnterRestarts))
 	}
 	return render.Dim("starting "+filepath.Base(t.command().Path), th)
 }
@@ -1032,13 +1090,9 @@ func (t *Terminal) exitText() string {
 		state = base.Foreground(th.Alive).Render(" " + th.Glyphs.Success + " exit 0 ")
 	}
 	if t.ended {
-		return state + base.Foreground(th.TextDim).Render(" enter closes ")
+		return state + base.Foreground(th.TextDim).Render(" "+lang.T(txt.KitTerminalEnterCloses)+" ")
 	}
-	hint := "enter"
-	if k := t.env.key("terminal.restart"); k != "" {
-		hint += " or " + k
-	}
-	return state + base.Foreground(th.TextDim).Render(" "+hint+" starts the shell again ")
+	return state + base.Foreground(th.TextDim).Render(" "+lang.T(txt.KitTerminalEnterRestarts)+" ")
 }
 
 // Writes styled text on one row of the buffer, from the left edge
@@ -1054,20 +1108,21 @@ func (t *Terminal) paintSearch(buf *uv.Buffer) {
 	th := t.env.Theme
 	w := buf.Width()
 	base := lipgloss.NewStyle().Background(th.Steel)
-	count := "no match"
-	if n := len(t.matches); n > 0 {
-		count = fmt.Sprintf("%d/%d", t.current+1, n)
-	}
-	right := base.Foreground(th.TextDim).Render(" " + count + " ")
+	right := base.Foreground(th.TextDim).Render(" " + t.searchCount() + " ")
 	room := max(w-ansi.StringWidth(right)-4, 1)
-	query := t.query
-	if ansi.StringWidth(query) > room {
-		query = ansi.TruncateLeft(query, ansi.StringWidth(query)-room, "")
-	}
+	query, _ := t.input().Line(room)
 	left := base.Foreground(th.Accent).Render(" "+th.Glyphs.Search+" ") + base.Foreground(th.Text).Render(query)
 	pad := max(w-ansi.StringWidth(left)-ansi.StringWidth(right), 0)
 	line := left + base.Render(strings.Repeat(" ", pad)) + right
 	uv.NewStyledString(ansi.Truncate(line, w, "")).Draw(cells{buf}, uv.Rect(0, buf.Height()-1, w, 1))
+}
+
+// Count of the matches with the one in view, or that there is none
+func (t *Terminal) searchCount() string {
+	if n := len(t.matches); n > 0 {
+		return fmt.Sprintf("%d/%d", t.current+1, n)
+	}
+	return lang.T(txt.KitWmNoMatch)
 }
 
 // Draws a scrollbar in the last column showing where the view sits in the scrollback
@@ -1104,8 +1159,15 @@ func (t *Terminal) View(w, h int) string {
 
 // Cursor of the shell, or of the search bar while it is open, none while scrolled back or ended
 func (t *Terminal) Cursor() *tea.Cursor {
+	if t.reading() {
+		if _, caret := t.reader.Line(t.w, t.env.Theme); caret >= 0 {
+			return tea.NewCursor(min(caret, max(t.w-1, 0)), max(t.h-1, 0))
+		}
+		return nil
+	}
 	if t.searching {
-		return tea.NewCursor(min(3+ansi.StringWidth(t.query), max(t.w-1, 0)), max(t.h-1, 0))
+		_, caret := t.input().Line(max(t.w-ansi.StringWidth(t.searchCount())-6, 1))
+		return tea.NewCursor(min(3+caret, max(t.w-1, 0)), max(t.h-1, 0))
 	}
 	if !t.live() || t.scroll > 0 {
 		return nil
@@ -1159,10 +1221,78 @@ func (t *Terminal) Status() string {
 // Actions worth a reminder
 func (t *Terminal) Hints() []wm.Hint {
 	switch {
+	case t.reading():
+		return t.reader.Hints()
 	case t.searching:
 		return []wm.Hint{{Action: "search.accept"}, {Action: "search.next", Pair: "search.prev", Label: lang.T(txt.KitHintMatches)}, {Action: "search.close"}}
 	case !t.live():
 		return []wm.Hint{{Action: "terminal.restart"}, {Action: "terminal.copy"}}
 	}
 	return []wm.Hint{{Action: "terminal.copy"}, {Action: "terminal.paste"}, {Action: "terminal.search"}, {Action: "terminal.scroll.up", Pair: "terminal.scroll.down", Label: lang.T(txt.KitHintScroll)}, {Action: "terminal.lock"}}
+}
+
+// Absolute row of the oldest row the scrollback keeps
+func (t *Terminal) firstRow() uint64 {
+	e := t.sess.Emu
+	return e.Base() - uint64(e.ScrollbackLen())
+}
+
+// Rows the scrollback and the screen hold
+func (t *Terminal) ReadRows() int {
+	if t.sess == nil {
+		return 0
+	}
+	return t.sess.Emu.ScrollbackLen() + t.h
+}
+
+// Plain text of a row counted from the oldest one kept
+func (t *Terminal) ReadRow(i int) string {
+	if t.sess == nil {
+		return ""
+	}
+	row := t.firstRow() + uint64(i)
+	return t.sess.Emu.Text(term.Selection{Anchor: term.Pos{Row: row}, Head: term.Pos{Row: row, Col: max(t.w-1, 0)}, Mode: term.SelLines})
+}
+
+// First row in view counted from the oldest one kept, and the rows of the window
+func (t *Terminal) ReadWindow() (int, int) {
+	if t.sess == nil {
+		return 0, t.h
+	}
+	return t.sess.Emu.ScrollbackLen() - t.scroll, t.h
+}
+
+// Scrolls so that the row is the first in view, as far as the scrollback goes
+func (t *Terminal) ReadScroll(top int) {
+	if t.sess == nil {
+		return
+	}
+	n := t.sess.Emu.ScrollbackLen()
+	t.scroll = min(max(n-top, 0), n)
+}
+
+// Row of the shell prompt before or after a row, for shells that mark their prompts
+func (t *Terminal) ReadPrompt(from, d int) (int, bool) {
+	if t.sess == nil {
+		return 0, false
+	}
+	first := t.firstRow()
+	row, ok := t.sess.Emu.Prompt(first+uint64(max(from, 0)), d)
+	if !ok || row < first {
+		return 0, false
+	}
+	return int(row - first), true
+}
+
+// Rows of the command output holding a row, from the prompt at or before it up to the next prompt, the row alone where shells mark no prompts
+func (t *Terminal) ReadBlock(row int) (int, int) {
+	start, ok := t.ReadPrompt(row+1, -1)
+	if !ok || start > row {
+		return row, row + 1
+	}
+	end, ok := t.ReadPrompt(row, 1)
+	if !ok || end <= row {
+		end = t.ReadRows()
+	}
+	return start, end
 }

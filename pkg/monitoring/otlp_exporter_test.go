@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -51,7 +52,7 @@ func TestHeadersResolveFromEnvNotValue(t *testing.T) {
 }
 
 func TestTraceResourceIncludesStableHashedInstance(t *testing.T) {
-	attrs := resourceAttributes(map[string]any{"monitoring": map[string]any{"install_id": "private-install-id"}})
+	attrs := resourceAttributes(monitoringContext(t, "monitoring:\n  install_id: private-install-id\n"))
 	if attrs["service.name"] != "icebath-gateway" || !strings.HasPrefix(attrs["service.instance.id"], "sha256:") || len(attrs["service.instance.id"]) != len("sha256:")+24 {
 		t.Fatalf("attrs %v", attrs)
 	}
@@ -66,8 +67,7 @@ func TestTraceResourceIncludesStableHashedInstance(t *testing.T) {
 }
 
 func TestTraceResourceIncludesConfiguredDeploymentEnvironment(t *testing.T) {
-	attrs := resourceAttributes(map[string]any{"monitoring": map[string]any{"install_id": "private-install-id",
-		"gateway_health_export": map[string]any{"resource_attributes": map[string]any{"deployment.environment.name": "production", "host.name": "leak", "cloud.region": "bad value!"}}}})
+	attrs := resourceAttributes(monitoringContext(t, "monitoring:\n  install_id: private-install-id\n  gateway_health_export:\n    resource_attributes:\n      deployment.environment.name: production\n      host.name: leak\n      cloud.region: bad value!\n"))
 	if attrs["deployment.environment.name"] != "production" || attrs["service.name"] != "icebath-gateway" {
 		t.Fatalf("attrs %v", attrs)
 	}
@@ -82,9 +82,9 @@ func TestTraceResourceIncludesConfiguredDeploymentEnvironment(t *testing.T) {
 func TestStreamerReceivesEventsAndRespectsFilter(t *testing.T) {
 	provider, mem := memProvider()
 	prev := makeProvider
-	makeProvider = func(map[string]any) (*TracerProvider, *BatchSpanProcessor, error) { return provider, nil, nil }
+	makeProvider = func(context.Context) (*TracerProvider, *BatchSpanProcessor, error) { return provider, nil, nil }
 	t.Cleanup(func() { makeProvider = prev })
-	streamer, err := NewOTLPStreamer(map[string]any{}, func(ev *pyjson.Object) bool {
+	streamer, err := NewOTLPStreamer(context.Background(), func(ev *pyjson.Object) bool {
 		kind, _ := ev.Get("event")
 		return kind == "gateway_health"
 	})
@@ -129,11 +129,11 @@ func TestSignalEndpointRewritesOnlyKnownSignalPaths(t *testing.T) {
 }
 
 func TestBuildExporterRequiresAnEndpoint(t *testing.T) {
-	if _, err := BuildExporter(map[string]any{"monitoring": map[string]any{"export": map[string]any{"otlp": map[string]any{"enabled": true}}}}); err == nil || err.Error() != "monitoring.export.otlp.endpoint is not set" {
+	if _, err := BuildExporter(monitoringContext(t, "monitoring:\n  export:\n    otlp:\n      enabled: true\n")); err == nil || err.Error() != "monitoring.export.otlp.endpoint is not set" {
 		t.Fatalf("err %v", err)
 	}
 	t.Setenv("OTLP_TOKEN", "tok")
-	exporter, err := BuildExporter(map[string]any{"monitoring": map[string]any{"export": map[string]any{"otlp": map[string]any{"endpoint": "https://c.example/v1/traces", "headers_env": map[string]any{"Authorization": "OTLP_TOKEN"}}}}})
+	exporter, err := BuildExporter(monitoringContext(t, "monitoring:\n  export:\n    otlp:\n      endpoint: https://c.example/v1/traces\n      headers_env:\n        Authorization: OTLP_TOKEN\n"))
 	if err != nil || exporter.Endpoint != "https://c.example/v1/traces" || exporter.Headers["Authorization"] != "tok" {
 		t.Fatalf("exporter %+v err %v", exporter, err)
 	}
@@ -180,12 +180,18 @@ func TestHTTPExporterPostsOTLPJSONWithHeaders(t *testing.T) {
 }
 
 func TestStartStreamingIsOffWithoutAnEnabledEndpoint(t *testing.T) {
-	if s := StartStreaming(map[string]any{"monitoring": map[string]any{"export": map[string]any{"otlp": map[string]any{"enabled": true}}}}, nil); s != nil {
+	if s := StartStreaming(monitoringContext(t, "monitoring:\n  export:\n    otlp:\n      enabled: true\n"), nil); s != nil {
 		t.Fatal("streamer without endpoint")
 	}
-	if s := StartStreaming(map[string]any{"monitoring": map[string]any{"export": map[string]any{"otlp": map[string]any{"endpoint": "https://c.example"}}}}, nil); s != nil {
+	if s := StartStreaming(monitoringContext(t, "monitoring:\n  export:\n    otlp:\n      endpoint: https://c.example\n"), nil); s != nil {
 		t.Fatal("streamer while disabled")
 	}
+}
+
+// Context bound to a fresh home whose config.yaml holds body
+func monitoringContext(t *testing.T, body string) context.Context {
+	t.Helper()
+	return home.WithOverride(context.Background(), writeMonitoringConfig(t, body))
 }
 
 func writeMonitoringConfig(t *testing.T, body string) string {

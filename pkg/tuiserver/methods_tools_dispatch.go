@@ -115,7 +115,6 @@ func sessionTaskID(session *tuihost.Session) string {
 }
 
 func init() {
-	toolsDispatchRegistry.method("command.dispatch", commandDispatch)
 }
 
 var toolsDispatchRegistry = &handlerRegistry{}

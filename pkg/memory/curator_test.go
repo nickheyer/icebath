@@ -13,12 +13,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
-// Temp home with a skills dir, default curator config and the warn once memory cleared
+// Writes doc as the config.yaml of home h, nil sections dropped
+func curWriteConfigDoc(t *testing.T, h string, doc map[string]any) {
+	t.Helper()
+	for k, v := range doc {
+		if m, ok := v.(map[string]any); v == nil || ok && m == nil {
+			delete(doc, k)
+		}
+	}
+	data, err := config.SafeDump(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Temp home with a skills dir, the curator section cfg in its config.yaml and the warn once memory cleared
 func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
 	t.Helper()
 	h := filepath.Join(t.TempDir(), ".icebath")
@@ -26,18 +45,13 @@ func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	prevCfg, prevLLM := curatorConfig, curatorLLMReview
-	curatorConfig = func(context.Context) map[string]any {
-		if cfg == nil {
-			return map[string]any{}
-		}
-		return cfg
-	}
+	curWriteConfigDoc(t, h, map[string]any{"curator": cfg})
+	prevLLM := curatorLLMReview
 	curatorLLMReview = func(context.Context, string) *pyjson.Object { return curatorLLMMeta("llm-stub", nil) }
 	curatorWarned.Lock()
 	curatorWarned.seen = map[string]bool{}
 	curatorWarned.Unlock()
-	t.Cleanup(func() { curatorConfig, curatorLLMReview = prevCfg, prevLLM })
+	t.Cleanup(func() { curatorLLMReview = prevLLM })
 	t.Cleanup(curatorReviewThreads.Wait)
 	return context.Background(), h
 }
@@ -138,7 +152,7 @@ func TestCuratorNonPositiveBoundsFallBackToDefaults(t *testing.T) {
 		if curatorCount(counts, "archived") != 0 || curRecord(t, ctx, "just-used").Vals["state"] != skills.StateActive {
 			t.Fatalf("bad value %d archived a fresh skill", bad)
 		}
-		if CuratorArchiveAfterDays(ctx) != curatorDefaultArchiveAfterDays || CuratorStaleAfterDays(ctx) != curatorDefaultStaleAfterDays {
+		if CuratorArchiveAfterDays(ctx) != int(settings.CuratorArchiveAfterDays.Default/(24*time.Hour)) || CuratorStaleAfterDays(ctx) != int(settings.CuratorStaleAfterDays.Default/(24*time.Hour)) {
 			t.Fatal("non positive day counts must fall back to the defaults")
 		}
 	}
@@ -146,7 +160,7 @@ func TestCuratorNonPositiveBoundsFallBackToDefaults(t *testing.T) {
 		ctx, _ := curTestHome(t, map[string]any{"interval_hours": bad})
 		now := time.Now().UTC()
 		SaveCuratorState(ctx, curatorEntry("last_run_at", pydatetime.ISOFormatUTC(now.Add(-time.Minute))))
-		if CuratorIntervalHours(ctx) != curatorDefaultIntervalHours {
+		if CuratorIntervalHours(ctx) != int(settings.CuratorIntervalHours.Default/time.Hour) {
 			t.Fatal("interval must fall back to the default")
 		}
 		if run, _ := CuratorShouldRunNow(ctx, now); run {
@@ -157,7 +171,7 @@ func TestCuratorNonPositiveBoundsFallBackToDefaults(t *testing.T) {
 
 func TestCuratorBadBoundedValueWarnsOncePerDistinctValue(t *testing.T) {
 	cfg := map[string]any{"archive_after_days": 0}
-	ctx, _ := curTestHome(t, cfg)
+	ctx, h := curTestHome(t, cfg)
 	var buf bytes.Buffer
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
@@ -166,6 +180,7 @@ func TestCuratorBadBoundedValueWarnsOncePerDistinctValue(t *testing.T) {
 		CuratorArchiveAfterDays(ctx)
 	}
 	cfg["archive_after_days"] = -1
+	curWriteConfigDoc(t, h, map[string]any{"curator": cfg})
 	CuratorArchiveAfterDays(ctx)
 	CuratorArchiveAfterDays(ctx)
 	var msgs []string
@@ -349,15 +364,13 @@ func TestCuratorRenameSummary(t *testing.T) {
 }
 
 func curBackupHome(t *testing.T, keep any) (context.Context, string) {
-	ctx, h := curTestHome(t, nil)
-	prevCfg, prevID, prevSnap := curatorBackupConfig, curatorUTCIDNow, curatorSnapshotSkills
-	curatorBackupConfig = func(context.Context) map[string]any {
-		if keep == nil {
-			return map[string]any{}
-		}
-		return map[string]any{"keep": keep}
+	var cfg map[string]any
+	if keep != nil {
+		cfg = map[string]any{"backup": map[string]any{"keep": keep}}
 	}
-	t.Cleanup(func() { curatorBackupConfig, curatorUTCIDNow, curatorSnapshotSkills = prevCfg, prevID, prevSnap })
+	ctx, h := curTestHome(t, cfg)
+	prevID, prevSnap := curatorUTCIDNow, curatorSnapshotSkills
+	t.Cleanup(func() { curatorUTCIDNow, curatorSnapshotSkills = prevID, prevSnap })
 	return ctx, filepath.Join(h, "skills")
 }
 

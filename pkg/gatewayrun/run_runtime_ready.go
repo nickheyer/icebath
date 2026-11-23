@@ -46,7 +46,6 @@ func publishGatewayRuntimeReady(r *GatewayRunner) error {
 	}
 	r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
 		descriptor["state"] = "ready"
-		descriptor["capabilities"] = []any{"session-authority-v1", "durable-admission-v1", "event-replay-v1"}
 	})
 	return gateway.StartReadyHostedServices(r)
 }

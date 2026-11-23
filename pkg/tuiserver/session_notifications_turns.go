@@ -106,7 +106,7 @@ func notifHandleEvent(ctx context.Context, sid string, session *tuihost.Session,
 		if _, err := config.RenderNotification(ctx, func() error {
 			tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "process", "text": displayText})
 			return nil
-		}, "tui", agent.DiagnosticProcessEvent(evt), nil); err != nil {
+		}, "tui", agent.DiagnosticProcessEvent(evt)); err != nil {
 			panic(err)
 		}
 		emitted[dedup] = true

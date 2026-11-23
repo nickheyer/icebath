@@ -235,14 +235,11 @@ func touchActivityIfDue(ctx context.Context, env *Env, st *activityState, label 
 	env.Emit(Event{Kind: "activity", Text: text})
 }
 
-// SandboxDir is the host side root for all sandbox storage, TERMINAL_SANDBOX_DIR over home/sandboxes
+// SandboxDir is the host side root for all sandbox storage, the sandbox folder setting over home/sandboxes
 func SandboxDir(env *Env) (string, error) {
 	custom := ""
 	if policy, err := terminalPolicy(env); err == nil {
-		custom = policy.Get("TERMINAL_SANDBOX_DIR", "")
-	}
-	if custom == "" {
-		custom = os.Getenv("TERMINAL_SANDBOX_DIR")
+		custom = policy.Setting("sandbox_dir")
 	}
 	p := filepath.Join(envHome(env), "sandboxes")
 	if custom != "" {

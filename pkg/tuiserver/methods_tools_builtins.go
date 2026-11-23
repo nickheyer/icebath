@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -34,7 +35,7 @@ var slashBuiltins map[string]dispatchStage
 func init() {
 	slashBuiltins = map[string]dispatchStage{
 		"queue": cmdQueue, "q": cmdQueue, "learn": promptBuiltin(memory.BuildLearnPrompt), "plan": promptBuiltin(provider.BuildPlanPrompt),
-		"init": cmdInit, "moa": cmdMoa, "focus": cmdFocus, "retry": cmdRetry, "steer": cmdSteer, "goal": cmdGoal,
+		"init": cmdInit, "moa": cmdMoa, "retry": cmdRetry, "steer": cmdSteer, "goal": cmdGoal,
 		"loop": cmdLoop, "undo": cmdUndo, "snapshot": cmdSnapshot, "snap": cmdSnapshot,
 		"compress": cmdCompress, "compact": cmdCompress, "memory": cmdMemory, "skills": cmdSkills}
 }
@@ -151,11 +152,7 @@ func cmdMoa(ctx context.Context, rid any, params map[string]any, session *tuihos
 			res = rpcErr(rid, 4001, "no active session", nil)
 			return
 		}
-		moaCfg := loadCfg(ctx)["moa"]
-		if !truthy(moaCfg) {
-			moaCfg = map[string]any{}
-		}
-		preset := provider.NormalizeMoAConfig(moaCfg)["default_preset"]
+		preset := settings.MoaDefaultPreset.Get(ctx)
 		a := sessionAgent(session)
 		restore := map[string]any{"override": session.Get("model_override"), "model": nil, "provider": nil}
 		if a != nil {
@@ -181,40 +178,6 @@ func cmdMoa(ctx context.Context, rid any, params map[string]any, session *tuihos
 		return rpcErr(rid, 5030, "moa unavailable: "+errorMessage(failure), nil)
 	}
 	return res
-}
-
-// Focus view toggle through the config.set branch the TUI uses, or its status line
-func cmdFocus(ctx context.Context, rid any, params map[string]any, session *tuihost.Session, name, arg string) map[string]any {
-	display, isDict := loadCfg(ctx)["display"].(map[string]any)
-	if !isDict {
-		display = map[string]any{}
-	}
-	cur := truthy(display["focus_view"])
-	action, target := tuihost.ResolveFocusArg(arg, cur)
-	if action == "usage" {
-		return rpcErr(rid, 4004, "usage: /focus [on|off|status]", nil)
-	}
-	if action == "status" {
-		saved := display["focus_saved_tool_progress"]
-		if !truthy(saved) {
-			saved = loadToolProgressMode(ctx)
-		}
-		return execOut(rid, tuihost.FormatFocusStatus(cur, saved))
-	}
-	value := "off"
-	if target != nil && *target {
-		value = "on"
-	}
-	res := lookupMethod("config.set")(ctx, rid, map[string]any{"key": "focus", "value": value, "session_id": strOr(params["session_id"])})
-	if _, failed := res["error"]; failed {
-		return res
-	}
-	result, _ := res["result"].(map[string]any)
-	toolProgress := result["tool_progress"]
-	if !truthy(toolProgress) {
-		toolProgress = "all"
-	}
-	return execOut(rid, tuihost.FormatFocusToggleMessage(target != nil && *target, toolProgress))
 }
 
 // Rewinds the last user turn and resubmits its text, refusing media it cannot reconstruct
@@ -279,21 +242,12 @@ func cmdSteer(ctx context.Context, rid any, params map[string]any, session *tuih
 	return directive(rid, tuigateway.CommandDispatchResult{Type: "send", Message: arg})
 }
 
-// Goal max turns of the config, twenty when unset, falsy or not an integer
-func goalMaxTurns(cfg map[string]any) int64 {
-	goalsCfg, _ := cfg["goals"].(map[string]any)
-	raw, has := goalsCfg["max_turns"]
-	if !has {
-		raw = int64(20)
+// Goal max turns of the profile, twenty when unset or zero
+func goalMaxTurns(ctx context.Context) int64 {
+	if n := settings.GoalsMaxTurns.Get(ctx); n != 0 {
+		return int64(n)
 	}
-	if !truthy(raw) {
-		return 20
-	}
-	n, err := pyint.Int64(raw)
-	if err != nil || n == 0 {
-		return 20
-	}
-	return n
+	return 20
 }
 
 // Runs the goal command on the session's goal manager in its profile scope
@@ -303,7 +257,7 @@ func cmdGoal(ctx context.Context, rid any, params map[string]any, session *tuiho
 	if errResp != nil {
 		return errResp
 	}
-	mgr := goals.NewGoalManager(scoped, sidKey, goalMaxTurns(loadCfg(scoped)))
+	mgr := goals.NewGoalManager(scoped, sidKey, goalMaxTurns(scoped))
 	result, err := goals.DispatchGoalCommand(mgr, arg, goals.GoalCommandOptions{AuthorizeGate: func() string { return "" },
 		LastUserMessage: goals.LastUserMessageFromDB(scoped, sidKey)})
 	panicIf(err)

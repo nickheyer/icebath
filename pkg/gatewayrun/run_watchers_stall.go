@@ -12,14 +12,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Bound of one stall notice send so a wedged transport cannot stall the watcher pass
 const stallNotifySendTimeoutSeconds = 15.0
 
 // Configured stall timeout in seconds, zero disabling the watchdog
-func (r *GatewayRunner) sessionStallTimeoutSeconds() float64 {
-	return floatEnv("ICEBATH_SESSION_STALL_TIMEOUT", 300)
+func (r *GatewayRunner) sessionStallTimeoutSeconds(ctx context.Context) float64 {
+	return settings.AgentSessionStallTimeout.Get(ctx).Seconds()
 }
 
 // Stall progress snapshot of a session's running agent, nil without a live agent
@@ -219,7 +220,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 			}
 			result = &res
 			return nil
-		}, string(source.Platform), true, nil)
+		}, string(source.Platform), true)
 		if err != nil {
 			return err
 		}
@@ -289,7 +290,7 @@ func (r *GatewayRunner) sessionStallWatcher(ctx context.Context, interval float6
 		return err
 	}
 	for r.running.Load() {
-		if timeout := r.sessionStallTimeoutSeconds(); timeout > 0 {
+		if timeout := r.sessionStallTimeoutSeconds(ctx); timeout > 0 {
 			if _, err := r.checkSessionStalls(ctx, timeout); err != nil {
 				if isCancellation(err) || ctx.Err() != nil {
 					return err

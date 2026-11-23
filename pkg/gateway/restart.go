@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Gateway exit codes, 75 asks the supervisor for a restart and 78 is a fatal configuration error
@@ -40,33 +40,17 @@ const (
 	launchdJobLabelPrefix                   = "app.icebath."
 )
 
-// Shipped defaults of agent.restart_drain_timeout, gateway.signal_interrupt_grace_timeout and the after turn and cron drains
+// Registry defaults of the restart drain, the signal interrupt grace and the after turn and cron drains in seconds
 var (
-	DefaultGatewayRestartDrainTimeout         = defaultConfigFloat("agent", "restart_drain_timeout")
-	DefaultGatewaySignalInterruptGraceTimeout = defaultConfigFloat("gateway", "signal_interrupt_grace_timeout")
-	DefaultGatewayRestartAfterTurnTimeout     = defaultConfigFloat("agent", "restart_after_turn_timeout")
-	DefaultGatewayCronDrainTimeout            = defaultConfigFloat("agent", "cron_drain_timeout")
+	DefaultGatewayRestartDrainTimeout         = settings.AgentRestartDrainTimeout.Default.Seconds()
+	DefaultGatewaySignalInterruptGraceTimeout = settings.GatewaySignalInterruptGraceTimeout.Default.Seconds()
+	DefaultGatewayRestartAfterTurnTimeout     = settings.AgentRestartAfterTurnTimeout.Default.Seconds()
+	DefaultGatewayCronDrainTimeout            = settings.AgentCronDrainTimeout.Default.Seconds()
 )
 
 var launchdExitTimeoutRE = regexp.MustCompile(`(?m)^[` + pySpaceClass + `]*exit timeout[` + pySpaceClass + `]*=[` + pySpaceClass + `]*(\p{Nd}+)[` + pySpaceClass + `]*$`)
 
 var restartTruthy = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
-
-// float() of a shipped default config value, panicking when the defaults table lacks it as Python raises at import
-func defaultConfigFloat(section, key string) float64 {
-	var block map[string]any
-	switch b := config.Defaults()[section].(type) {
-	case config.Tree:
-		block = b
-	case map[string]any:
-		block = b
-	}
-	v, err := pyint.Float(block[key])
-	if err != nil {
-		panic("gateway/restart.py DEFAULT_CONFIG[" + section + "][" + key + "]: " + err.Error())
-	}
-	return v
-}
 
 // Python max of two floats, the first wins unless the second compares greater
 func pyMaxFloat(a, b float64) float64 {

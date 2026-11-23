@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func TestMain(m *testing.M) {
@@ -54,10 +55,19 @@ func makeAdapter(t *testing.T, extra map[string]any) *YuanbaoAdapter {
 	t.Helper()
 	isolatedHome(t)
 	config := gateway.NewPlatformConfig()
-	config.Extra = map[string]any{"app_id": "test_key", "app_secret": "test_secret", "ws_url": "wss://test.example.com/ws",
-		"api_domain": "https://test.example.com"}
+	config.Extra = map[string]any{"app_id": "test_key", "app_secret": "test_secret"}
+	endpoints := map[string]any{settings.YuanbaoWsURL.Key: "wss://test.example.com/ws", settings.YuanbaoAPIDomain.Key: "https://test.example.com"}
 	for key, value := range extra {
+		if e := settings.Lookup("yuanbao." + key); e == settings.YuanbaoWsURL || e == settings.YuanbaoAPIDomain || e == settings.YuanbaoRouteEnv {
+			endpoints[e.Info().Key] = value
+			continue
+		}
 		config.Extra[key] = value
+	}
+	for key, value := range endpoints {
+		if _, err := settings.Set(context.Background(), key, value, settings.Global); err != nil {
+			t.Fatal(err)
+		}
 	}
 	adapter, err := NewYuanbaoAdapter(context.Background(), config)
 	if err != nil {

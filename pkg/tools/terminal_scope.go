@@ -5,18 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// TerminalPolicy is the complete TERMINAL_* policy of one profile, total by construction
+// TerminalPolicy is the frozen terminal settings of one profile keyed by their policy names, total by construction
 type TerminalPolicy map[string]string
 
 // Get reads a policy value, the default when the key is absent
@@ -36,6 +37,36 @@ func (p TerminalPolicy) GetBool(name, def string) bool {
 	return false
 }
 
+// Value of the terminal setting key in the policy, its registry default when the policy lacks it
+func (p TerminalPolicy) Setting(key string) string {
+	if v, ok := p[terminalConfigEnvMap[key]]; ok {
+		return v
+	}
+	return terminalDefault(key)
+}
+
+// Terminal setting key of the policy as true, 1 or yes
+func (p TerminalPolicy) SettingBool(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(p.Setting(key))) {
+	case "true", "1", "yes":
+		return true
+	}
+	return false
+}
+
+// Policy text of a terminal setting's registry default, empty when unset by default
+func terminalDefault(key string) string {
+	e := settings.Find("terminal." + key)
+	if e == nil {
+		return ""
+	}
+	v := canonicalTerminalValue(key, e.DefaultValue())
+	if key == "cwd" && cwdIsPlaceholder(v) {
+		return ""
+	}
+	return terminalEnvValue(v)
+}
+
 // Error of a profile whose terminal policy could not be resolved
 type TerminalPolicyUnavailable struct {
 	Reason string
@@ -46,7 +77,7 @@ func (e *TerminalPolicyUnavailable) Error() string {
 	return "terminal policy unavailable for this profile: " + e.Reason
 }
 
-// Config key under terminal mapped to the env var the tool reads
+// Config key under terminal mapped to its name in the terminal policy
 var terminalConfigEnvMap = func() map[string]string {
 	m := map[string]string{"backend": "TERMINAL_ENV"}
 	for _, key := range []string{
@@ -57,8 +88,8 @@ var terminalConfigEnvMap = func() map[string]string {
 		"docker_volumes", "docker_env", "docker_mount_cwd_to_workspace", "docker_network",
 		"docker_extra_args", "docker_shm_size", "docker_run_as_host_user", "docker_snap_compat",
 		"docker_persist_across_processes", "docker_shared_container_key",
-		"docker_orphan_reaper", "sandbox_dir", "persistent_shell", "home_mode",
-		"singularity_image", "wsl_distro", "wsl_user", "daemon_term_grace_seconds",
+		"docker_orphan_reaper", "sandbox_dir", "persistent_shell", "local_persistent", "home_mode",
+		"singularity_image", "daemon_term_grace_seconds",
 		"oneshot_completion_wait_seconds", "process_wait_auto_notify", "env_passthrough",
 	} {
 		m[key] = "TERMINAL_" + strings.ToUpper(key)
@@ -66,15 +97,10 @@ var terminalConfigEnvMap = func() map[string]string {
 	return m
 }()
 
-// Keys whose default lives in the tool rather than the config defaults
-var toolLevelTerminalDefaults = map[string]any{
-	"cwd": ".", "ssh_host": "", "ssh_user": "", "ssh_port": 22, "ssh_key": "",
-	"docker_orphan_reaper": true, "docker_persist_across_processes": true,
-	"sandbox_dir": "", "lifetime_seconds": 300, "docker_shared_container_key": "",
-	"home_mode": "auto",
-}
+// Policy name of the launch working folder a launcher hands its backend process
+const launchCwdName = "TERMINAL_CWD"
 
-// Serialises a config value the way the env bridge does, lists and maps as JSON
+// Serialises a setting value for the policy, lists and maps as JSON
 func terminalEnvValue(v any) string {
 	switch t := v.(type) {
 	case nil:
@@ -117,67 +143,68 @@ func isSSHRemoteTildeCwd(backend, cwd string) bool {
 	return strings.ToLower(strings.TrimSpace(backend)) == "ssh" && (cwd == "~" || strings.HasPrefix(cwd, "~/"))
 }
 
-// Writes a terminal config mapping into the policy
-func applyTerminalMapping(policy TerminalPolicy, mapping map[string]any) {
-	keys := make([]string, 0, len(mapping))
-	for k := range mapping {
+// Terminal config keys in a stable order
+func terminalConfigKeys() []string {
+	keys := make([]string, 0, len(terminalConfigEnvMap))
+	for k := range terminalConfigEnvMap {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	backend := policy.Get("TERMINAL_ENV", "")
-	if b, ok := mapping["backend"].(string); ok && b != "" {
-		backend = b
-	}
-	for _, key := range keys {
-		value := mapping[key]
-		if value == nil || (key == "cwd" && cwdIsPlaceholder(value)) {
-			continue
-		}
-		envVar, ok := terminalConfigEnvMap[key]
-		if !ok {
-			continue
-		}
-		if key == "cwd" {
-			if s, ok := value.(string); ok && !isSSHRemoteTildeCwd(backend, strings.TrimSpace(s)) {
-				value = expandUser(s)
-			}
-		}
-		policy[envVar] = terminalEnvValue(value)
-	}
+	return keys
 }
 
-// Code default terminal policy, what a profile bypassing session freezes
+// Canonical stored form of a terminal setting's value, the value as given when it does not fit
+func canonicalTerminalValue(key string, v any) any {
+	if v == nil {
+		return nil
+	}
+	if e := settings.Find("terminal." + key); e != nil {
+		if c, err := e.Coerce(v); err == nil {
+			return c
+		}
+	}
+	return v
+}
+
+// Stores one terminal value in the policy, skipping unset values and placeholder working folders
+func setTerminalValue(policy TerminalPolicy, key string, v any) {
+	if v == nil || (key == "cwd" && cwdIsPlaceholder(v)) {
+		return
+	}
+	if key == "cwd" {
+		if s, ok := v.(string); ok && !isSSHRemoteTildeCwd(policy[terminalConfigEnvMap["backend"]], strings.TrimSpace(s)) {
+			v = expandUser(s)
+		}
+	}
+	policy[terminalConfigEnvMap[key]] = terminalEnvValue(v)
+}
+
+// Registry default terminal policy, what a profile bypassing session freezes
 func defaultTerminalScope() TerminalPolicy {
 	policy := TerminalPolicy{}
-	merged := map[string]any{}
-	for k, v := range toolLevelTerminalDefaults {
-		merged[k] = v
+	for _, key := range terminalConfigKeys() {
+		if e := settings.Find("terminal." + key); e != nil {
+			setTerminalValue(policy, key, canonicalTerminalValue(key, e.DefaultValue()))
+		}
 	}
-	for k, v := range config.AsMap(config.Defaults()["terminal"]) {
-		merged[k] = v
-	}
-	applyTerminalMapping(policy, merged)
 	return policy
 }
 
-// DefaultTerminalScope is the tool level terminal policy with no profile config folded in
+// DefaultTerminalScope is the terminal policy of the registry defaults with no profile config folded in
 func DefaultTerminalScope() TerminalPolicy { return defaultTerminalScope() }
 
-// Reads the profile dotenv bytes, a seam for tests that deny the read
-var readProfileEnvBytes = os.ReadFile
-
-// Builds the complete TERMINAL_* policy of a home with the process environment as the overlay layer
-func BuildTerminalScope(h string, secrets *config.Secrets) (TerminalPolicy, error) {
-	envPath := home.EnvPath(h)
-	if secrets != nil {
-		envPath = secrets.Path()
+// Builds the complete terminal policy of a home, the launch working folder of this process applying where the profile sets none
+func BuildTerminalScope(h string) (TerminalPolicy, error) {
+	overlay := map[string]string{}
+	if cwd, ok := os.LookupEnv(launchCwdName); ok {
+		overlay[launchCwdName] = cwd
 	}
-	return buildTerminalLayers(context.Background(), h, envPath, processTerminalEnv(), true)
+	return buildTerminalLayers(context.Background(), h, overlay, true)
 }
 
-// Builds the complete TERMINAL_* policy of a profile home over a trusted launch overlay, never the process env
+// Builds the complete terminal policy of a profile home over a trusted launch overlay, never the process env
 func BuildProfileTerminalScope(ctx context.Context, h string, envOverlay map[string]string) (TerminalPolicy, error) {
-	policy, err := buildTerminalLayers(ctx, h, home.EnvPath(h), envOverlay, false)
+	policy, err := buildTerminalLayers(ctx, h, envOverlay, false)
 	if err != nil {
 		return nil, err
 	}
@@ -185,75 +212,55 @@ func BuildProfileTerminalScope(ctx context.Context, h string, envOverlay map[str
 	return policy, nil
 }
 
-// TERMINAL_* assignments of the process environment
-func processTerminalEnv() map[string]string {
-	out := map[string]string{}
-	for _, kv := range os.Environ() {
-		if k, v, ok := strings.Cut(kv, "="); ok && strings.HasPrefix(k, "TERMINAL_") {
-			out[k] = v
-		}
-	}
-	return out
-}
-
-// Layers defaults, profile dotenv, overlay, profile config and managed config, an unscoped build skipping a config that does not parse
-func buildTerminalLayers(ctx context.Context, h, envPath string, envOverlay map[string]string, unscoped bool) (TerminalPolicy, error) {
-	policy := defaultTerminalScope()
-	defaultImage, hasDefaultImage := policy["TERMINAL_DOCKER_IMAGE"]
-	imagePinned := false
-	if _, err := os.Stat(envPath); err == nil {
-		raw, err := readProfileEnvBytes(envPath)
-		if err != nil && (!errors.Is(err, fs.ErrPermission) || config.PinnedTerminalBackend() == "") {
-			return nil, &TerminalPolicyUnavailable{Reason: fmt.Sprintf("cannot read %s: %v", envPath, err)}
-		}
-		profileEnv := map[string]string{}
-		if err == nil {
-			profileEnv = config.ParseEnv(config.DecodeEnvBytes(raw))
-		}
-		for k, v := range profileEnv {
-			if strings.HasPrefix(k, "TERMINAL_") {
-				policy[k] = v
-			}
-		}
-		_, imagePinned = profileEnv["TERMINAL_DOCKER_IMAGE"]
-	}
-	for k, v := range envOverlay {
-		if strings.HasPrefix(k, "TERMINAL_") && k != "TERMINAL_DOCKER_IMAGE_PINNED" {
-			policy[k] = v
-		}
-	}
-	if v, ok := envOverlay["TERMINAL_DOCKER_IMAGE"]; ok && (!hasDefaultImage || v != defaultImage) {
-		imagePinned = true
-	}
+// Settings of a home (defaults, config.yaml, managed pins) over a launch overlay that only fills what the profile leaves unset; a scoped build refuses a config that does not parse
+func buildTerminalLayers(ctx context.Context, h string, envOverlay map[string]string, unscoped bool) (TerminalPolicy, error) {
 	configPath := home.ConfigPath(h)
 	hasConfig, err := config.ConfigExists(ctx, configPath)
 	if err != nil {
 		return nil, &TerminalPolicyUnavailable{Reason: fmt.Sprintf("cannot resolve terminal config in %s: %v", h, err)}
 	}
-	var rawTerminal map[string]any
 	if hasConfig {
-		raw, err := config.ReadConfigDocReadonly(ctx, configPath)
-		if err != nil && !(unscoped && config.IsYAMLError(err)) {
+		if _, err := config.ReadConfigDocReadonly(ctx, configPath); err != nil && !(unscoped && config.IsYAMLError(err)) {
 			return nil, &TerminalPolicyUnavailable{Reason: fmt.Sprintf("cannot parse %s: %v", configPath, err)}
 		}
-		if doc, ok := raw.(map[string]any); ok {
-			rawTerminal, _ = doc["terminal"].(map[string]any)
+	}
+	sctx := home.WithOverride(ctx, h)
+	policy := TerminalPolicy{}
+	imagePinned := false
+	keys := terminalConfigKeys()
+	for _, key := range keys {
+		if key == "cwd" {
+			continue
 		}
-		if rawTerminal != nil {
-			applyTerminalMapping(policy, rawTerminal)
-			if _, ok := rawTerminal["docker_image"]; ok {
+		v, err := settings.Resolve(sctx, "terminal."+key)
+		if err != nil {
+			return nil, fmt.Errorf("terminal.%s: %w", key, err)
+		}
+		name := terminalConfigEnvMap[key]
+		if over, ok := envOverlay[name]; ok && v.Source == settings.SourceDefault {
+			policy[name] = over
+			if key == "docker_image" && over != terminalEnvValue(canonicalTerminalValue(key, v.Value)) {
 				imagePinned = true
 			}
+			continue
 		}
-	}
-	if managed, ok := config.ApplyManagedOverlay(map[string]any{})["terminal"].(map[string]any); ok {
-		base := rawTerminal
-		if base == nil {
-			base = map[string]any{}
-		}
-		applyTerminalMapping(policy, config.DeepMerge(base, managed))
-		if managed["docker_image"] != nil {
+		if key == "docker_image" && v.Source != settings.SourceDefault && v.Value != nil {
 			imagePinned = true
+		}
+		setTerminalValue(policy, key, canonicalTerminalValue(key, v.Value))
+	}
+	cwd, err := settings.Resolve(sctx, settings.WorkingFolder.Key)
+	if err != nil {
+		return nil, err
+	}
+	if over, ok := envOverlay[launchCwdName]; ok && (cwd.Source == settings.SourceDefault || cwdIsPlaceholder(cwd.Value)) {
+		policy[launchCwdName] = over
+	} else {
+		setTerminalValue(policy, "cwd", cwd.Value)
+	}
+	for name, v := range envOverlay {
+		if _, set := policy[name]; !set && strings.HasPrefix(name, "TERMINAL_") && name != "TERMINAL_DOCKER_IMAGE_PINNED" && !slices.Contains(keys, strings.ToLower(strings.TrimPrefix(name, "TERMINAL_"))) {
+			policy[name] = v
 		}
 	}
 	if imagePinned {
@@ -266,14 +273,13 @@ func buildTerminalLayers(ctx context.Context, h, envPath string, envOverlay map[
 
 // Gives a policy without an explicit cwd the TERMINAL_CWD a standalone gateway resolves at startup
 func resolveScopeCwdPlaceholder(policy TerminalPolicy) {
-	if policy["TERMINAL_CWD"] != "" {
+	if policy[launchCwdName] != "" {
 		return
 	}
 	homeFallback, _ := os.UserHomeDir()
-	mount := strings.ToLower(strings.TrimSpace(policy.Get("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false")))
-	resolved, ok := ResolvePlaceholderTerminalCwd("", policy["TERMINAL_ENV"], "", mount == "true" || mount == "1" || mount == "yes", homeFallback)
+	resolved, ok := ResolvePlaceholderTerminalCwd("", policy.Setting("backend"), "", policy.SettingBool("docker_mount_cwd_to_workspace"), homeFallback)
 	if ok && resolved != "" {
-		policy["TERMINAL_CWD"] = resolved
+		policy[launchCwdName] = resolved
 	}
 }
 
@@ -395,7 +401,7 @@ func EnvForProfileHome(ctx context.Context, env *Env, h string) *Env {
 	return scoped
 }
 
-// Cached policy with the inputs it was built from
+// Cached policy with the config and launch folder it was built from
 type scopeCacheEntry struct {
 	policy    TerminalPolicy
 	configSig string
@@ -418,18 +424,6 @@ func fileSig(path string) string {
 	return fmt.Sprintf("%d:%d", st.Size(), st.ModTime().UnixNano())
 }
 
-// TERMINAL_* values present in the process environment, as one signature
-func processTerminalEnvSig() string {
-	var parts []string
-	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "TERMINAL_") {
-			parts = append(parts, kv)
-		}
-	}
-	sort.Strings(parts)
-	return strings.Join(parts, "\x00")
-}
-
 // Policy bound to the env scope, else the session home policy rebuilt only when its inputs changed
 func terminalPolicy(env *Env) (TerminalPolicy, error) {
 	if env != nil && env.TerminalScope != nil {
@@ -439,24 +433,20 @@ func terminalPolicy(env *Env) (TerminalPolicy, error) {
 		return env.TerminalScope.Policy, nil
 	}
 	h := ""
-	var secrets *config.Secrets
 	if env != nil {
-		h, secrets = env.Home, env.Secrets
+		h = env.Home
 	}
-	if secrets == nil && h != "" {
-		secrets = config.NewSecrets(h)
-	}
-	configSig := fileSig(home.ConfigPath(h)) + "|" + fileSig(home.EnvPath(h))
+	configSig := fileSig(home.ConfigPath(h))
 	if md := config.ManagedDir(); md != "" {
 		configSig += "|" + fileSig(filepath.Join(md, "config.yaml"))
 	}
-	envSig := processTerminalEnvSig()
+	envSig := os.Getenv(launchCwdName)
 	scopeCache.Lock()
 	defer scopeCache.Unlock()
 	if entry := scopeCache.entries[h]; entry != nil && entry.configSig == configSig && entry.envSig == envSig {
 		return entry.policy, entry.err
 	}
-	policy, err := BuildTerminalScope(h, secrets)
+	policy, err := BuildTerminalScope(h)
 	scopeCache.entries[h] = &scopeCacheEntry{policy: policy, configSig: configSig, envSig: envSig, err: err}
 	return policy, err
 }
@@ -494,5 +484,5 @@ func (s sessionScope) dockerProfileScoped() bool {
 
 // Snapshot of the backend scope for this call
 func currentSessionScope(policy TerminalPolicy) sessionScope {
-	return sessionScope{envType: policy.Get("TERMINAL_ENV", "local"), persistent: policy.GetBool("TERMINAL_CONTAINER_PERSISTENT", "true")}
+	return sessionScope{envType: policy.Setting("backend"), persistent: policy.SettingBool("container_persistent")}
 }

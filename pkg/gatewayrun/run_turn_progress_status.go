@@ -52,7 +52,7 @@ func (t *TurnRunner) localNoticeCallbackSync(notice provider.AgentNotice) {
 		t.publishExecution("notification.show", map[string]any{"text": pystr.Strip(notice.Text), "level": notice.Level,
 			"kind": notice.Kind, "ttl_ms": notice.TTLMs, "key": notice.Key, "id": notice.ID})
 		return nil
-	}, string(tc.source.Platform), config.IsDiagnosticNotice(notice.Level, notice.Key), tc.userConfig)
+	}, string(tc.source.Platform), config.IsDiagnosticNotice(notice.Level, notice.Key))
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("local notice render failed: %s", err))
 	}
@@ -100,7 +100,7 @@ func (t *TurnRunner) statusCallbackSync(eventType string, message any) {
 		}
 		return nil
 	}
-	if _, err := config.RenderNotification(t.turnCtx, present, string(tc.source.Platform), config.IsWarningStatus(eventType, message), tc.userConfig); err != nil {
+	if _, err := config.RenderNotification(t.turnCtx, present, string(tc.source.Platform), config.IsWarningStatus(eventType, message)); err != nil {
 		pkgLog().Debug(fmt.Sprintf("status render failed: %s", err))
 	}
 }

@@ -108,8 +108,7 @@ func deferredSessionRecord(ctx context.Context, sessionKey string, o deferredRec
 		"inflight_turn": nil, "last_active": now, "lazy": o.lazy, "model_override": o.modelOverride,
 		"pending_title": nil, "profile_home": profile,
 		"resume_runtime_overrides": overrides, "resume_session_id": sessionKey,
-		"running": false, "session_key": sessionKey, "show_reasoning": loadShowReasoning(ctx),
-		"source": source, "tool_progress_mode": loadToolProgressMode(ctx),
+		"running": false, "session_key": sessionKey, "source": source,
 		"tool_started_at": map[string]any{}, "todo_state": o.todoState,
 		"transport": callerTransport(ctx), "auth_user_id": authUserID})
 }

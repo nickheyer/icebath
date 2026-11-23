@@ -1,17 +1,12 @@
 package gateway
 
 import (
-	"fmt"
-	"os"
 	"regexp"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
-
-var truthyTokens = []string{"1", "on", "true", "yes"}
-var falsyTokens = []string{"0", "false", "no", "off"}
 
 // Python str of the value parsed as a recognized truthy or falsy token, ok false otherwise
 func boolToken(value any) (bool, bool) {
@@ -36,48 +31,8 @@ func coerceBool(value any, def bool) bool {
 	return pyrepr.Truthy(value)
 }
 
-// GATEWAY_MULTIPLEX_PROFILES operator override, nil when unset, blank or unrecognized
-func envMultiplexProfilesOverride() *bool {
-	raw := os.Getenv("GATEWAY_MULTIPLEX_PROFILES")
-	if pystr.Strip(raw) == "" {
-		return nil
-	}
-	parsed, known := boolToken(raw)
-	if !known {
-		pkgLog().Warn(fmt.Sprintf("Ignoring unrecognized GATEWAY_MULTIPLEX_PROFILES=%s (expected one of %s or %s); falling back to config.yaml.",
-			pyrepr.Repr(raw), pyrepr.Repr(anyStrings(truthyTokens)), pyrepr.Repr(anyStrings(falsyTokens))))
-		return nil
-	}
-	return &parsed
-}
-
-func anyStrings(values []string) []any {
-	out := make([]any, len(values))
-	for i, v := range values {
-		out[i] = v
-	}
-	return out
-}
-
 // Policies for the runner when the last messaging adapter goes down
 var OnAllAdaptersDownPolicies = []string{"exit", "stay_alive"}
-
-// GATEWAY_ON_ALL_ADAPTERS_DOWN operator override, empty when unset, blank or unrecognized
-func envOnAllAdaptersDownOverride() string {
-	raw := os.Getenv("GATEWAY_ON_ALL_ADAPTERS_DOWN")
-	if pystr.Strip(raw) == "" {
-		return ""
-	}
-	token := pystr.Lower(pystr.Strip(raw))
-	for _, p := range OnAllAdaptersDownPolicies {
-		if token == p {
-			return token
-		}
-	}
-	pkgLog().Warn(fmt.Sprintf("Ignoring unrecognized GATEWAY_ON_ALL_ADAPTERS_DOWN=%s (expected one of %s); falling back to config.yaml.",
-		pyrepr.Repr(raw), pyrepr.Repr(anyStrings(OnAllAdaptersDownPolicies))))
-	return ""
-}
 
 // Canonical streaming transport token where YAML booleans map to auto or off and blanks to auto
 func normalizeTransportToken(value any) string {

@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Iron proxy module surface as the egress CLI reaches it, the attributes tests patch
@@ -76,6 +78,11 @@ type egressCLI struct {
 }
 
 type egressHandler func(cli *egressCLI) (int, error)
+
+// Context the CLI's settings reads resolve in, bound to the CLI's home
+func (cli *egressCLI) settingsCtx() context.Context {
+	return home.WithOverride(cli.ctx, cli.home)
+}
 
 // Subcommand of the egress tree with its handler and arguments
 type egressSubcommand struct {
@@ -513,20 +520,21 @@ func setupRestartDaemon(cli *egressCLI, proxyCfg map[string]any) error {
 
 func egressCmdStart(cli *egressCLI) (int, error) {
 	console := cli.console
+	ctx := cli.settingsCtx()
+	if !settings.ProxyEnabled.Get(ctx) {
+		console.Print("[yellow]proxy.enabled is false — run `icebath egress setup` first.[/yellow]")
+		return 1, nil
+	}
 	cfg, err := secretsLoadConfig(cli.home)
 	if err != nil {
 		return 1, err
 	}
-	proxyCfg := secretsMapping(cfg["proxy"])
-	if !pyTruthy(proxyCfg["enabled"]) {
-		console.Print("[yellow]proxy.enabled is false — run `icebath egress setup` first.[/yellow]")
-		return 1, nil
-	}
-	credentialSource := cfgText(proxyCfg, "credential_source", "env")
+	allowEnvFallback := settings.ProxyAllowEnvFallback.Get(ctx)
+	credentialSource := settings.ProxyCredentialSource.Get(ctx)
 	bwCfg, bwPresent := secretsMapping(cfg["secrets"])["bitwarden"].(map[string]any)
-	refreshBW := credentialSource == "bitwarden" && bwPresent && pyTruthy(bwCfg["enabled"])
+	refreshBW := credentialSource == "bitwarden" && bwPresent && settings.SecretsBitwardenEnabled.Get(ctx)
 	if credentialSource == "bitwarden" && !refreshBW {
-		if cfgBool(proxyCfg, "allow_env_fallback", false) {
+		if allowEnvFallback {
 			console.Print("[yellow]⚠ credential_source=bitwarden but secrets.bitwarden is disabled or missing — falling back " +
 				"to host-env secrets (allow_env_fallback=true).  Rotated Bitwarden keys will NOT propagate.[/yellow]")
 		} else {
@@ -546,25 +554,25 @@ func egressCmdStart(cli *egressCLI) (int, error) {
 		for k, v := range bwCfg {
 			copied[k] = v
 		}
-		copied["allow_env_fallback"] = cfgBool(proxyCfg, "allow_env_fallback", false)
+		copied["allow_env_fallback"] = allowEnvFallback
 		bitwardenConfig = copied
 	}
 	if refreshBW {
-		bwAccessEnv := cfgText(bitwardenConfig, "access_token_env", "BWS_ACCESS_TOKEN")
+		bwAccessEnv := settings.SecretsBitwardenAccessTokenEnv.Get(ctx)
 		if pystr.Strip(os.Getenv(bwAccessEnv)) == "" {
 			return egressRefuse(console,
 				fmt.Sprintf("credential_source=bitwarden but %s is not set in the environment.", bwAccessEnv),
 				"Either export the access token, or run "+
 					"`icebath egress setup --no-bitwarden` to switch back to env-based credentials."), nil
 		}
-		if !pyTruthy(bitwardenConfig["project_id"]) {
+		if settings.SecretsBitwardenProjectId.Get(ctx) == "" {
 			return egressRefuse(console,
 				"credential_source=bitwarden but secrets.bitwarden.project_id is empty.",
 				"Run `icebath secrets bitwarden setup` to configure the "+
 					"project, or switch back via `icebath egress setup --no-bitwarden`."), nil
 		}
 	}
-	status, err := cli.ip.startProxy(IronProxyStartOptions{InstallIfMissing: cfgBool(proxyCfg, "auto_install", true),
+	status, err := cli.ip.startProxy(IronProxyStartOptions{InstallIfMissing: settings.ProxyAutoInstall.Get(ctx),
 		RefreshSecretsFromBitwarden: refreshBW, BitwardenConfig: bitwardenConfig})
 	if err != nil {
 		console.Print("[red]✗ failed to start iron-proxy:[/red] " + pyrepr.ExceptionMessage(err))
@@ -622,15 +630,11 @@ func egressCmdReload(cli *egressCLI) (int, error) {
 
 // FormatEgressStatusText is the plain text egress status for slash commands
 func FormatEgressStatusText(h string, showTokens bool) (string, error) {
-	cfg, err := secretsLoadConfig(h)
-	if err != nil {
-		return "", err
-	}
+	ctx := home.WithOverride(context.Background(), h)
 	ip := newEgressBackend(IronProxy{Home: h})
-	proxyCfg := secretsMapping(cfg["proxy"])
 	status := ip.getStatus()
 	lines := []string{"Egress proxy status", ""}
-	for _, row := range statusRows(proxyCfg, status, func(v bool) string {
+	for _, row := range statusRows(ctx, status, func(v bool) string {
 		if v {
 			return "yes"
 		}
@@ -659,7 +663,7 @@ func FormatEgressStatusText(h string, showTokens bool) (string, error) {
 			lines = append(lines, "  - "+name)
 		}
 	}
-	enabled := pyTruthy(proxyCfg["enabled"])
+	enabled := settings.ProxyEnabled.Get(ctx)
 	if enabled && !status.Configured() {
 		lines = append(lines, "", "Next: run `icebath egress setup` to mint tokens and write proxy.yaml.")
 	} else if enabled && !(status.PID != 0 && status.Listening) {
@@ -670,14 +674,9 @@ func FormatEgressStatusText(h string, showTokens bool) (string, error) {
 
 func egressCmdStatus(cli *egressCLI) (int, error) {
 	console := cli.console
-	cfg, err := secretsLoadConfig(cli.home)
-	if err != nil {
-		return 1, err
-	}
-	proxyCfg := secretsMapping(cfg["proxy"])
 	status := cli.ip.getStatus()
 	table := &pyrich.Table{HideHeader: true, NoBox: true, PadX: 2, Columns: []pyrich.Column{{Style: "bold"}, {}}}
-	for _, row := range statusRows(proxyCfg, status, yn, func(t string) string { return "[dim]" + t + "[/dim]" }) {
+	for _, row := range statusRows(cli.settingsCtx(), status, yn, func(t string) string { return "[dim]" + t + "[/dim]" }) {
 		table.AddRow(row[0], row[1])
 	}
 	console.PrintTable(table)
@@ -708,17 +707,12 @@ func egressCmdStatus(cli *egressCLI) (int, error) {
 // Turns the integration off, a still running daemon reported through the liveness checked status pid
 func egressCmdDisable(cli *egressCLI) (int, error) {
 	console := cli.console
-	cfg, err := secretsLoadConfig(cli.home)
-	if err != nil {
-		return 1, err
-	}
-	proxyCfg := secretsSetdefaultMapping(cfg, "proxy")
-	if !pyTruthy(proxyCfg["enabled"]) {
+	ctx := cli.settingsCtx()
+	if !settings.ProxyEnabled.Get(ctx) {
 		console.Print("[dim]proxy.enabled was already false.[/dim]")
 		return 0, nil
 	}
-	proxyCfg["enabled"] = false
-	if err := secretsSaveConfig(cli.home, cfg); err != nil {
+	if _, err := settings.Set(ctx, settings.ProxyEnabled.Key, false, settings.Global); err != nil {
 		return 1, err
 	}
 	console.Print("[green]✓[/green] proxy.enabled set to false")
@@ -741,24 +735,19 @@ func egressCmdConfig(cli *egressCLI) (int, error) {
 // Secret names from Bitwarden for setup --from-bitwarden, nil after printing so the wizard aborts loudly
 func bitwardenEnvNames(cli *egressCLI) []string {
 	console := cli.console
-	cfg, err := secretsLoadConfig(cli.home)
-	if err != nil {
-		console.Print(fmt.Sprintf("  [red]✗ Could not enumerate Bitwarden secrets: %s[/red]", pyrepr.ExceptionMessage(err)))
-		return nil
-	}
-	bwCfg := sectionCfg(cfg, "bitwarden")
-	if !pyTruthy(bwCfg["enabled"]) {
+	ctx := cli.settingsCtx()
+	if !settings.SecretsBitwardenEnabled.Get(ctx) {
 		console.Print("  [red]✗ --from-bitwarden requested but secrets.bitwarden.enabled is false.[/red]")
 		console.Print("  Run `icebath secrets bitwarden setup` first, or omit --from-bitwarden.")
 		return nil
 	}
-	tokenEnv := cfgText(bwCfg, "access_token_env", "BWS_ACCESS_TOKEN")
+	tokenEnv := settings.SecretsBitwardenAccessTokenEnv.Get(ctx)
 	accessToken := pystr.Strip(os.Getenv(tokenEnv))
 	if accessToken == "" {
 		console.Print(fmt.Sprintf("  [red]✗ --from-bitwarden requested but %s is not set in the environment.[/red]", tokenEnv))
 		return nil
 	}
-	secrets, _, err := cli.ip.fetchBitwardenSecrets(BitwardenFetchOptions{AccessToken: accessToken, ProjectID: cfgText(bwCfg, "project_id", ""), CacheTTL: 0, UseCache: false, HomePath: cli.home})
+	secrets, _, err := cli.ip.fetchBitwardenSecrets(BitwardenFetchOptions{AccessToken: accessToken, ProjectID: settings.SecretsBitwardenProjectId.Get(ctx), CacheTTL: 0, UseCache: false, HomePath: cli.home})
 	if err != nil {
 		console.Print(fmt.Sprintf("  [red]✗ Could not enumerate Bitwarden secrets: %s[/red]", pyrepr.ExceptionMessage(err)))
 		console.Print("  Either fix the Bitwarden config and retry, or rerun setup " +
@@ -822,7 +811,7 @@ func egressPrompt(console *pyrich.Console, text string) string {
 }
 
 // Label and value rows shared by the rich status table and the plain text variant
-func statusRows(proxyCfg map[string]any, status IronProxyStatus, yn func(bool) string, dim func(string) string) [][2]string {
+func statusRows(ctx context.Context, status IronProxyStatus, yn func(bool) string, dim func(string) string) [][2]string {
 	orDim := func(value, missing string) string {
 		if value == "" {
 			return dim(missing)
@@ -834,7 +823,7 @@ func statusRows(proxyCfg map[string]any, status IronProxyStatus, yn func(bool) s
 		process = fmt.Sprintf("pid %d", status.PID)
 	}
 	return [][2]string{
-		{"Enabled", yn(pyTruthy(proxyCfg["enabled"]))},
+		{"Enabled", yn(settings.ProxyEnabled.Get(ctx))},
 		{"Binary", orDim(status.BinaryPath, "(missing)")},
 		{"Binary version", orDim(status.BinaryVersion, "(unknown)")},
 		{"Config", orDim(status.ConfigPath, "(not generated)")},
@@ -842,7 +831,7 @@ func statusRows(proxyCfg map[string]any, status IronProxyStatus, yn func(bool) s
 		{"Tunnel port", fmt.Sprint(status.TunnelPort)},
 		{"Process", process},
 		{"Listening", yn(status.Listening)},
-		{"Credential src", cfgText(proxyCfg, "credential_source", "env")},
-		{"Docker enforce", yn(cfgBool(proxyCfg, "enforce_on_docker", true))},
+		{"Credential src", settings.ProxyCredentialSource.Get(ctx)},
+		{"Docker enforce", yn(settings.ProxyEnforceOnDocker.Get(ctx))},
 	}
 }

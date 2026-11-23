@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/spf13/cobra"
@@ -158,9 +159,6 @@ func (c *CLI) applyTiers(root *cobra.Command) {
 		refuse := func(*cobra.Command, []string) error { return &ExitError{Code: 1, Msg: msg} }
 		cmd.Hidden, cmd.DisableFlagParsing, cmd.Args, cmd.RunE = true, true, cobra.ArbitraryArgs, refuse
 		c.handlers[path] = refuse
-		if parent == root {
-			BuiltinSubcommands[name] = true
-		}
 	}
 	for path, flags := range cliFlagTiers {
 		cmd := root
@@ -231,14 +229,29 @@ func applyTierTexts(root *cobra.Command) {
 		}
 	}
 	walk(root)
-	for _, p := range argparseTree {
-		for i := range p.Acts {
-			p.Acts[i].Help = r.Replace(p.Acts[i].Help)
-			for j := range p.Acts[i].Sub {
-				p.Acts[i].Sub[j].Help = r.Replace(p.Acts[i].Sub[j].Help)
+	argparseTierTexts.Do(func() {
+		for _, p := range argparseTree {
+			for i := range p.Acts {
+				p.Acts[i].Help = r.Replace(p.Acts[i].Help)
+				for j := range p.Acts[i].Sub {
+					p.Acts[i].Sub[j].Help = r.Replace(p.Acts[i].Sub[j].Help)
+				}
 			}
 		}
+	})
+}
+
+// Rewrites the shared parser table's help texts once per process, so building a CLI never writes package state another one reads
+var argparseTierTexts sync.Once
+
+// Whether a top level name is a command of a tier this binary leaves out, a builtin that refuses with the build that has it
+func tierRefusedTopLevel(name string) bool {
+	tier, ok := CLITiers[name]
+	if !ok {
+		return false
 	}
+	_, refused := linktier.Refusal("icebath "+name, tier)
+	return refused
 }
 
 // Epilog examples that show the output of a feature of a tier and that tier

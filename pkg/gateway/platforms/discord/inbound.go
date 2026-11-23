@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const maxTextInjectBytes = 100 * 1024
@@ -162,7 +163,7 @@ func (a *DiscordAdapter) handleDiscordMessage(ctx context.Context, m *inboundMes
 	var autoThreaded *autoThread
 	if !isThread && !isDM {
 		skipThread := channelKeys.intersects(a.getNoThreadChannels(ctx)) || (isFreeChannel && !a.discordFreeResponseAutoThread(ctx))
-		autoThreadOn := a.extraOrEnvFlag(ctx, "auto_thread", "DISCORD_AUTO_THREAD", "true", true)
+		autoThreadOn := settings.DiscordAutoThread.Get(a.sctx(ctx))
 		isReply := m.Type == discordgo.MessageTypeReply
 		if autoThreadOn && !skipThread && !isVoiceLinkedChannel && !isReply {
 			thread := a.autoCreateThread(ctx, m)

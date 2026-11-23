@@ -192,11 +192,6 @@ func ApplyManagedOverlay(doc map[string]any) map[string]any {
 	if expanded == nil {
 		return doc
 	}
-	expanded = normalizeModelKeys(expanded)
-	if model, ok := expanded["model"].(string); ok {
-		expanded = Clone(expanded).(map[string]any)
-		expanded["model"] = map[string]any{"default": model}
-	}
 	return DeepMerge(doc, expanded)
 }
 

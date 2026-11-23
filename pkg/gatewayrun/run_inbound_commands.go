@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -185,11 +186,7 @@ func (r *GatewayRunner) hmCmdMoa(ctx context.Context, event *gateway.MessageEven
 	if payload == "" {
 		return true, provider.MoAUsage(), nil
 	}
-	var raw any = map[string]any{}
-	if cfg := r.readUserConfig(ctx); cfg != nil {
-		raw = cfg["moa"]
-	}
-	moaCfg := provider.NormalizeMoAConfig(raw)
+	defaultPreset := settings.MoaDefaultPreset.Get(ctx)
 	failed := func() (failed bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -200,7 +197,7 @@ func (r *GatewayRunner) hmCmdMoa(ctx context.Context, event *gateway.MessageEven
 		r.withSessionState(quickKey, func(s *SessionState) {
 			claimOneTurnRestoreIn(s, nil)
 			s.conversation.modelOverride = map[string]any{
-				"provider": "moa", "model": moaCfg["default_preset"], "base_url": "moa://local",
+				"provider": "moa", "model": defaultPreset, "base_url": "moa://local",
 				"api_key": "moa-virtual-provider", "api_mode": "chat_completions",
 			}
 		})

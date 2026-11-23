@@ -2,46 +2,21 @@ package gateway
 
 import (
 	"context"
-	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Operator's explicit multiplex choice for the default profile, the env override first then its raw config.yaml
+// Operator's explicit multiplex choice for the default profile, nil when the setting is left at its default
 func ExplicitMultiplexFlag(ctx context.Context, defaultHome string) (*bool, error) {
-	if env := envMultiplexProfilesOverride(); env != nil {
-		return env, nil
-	}
-	cfgPath := filepath.Join(defaultHome, "config.yaml")
-	exists, err := config.ConfigExists(ctx, cfgPath)
-	if err != nil || !exists {
+	sctx := home.WithOverride(ctx, defaultHome)
+	v, err := settings.Resolve(sctx, settings.GatewayMultiplexProfiles.Key)
+	if err != nil || v.Source == settings.SourceDefault {
 		return nil, err
 	}
-	cfg, err := config.ReadUserConfigRaw(ctx, cfgPath)
-	if err != nil {
-		return nil, err
-	}
-	section, _ := cfg["gateway"].(map[string]any)
-	value, ok := cfg["multiplex_profiles"]
-	if !ok || value == nil {
-		value = section["multiplex_profiles"]
-	}
-	if value == nil {
-		return nil, nil
-	}
-	parsed := true
-	if s, isStr := value.(string); isStr {
-		if v, known := pystr.BoolToken(s); known {
-			parsed = v
-		}
-	} else {
-		parsed = pyrepr.Truthy(value)
-	}
-	return &parsed, nil
+	on := settings.GatewayMultiplexProfiles.Get(sctx)
+	return &on, nil
 }
 
 // Whether the default profile's gateway serves every profile, the live record first then any explicit flag

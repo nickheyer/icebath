@@ -160,14 +160,14 @@ func (a *app) prefillPrompt(stored string) tea.Cmd {
 	if draft := a.card.composer.Value(); trimJS(draft) != "" {
 		text = strings.TrimRightFunc(text, isJSSpace) + " " + draft
 	}
-	a.draftRevision++
 	filled := a.card.composer.SetValue(text)
 	return tea.Batch(filled, a.restoreImages(images))
 }
 
 // Drops the armed edit, saying so when one was armed and the cancel was asked for
 func (a *app) cancelPendingRewind(announce bool) bool {
-	a.rewindGeneration++
+	// A rewind on its way to the owner no longer arms the edit again when it fails
+	a.rewindFlight = nil
 	if a.rewindPending == nil {
 		return false
 	}
@@ -193,7 +193,7 @@ func (a *app) promptsOnScreen() int {
 // false when the escape is not one of those
 func (a *app) backtrackEscape() (tea.Cmd, bool) {
 	ui := a.store.ui
-	if ui.Busy || ui.Sid == "" || !a.gw.canonical() || a.dialogs.waiting() || a.queueEdit != nil || a.card.composer.Value() != "" {
+	if ui.Busy || ui.Sid == "" || a.dialogs.waiting() || a.queue.queueEditIndex() != nil || a.card.composer.Value() != "" {
 		a.rewindPrimed = ""
 		return nil, false
 	}
@@ -233,9 +233,6 @@ func (a *app) withRewindTargets(then func(sid string, targets []rewindTarget, tu
 	switch {
 	case sid == "":
 		a.sys(tr(txt.SlashCmdCoreRewindNothing))
-		return nil
-	case !a.gw.canonical():
-		a.sys(tr(txt.SlashCmdCoreRewindUnsupported))
 		return nil
 	case a.store.ui.Busy:
 		a.sys(tr(txt.SlashCmdCoreBusyReplying, "rewind"))
@@ -351,13 +348,14 @@ func (a *app) sendPendingRewind(full string) (tea.Cmd, bool) {
 	text, attachments := prepareSubmission(full, tokens)
 	a.store.stagePastes(full, text, tokens)
 	a.clearComposerTokens()
-	return a.rewindAndSend(pending.sid, pending.target, text, full, attachments, tokens), true
+	return a.rewindAndSend(pending, text, full, attachments, tokens), true
 }
 
 // Cuts the session back to just before the prompt, repaints the transcript from the owner's rows and sends the edit as the next prompt
-func (a *app) rewindAndSend(sid string, target rewindTarget, text, display string, attachments []imageAttachment, tokens []composerToken) tea.Cmd {
+func (a *app) rewindAndSend(pending *pendingRewind, text, display string, attachments []imageAttachment, tokens []composerToken) tea.Cmd {
+	sid, target := pending.sid, pending.target
 	stale := func() bool { return a.store.ui.Sid != sid }
-	generation := a.rewindGeneration
+	a.rewindFlight = pending
 	destination, derr := a.store.captureDestination()
 	if derr != nil {
 		a.uncaught(derr)
@@ -372,11 +370,13 @@ func (a *app) rewindAndSend(sid string, target rewindTarget, text, display strin
 			a.sys(tr(key))
 			return nil
 		}
-		if rearm && a.rewindPending == nil && generation == a.rewindGeneration {
-			a.rewindPending = &pendingRewind{sid: sid, target: target}
+		if rearm && a.rewindPending == nil && a.rewindFlight == pending {
+			a.rewindPending = pending
+		}
+		if a.rewindFlight == pending {
+			a.rewindFlight = nil
 		}
 		a.tokens = trimTokens(append(a.tokens, tokens...))
-		a.draftRevision++
 		value := display
 		if draft := a.card.composer.Value(); trimJS(draft) != "" {
 			value = strings.TrimRightFunc(display, isJSSpace) + " " + draft
@@ -408,6 +408,9 @@ func (a *app) rewindAndSend(sid string, target rewindTarget, text, display strin
 			}
 			return restored
 		}
+		if a.rewindFlight == pending {
+			a.rewindFlight = nil
+		}
 		send := func() tea.Cmd {
 			opts := submitOpts{Attachments: attachments, Destination: &destination}
 			return a.sendExpanded(text, true, display, opts)
@@ -426,7 +429,7 @@ func (a *app) rewindAndSend(sid string, target rewindTarget, text, display strin
 				attached := snapshotAttachment(snapshot)
 				info := patchedInfo(baseline, *attached.Info)
 				a.setHistoryItems(func([]msg) []msg {
-					return append([]msg{introMsg(info)}, toTranscriptMessages(attached.Messages)...)
+					return append([]msg{introMsg(info)}, toTranscriptMessages(attached.Messages, a.store.ui)...)
 				})
 				a.store.ui.Info = info
 			}
@@ -553,16 +556,5 @@ func (a *app) pasteBehindList(content string, live func() bool, next func() tea.
 			return land(a.insertPaste(cleaned))
 		})
 	}
-	if a.gw.canonical() {
-		return a.store.stageImagePath(cleaned, a.gw, destination, staged)
-	}
-	return call(a.gw, tuigateway.ImageAttach, tuigateway.ImageAttachParams{Path: cleaned, SessionID: destination.Sid}, func(r *tuigateway.AttachedImageResult, err error) tea.Cmd {
-		switch {
-		case !live() && r != nil && r.Path != "":
-			return tea.Batch(fire(a.gw, tuigateway.ImageDetach, tuigateway.ImageDetachParams{Path: r.Path, SessionID: destination.Sid}), gone())
-		case err != nil || r.Name == "":
-			return staged(nil, err)
-		}
-		return staged(&stagedImage{Name: r.Name, Path: r.Path, Remainder: val(r.Remainder)}, nil)
-	})
+	return a.store.stageImagePath(cleaned, a.gw, destination, staged)
 }

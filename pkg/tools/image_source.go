@@ -261,7 +261,7 @@ func isLocalTerminalBackend(env *Env) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	switch strings.ToLower(strings.TrimSpace(policy.Get("TERMINAL_ENV", "local"))) {
+	switch strings.ToLower(strings.TrimSpace(policy.Setting("backend"))) {
 	case "local", "":
 		return true, nil
 	}

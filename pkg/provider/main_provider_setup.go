@@ -9,7 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Providers select_provider_and_model sends to the generic api key flow
@@ -629,27 +631,20 @@ func dictGet(m map[string]any, key string, def any) any {
 	return def
 }
 
-// Removes a saved custom provider the user picks from config.yaml
+// Removes a providers entry the user picks, through the settings writer
 func removeCustomProvider(r *ModelFlowRun) error {
-	tree, err := r.loadConfig()
-	if err != nil {
-		return err
-	}
-	cfg := map[string]any(tree)
-	raw := cfg["custom_providers"]
-	providers, isList := raw.([]any)
-	if !pyTruthy(raw) || !isList || len(providers) == 0 {
+	ctx := home.WithOverride(r.ctx(), r.home())
+	providers := settings.Providers.Get(ctx)
+	keys := sortedKeys(providers)
+	if len(keys) == 0 {
 		fmt.Fprintln(r.Out, "No custom providers configured.")
 		return nil
 	}
 	fmt.Fprint(r.Out, "Remove a custom provider:\n\n")
-	choices := make([]string, 0, len(providers)+1)
-	for _, entry := range providers {
-		if m, ok := entry.(map[string]any); ok {
-			choices = append(choices, fmt.Sprintf("%s (%s)", pyStr(dictGet(m, "name", "unnamed")), shortURL(pyStr(dictGet(m, "base_url", "")))))
-		} else {
-			choices = append(choices, pyStr(entry))
-		}
+	choices := make([]string, 0, len(keys)+1)
+	for _, key := range keys {
+		m, _ := providers[key].(map[string]any)
+		choices = append(choices, fmt.Sprintf("%s (%s)", key, shortURL(pyStr(dictGet(m, "base_url", "")))))
 	}
 	choices = append(choices, "Cancel")
 	var idx *big.Int
@@ -671,28 +666,15 @@ func removeCustomProvider(r *ModelFlowRun) error {
 			}
 		}
 	}
-	if idx == nil || idx.Cmp(big.NewInt(int64(len(providers)))) >= 0 {
+	if idx == nil || idx.Sign() < 0 || idx.Cmp(big.NewInt(int64(len(keys)))) >= 0 {
 		fmt.Fprintln(r.Out, flowNoChange)
 		return nil
 	}
-	pos := int(idx.Int64())
-	if idx.Sign() < 0 {
-		if idx.Cmp(big.NewInt(int64(-len(providers)))) < 0 {
-			return fmt.Errorf("custom provider number %s is past the end of the list", idx.String())
-		}
-		pos = len(providers) + pos
-	}
-	removed := providers[pos]
-	rest := append(append([]any{}, providers[:pos]...), providers[pos+1:]...)
-	cfg["custom_providers"] = rest
-	if err := config.Save(r.home(), tree); err != nil {
+	removed := keys[idx.Int64()]
+	if _, err := settings.Reset(ctx, settings.Providers.EntryKey(removed), settings.Global); err != nil {
 		return err
 	}
-	removedName := pyStr(removed)
-	if m, ok := removed.(map[string]any); ok {
-		removedName = pyStr(dictGet(m, "name", "unnamed"))
-	}
-	fmt.Fprintf(r.Out, "✅ Removed \"%s\" from custom providers.\n", removedName)
+	fmt.Fprintf(r.Out, "✅ Removed \"%s\" from custom providers.\n", removed)
 	return nil
 }
 

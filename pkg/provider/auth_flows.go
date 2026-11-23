@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // ---- status helpers ----
@@ -323,20 +324,12 @@ func GetAuthStatus(env PoolEnv, providerID string) map[string]any {
 // Structural Azure Foundry status, the Entra chain never invoked so the CLI starts flat
 func getAzureFoundryAuthStatus(env PoolEnv) map[string]any {
 	info := map[string]any{"provider": "azure-foundry"}
-	cfg := env.config()
-	modelCfg, _ := cfg["model"].(map[string]any)
-	if modelCfg == nil {
-		modelCfg = map[string]any{}
-	}
-	authMode := strings.ToLower(strings.TrimSpace(cfgString(modelCfg["auth_mode"])))
-	if authMode == "" {
-		authMode = "api_key"
-	}
+	ctx := env.loginCtx()
+	authMode := settings.ModelAuthMode.Get(ctx)
 	info["auth_mode"] = authMode
-	info["base_url"] = strings.TrimSpace(cfgString(modelCfg["base_url"]))
+	info["base_url"] = strings.TrimSpace(settings.ModelBaseURL.Get(ctx))
 	if authMode == "entra_id" {
-		entraCfg, _ := modelCfg["entra"].(map[string]any)
-		scope := strings.TrimSpace(cfgString(entraCfg["scope"]))
+		scope := strings.TrimSpace(cfgString(settings.ModelEntra.Get(ctx)["scope"]))
 		if scope == "" {
 			scope = ScopeAIAzureDefault
 		}
@@ -479,13 +472,7 @@ func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultM
 
 // Normalized model.provider from config.yaml, empty when absent or unreadable
 func getConfigProvider(env PoolEnv) string {
-	cfg, err := config.ReadUser(envHome(env))
-	if err != nil {
-		return ""
-	}
-	model, _ := cfg["model"].(map[string]any)
-	provider, _ := model["provider"].(string)
-	return strings.ToLower(strings.TrimSpace(provider))
+	return strings.ToLower(strings.TrimSpace(settings.ModelProvider.Get(env.loginCtx())))
 }
 
 // True when logout should reset model.provider because config.yaml selects this registry provider
@@ -541,21 +528,17 @@ func LoginCommand(out io.Writer) {
 	fmt.Fprintln(out, "The 'icebath login' command has been removed.\nUse 'icebath auth' to manage credentials,\n'icebath model' to select a provider, or start 'icebath' and type '/setup' for full setup.")
 }
 
-// GetMinimaxOAuthAuthStatus is the MiniMax OAuth status snapshot
+// GetMinimaxOAuthAuthStatus is the MiniMax OAuth status snapshot of the selected MiniMax login
 func GetMinimaxOAuthAuthStatus(env PoolEnv) map[string]any {
-	state, err := env.Store.GetProviderAuthState("minimax-oauth")
-	if err != nil || len(state) == 0 || anyString(state["access_token"]) == "" {
+	entry, ok := LoadSelectedPool(env, "minimax-oauth").Peek()
+	if !ok || entry.AccessToken == "" {
 		return map[string]any{"logged_in": false, "provider": "minimax-oauth"}
 	}
-	tokenValid := true
-	if expires, ok := ParseISOTimestamp(state["expires_at"]); ok {
-		tokenValid = expires > nowEpoch()
+	status := map[string]any{"logged_in": true, "provider": "minimax-oauth"}
+	if entry.ExpiresAtMS != 0 {
+		status["expires_at"] = epochToISO(float64(entry.ExpiresAtMS) / 1000)
 	}
-	region := anyString(state["region"])
-	if region == "" {
-		region = "global"
-	}
-	return map[string]any{"logged_in": tokenValid, "provider": "minimax-oauth", "region": region, "expires_at": state["expires_at"]}
+	return status
 }
 
 // True when the registry knows the provider id
@@ -572,14 +555,20 @@ func authProviderDisplayName(providerID string) string {
 	return providerID
 }
 
+// Whether the auth store holds logins for the pool key
+func storeHoldsLogins(env PoolEnv, providerID string) bool {
+	rows, err := env.Store.ReadCredentialPool(strings.ToLower(strings.TrimSpace(providerID)))
+	return err == nil && len(rows) > 0
+}
+
 // UnknownAuthProviderError is a logout aimed at a provider the registry does not know
 type UnknownAuthProviderError struct{ Provider string }
 
 func (e *UnknownAuthProviderError) Error() string { return "Unknown provider: " + e.Provider }
 
-// LogoutCommand clears the auth state of the named, active, or config selected provider
-func LogoutCommand(env PoolEnv, providerID string, out io.Writer) error {
-	if providerID != "" && !isKnownAuthProvider(providerID) {
+// LogoutLogin removes the default login of the named, active or configured provider, or with all every login, its auth state and its env sources
+func LogoutLogin(env PoolEnv, providerID string, all bool, out io.Writer) error {
+	if providerID != "" && !isKnownAuthProvider(providerID) && !storeHoldsLogins(env, providerID) {
 		return &UnknownAuthProviderError{Provider: providerID}
 	}
 	target := providerID
@@ -593,11 +582,39 @@ func LogoutCommand(env PoolEnv, providerID string, out io.Writer) error {
 		fmt.Fprintln(out, "No provider is currently logged in.")
 		return nil
 	}
-	shouldResetConfig := shouldResetConfigProviderOnLogout(env, target)
 	providerName := authProviderDisplayName(target)
+	removedLogin := false
+	if !all {
+		row, rotating, found := logoutTargetLogin(env, target)
+		if rotating {
+			fmt.Fprintf(out, "%s takes turns between several logins. Remove one with `icebath auth remove %s <login>`, or all with `icebath logout %s --all`.\n", providerName, target, target)
+			return nil
+		}
+		if found {
+			remaining, err := logoutLogin(env, target, row, out)
+			if err != nil {
+				return err
+			}
+			if remaining > 0 {
+				fmt.Fprintf(out, "%s still has %d login(s). Model provider configuration was unchanged.\n", providerName, remaining)
+				return nil
+			}
+			removedLogin = true
+		}
+	}
+	shouldResetConfig := shouldResetConfigProviderOnLogout(env, target)
 	cleared, err := env.Store.ClearProviderAuth(target)
 	if err != nil {
 		return err
+	}
+	cleared = cleared || removedLogin
+	if all {
+		if err := suppressProviderEnvSources(env, target); err != nil {
+			return err
+		}
+		if err := setLoginsSetting(env, target, "default", nil); err != nil {
+			env.log().Debug(fmt.Sprintf("%s logins: could not clear the default (%v)", target, err))
+		}
 	}
 	if !cleared && !shouldResetConfig {
 		fmt.Fprintf(out, "No auth state found for %s.\n", providerName)

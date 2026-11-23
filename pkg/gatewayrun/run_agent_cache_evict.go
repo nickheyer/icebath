@@ -175,15 +175,7 @@ func (r *GatewayRunner) agentCacheBounds(ctx context.Context) gateway.AgentCache
 	if r.agentCacheBoundsCache != nil {
 		return *r.agentCacheBoundsCache
 	}
-	bounds := func() (bounds gateway.AgentCacheBounds) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				pkgLog().Debug(fmt.Sprintf("Agent cache bounds config read failed: %v", rec))
-				bounds = gateway.ResolveAgentCacheBounds(map[string]any{})
-			}
-		}()
-		return gateway.ResolveAgentCacheBounds(gateway.LoadGatewayConfigMap(ctx, ""))
-	}()
+	bounds := gateway.ResolveAgentCacheBounds(ctx)
 	r.agentCacheBoundsCache = &bounds
 	return bounds
 }

@@ -89,7 +89,7 @@ func (a *XAIGrokAdapter) GetRetryCredential(failed UpstreamCredential, statusCod
 }
 
 func (a *XAIGrokAdapter) loadPool() *Pool {
-	return LoadPool(a.env, xaiProxyPoolProvider)
+	return LoadSelectedPool(a.env, xaiProxyPoolProvider)
 }
 
 // Upstream credential of a pool entry, its runtime key and endpoint with the OAuth default base URL

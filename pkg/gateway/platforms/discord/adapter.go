@@ -5,14 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -36,7 +34,8 @@ type DiscordAdapter struct {
 	allowedUserIDs      strSet
 	usernameResolvedIDs strSet
 	allowedRoleIDs      strSet
-	gateEnvSnapshot     map[string]string
+	// Home of the profile this adapter serves, bound at connect time
+	settingsHome string
 
 	textBatchDelaySeconds      float64
 	textBatchSplitDelaySeconds float64
@@ -94,63 +93,8 @@ func (a *DiscordAdapter) FormatToolPreview(preview tools.ToolPreview) string {
 	return formatDiscordMarkdownLink(preview.Text, preview.URL)
 }
 
-// Liveness value from profile config, then the legacy env, then the default
-func (a *DiscordAdapter) configValue(ctx context.Context, key string, def any, envKey string) any {
-	var value any
-	if a.Config != nil && a.Config.Extra != nil {
-		value = a.Config.Extra[key]
-	}
-	if value == nil && envKey != "" {
-		if v := gateway.PlatformGateEnv(ctx, envKey, ""); v != "" {
-			value = v
-		}
-	}
-	if value == nil || value == "" {
-		return def
-	}
-	return value
-}
-
-// Warns that an unusable liveness knob value disables its probe dimension
-func (a *DiscordAdapter) warnLivenessConfigDisabled(key string, raw any) {
-	scope := "the websocket liveness probe"
-	if key == "websocket_event_max_silence_seconds" {
-		scope = "the event-silence dimension of the websocket liveness probe"
-	}
-	pkgLog().Warn(fmt.Sprintf("[%s] Discord liveness knob %s=%s is not a usable positive number; %s is disabled by this value",
-		a.Name(), key, pyrepr.Repr(raw), scope))
-}
-
-// Liveness knob usable when finite, non negative and exact for its type, else warned and zero
-func (a *DiscordAdapter) livenessKnob(ctx context.Context, key string, def any, integral bool, envKey string) float64 {
-	raw := a.configValue(ctx, key, def, envKey)
-	var value *float64
-	if _, isBool := raw.(bool); !isBool {
-		if f, err := pyint.Float(raw); err == nil {
-			value = &f
-		}
-	}
-	if value != nil && !math.IsInf(*value, 0) && !math.IsNaN(*value) && *value >= 0 && (!integral || math.Trunc(*value) == *value) {
-		if integral {
-			return math.Trunc(*value)
-		}
-		return *value
-	}
-	if value == nil || *value != 0 {
-		a.warnLivenessConfigDisabled(key, raw)
-	}
-	return 0
-}
-
-// Float liveness knob
-func (a *DiscordAdapter) finitePositiveConfigFloat(ctx context.Context, key string, def float64, envKey string) float64 {
-	return a.livenessKnob(ctx, key, def, false, envKey)
-}
-
-// Integer liveness knob
-func (a *DiscordAdapter) livenessConfigInt(ctx context.Context, key string, def int, envKey string) int {
-	return int(a.livenessKnob(ctx, key, def, true, envKey))
-}
+// Seconds of a liveness window, a negative length switching the probe off like zero does
+func livenessSeconds(d time.Duration) float64 { return max(d.Seconds(), 0) }
 
 // Surfaces a post startup gateway session exit as a retryable fatal so the runner requeues the adapter
 func (a *DiscordAdapter) handleBotTaskDone(ctx context.Context, task *botTask) {

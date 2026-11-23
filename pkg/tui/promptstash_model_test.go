@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"reflect"
 	"strconv"
 	"strings"
@@ -245,10 +246,12 @@ func TestIndicatorState(t *testing.T) {
 		}
 	})
 	t.Run("test_placeholder_hint_single_shows_preview", func(t *testing.T) {
+		km := tuiKeymap()
+		lang.InstallKeys(km.Chord)
 		s := newTestStash()
 		s.Stash("write the migration guide", nil)
 		hint := s.ComposerHint()
-		if !strings.Contains(hint, "Ctrl+S") {
+		if !strings.Contains(hint, km.Chord("tui.stash")) {
 			t.Fatalf("hint %q names no key", hint)
 		}
 		if !strings.Contains(hint, "write the migration guide") {

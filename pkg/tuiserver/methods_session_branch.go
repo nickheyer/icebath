@@ -14,13 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Declares session.branch and session.branch_whole on the session module registry
-func registerSessionBranchHandlers() {
-	sessionMethod("session.branch", true, func(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) map[string]any {
-		return branchLive(ctx, rid, params, session, false)
-	})
-}
-
 // Next title in the parent's lineage, the TUI branch naming
 func branchTitle(ctx context.Context, db *state.DB, parentKey string) (string, error) {
 	current, _, err := db.GetSessionTitle(ctx, parentKey)

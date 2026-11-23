@@ -115,7 +115,7 @@ func (r *GatewayRunner) resumeOwnerAuthorized(ctx context.Context, sessionKey st
 
 // Auto continues fresh restart interrupted sessions with a synthetic empty turn, returning how many were scheduled
 func (r *GatewayRunner) scheduleResumePendingSessions(ctx context.Context, platform *gateway.Platform) (int, error) {
-	window := gateway.AutoContinueFreshnessWindow()
+	window := gateway.AutoContinueFreshnessWindow(ctx)
 	candidates := r.resumePendingCandidates(ctx, platform)
 	if candidates == nil {
 		return 0, nil
@@ -236,7 +236,7 @@ func (r *GatewayRunner) awaitStartupBootSends(ctx context.Context, plannedRestar
 		r.redeliverClaimedObligations(ctx, claimed)
 		return nil, nil
 	})
-	timeout := startupRestoreDrainTimeoutSecs()
+	timeout := startupRestoreDrainTimeoutSecs(ctx)
 	if timeout <= 0 {
 		_, err := bootTask.wait(ctx)
 		return err

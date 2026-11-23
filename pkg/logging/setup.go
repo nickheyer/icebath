@@ -3,17 +3,14 @@ package logging
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Packages of each component, gating component logs and logs --component
@@ -74,40 +71,22 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 	if adopted {
 		return logDir, nil
 	}
-	cfgLevel, cfgMaxSize, cfgBackup := readLoggingConfig(ctx)
-	var rawLevel any = "INFO"
+	sctx := home.WithOverride(ctx, h)
+	levelName := settings.LoggingLevel.Get(sctx)
 	if o.LogLevel != "" {
-		rawLevel = o.LogLevel
-	} else if pyrepr.Truthy(cfgLevel) {
-		rawLevel = cfgLevel
-	}
-	levelName, ok := rawLevel.(string)
-	if !ok {
-		return "", fmt.Errorf("logging.level is %s, expected a level name", errchain.Kind(rawLevel))
+		levelName = o.LogLevel
 	}
 	level, known := levelByName[pystr.Upper(levelName)]
 	if !known {
 		level = LevelInfo
 	}
-	var rawSize any = 5
+	sizeMB := float64(settings.LoggingMaxSizeMb.Get(sctx))
 	if o.MaxSizeMB != 0 {
-		rawSize = o.MaxSizeMB
-	} else if pyrepr.Truthy(cfgMaxSize) {
-		rawSize = cfgMaxSize
+		sizeMB = float64(o.MaxSizeMB)
 	}
-	sizeMB, ok := configNumber(rawSize)
-	if !ok {
-		return "", fmt.Errorf("logging.max_size_mb must be a number, got %s", errchain.Kind(rawSize))
-	}
-	var rawBackups any = 3
+	backups := settings.LoggingBackupCount.Get(sctx)
 	if o.BackupCount != 0 {
-		rawBackups = o.BackupCount
-	} else if pyrepr.Truthy(cfgBackup) {
-		rawBackups = cfgBackup
-	}
-	backups, ok := configNumber(rawBackups)
-	if !ok || backups != float64(int(backups)) {
-		return "", fmt.Errorf("logging.backup_count must be a whole number, got %s", errchain.Kind(rawBackups))
+		backups = o.BackupCount
 	}
 	maxBytes := sizeMB * 1024 * 1024
 	formatter, err := LogFileFormatter()
@@ -121,7 +100,7 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 		backups   int
 		component string
 	}{
-		{"agent.log", level, maxBytes, int(backups), ""},
+		{"agent.log", level, maxBytes, backups, ""},
 		{"errors.log", LevelWarning, 2 * 1024 * 1024, 2, ""},
 		{"gateway.log", LevelInfo, 5 * 1024 * 1024, 3, "gateway"},
 	}
@@ -167,26 +146,6 @@ func SetupLogging(ctx context.Context, o Options) (string, error) {
 func SetupHomeLogging(h, mode string) error {
 	_, err := SetupLogging(context.Background(), Options{Home: h, Mode: mode})
 	return err
-}
-
-// Numeric value of a config scalar, booleans counting as 0 and 1
-func configNumber(v any) (float64, bool) {
-	switch n := v.(type) {
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case uint64:
-		return float64(n), true
-	case float64:
-		return n, true
-	case bool:
-		if n {
-			return 1, true
-		}
-		return 0, true
-	}
-	return 0, false
 }
 
 // Adds the DEBUG console handler of verbose mode once
@@ -307,43 +266,4 @@ func addRotatingHandler(ctx context.Context, path string, level int, maxBytes fl
 	}
 	registerQueuedHandler(queued)
 	return nil
-}
-
-// Level, max size and backup count from config.yaml logging, nil for each one absent or unreadable
-func readLoggingConfig(ctx context.Context) (level, maxSizeMB, backupCount any) {
-	defer func() {
-		if recover() != nil {
-			level, maxSizeMB, backupCount = nil, nil, nil
-		}
-	}()
-	cfgPath := home.ConfigPath(home.Dir(ctx))
-	var cfg map[string]any
-	effective, err := config.LoadUserEffective(cfgPath, os.LookupEnv)
-	if err == nil {
-		cfg = effective
-	} else {
-		exists, err := config.ConfigExists(ctx, cfgPath)
-		if err != nil {
-			return nil, nil, nil
-		}
-		if exists {
-			doc, err := config.ReadConfigDoc(ctx, cfgPath)
-			if err != nil {
-				return nil, nil, nil
-			}
-			m, ok := doc.(map[string]any)
-			if !ok {
-				return nil, nil, nil
-			}
-			cfg = m
-		}
-	}
-	if len(cfg) == 0 {
-		return nil, nil, nil
-	}
-	logCfg, ok := cfg["logging"].(map[string]any)
-	if !ok {
-		return nil, nil, nil
-	}
-	return logCfg["level"], logCfg["max_size_mb"], logCfg["backup_count"]
 }

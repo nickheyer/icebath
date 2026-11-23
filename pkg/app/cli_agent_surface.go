@@ -32,7 +32,6 @@ type cliAgent interface {
 	MaxIterations() int
 	Model() string
 	MuteNotificationReply() bool
-	NotificationConfig() map[string]any
 	Provider() string
 	RunConversation(ctx context.Context, userMessage any, o agent.RunConversationOptions) (map[string]any, error)
 	SessionID() string
@@ -42,7 +41,6 @@ type cliAgent interface {
 	SetReasoningCallback(callback func(text string))
 	SetToolProgressMode(mode string)
 	SwitchModel(newModel, newProvider string) (bool, error)
-	NotificationPolicySnapshot(cfg map[string]any) func()
 	NotificationTurn(ctx context.Context, muted bool, sessionID string) (context.Context, func())
 	SummarizeAPIError(err error) string
 	TodoStore() *tools.TodoStore

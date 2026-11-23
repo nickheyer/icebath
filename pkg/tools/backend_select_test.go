@@ -254,38 +254,6 @@ func TestRemovedBackendNoteAndSelectionError(t *testing.T) {
 	}
 }
 
-func TestReadSelectionAndSelectionConfigKeys(t *testing.T) {
-	env := tbhEnv(t, "", map[string]any{
-		"browser":   map[string]any{"backend": "local", "cloud_provider": "Browserbase"},
-		"tts":       map[string]any{"use_gateway": "true", "provider": "openai"},
-		"stt":       map[string]any{"use_gateway": "false"},
-		"web":       map[string]any{"search_backend": "Exa"},
-		"image_gen": map[string]any{"backend": "fal"},
-	})
-	if ReadSelection(env, "browser") != "browserbase" || ReadSelection(env, "tts") != "openai" || ReadSelection(env, "stt") != "" {
-		t.Fatal("read selection")
-	}
-	if ReadSelection(env, "image_gen") != "fal" || ReadSelection(env, "video_gen") != "" {
-		t.Fatal("default name keys")
-	}
-	if ReadWebCapabilitySelection(env, "search") != "exa" || ReadWebCapabilitySelection(env, "extract") != "" {
-		t.Fatal("web capability selection")
-	}
-	if !SelectionExists(env, "web") || SelectionExists(env, "stt") || !SelectionExists(env, "tts") {
-		t.Fatal("selection exists")
-	}
-	keys := SelectionConfigKeys()
-	for _, k := range []string{"browser.cloud_provider", "web.backend", "web.search_backend", "web.extract_backend",
-		"tts.provider", "stt.cloud_provider", "image_gen.backend", "video_gen.provider"} {
-		if !keys[k] {
-			t.Fatalf("missing %s", k)
-		}
-	}
-	if keys["browser.backend"] || keys["browser.use_gateway"] || len(keys) != 1+3+4*3 {
-		t.Fatalf("keys %v", keys)
-	}
-}
-
 func TestFalKeyIsConfigured(t *testing.T) {
 	tbhClearVoiceEnv(t)
 	if FalKeyIsConfigured(tbhEnv(t, "", nil)) {

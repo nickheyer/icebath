@@ -5,14 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/home"
 )
 
 func TestHostedLineOffersTypedMenusAsLists(t *testing.T) {
@@ -61,7 +56,7 @@ func TestHostedOutputNamesTheTUICommands(t *testing.T) {
 	fmt.Fprint(trail, "  API key cleared.  Re-run `icebath setup` to configure X again.\nRun `icebath setup tts` next. Partial")
 	trail.flush()
 	want := "Sign-in did not complete; run `/setup model` to try again.\nRun `/setup model copilot` to sign in.\n" +
-		"  API key cleared.  Re-run `/setup` to configure X again.\nRun `/setup tts` next. Partial\n"
+		"  API key cleared.  Re-run `/setup` to configure X again.\nRun `/setup voice` next. Partial\n"
 	if out.String() != want {
 		t.Fatalf("wording %q", out.String())
 	}
@@ -141,60 +136,6 @@ func TestHostSetupFlowPutsEveryPromptToTheHostAndRestoresTheTerminal(t *testing.
 	}
 }
 
-func TestRunHostedModelSectionSavesACustomEndpoint(t *testing.T) {
-	h, ctx, _ := pickerCaseHome(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"object": "list", "data": [{"id": "local-model", "object": "model"}]}`))
-	}))
-	defer server.Close()
-	swapFlowSeam(t, &offerReasoningAfterPickFn, func(*ModelFlowRun, string, int) error { return nil })
-	var titles []string
-	ask := func(p HostedPrompt) HostedAnswer {
-		titles = append(titles, p.Title)
-		switch {
-		case strings.HasPrefix(p.Title, "API base URL"):
-			return HostedAnswer{Text: server.URL + "/v1"}
-		case strings.HasPrefix(p.Title, "API key"):
-			return HostedAnswer{Text: "sk-local-test"}
-		case p.Kind == HostedChoice:
-			return HostedAnswer{Index: p.Default}
-		}
-		return HostedAnswer{}
-	}
-	var out bytes.Buffer
-	result, err := RunHostedModelSection(ctx, ask, &out, "custom")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Model != "local-model" || result.Provider != "custom" || !result.Changed {
-		t.Fatalf("result %+v titles %v output %s", result, titles, out.String())
-	}
-	model, _ := readConfig(t, h)["model"].(map[string]any)
-	if model["base_url"] != server.URL+"/v1" || !strings.HasPrefix(fmt.Sprint(model["api_key"]), "${") {
-		t.Fatalf("model %v", model)
-	}
-	env, err := os.ReadFile(home.EnvPath(h))
-	if err != nil || !strings.Contains(string(env), "=sk-local-test") {
-		t.Fatalf("env %q %v", env, err)
-	}
-	result, err = RunHostedModelSection(ctx, func(p HostedPrompt) HostedAnswer { return HostedAnswer{Cancelled: true} }, &out, "")
-	if err != nil || result.Changed || result.Model != "local-model" {
-		t.Fatalf("a backed out picker changed the model %+v %v", result, err)
-	}
-}
-
-func TestHostedModelEntryNamesPickerRows(t *testing.T) {
-	for _, entry := range []string{"", "openai-codex", "aux-config", "reasoning", "custom", "llamacpp"} {
-		if !HostedModelEntry(entry) {
-			t.Fatalf("%q refused", entry)
-		}
-	}
-	if HostedModelEntry("no-such-provider") {
-		t.Fatal("an unknown row was accepted")
-	}
-}
-
 func TestHostedOutputKeepsTheRewrittenProgressLineApart(t *testing.T) {
 	var out bytes.Buffer
 	var shown []string
@@ -207,26 +148,5 @@ func TestHostedOutputKeepsTheRewrittenProgressLineApart(t *testing.T) {
 	}
 	if !reflect.DeepEqual(shown, []string{"downloading 10%", "downloading 60%", ""}) {
 		t.Fatalf("progress %q", shown)
-	}
-}
-
-func TestRunHostedModelSectionStoppedLeavesTheConfigAsSaved(t *testing.T) {
-	h, ctx, _ := pickerCaseHome(t)
-	writePickerConfig(t, h, "model:\n  default: kept\n  provider: openrouter\n")
-	before, err := os.ReadFile(home.ConfigPath(h))
-	if err != nil {
-		t.Fatal(err)
-	}
-	stopped, cancel := context.WithCancel(ctx)
-	ask := func(HostedPrompt) HostedAnswer {
-		cancel()
-		return HostedAnswer{Cancelled: true}
-	}
-	result, err := RunHostedModelSection(stopped, ask, io.Discard, "")
-	if err != nil || result.Changed || result.Model != "kept" {
-		t.Fatalf("result %+v %v", result, err)
-	}
-	if after, _ := os.ReadFile(home.ConfigPath(h)); string(after) != string(before) {
-		t.Fatalf("a stopped section rewrote config.yaml\n%s", after)
 	}
 }

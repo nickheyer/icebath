@@ -35,7 +35,7 @@ func newSetValueHome(t *testing.T, text string) *setValueHome {
 }
 
 func (s *setValueHome) set(key, value string, force bool) error {
-	return config.SetConfigValue(context.Background(), s.h, key, value, force, moaCommandSources())
+	return config.SetConfigValue(context.Background(), s.h, key, value, moaCommandSources())
 }
 
 func (s *setValueHome) mustSet(key, value string) {
@@ -223,7 +223,7 @@ func TestSetValueListNavigation(t *testing.T) {
 }
 
 func TestSetValueStringTypedValues(t *testing.T) {
-	for _, value := range []string{"off", "true", "01"} {
+	for _, value := range []string{"off", "smart", "manual"} {
 		s := newSetValueHome(t, "")
 		s.mustSet("approvals.mode", value)
 		if got := s.at("approvals", "mode"); got != value {
@@ -504,7 +504,7 @@ func TestSetValueContainerTypeRefusal(t *testing.T) {
 	if !reflect.DeepEqual(s.doc()["custom_providers"], []any{map[string]any{"name": "ok", "base_url": "http://h/v1"}}) || !reflect.DeepEqual(s.doc()["model"], map[string]any{"default": "bar", "aliases": "replaced"}) {
 		t.Fatalf("valid writes %v", s.doc())
 	}
-	for _, key := range []string{"model.aliases", "providers", "toolsets"} {
+	for _, key := range []string{"model.aliases", "providers"} {
 		s = newSetValueHome(t, "model:\n  default: m\n")
 		if err := s.set(key, "notacontainer", false); err == nil || !reflect.DeepEqual(s.doc(), map[string]any{"model": map[string]any{"default": "m"}}) {
 			t.Fatalf("%s %v %v", key, err, s.doc())

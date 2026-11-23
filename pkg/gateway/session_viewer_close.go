@@ -7,15 +7,14 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
-	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -235,70 +234,21 @@ func rearmPersistedCloses(ctx context.Context, a *SessionAuthority) ([]string, e
 	return armed, nil
 }
 
-// Non negative float seconds of a config value, default when it is no number
-func closeSeconds(raw any, def float64) (float64, error) {
-	value, err := pyint.Float(raw)
-	if err != nil {
-		var pyErr *pyint.Error
-		if errors.As(err, &pyErr) && (pyErr.Kind == "ValueError" || pyErr.Kind == "TypeError") {
-			return def, nil
-		}
-		return 0, err
-	}
-	if value > 0 {
-		return value, nil
-	}
-	return 0, nil
-}
-
-// Mapping under a config key, empty when absent or no mapping
-func closeConfigSection(cfg map[string]any, key string) map[string]any {
-	if section, ok := cfg[key].(map[string]any); ok {
-		return section
-	}
-	return map[string]any{}
-}
-
-// Truthy reading of a config value with the shared truthy string set, default for None
-func closeTruthy(value any, def bool) bool {
-	if value == nil {
-		return def
-	}
-	if s, ok := value.(string); ok {
-		switch strings.ToLower(strings.TrimSpace(s)) {
-		case "1", "true", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return pyrepr.Truthy(value)
-}
-
 // Orphan end grace of the store's profile, zero when unset and a session reap or startup sweep opt out holds
 func orphanCloseGrace(ctx context.Context, a *SessionAuthority, startup bool) (float64, error) {
-	def, _ := pyint.Float(closeConfigSection(config.Defaults(), "sessions")["orphan_end_grace_s"])
 	resolved, err := pypath.Resolve(a.DB.Path())
 	if err != nil {
 		return 0, err
 	}
 	profileHome := filepath.Dir(resolved)
-	scoped := profileEnvScope(ctx, profileHome)
-	cfg, err := config.LoadUserEffective(filepath.Join(profileHome, "config.yaml"), func(name string) (string, bool) { return getenv(scoped, name) })
-	if err != nil {
-		return 0, err
+	scoped := profileEnvScope(home.WithOverride(ctx, profileHome), profileHome)
+	if v, err := settings.Resolve(scoped, settings.SessionsOrphanEndGraceS.Key); err == nil && v.Source != settings.SourceDefault {
+		return max(0, settings.SessionsOrphanEndGraceS.Get(scoped).Seconds()), nil
 	}
-	sessions := closeConfigSection(cfg, "sessions")
-	if raw, ok := sessions["orphan_end_grace_s"]; ok {
-		return closeSeconds(raw, def)
-	}
-	reap, err := closeSeconds(sessions["ws_orphan_reap_grace_s"], def)
-	if err != nil {
-		return 0, err
-	}
-	if reap == 0 || (startup && !closeTruthy(sessions["startup_orphan_sweep"], true)) {
+	if settings.SessionsWsOrphanReapGraceS.Get(scoped) <= 0 || (startup && !settings.SessionsStartupOrphanSweep.Get(scoped)) {
 		return 0, nil
 	}
-	return def, nil
+	return settings.SessionsOrphanEndGraceS.Default.Seconds(), nil
 }
 
 // True for a local session with an open row whose policy is not ACP

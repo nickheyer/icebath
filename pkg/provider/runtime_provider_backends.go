@@ -166,17 +166,12 @@ func (r *resolver) resolveBedrockRuntime(requestedProvider string, modelCfg map[
 			"  - IAM instance role (EC2, ECS, Lambda)\n"+
 			"Or run 'aws configure' to set up credentials.", "no_aws_credentials", false)
 	}
-	bedrockCfg, _ := r.cfg["bedrock"].(map[string]any)
-	if bedrockCfg == nil {
-		bedrockCfg = map[string]any{}
-	}
-	scoped := map[string]any{"bedrock": bedrockCfg}
-	region := resolveBedrockRuntimeRegion(scoped)
+	region := resolveBedrockRuntimeRegion(r.ctx)
 	authSource := resolveAWSAuthEnvVar(r.ctx)
 	if authSource == "" {
 		authSource = "aws-sdk-default-chain"
 	}
-	guardrail := bedrockGuardrailConfig(scoped)
+	guardrail := bedrockGuardrailConfig(r.ctx)
 	currentModel := strings.TrimSpace(targetModel)
 	if currentModel == "" {
 		currentModel = strings.TrimSpace(cfgString(modelCfg["default"]))

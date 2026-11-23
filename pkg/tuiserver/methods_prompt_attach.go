@@ -24,10 +24,6 @@ var (
 var promptAttachRegistry = &handlerRegistry{}
 
 func init() {
-	promptAttachRegistry.method("clipboard.paste", clipboardPaste)
-	promptAttachRegistry.method("image.attach", imageAttach)
-	promptAttachRegistry.method("image.attach_bytes", imageAttachBytes)
-	promptAttachRegistry.method("image.detach", imageDetach)
 	promptAttachRegistry.method("input.detect_drop", inputDetectDrop)
 	promptAttachRegistry.install()
 }

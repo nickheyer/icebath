@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // The functions platform wizards resolve at call time, a table tests replace like the patched module
@@ -46,14 +47,36 @@ var WizardSetup = SetupFns{
 	PrintSuccess:    provider.SetupPrintSuccess,
 	PrintWarning:    provider.SetupPrintWarning,
 	PrintError:      provider.SetupPrintError,
-	GetEnvValue: func(ctx context.Context, key string) (string, error) {
-		v, _, err := config.GetEnvValue(ctx, home.Dir(ctx), key)
-		return v, err
-	},
-	SaveEnvValue: func(ctx context.Context, key, value string) error {
-		return config.SaveEnvValueContext(ctx, home.Dir(ctx), key, value)
-	},
-	IcebathHome: home.Dir,
+	GetEnvValue:     setupValue,
+	SaveEnvValue:    saveSetupValue,
+	IcebathHome:     home.Dir,
+}
+
+// Value a setup flow reads under an env name: the setting the name moved to, else the profile .env
+func setupValue(ctx context.Context, key string) (string, error) {
+	if e := envSetting(key); e != nil {
+		return SettingText(ctx, e), nil
+	}
+	v, _, err := config.GetEnvValue(ctx, home.Dir(ctx), key)
+	return v, err
+}
+
+// Saves a value a setup flow asked for under an env name: the setting the name moved to, else the profile .env
+func saveSetupValue(ctx context.Context, key, value string) error {
+	if e := envSetting(key); e != nil {
+		_, err := settings.Set(SettingsContext(ctx), e.Info().Key, value, settings.Global)
+		return err
+	}
+	return config.SaveEnvValueContext(ctx, home.Dir(ctx), key, value)
+}
+
+// Removes a value a setup flow names by env name: the setting the name moved to goes back to its default, else the .env line goes
+func removeSetupValue(ctx context.Context, key string) (bool, error) {
+	if e := envSetting(key); e != nil {
+		change, err := settings.Reset(SettingsContext(ctx), e.Info().Key, settings.Global)
+		return err == nil && change.Old.Source != settings.SourceDefault, err
+	}
+	return config.RemoveHomeEnvValue(ctx, home.Dir(ctx), key)
 }
 
 // Keyword options of save_prompted, the success message may name {value}
@@ -474,7 +497,7 @@ func SetupGateway(ctx context.Context, cfg config.Tree) error {
 	}
 	selected := WizardSetup.PromptChecklist("Select platforms to configure:", items, preSelected)
 	if len(selected) == 0 {
-		WizardSetup.PrintInfo("No platforms selected. Type '/setup gateway' in icebath later to configure.")
+		WizardSetup.PrintInfo("No platforms selected. Type '/setup chat-apps' in icebath later to configure.")
 	}
 	for _, idx := range selected {
 		at, ok := pyIndex(idx, len(platforms))

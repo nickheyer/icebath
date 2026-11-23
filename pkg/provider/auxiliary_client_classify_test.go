@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
@@ -263,22 +264,18 @@ func TestAuxWithoutReasoningFields(t *testing.T) {
 }
 
 func TestAuxTransientRetryCountClampsConfig(t *testing.T) {
-	prev := auxLoadConfigFn
-	t.Cleanup(func() { auxLoadConfigFn = prev })
+	dir := t.TempDir()
+	t.Setenv("ICEBATH_HOME", dir)
 	for _, tc := range []struct {
-		val  any
+		val  string
 		want int
-	}{{nil, 2}, {0, 0}, {9, 6}, {-3, 0}, {"4", 4}, {"many", 2}, {3.9, 3}} {
-		auxLoadConfigFn = func(context.Context) (config.Tree, error) {
-			return config.Tree{"auxiliary": map[string]any{"transient_retries": tc.val}}, nil
+	}{{"null", 2}, {"0", 0}, {"9", 6}, {"-3", 0}, {"'4'", 4}, {"many", 2}} {
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("auxiliary:\n  transient_retries: "+tc.val+"\n"), 0o600); err != nil {
+			t.Fatal(err)
 		}
 		if got := auxTransientRetryCount(context.Background()); got != tc.want {
 			t.Fatalf("%v gave %d want %d", tc.val, got, tc.want)
 		}
-	}
-	auxLoadConfigFn = func(context.Context) (config.Tree, error) { return nil, errors.New("broken") }
-	if auxTransientRetryCount(context.Background()) != 2 {
-		t.Fatal("config failures fall back to the default")
 	}
 }
 

@@ -29,9 +29,6 @@ func toolsCatalogText(ctx context.Context, res tuigateway.ToolsShowResult) strin
 
 // Toolsets the launch fixed for every session this terminal UI creates on the shared gateway, none when it follows the profile
 func (a *app) launchToolsets() []string {
-	if !a.gw.canonical() {
-		return nil
-	}
 	var names []string
 	for _, name := range strings.Split(a.gw.creationEnv()("ICEBATH_TUI_TOOLSETS"), ",") {
 		if name = trimJS(name); name != "" {

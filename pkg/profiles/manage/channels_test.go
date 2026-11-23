@@ -366,7 +366,7 @@ func TestChannelMessageTexts(t *testing.T) {
 		t.Fatalf("notice = %v", lines)
 	}
 	w := SharedCredentialWarning("p", []string{"telegram"}, "default")
-	if !strings.HasPrefix(w, "⚠ Profile 'p' shares its telegram credential with default:") || !strings.Contains(w, "start icebath -p p and type /setup gateway") {
+	if !strings.HasPrefix(w, "⚠ Profile 'p' shares its telegram credential with default:") || !strings.Contains(w, "start icebath -p p and type /setup chat-apps") {
 		t.Fatalf("warning = %q", w)
 	}
 	if got := PlatformEnvPrefixes("wecom-callback"); !reflect.DeepEqual(got, []string{"WECOM_CALLBACK_"}) {

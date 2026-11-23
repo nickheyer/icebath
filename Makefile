@@ -1,6 +1,8 @@
 .PHONY: test build build-full build-noextras build-core dev release setup
 
 GOTAGS ?= goolm
+# Flags of the binaries make builds: no debug tables and no build paths, as the release builds have
+GOBUILD ?= -trimpath -ldflags "-s -w"
 # Memory ceiling of the Go toolchain for every compile
 GOMEMLIMIT ?= 12GiB
 # Work directories of the Go toolchain, on disk, one per running make command
@@ -23,15 +25,15 @@ build: build-full
 
 # Full build, every tier linked, the binary releases ship
 build-full:
-	$(call go,build -tags "$(GOTAGS)" -o dist/icebath ./cmd/icebath)
+	$(call go,build $(GOBUILD) -tags "$(GOTAGS)" -o dist/icebath ./cmd/icebath)
 
 # Core and plugins tiers, no extras
 build-noextras:
-	$(call go,build -tags "$(GOTAGS) icebath_noextras" -o dist/icebath-noextras ./cmd/icebath)
+	$(call go,build $(GOBUILD) -tags "$(GOTAGS) icebath_noextras" -o dist/icebath-noextras ./cmd/icebath)
 
 # Core tier only, one terminal session with no Python
 build-core:
-	$(call go,build -tags "$(GOTAGS) icebath_core" -o dist/icebath-core ./cmd/icebath)
+	$(call go,build $(GOBUILD) -tags "$(GOTAGS) icebath_core" -o dist/icebath-core ./cmd/icebath)
 
 dev:
 	$(call go,run -tags "$(GOTAGS)" ./cmd/icebath)

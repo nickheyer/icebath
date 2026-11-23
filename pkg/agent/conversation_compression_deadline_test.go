@@ -2,12 +2,16 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 type deadlineFence struct {
@@ -22,31 +26,47 @@ func (f *deadlineFence) ExtendDeadline(seconds float64) {
 	f.deadline += seconds
 }
 
+// Context of a fresh home whose config.yaml holds the given compression section
+func compressionHome(t *testing.T, section map[string]any) context.Context {
+	t.Helper()
+	h := t.TempDir()
+	writeCompressionSection(t, h, section)
+	return home.WithOverride(context.Background(), h)
+}
+
+// Writes the compression section into the config.yaml of home h
+func writeCompressionSection(t *testing.T, h string, section map[string]any) {
+	t.Helper()
+	doc, err := config.SafeDump(map[string]any{"compression": section})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestResolveContextCompressionTimeoutsClampsToTheAuxBudget(t *testing.T) {
 	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{})
-	ctx := context.Background()
-	aux := provider.EffectiveAuxTimeout(ctx, "compression", nil)
-	idle, ceiling := ResolveContextCompressionTimeouts(ctx, map[string]any{"context_timeout_seconds": "0", "context_total_ceiling_seconds": -5})
-	if idle != 0 || ceiling != DefaultContextTotalCeilingSeconds {
+	aux := provider.EffectiveAuxTimeout(context.Background(), "compression", nil)
+	defaultCeiling := settings.CompressionContextTotalCeilingSeconds.Default.Seconds()
+	idle, ceiling := ResolveContextCompressionTimeouts(compressionHome(t, map[string]any{"context_timeout_seconds": "0", "context_total_ceiling_seconds": -5}))
+	if idle != 0 || ceiling != defaultCeiling {
 		t.Fatalf("disabled idle %v %v", idle, ceiling)
 	}
-	idle, ceiling = ResolveContextCompressionTimeouts(ctx, config.Tree{"context_timeout_seconds": 30, "context_total_ceiling_seconds": "bad"})
+	idle, ceiling = ResolveContextCompressionTimeouts(compressionHome(t, map[string]any{"context_timeout_seconds": 30, "context_total_ceiling_seconds": "bad"}))
 	if ceiling != max(600, aux) || idle != max(30, min(aux, ceiling)) {
 		t.Fatalf("aux clamp %v %v with aux %v", idle, ceiling, aux)
 	}
-	idle, ceiling = ResolveContextCompressionTimeouts(ctx, map[string]any{"context_timeout_seconds": 5000.0, "context_total_ceiling_seconds": 100})
+	idle, ceiling = ResolveContextCompressionTimeouts(compressionHome(t, map[string]any{"context_timeout_seconds": 5000.0, "context_total_ceiling_seconds": 100}))
 	if idle != 5000 || ceiling != 5000 {
 		t.Fatalf("ceiling at least one idle window %v %v", idle, ceiling)
 	}
-	if idle, _ := ResolveContextCompressionTimeouts(ctx, "not a dict"); idle != max(DefaultContextTimeoutSeconds, min(aux, max(600, aux))) {
-		t.Fatalf("non dict config keeps defaults %v", idle)
+	if idle, _ := ResolveContextCompressionTimeouts(compressionHome(t, map[string]any{})); idle != max(settings.CompressionContextTimeoutSeconds.Default.Seconds(), min(aux, max(600, aux))) {
+		t.Fatalf("an empty section keeps the defaults %v", idle)
 	}
-	loaded := false
-	orig := loadCompressionConfig
-	loadCompressionConfig = func(context.Context) any { loaded = true; return map[string]any{"context_timeout_seconds": -1} }
-	t.Cleanup(func() { loadCompressionConfig = orig })
-	if idle, _ := ResolveContextCompressionTimeouts(ctx, nil); !loaded || idle != -1 {
-		t.Fatal("nil config reads the config file")
+	if idle, _ := ResolveContextCompressionTimeouts(compressionHome(t, map[string]any{"context_timeout_seconds": -1})); idle != -1 {
+		t.Fatal("a negative idle window is kept")
 	}
 }
 
@@ -87,10 +107,9 @@ func pinCompressionAuxTimeout(t *testing.T, budget float64) {
 }
 
 func TestIdleIsFlooredAtTheAuxCompressionRequestBudget(t *testing.T) {
-	ctx := context.Background()
 	check := func(cfg map[string]any, wantIdle, wantCeiling float64) {
 		t.Helper()
-		if idle, ceiling := ResolveContextCompressionTimeouts(ctx, cfg); idle != wantIdle || ceiling != wantCeiling {
+		if idle, ceiling := ResolveContextCompressionTimeouts(compressionHome(t, cfg)); idle != wantIdle || ceiling != wantCeiling {
 			t.Fatalf("%v resolved to (%v, %v), want (%v, %v)", cfg, idle, ceiling, wantIdle, wantCeiling)
 		}
 	}
@@ -104,7 +123,7 @@ func TestIdleIsFlooredAtTheAuxCompressionRequestBudget(t *testing.T) {
 
 func TestZeroIdleDisablesWrapper(t *testing.T) {
 	pinCompressionAuxTimeout(t, 0)
-	idle, ceiling := ResolveContextCompressionTimeouts(context.Background(), map[string]any{"context_timeout_seconds": 0})
+	idle, ceiling := ResolveContextCompressionTimeouts(compressionHome(t, map[string]any{"context_timeout_seconds": 0}))
 	if idle != 0 || ceiling <= 0 {
 		t.Fatalf("idle %v ceiling %v", idle, ceiling)
 	}
@@ -112,7 +131,7 @@ func TestZeroIdleDisablesWrapper(t *testing.T) {
 
 func TestCeilingClampedToIdle(t *testing.T) {
 	pinCompressionAuxTimeout(t, 0)
-	idle, ceiling := ResolveContextCompressionTimeouts(context.Background(), map[string]any{"context_timeout_seconds": 90, "context_total_ceiling_seconds": 30})
+	idle, ceiling := ResolveContextCompressionTimeouts(compressionHome(t, map[string]any{"context_timeout_seconds": 90, "context_total_ceiling_seconds": 30}))
 	if idle != 90 || ceiling != 90 {
 		t.Fatalf("idle %v ceiling %v", idle, ceiling)
 	}

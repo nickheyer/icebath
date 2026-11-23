@@ -97,7 +97,7 @@ func compressionAttemptStalled(ctx context.Context, fence *CompressionCommitFenc
 	if idleTimeoutSeconds != nil {
 		idle = *idleTimeoutSeconds
 	} else {
-		idle, _ = ResolveContextCompressionTimeouts(ctx, nil)
+		idle, _ = ResolveContextCompressionTimeouts(ctx)
 	}
 	if math.IsNaN(idle) || idle <= 0 {
 		return false

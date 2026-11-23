@@ -10,18 +10,17 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Resume and export guard default, read open retry window and read busy timeout
+// Read open retry window and read busy timeout
 const (
-	maxSafeMessages            = 20_000
 	readOpenRetrySeconds       = 60.0
 	readOnlyIOErrRetryAttempts = 3
 	readBusyTimeoutS           = 5.0
@@ -30,40 +29,22 @@ const (
 // Billing buckets that are no routable provider identity
 var bareBillingProviders = setOf("auto", "custom")
 
-// Sessions limit from config.yaml, fallback when unset, negative or unreadable, zero disabling the guard
-func configuredTranscriptLimit(ctx context.Context, key string, fallback int) int {
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-	if err != nil {
-		return fallback
+// Message cap of a setting, zero disabling the guard and a negative value reading as the default
+func transcriptLimit(ctx context.Context, e *settings.Int) int {
+	if n := e.Get(ctx); n >= 0 {
+		return n
 	}
-	var value any
-	switch sessions := cfg["sessions"].(type) {
-	case config.Tree:
-		value = sessions[key]
-	case map[string]any:
-		value = sessions[key]
-	}
-	if value == nil {
-		return fallback
-	}
-	n, err := pyint.Of(value)
-	switch {
-	case err != nil || n.Sign() < 0:
-		return fallback
-	case !n.IsInt64() || n.Int64() > math.MaxInt:
-		return math.MaxInt
-	}
-	return int(n.Int64())
+	return e.Default
 }
 
 // Message cap a resume reloads, sessions.max_resume_messages
 func ResolvedMaxResumeMessages(ctx context.Context) int {
-	return configuredTranscriptLimit(ctx, "max_resume_messages", maxSafeMessages)
+	return transcriptLimit(ctx, settings.SessionsMaxResumeMessages)
 }
 
 // Message cap an in memory export builds, sessions.max_export_messages
 func ResolvedMaxExportMessages(ctx context.Context) int {
-	return configuredTranscriptLimit(ctx, "max_export_messages", maxSafeMessages)
+	return transcriptLimit(ctx, settings.SessionsMaxExportMessages)
 }
 
 // A ValueError refusing to reload a transcript longer than the resume cap

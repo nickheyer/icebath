@@ -135,11 +135,7 @@ func auxToAsyncClient(ctx context.Context, syncClient AuxClient, model string, i
 	var headers map[string]string
 	switch {
 	case HostMatches(syncBase, "openrouter.ai"):
-		or, err := BuildORHeaders(ctx, nil)
-		if err != nil {
-			panic(err)
-		}
-		headers = auxApplyUserDefaultHeaders(ctx, or)
+		headers = auxApplyUserDefaultHeaders(ctx, BuildORHeaders(ctx))
 	case isOfficialCodexBaseURL(syncBase):
 		headers = auxApplyUserDefaultHeaders(ctx, codexCloudflareHeaders(syncClient.APIKey(), syncBase))
 	default:
@@ -195,7 +191,7 @@ func auxNamedCustomAPIKey(ctx context.Context, entry map[string]any, provider, c
 			poolName := auxFirstNonEmpty(cfgString(entry["provider_key"]), cfgString(entry["name"]), provider)
 			for _, poolKey := range customProviderPoolKeyCandidates(customBase, poolName, cfg) {
 				var pool *Pool
-				if auxRecoverRaise(func() { pool = LoadPool(modelsPoolEnv(ctx), poolKey) }) != nil {
+				if auxRecoverRaise(func() { pool = LoadSelectedPool(modelsPoolEnv(ctx), poolKey) }) != nil {
 					continue
 				}
 				if pool = EntryScopedPool(pool, poolKey, entry); pool == nil || !pool.HasCredentials() {
@@ -224,7 +220,7 @@ func auxBuildBedrockClient(ctx context.Context, provider, model string, rawCodex
 		pkgLog().Debug("resolve_provider_client: bedrock requested but no AWS credentials found")
 		return nil, ""
 	}
-	region := resolveBedrockRuntimeRegionCtx(ctx)
+	region := resolveBedrockRuntimeRegion(ctx)
 	const defaultModel = "anthropic.claude-haiku-4-5-20251001-v1:0"
 	finalModel := auxNormalizeResolvedModel(ctx, auxFirstNonEmpty(model, defaultModel), provider)
 	if finalModel == "" {

@@ -62,6 +62,21 @@ func TestAdoptExternalLoginsEnabledDefaultsTrueAndLogsOnce(t *testing.T) {
 	}
 }
 
+func TestReloginCommands(t *testing.T) {
+	h := newTestHome(t)
+	if OAuthReloginCommand("xai-oauth") != "icebath auth add xai-oauth --type oauth" || OAuthReloginCommand("openai-codex") != "icebath auth add openai-codex --type oauth" {
+		t.Fatal("classic home has no selector")
+	}
+	profile := filepath.Join(h, "profiles", "work")
+	_ = os.MkdirAll(profile, 0o700)
+	if oauthReloginCommandIn(profile, "xai-oauth") != "icebath -p work auth add xai-oauth --type oauth" {
+		t.Fatalf("got %q", oauthReloginCommandIn(profile, "xai-oauth"))
+	}
+	if ReloginCommandHint(h, "") != "icebath auth add <provider>" || ReloginCommandHint(h, "deepseek") != "icebath auth add deepseek" {
+		t.Fatal("api key slugs and unknown providers")
+	}
+}
+
 func TestRemovalStepsCleanTheRightSource(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
@@ -78,18 +93,10 @@ func TestRemovalStepsCleanTheRightSource(t *testing.T) {
 	if string(raw) != "" && contains(string(raw), "OPENROUTER_API_KEY=") {
 		t.Fatal(".env entry must be cleared")
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "a"}}}})
-	step, _ = FindRemovalStep("openai-codex", "manual:device_code")
-	result = step.Remove(env, "openai-codex", PooledCredential{Source: "manual:device_code"})
-	if len(result.Cleaned) != 1 || !env.Store.IsSourceSuppressed("openai-codex", "device_code") {
-		t.Fatalf("codex removal must clear the block and suppress device_code: %+v", result)
-	}
-	if err := WriteIcebathOAuthCredentials(env, "a", "r", 1, ""); err != nil {
-		t.Fatal(err)
-	}
-	step, _ = FindRemovalStep("anthropic", "icebath_pkce")
-	if result = step.Remove(env, "anthropic", PooledCredential{Source: "icebath_pkce"}); len(result.Cleaned) != 1 || fileExists(IcebathOAuthFile(env)) {
-		t.Fatal("the PKCE file is ours to delete")
+	for _, source := range []string{"manual:device_code", "manual:icebath_pkce", "manual:minimax_oauth"} {
+		if _, ok := FindRemovalStep("openai-codex", source); ok {
+			t.Fatalf("an owned login %s has nothing outside its row to clean", source)
+		}
 	}
 	step, _ = FindRemovalStep("anthropic", "claude_code")
 	if result = step.Remove(env, "anthropic", PooledCredential{Source: "claude_code"}); len(result.Cleaned) != 0 || len(result.Hints) != 3 {
@@ -108,20 +115,5 @@ func TestRemovalStepsCleanTheRightSource(t *testing.T) {
 	result = step.Remove(env, "plug", PooledCredential{Source: "env:X"})
 	if !env.Store.IsSourceSuppressed("plug", "env:X-alt") || len(result.Hints) != 1 {
 		t.Fatal("a profile claim suppresses every variant")
-	}
-}
-
-func TestReloginCommands(t *testing.T) {
-	h := newTestHome(t)
-	if OAuthReloginCommand("xai-oauth") != "icebath auth add xai-oauth --type oauth" || OAuthReloginCommand("openai-codex") != "icebath auth add openai-codex --type oauth" {
-		t.Fatal("classic home has no selector")
-	}
-	profile := filepath.Join(h, "profiles", "work")
-	_ = os.MkdirAll(profile, 0o700)
-	if oauthReloginCommandIn(profile, "xai-oauth") != "icebath -p work auth add xai-oauth --type oauth" {
-		t.Fatalf("got %q", oauthReloginCommandIn(profile, "xai-oauth"))
-	}
-	if ReloginCommandHint(h, "") != "icebath auth add <provider>" || ReloginCommandHint(h, "deepseek") != "icebath auth add deepseek" {
-		t.Fatal("api key slugs and unknown providers")
 	}
 }

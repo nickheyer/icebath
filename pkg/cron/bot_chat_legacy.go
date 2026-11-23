@@ -209,11 +209,7 @@ func (s *Store) botChatLegacyDispose(ctx context.Context, path string, r *pyjson
 		return true, nil
 	}
 	if forFailure {
-		userCfg, err := config.LoadUserEffective(filepath.Join(target, "config.yaml"), nil)
-		if err != nil {
-			return false, err
-		}
-		if !config.WarningNotificationsEnabled(ctx, BotChatPolicyPlatform, userCfg) {
+		if !config.WarningNotificationsEnabled(home.WithOverride(ctx, target), BotChatPolicyPlatform) {
 			r.Set("status", "suppressed")
 			r.Set("error", nil)
 			return true, nil

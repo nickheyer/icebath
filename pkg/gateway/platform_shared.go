@@ -3,21 +3,114 @@ package gateway
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Scoped secret reader the shared platform helpers go through, replaced by tests at this seam
 var sharedGetScopedSecret = GetScopedSecret
 
-// Allow or deny gate env read isolated per profile, a scoped miss under multiplexing taking the default
+// Context whose settings reads resolve in the profile a platform task serves, the secret scope's home when no home is bound
+func SettingsContext(ctx context.Context) context.Context {
+	if home.Override(ctx) == "" {
+		if h := provider.CurrentSecretScopeHome(ctx); h != "" {
+			return home.WithOverride(ctx, h)
+		}
+	}
+	return ctx
+}
+
+// Settings that took over env names, keyed by the name
+var envSettings = struct {
+	sync.RWMutex
+	byName map[string]settings.Entry
+}{byName: map[string]settings.Entry{}}
+
+// Records the settings that took over env names, which platform declarations, access checks and setup flows still use as identifiers
+func RegisterEnvSettings(byName map[string]settings.Entry) {
+	envSettings.Lock()
+	defer envSettings.Unlock()
+	for name, e := range byName {
+		envSettings.byName[name] = e
+	}
+}
+
+// Setting that took over an env name, nil when the name is still read from the env
+func envSetting(name string) settings.Entry {
+	envSettings.RLock()
+	defer envSettings.RUnlock()
+	return envSettings.byName[name]
+}
+
+// Items a list setting holds for the profile ctx serves, a comma separated or JSON list text split the same way
+func SettingList(ctx context.Context, e settings.Entry) []string {
+	v, err := settings.Resolve(SettingsContext(ctx), e.Info().Key)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, item := range config.AsStrings(DecodeJSONListLiteral(v.Value)) {
+		if item = pystr.Strip(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// Set of the items a list setting holds for the profile ctx serves
+func SettingSet(ctx context.Context, e settings.Entry) map[string]bool {
+	out := map[string]bool{}
+	for _, item := range SettingList(ctx, e) {
+		out[item] = true
+	}
+	return out
+}
+
+// Value of an env name folded into a setting, the setting's text for the profile ctx serves, folded false for a name still read from the env
+func FoldedEnvValue(ctx context.Context, name string) (value string, folded bool) {
+	e := envSetting(name)
+	if e == nil {
+		return "", false
+	}
+	return SettingText(ctx, e), true
+}
+
+// Text of a setting the profile ctx serves set: a list comma joined, a switch true or false, empty while only the default applies
+func SettingText(ctx context.Context, e settings.Entry) string {
+	sctx := SettingsContext(ctx)
+	if v, err := settings.Resolve(sctx, e.Info().Key); err != nil || v.Source == settings.SourceDefault {
+		return ""
+	}
+	switch t := e.(type) {
+	case *settings.Bool:
+		return strconv.FormatBool(t.Get(sctx))
+	case *settings.Enum:
+		return t.Get(sctx)
+	case *settings.Int:
+		return strconv.Itoa(t.Get(sctx))
+	}
+	return strings.Join(SettingList(ctx, e), ",")
+}
+
+// Allow or deny gate value of the profile ctx serves: the setting a folded name moved to, else the env isolated per profile
 func PlatformGateEnv(ctx context.Context, name, def string) string {
 	if name == "" {
+		return def
+	}
+	if e := envSetting(name); e != nil {
+		if v := pystr.Strip(SettingText(ctx, e)); v != "" {
+			return v
+		}
 		return def
 	}
 	if scope := provider.CurrentSecretScope(ctx); scope != nil && provider.IsMultiplexActive(ctx) {
@@ -50,7 +143,7 @@ func DecodeJSONListLiteral(raw any) any {
 	return raw
 }
 
-// Per profile setting from the scoped env, then the profile's YAML extra, then the default
+// Per profile setting from the scoped env or the setting a folded name moved to, then the profile's YAML extra, then the default
 func ExtraOrSecret(ctx context.Context, extra map[string]any, key, env string, def any, blankIsUnset bool) (any, error) {
 	if env != "" {
 		val, err := sharedGetScopedSecret(ctx, env, "", false)

@@ -359,7 +359,7 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 		return nil, runtimeRefusal("permission_denied")
 	}
 	limit, isInt := strictInt(params.GetOr("limit", int64(200)))
-	if paramsOutside(params, "limit", "title", "include_hidden", "scope") || !isInt || limit.Cmp(big.NewInt(1)) < 0 ||
+	if paramsOutside(params, "limit", "title", "include_hidden", "include_archived", "scope") || !isInt || limit.Cmp(big.NewInt(1)) < 0 ||
 		limit.Cmp(big.NewInt(200)) > 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -375,7 +375,7 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 	}
 	a := c.authority
 	if scope == "stored" {
-		return storedPickerSessions(ctx, a, c.actor, int(limit.Int64()), pyTruthy(params.GetOr("include_hidden", false)))
+		return storedPickerSessions(ctx, a, c.actor, int(limit.Int64()), pyTruthy(params.GetOr("include_hidden", false)), pyTruthy(params.GetOr("include_archived", false)))
 	}
 	if hasTitle {
 		title := params.GetOr("title", nil)
@@ -442,7 +442,8 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 		}
 		sessions = append(sessions, pyjson.ObjectOf("session_id", entry.sessionID, "id", entry.sessionID, "title", title,
 			"source", row["source"], "started_at", row["started_at"], "message_count", count, "model", row["model"],
-			"running", entry.handle.ExecutionState == "running"))
+			"running", entry.handle.ExecutionState == "running", "preview", state.ShapePreview(row["_preview_raw"]), "pinned", pyTruthy(row["pinned"]),
+			"archived", pyTruthy(row["archived"])))
 	}
 	sort.SliceStable(sessions, func(i, j int) bool {
 		return startedAtKey(sessions[i].GetOr("started_at", nil)) > startedAtKey(sessions[j].GetOr("started_at", nil))
@@ -462,24 +463,9 @@ func (c *AuthorityConnection) describe(ctx context.Context, ref SessionRef, para
 	if _, err := c.pingVerb(ctx, ref, params); err != nil {
 		return nil, err
 	}
-	sources := make([]string, 0, len(Surfaces))
-	for name := range Surfaces {
-		sources = append(sources, name)
-	}
-	sort.Strings(sources)
-	parameters := []string{"title"}
-	for name := range CreateFields {
-		if name != "title" {
-			parameters = append(parameters, name)
-		}
-	}
-	sort.Strings(parameters)
 	a := c.authority
 	return pyjson.ObjectOf("instance_id", a.InstanceID, "profile_id", a.ProfileID, "authority_epoch", a.Epoch,
-		"capabilities", []any{"durable-admission-v1", "event-replay-v1", "local-cli-create-v1", "acp-editor-policy-v1",
-			"acp-session-mcp-v1", "clarify-batch-v1"},
-		"session_create", pyjson.ObjectOf("sources", stringsAny(sources), "parameters", stringsAny(parameters)),
-		"skin", resolvedSkin(ctx), "build", tuigateway.BuildID(), "contract", int64(tuigateway.ContractVersion)), nil
+		"skin", resolvedSkin(ctx), "build", tuigateway.BuildID()), nil
 }
 
 // Strings as a JSON list value

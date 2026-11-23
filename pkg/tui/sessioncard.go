@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,8 +62,7 @@ func newSessionCard(a *app) *sessionCard {
 	c.composer = cards.NewComposer(a.uiTheme(), a.keys, "", a.store.sessionCwd)
 	c.composer.Literal = true
 	c.composer.Hint = composerHint()
-	c.composer.Seed(a.inputs.entries())
-	c.composer.OnRemember = a.inputs.push
+	a.bindComposer(c.composer)
 	c.composer.Apply = a.applyOffer
 	c.composer.Sending = func() { a.collapsePaste() }
 	c.composer.OnStop = a.interruptTurn
@@ -83,15 +84,42 @@ func (c *sessionCard) untitled() string {
 	return tr(txt.SessionCardTitle)
 }
 
-func (c *sessionCard) Glyph() string       { return c.app.uiTheme().Glyphs.Session }
-func (c *sessionCard) Key() string         { return "session" }
-func (c *sessionCard) Init() tea.Cmd       { return tea.RequestTerminalVersion }
-func (c *sessionCard) Closable() bool      { return false }
+func (c *sessionCard) Glyph() string  { return c.app.uiTheme().Glyphs.Session }
+func (c *sessionCard) Key() string    { return "session:" + strconv.Itoa(c.app.num) }
+func (c *sessionCard) Init() tea.Cmd  { return tea.RequestTerminalVersion }
+func (c *sessionCard) Closable() bool { return len(c.app.sessions) > 1 }
+
+// Session the card shows, kept with the layout
+func (c *sessionCard) State() any {
+	sid := c.app.store.ui.StoredSid
+	if sid == "" {
+		sid = c.app.store.ui.Sid
+	}
+	if sid == "" {
+		return nil
+	}
+	return sessionCardState{Sid: sid}
+}
+
+// Session a restored card resumes once the background service is ready, unless the launch named one to resume
+func (c *sessionCard) SetState(raw json.RawMessage) error {
+	var st sessionCardState
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return err
+	}
+	if st.Sid != "" && c.app.events.startupResumeID == "" {
+		c.app.events.startupResumeID = st.Sid
+	}
+	return nil
+}
 func (c *sessionCard) Selectable() bool    { return true }
 func (c *sessionCard) MinSize() (int, int) { return 40, 10 }
 
 // Keys in force, the stash panel and completion popup first, then the terminal UI keys over the session keys
 func (c *sessionCard) Contexts() []string {
+	if c.view.reading() {
+		return c.readContexts()
+	}
 	var ctxs []string
 	if c.app.stashBrowsing() {
 		ctxs = append(ctxs, stashContext)
@@ -99,12 +127,20 @@ func (c *sessionCard) Contexts() []string {
 	if c.composer.Completing() {
 		ctxs = append(ctxs, keys.Complete)
 	}
-	return append(ctxs, tuiContext, keys.Session)
+	return append(ctxs, tuiContext, keys.Session, keys.Text)
+}
+
+// Ambient widgets of the window, shown and refreshed by the session card in view alone
+func (c *sessionCard) ambient() []*activeWidget {
+	if !c.app.shell.inView(c.app) {
+		return nil
+	}
+	return c.app.widgets.ambient
 }
 
 // Spinner frames advance while a turn runs and ambient widgets refresh on their interval, the window repainting on either
 func (c *sessionCard) Animate(dt float64) bool {
-	refreshed := c.app.widgets.refresh(time.Now(), c.app.widgets.ambient)
+	refreshed := c.app.widgets.refresh(time.Now(), c.ambient())
 	if !c.app.store.ui.Busy && len(c.app.store.turn.Tools) == 0 {
 		return refreshed
 	}
@@ -117,12 +153,22 @@ func (c *sessionCard) Animate(dt float64) bool {
 	return true
 }
 
-// Keeps the frame clock running while an ambient widget refreshes on an interval
-func (c *sessionCard) Awake() bool { return c.app.widgets.refreshing(c.app.widgets.ambient) }
+// Keeps the frame clock running while the card moves on its own: a turn runs, whose spinner turns, or an ambient widget refreshes on an
+// interval
+func (c *sessionCard) Awake() bool {
+	return c.app.store.ui.Busy || len(c.app.store.turn.Tools) > 0 || c.app.widgets.refreshing(c.ambient())
+}
 
+// Takes a message for the card; a card that closes lets its session go, and the one that takes the focus becomes the session in view
 func (c *sessionCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 	switch m := m.(type) {
+	case wm.ClosedMsg:
+		return c, c.app.shell.dropSession(c.app)
 	case wm.FocusMsg:
+		if m.Focused {
+			c.app.shell.current = c.app
+			c.app.shell.focusChanged()
+		}
 		return c, c.composer.SetFocus(m.Focused)
 	case wm.ActionMsg:
 		if m.ID != "session.stop" {
@@ -130,10 +176,21 @@ func (c *sessionCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 		}
 		return c, c.action(m.ID)
 	case tea.KeyPressMsg:
+		if c.view.reading() {
+			return c, c.readKey(m)
+		}
 		c.app.rewindPrimed = ""
+		// Typing closes the stash panel and goes into the prompt
+		if m.Text != "" && c.app.stashBrowsing() {
+			c.app.promptStash().ClosePanel()
+		}
 		cmd := c.composer.Update(m)
-		return c, tea.Batch(c.app.typed(cmd), c.app.syncTokens())
+		c.app.syncTokens()
+		return c, c.app.typed(cmd)
 	case tea.PasteMsg:
+		if c.view.reading() {
+			return c, c.readKey(m)
+		}
 		c.app.rewindPrimed = ""
 		return c, c.app.pasted(m.Content)
 	case tea.MouseWheelMsg:
@@ -204,7 +261,7 @@ func (c *sessionCard) promptPress(m tea.MouseClickMsg) tea.Cmd {
 	switch m.Button {
 	case tea.MouseRight:
 		if _, selected := c.composer.Selection(); selected {
-			return c.composer.Action("composer.copy")
+			return c.composer.Action("text.copy")
 		}
 		return c.app.pasteFromClipboard()
 	case tea.MouseLeft:
@@ -219,12 +276,12 @@ func (c *sessionCard) promptPress(m tea.MouseClickMsg) tea.Cmd {
 	return nil
 }
 
-// Release of a press on the prompt, the selection ending where the pointer is and, on a Mac, going to the clipboard
+// Release of a press on the prompt, the selection ending where the pointer is and going to the clipboard, as a sweep of the transcript does
 func (c *sessionCard) promptRelease() tea.Cmd {
 	c.promptDrag = false
 	c.composer.Release()
-	if _, selected := c.composer.Selection(); selected && isMac {
-		return c.composer.Action("composer.copy")
+	if _, selected := c.composer.Selection(); selected {
+		return c.composer.Action("text.copy")
 	}
 	return nil
 }
@@ -272,14 +329,15 @@ func (c *sessionCard) tap(m wm.TapMsg) tea.Cmd {
 	return nil
 }
 
-// Keys that leave the prompt at its edges, up and down stepping through the queued inputs and enter on an empty prompt acting on the turn or the queue,
-// false when the key stays with the prompt
+// Up and down into the queued inputs from an empty prompt or one held for editing, and enter on an empty prompt; false leaves the key to the prompt
 func (c *sessionCard) promptEdge(id string) (tea.Cmd, bool) {
+	editing := c.app.queue.queueEditIndex() != nil
+	_, recalling := c.composer.Recalling()
 	switch {
-	case id == "composer.up" && c.composer.AtTop():
-		return c.app.cycleQueue(1)
-	case id == "composer.down" && c.composer.AtBottom():
+	case id == "composer.up" && c.composer.AtTop() && (editing || (!recalling && c.composer.Value() == "")):
 		return c.app.cycleQueue(-1)
+	case id == "composer.down" && c.composer.AtBottom() && editing:
+		return c.app.cycleQueue(1)
 	case id == "composer.send":
 		return c.app.emptyEnter()
 	}
@@ -288,8 +346,19 @@ func (c *sessionCard) promptEdge(id string) (tea.Cmd, bool) {
 
 // Carries out a keymap action, the transcript and session ones here and the prompt ones in the composer
 func (c *sessionCard) action(id string) tea.Cmd {
+	if cmd, used := c.composer.SearchKey(id); used {
+		if id == "session.stop" {
+			c.app.escapeClosed()
+		}
+		return cmd
+	}
 	if cmd, taken := c.promptEdge(id); taken {
 		return cmd
+	}
+	// A history key leaves the queued input being edited, so Enter never writes a recalled prompt over it
+	if strings.HasPrefix(id, "composer.history.") && c.app.queue.queueEditIndex() != nil {
+		c.app.setQueueEdit(nil)
+		return tea.Batch(c.composer.SetValue(""), c.composer.Action(id))
 	}
 	page := max(c.view.height-2, 1)
 	switch id {
@@ -307,6 +376,9 @@ func (c *sessionCard) action(id string) tea.Cmd {
 		c.view.scrollBy(1)
 	case "session.stop":
 		return c.app.escape()
+	case "complete.close":
+		c.app.escapeClosed()
+		return c.composer.Action(id)
 	case "session.expand":
 		return c.app.setDetails("expanded")
 	case "session.collapse":
@@ -329,7 +401,8 @@ func (c *sessionCard) action(id string) tea.Cmd {
 		if (id == "composer.send" || id == "complete.accept") && trimJS(before) != "" && c.composer.Value() == "" {
 			return c.app.typed(cmd)
 		}
-		return tea.Batch(c.app.typed(cmd), c.app.syncTokens())
+		c.app.syncTokens()
+		return c.app.typed(cmd)
 	}
 	return nil
 }
@@ -358,7 +431,7 @@ func (c *sessionCard) queueRows(width int, rc renderCtx) []string {
 	if err != nil || len(shown) == 0 {
 		return nil
 	}
-	muted, edit := toneStyle(rc.t.Color.Muted), c.app.queueEdit
+	muted, edit := toneStyle(rc.t.Color.Muted), c.app.queue.queueEditIndex()
 	header := toneStyle(rc.t.Color.Label).Render("  " + tr(txt.ChatBitsQueuedHeader, len(shown)))
 	if edit != nil {
 		header += muted.Render(tr(txt.ChatBitsQueuedEditing, *edit+1))
@@ -482,7 +555,9 @@ func (c *sessionCard) Footer(room int) wm.FooterLine {
 	if !ui.Busy && (raw == "ready" || raw == tr(txt.StatusReady)) {
 		status = ""
 	}
-	left += toneStyle(tone).Render(status)
+	if status != "" {
+		left += toneStyle(tone).Render(status)
+	}
 	sep := func() string {
 		if left == "" {
 			return ""
@@ -510,18 +585,14 @@ func (c *sessionCard) Footer(room int) wm.FooterLine {
 		right = toneStyle(t.Color.Accent).Render(c.app.store.voicePartial)
 	case len(imageAttachments(c.composer.Value(), c.app.tokens)) > 0:
 		right = toneStyle(t.Color.Accent).Render(trCount(txt.ComposerImagesAttachedOne, txt.ComposerImagesAttachedOther, len(imageAttachments(c.composer.Value(), c.app.tokens))))
-	case ui.Busy && c.composer.Empty():
-		if key := c.app.keys.Display("interrupt"); key != "" {
-			right = muted.Render(key + " stop")
-		}
-	case ui.BusyInputMode != "" && ui.Busy:
-		right = muted.Render(tr(txt.ComposerEnterMode, ui.BusyInputMode))
+	default:
+		right = muted.Render(c.legend())
 	}
 	tail := ""
 	if extra := c.composer.Status(); extra != "" {
 		tail = muted.Render(extra)
 	}
-	if heart := c.app.goodVibesHeart(t); heart != "" {
+	if heart := c.app.store.goodVibesHeart(t); heart != "" {
 		tail = strings.TrimSpace(tail + " " + heart)
 	}
 	free := room - ansi.StringWidth(left)
@@ -598,21 +669,36 @@ func (c *sessionCard) View(w, h int) string {
 	chrome = append(chrome, c.quickHelpRows(w, h-len(chrome)-quickHelpReserve, rc)...)
 	c.composer.Phase = c.tick
 	c.composer.Offline = c.app.store.ui.GatewayConnected != nil && !*c.app.store.ui.GatewayConnected
-	composerRows := min(c.composer.Height(), max(h-len(chrome)-3, 2))
+	// A short window gives the prompt's spare row to the transcript
+	if _, screen := c.app.wm.Size(); screen <= smallScreenRows {
+		c.composer.SetMinRows(1)
+	} else {
+		c.composer.SetMinRows(2)
+	}
+	composerRows := min(c.composer.Height(), max(h-len(chrome)-3, 1))
 	gap := 0
 	if h-len(chrome)-composerRows > composerGap+1 {
 		gap = composerGap
 	}
 	bodyRows := max(h-len(chrome)-composerRows-gap, 1)
-	top := c.app.widgets.dock("dock-top", w)
-	bottom := c.app.widgets.dock("dock-bottom", w)
+	var top, bottom []string
+	inView := c.app.shell.inView(c.app)
+	if inView {
+		top, bottom = c.app.widgets.dock("dock-top", w), c.app.widgets.dock("dock-bottom", w)
+	}
 	bodyRows = max(bodyRows-len(top)-len(bottom), 1)
-	pet := c.app.pet.place(w, bodyRows, len(top))
+	var pet petPlacement
+	if inView {
+		pet = c.app.pet.place(w, bodyRows, len(top))
+	}
 	wrap := rc
 	wrap.width = scrollbarRoom(w - pet.gutter)
 	c.lines, c.viewTop = c.view.rows(c.app.history, c.app.store, c.app.turn.visibleStream(), wrap, c.tick), len(top)
 	rows := pet.over(strings.Split(c.view.view(c.lines, w-pet.gutter, bodyRows-pet.band, rc), "\n"), w)
-	body := strings.Join(c.app.widgets.overlayCorners(rows, w), "\n")
+	if inView {
+		rows = c.app.widgets.overlayCorners(rows, w)
+	}
+	body := strings.Join(rows, "\n")
 	if len(top) > 0 {
 		body = strings.Join(top, "\n") + "\n" + body
 	}
@@ -631,12 +717,19 @@ func (c *sessionCard) View(w, h int) string {
 
 // Screen cell the content starts at, where the pet image and the transcript pictures are placed from
 func (c *sessionCard) Origin(x, y int) {
-	c.app.pet.origin(x, y)
+	if c.app.shell.inView(c.app) {
+		c.app.pet.origin(x, y)
+	}
 	c.app.images.origin(x, y)
 }
 
-// Boxes of the pet image and the transcript pictures the terminal draws over the cells
-func (c *sessionCard) Holes() []wm.Box { return append(c.app.pet.holes(), c.app.images.holes()...) }
+// Boxes of the transcript pictures the terminal draws over the cells, and of the pet image in the card that hosts it
+func (c *sessionCard) Holes() []wm.Box {
+	if c.app.shell.inView(c.app) {
+		return append(c.app.pet.holes(), c.app.images.holes()...)
+	}
+	return c.app.images.holes()
+}
 
 // Cursor of the prompt, moved below the transcript and chrome
 func (c *sessionCard) Cursor() *tea.Cursor {
@@ -653,16 +746,42 @@ func (c *sessionCard) Status() string {
 	return c.app.frameStatus()
 }
 
+// Keys that matter for what the prompt is doing right now, read from the keymap so a rebound key shows as bound
+func (c *sessionCard) legend() string {
+	ui := c.app.store.ui
+	switch {
+	case c.composer.Searching():
+		return tr(txt.HintsLegendSearch)
+	case len(c.composer.Completions()) > 0:
+		return tr(txt.HintsLegendPopup)
+	case c.app.queue.queueEditIndex() != nil:
+		rows, _ := c.app.queue.queuedDisplay()
+		return tr(txt.HintsLegendQueued, *c.app.queue.queueEditIndex()+1, len(rows))
+	}
+	if _, recalling := c.composer.Recalling(); recalling {
+		return tr(txt.HintsLegendHistory)
+	}
+	switch {
+	case ui.Busy && c.composer.Empty():
+		return tr(txt.HintsLegendBusy)
+	case ui.Busy && ui.BusyInputMode != "":
+		return tr(txt.ComposerEnterMode, ui.BusyInputMode)
+	case c.composer.Empty():
+		return tr(txt.HintsLegendIdle)
+	}
+	return ""
+}
+
 // Legend of the keys that matter right now
 func (c *sessionCard) Hints() []wm.Hint {
-	edits := []wm.Hint{{Action: "composer.undo"}, {Action: "composer.redo", All: true}, {Action: "tui.suspend"}}
+	edits := []wm.Hint{{Action: "text.undo"}, {Action: "text.redo", All: true}, {Action: "tui.suspend"}}
 	lead := []wm.Hint{{Action: "composer.send"}, {Action: "tui.editor"}, {Action: "palette"}}
 	if c.app.store.ui.Busy {
 		lead = []wm.Hint{{Action: "composer.send", Label: c.app.store.ui.BusyInputMode}, {Action: "interrupt"}}
 	}
 	var queued []wm.Hint
 	switch {
-	case c.app.queueEdit != nil:
+	case c.app.queue.queueEditIndex() != nil:
 		queued = []wm.Hint{{Action: "tui.queue.delete"}, {Action: "session.stop", Label: tr(txt.HintsLabelCancel)}}
 	case c.app.queueHeadWaits():
 		queued = []wm.Hint{{Action: "tui.queue.send"}}

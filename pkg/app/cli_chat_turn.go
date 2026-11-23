@@ -155,9 +155,8 @@ func (c *CLI) chat(message any, images []string) (response string, ok bool) {
 		chatConsolePrint("[" + accentHex() + "]" + strings.Repeat("─", 40) + "[/]")
 		cprint("")
 	}
-	defer a.NotificationPolicySnapshot(agent.NotificationConfigSnapshot(c.ctx))()
 	turn := &chatTurn{}
-	turn.muteNotificationReply = config.DiagnosticTurnMuted(c.ctx, displayMetadata, "cli", a.NotificationConfig())
+	turn.muteNotificationReply = config.DiagnosticTurnMuted(c.ctx, displayMetadata, "cli")
 	defer func() {
 		if r := recover(); r != nil {
 			if _, interrupted := r.(keyboardInterrupt); interrupted {
@@ -441,16 +440,14 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 	if len(result) > 0 && !cliTruthy(result["completed"]) && !cliTruthy(result["interrupted"]) {
 		apiCalls, _ := progressNumber(mapValueOr(result, "api_calls", 0))
 		maxIter := 500
-		var notificationConfig map[string]any
 		if c.agentRef() != nil {
 			maxIter = c.agentRef().MaxIterations()
-			notificationConfig = c.agentRef().NotificationConfig()
 		}
 		if int(apiCalls) >= maxIter {
 			_, _ = config.RenderNotification(c.ctx, func() error {
 				cprint("\n" + dimANSI + c.t("cli.chat.iteration_budget_reached", map[string]any{"used": int(apiCalls), "max": maxIter}) + resetANSI)
 				return nil
-			}, "cli", false, notificationConfig)
+			}, "cli", false)
 		}
 	}
 	if pyrepr.Truthy(interruptPayloadValue(pendingMessage)) {

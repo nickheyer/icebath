@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -29,13 +30,6 @@ var thinkingModes = map[string]bool{"collapsed": true, "truncated": true, "full"
 
 // Error codes of the config getters whose failure is a JSON RPC error
 var configGetErr = map[string]int{"provider": 5013, "approval_mode": 5001, "approvals.mode": 5001}
-
-var configRegistry = &handlerRegistry{}
-
-func init() {
-	configRegistry.scopedMethod("config.get", configGet)
-	configRegistry.install()
-}
 
 // int of a param value or its default when falsy, raising like int() on a bad value
 func intParamOr(v any, def int) int {
@@ -94,8 +88,7 @@ func cfgGetProvider(ctx context.Context, params map[string]any) tuigateway.Confi
 func cfgGetProject(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 	raw := params["cwd"]
 	if !truthy(raw) {
-		terminal, _ := loadCfg(ctx)["terminal"].(map[string]any)
-		raw = terminal["cwd"]
+		raw = settings.WorkingFolder.Get(ctx)
 	}
 	cwd, err := completionCwd(ctx, map[string]any{"cwd": pystr.Strip(strOr(raw)), "cwd_explicit": truthy(params["cwd"]), "profile": params["profile"]})
 	if err != nil {
@@ -106,7 +99,6 @@ func cfgGetProject(ctx context.Context, params map[string]any) tuigateway.Config
 
 // Effective reasoning effort of the session or config with whether reasoning shows
 func cfgGetReasoning(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
-	cfg := loadCfg(ctx)
 	session := tuihost.SessionRecord(strOr(params["session_id"]))
 	var reasoning any
 	if session != nil {
@@ -130,36 +122,11 @@ func cfgGetReasoning(ctx context.Context, params map[string]any) tuigateway.Conf
 		} else {
 			effort = "none"
 		}
-	} else {
-		agentCfg, _ := cfg["agent"].(map[string]any)
-		rawEffort, present := agentCfg["reasoning_effort"]
-		if !present {
-			rawEffort = ""
-		}
-		if effortDict, isDict := rawEffort.(map[string]any); isDict {
-			parsed := config.ParseReasoningEffort(effortDict)
-			if parsed["enabled"] == false {
-				rawEffort = false
-			} else {
-				rawEffort = parsed["effort"]
-			}
-		}
-		switch {
-		case rawEffort == false:
-			effort = "none"
-		case truthy(rawEffort):
-			effort = pyStrOf(rawEffort)
-		default:
-			effort = "medium"
-		}
-	}
-	display, _ := cfg["display"].(map[string]any)
-	show, present := display["show_reasoning"]
-	if !present {
-		show = true
+	} else if effort = settings.ReasoningEffort.Get(ctx); effort == "" {
+		effort = "medium"
 	}
 	shown := "hide"
-	if truthy(show) {
+	if sessionShowReasoning(ctx, strOr(params["session_id"])) {
 		shown = "show"
 	}
 	return tuigateway.ConfigGetResult{Value: tuigateway.TextValue(effort), Display: shown}
@@ -178,25 +145,13 @@ func cfgGetFast(ctx context.Context, params map[string]any) tuigateway.ConfigGet
 		}
 	}
 	if !known {
-		tier = loadServiceTier(ctx)
+		tier = loadServiceTier(sessionSettings(ctx, strOr(params["session_id"])))
 	}
 	value := map[string]string{"priority": "fast", "ultrafast": "ultrafast"}[tier]
 	if value == "" {
 		value = "normal"
 	}
 	return wordAnswer(value)
-}
-
-// Thinking display mode, the legacy details mode deciding when it is unset
-func cfgGetThinkingMode(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
-	raw := displayWord(ctx, "thinking_mode", "", thinkingModes)
-	if raw == "" {
-		raw = "collapsed"
-		if displayWord(ctx, "details_mode", "collapsed", detailModes) == "expanded" {
-			raw = "full"
-		}
-	}
-	return wordAnswer(raw)
 }
 
 // Launch config version token with the MCP section hash, zero when the version cannot be read
@@ -231,8 +186,8 @@ var configGetters = map[string]func(ctx context.Context, params map[string]any) 
 	},
 	"project": cfgGetProject,
 	"full": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
-		settings := tuihost.ClientConfig(loadCfg(ctx))
-		return tuigateway.ConfigGetResult{Config: &settings}
+		client := tuigateway.ClientConfigOf(sessionSettings(ctx, strOr(params["session_id"])))
+		return tuigateway.ConfigGetResult{Config: &client}
 	},
 	"prompt": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		prompt := textOr(loadCfg(ctx)["custom_prompt"], "")
@@ -258,11 +213,10 @@ var configGetters = map[string]func(ctx context.Context, params map[string]any) 
 	"reasoning": cfgGetReasoning,
 	"fast":      cfgGetFast,
 	"daybreak": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
-		agentCfg, _ := loadCfg(ctx)["agent"].(map[string]any)
-		return tuigateway.ConfigGetResult{Value: tuigateway.FlagValue(agentCfg["daybreak"] == true)}
+		return tuigateway.ConfigGetResult{Value: tuigateway.FlagValue(settings.Daybreak.Get(ctx))}
 	},
 	"busy": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
-		return wordAnswer(loadBusyInputMode(ctx))
+		return wordAnswer(loadBusyInputMode(sessionSettings(ctx, strOr(params["session_id"]))))
 	},
 	"approval_mode": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		return wordAnswer(loadApprovalMode(ctx))
@@ -273,7 +227,6 @@ var configGetters = map[string]func(ctx context.Context, params map[string]any) 
 	"details_mode": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		return wordAnswer(displayWord(ctx, "details_mode", "collapsed", detailModes))
 	},
-	"thinking_mode": cfgGetThinkingMode,
 	"density": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
 		value := "off"
 		if truthy(displayRaw(ctx)["tui_compact"]) {
@@ -291,15 +244,8 @@ var configGetters = map[string]func(ctx context.Context, params map[string]any) 
 		}
 		return wordAnswer(coerceStatusbar(raw))
 	},
-	"focus": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
-		value := "off"
-		if truthy(displayCfg(ctx)["focus_view"]) {
-			value = "on"
-		}
-		return tuigateway.ConfigGetResult{Value: tuigateway.TextValue(value), ToolProgress: loadToolProgressMode(ctx)}
-	},
 	"mouse": func(ctx context.Context, params map[string]any) tuigateway.ConfigGetResult {
-		return wordAnswer(displayMouseTracking(loadCfg(ctx)["display"]))
+		return wordAnswer(settings.Mouse.Get(ctx))
 	},
 	"mtime": cfgGetMtime,
 }

@@ -169,10 +169,15 @@ func (s *tuiStore) loopTick() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg { return loopTickMsg{gen: gen} })
 }
 
-// Restarts the countdown ticker after the loop snapshot or the session changed
-func (s *tuiStore) restartLoopTicker() tea.Cmd {
+// Starts the countdown ticker when a loop began counting and lets it end when none does
+func (s *tuiStore) syncLoopTicker() tea.Cmd {
+	ticking := s.loopTicking()
+	if ticking == s.loopTickerOn {
+		return nil
+	}
+	s.loopTickerOn = ticking
 	s.loopTickGen++
-	if !s.loopTicking() {
+	if !ticking {
 		return nil
 	}
 	return s.loopTick()

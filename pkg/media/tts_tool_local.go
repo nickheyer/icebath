@@ -586,7 +586,7 @@ def main():
     try:
         from neutts import NeuTTS
     except ImportError:
-        print("Error: neutts not installed. Run 'icebath pm install --extra neutts', or start icebath, type /setup tts and choose NeuTTS.", file=sys.stderr)
+        print("Error: neutts not installed. Run 'icebath pm install --extra neutts', or start icebath, type /setup voice and choose NeuTTS.", file=sys.stderr)
         sys.exit(1)
     if os.environ.get("ESPEAK_DATA_PATH"):
         os.environ["ESPEAK_DATA_PATH"] = short_espeak_data(os.environ["ESPEAK_DATA_PATH"])

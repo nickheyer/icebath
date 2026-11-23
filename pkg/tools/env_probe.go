@@ -116,7 +116,7 @@ func resolveTerminalBackend(env *Env) string {
 		pkgLog().Debug("terminal backend resolution failed", "error", err)
 		return "local"
 	}
-	backend := strings.ToLower(strings.TrimSpace(policy.Get("TERMINAL_ENV", "local")))
+	backend := strings.ToLower(strings.TrimSpace(policy.Setting("backend")))
 	if backend == "" {
 		return "local"
 	}

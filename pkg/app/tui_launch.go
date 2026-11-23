@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"math/big"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,8 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
 )
@@ -238,9 +241,6 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		fmt.Fprintf(deps.stderr, "Error: %v\n", err)
 		return 1
 	}
-	if err := config.ApplyTerminalConfigToEnv(ctx, home.Dir(ctx), config.TerminalEnvOptions{Env: env}); err != nil {
-		pkgLog().Debug(fmt.Sprintf("Failed to apply terminal config bridge for TUI launch: %v", err))
-	}
 	tmpDir, err := pypath.Gettempdir()
 	if err != nil {
 		return tuiLaunchExitCode(err, deps.stderr)
@@ -252,18 +252,13 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	activeSessionFile := activeFile.Name()
 	_ = activeFile.Close()
 	env["ICEBATH_TUI_ACTIVE_SESSION_FILE"] = activeSessionFile
-	nativeMode := l.Native
-	if !nativeMode {
-		if cfg, cerr := config.Load(home.Dir(ctx), nil); cerr == nil {
-			if display, ok := cfg["display"].(map[string]any); ok {
-				nativeMode = provider.IsTruthyValue(display["tui_native"])
-			}
-		}
-	}
+	nativeMode := l.Native || settings.DisplayTuiNative.Get(ctx)
 	env["ICEBATH_TUI_NATIVE"] = "0"
 	if nativeMode {
 		env["ICEBATH_TUI_NATIVE"] = "1"
 	}
+	// The window paints its first frame before the background service answers, so the mouse mode of that frame travels with the launch
+	env["ICEBATH_TUI_MOUSE"] = settings.Mouse.Get(ctx)
 	var wtInfo map[string]any
 	if l.Worktree {
 		if wtInfo, err = deps.setupWorktree(ctx); err != nil {
@@ -273,11 +268,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		env["ICEBATH_CWD"] = path
 		env["TERMINAL_CWD"] = path
 	}
-	terminalEnv := env["TERMINAL_ENV"]
-	if terminalEnv == "" {
-		terminalEnv = "local"
-	}
-	if terminalEnv == "local" {
+	if settings.WhereCommandsRun.Get(ctx) == "local" {
 		env["TERMINAL_CWD"] = env["ICEBATH_CWD"]
 		env["ICEBATH_TUI_CWD"] = env["ICEBATH_CWD"]
 	} else {
@@ -356,11 +347,79 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	if callErr != nil {
 		return tuiLaunchExitCode(callErr, deps.stderr)
 	}
-	if code == 42 {
-		fmt.Fprint(deps.stdout, "\n󰆧 Launching update...\n\n")
-		deps.relaunch([]string{"update"}, false)
+	queued, err := tui.TakeAfterExit()
+	if err != nil {
+		fmt.Fprintf(deps.stderr, "icebath: could not read the commands queued to run after exit: %v\n", err)
+	}
+	if code != 0 {
+		printNotRun(deps.stderr, "icebath did not close normally, so these commands did not run:", queued)
+		return code
+	}
+	if len(queued) > 0 && runAfterExit(deps, queued) {
+		fmt.Fprint(deps.stdout, "\n󰆧 Opening icebath again...\n\n")
+		deps.relaunch(nil, false)
 	}
 	return code
+}
+
+// Lists queued commands that did not run, each as a line to run by hand
+func printNotRun(w io.Writer, why string, queued [][]string) {
+	if len(queued) == 0 {
+		return
+	}
+	fmt.Fprintln(w, why)
+	for _, argv := range queued {
+		fmt.Fprintln(w, "  icebath "+pyshlex.Join(argv))
+	}
+}
+
+// Runs the queued commands in this terminal, the background service stopped first when one needs it, reporting whether icebath opens again
+func runAfterExit(deps tuiLaunchDeps, queued [][]string) bool {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(deps.stderr, "icebath: %v\n", err)
+		printNotRun(deps.stderr, "These commands did not run:", queued)
+		return false
+	}
+	run := func(argv []string) int {
+		line := "icebath " + pyshlex.Join(argv)
+		fmt.Fprintf(deps.stdout, "\n󰆧 %s\n\n", line)
+		code, err := runAndWait(append([]string{exe}, argv...))
+		if err != nil {
+			fmt.Fprintf(deps.stderr, "%s: %v\n", line, err)
+		}
+		return code
+	}
+	if slices.ContainsFunc(queued, stopsServiceFirst) {
+		run([]string{"gateway", "stop"})
+	}
+	reopen := true
+	for i, argv := range queued {
+		code := run(argv)
+		if code == 130 {
+			printNotRun(deps.stderr, "Stopped. These commands did not run:", queued[i+1:])
+			return false
+		}
+		switch path := strings.Join(argv[:min(2, len(argv))], " "); {
+		case argv[0] == "uninstall", path == "gateway stop":
+			reopen = false
+		case path == "profile use" && code == 0:
+			// The profile this process was started on would otherwise win over the new sticky one
+			_ = os.Setenv(home.EnvHome, home.Root())
+		}
+	}
+	return reopen
+}
+
+// Whether a queued command needs the background service stopped first, one that removes icebath, replaces the service or repairs sessions
+func stopsServiceFirst(argv []string) bool {
+	switch argv[0] {
+	case "uninstall", "sessions":
+		return true
+	case "gateway":
+		return len(argv) < 2 || argv[1] != "stop"
+	}
+	return false
 }
 
 // Runs the Go terminal UI in this process with the launch environment as the process environment

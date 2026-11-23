@@ -101,40 +101,12 @@ func ReadUser(h string) (map[string]any, error) {
 	return ReadDocument(GetConfigPath(h))
 }
 
-// Document with legacy root max_turns under agent and the model section canonical, the Python error for an agent that is no mapping
+// Document as stored, the Python error for an agent section that is no mapping
 func Canonicalize(doc map[string]any) (map[string]any, error) {
-	moved, err := normalizeMaxTurns(doc)
-	if err != nil {
+	if _, err := pyDictOf(doc["agent"]); err != nil {
 		return nil, err
 	}
-	return normalizeModelKeys(moved), nil
-}
-
-// Shallow copy with a root max_turns moved under agent, an agent key kept as a mapping whenever present
-func normalizeMaxTurns(doc map[string]any) (map[string]any, error) {
-	agent, err := pyDictOf(doc["agent"])
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]any, len(doc)+1)
-	for k, v := range doc {
-		out[k] = v
-	}
-	order := MappingKeys(doc)
-	raw, hasRoot := doc["max_turns"]
-	if _, set := agent["max_turns"]; hasRoot && !set {
-		agent["max_turns"] = raw
-		AppendMappingKey(agent, "max_turns")
-	}
-	if _, has := doc["agent"]; len(agent) > 0 || has {
-		if !has {
-			order = append(order, "agent")
-		}
-		out["agent"] = agent
-	}
-	delete(out, "max_turns")
-	SetMappingKeys(out, order)
-	return out, nil
+	return doc, nil
 }
 
 // Model and provider of a model default value that may be a string or a mapping
@@ -148,98 +120,6 @@ func SplitModelDefault(raw any) (string, string) {
 		return strings.TrimFunc(pyOrEmpty(model), isPySpace), provider
 	}
 	return strings.TrimFunc(pyOrEmpty(raw), isPySpace), ""
-}
-
-// Canonicalizes the model section of a parsed config document the way every load and save does
-func NormalizeRootModelKeys(doc map[string]any) map[string]any { return normalizeModelKeys(doc) }
-
-// Document with root provider, base_url, context_length and api_base folded into the model section
-func normalizeModelKeys(doc map[string]any) map[string]any {
-	modelMap, isMap := doc["model"].(map[string]any)
-	needsWork := false
-	if isMap {
-		if p := modelMap["provider"]; p != nil {
-			if _, isStr := p.(string); !isStr {
-				needsWork = true
-			}
-		}
-		if PyTruthy(modelMap["api_base"]) || PyTruthy(modelMap["model"]) || PyTruthy(modelMap["name"]) {
-			needsWork = true
-		}
-		for _, k := range []string{"default", "model", "name"} {
-			if _, ok := modelMap[k].(map[string]any); ok {
-				needsWork = true
-			}
-		}
-	}
-	hasRoot := false
-	for _, k := range []string{"provider", "base_url", "context_length", "api_base"} {
-		if PyTruthy(doc[k]) {
-			hasRoot = true
-		}
-	}
-	if !hasRoot && !needsWork {
-		return doc
-	}
-	out := make(map[string]any, len(doc))
-	for k, v := range doc {
-		out[k] = v
-	}
-	SetMappingKeys(out, MappingKeys(doc))
-	model := map[string]any{}
-	switch m := out["model"].(type) {
-	case map[string]any:
-		for k, v := range m {
-			model[k] = v
-		}
-		SetMappingKeys(model, MappingKeys(m))
-	default:
-		if PyTruthy(m) {
-			model["default"] = m
-		}
-	}
-	setOrderedKey(out, "model", model)
-	for _, key := range []string{"default", "model", "name"} {
-		nested, ok := model[key].(map[string]any)
-		if !ok {
-			continue
-		}
-		name, provider := SplitModelDefault(nested)
-		model[key] = name
-		if provider != "" {
-			if outer := strings.TrimFunc(pyOrEmpty(model["provider"]), isPySpace); outer == "" || outer == "auto" {
-				setOrderedKey(model, "provider", provider)
-			}
-		}
-	}
-	for _, key := range []string{"provider", "base_url", "context_length"} {
-		if rootVal := out[key]; PyTruthy(rootVal) && !PyTruthy(model[key]) {
-			setOrderedKey(model, key, rootVal)
-		}
-		delete(out, key)
-	}
-	if p := model["provider"]; p != nil {
-		model["provider"] = strings.TrimFunc(PyStr(p), isPySpace)
-	}
-	for _, alias := range []any{out["api_base"], model["api_base"]} {
-		if PyTruthy(alias) && !PyTruthy(model["base_url"]) {
-			setOrderedKey(model, "base_url", alias)
-		}
-	}
-	delete(out, "api_base")
-	delete(model, "api_base")
-	alias := model["model"]
-	if !PyTruthy(alias) {
-		alias = model["name"]
-	}
-	if !PyTruthy(model["default"]) && PyTruthy(alias) {
-		setOrderedKey(model, "default", alias)
-	}
-	if PyTruthy(model["default"]) {
-		delete(model, "model")
-		delete(model, "name")
-	}
-	return out
 }
 
 // Writes the effective document of a home, dropping values equal to the defaults the user never set

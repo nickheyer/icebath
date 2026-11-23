@@ -24,11 +24,7 @@ func agentPresentationEnabled(ctx context.Context, sid string, diagnostic bool) 
 	if session == nil {
 		session = tuihost.NewSession(map[string]any{})
 	}
-	var notificationConfig map[string]any
-	if a != nil {
-		notificationConfig = a.NotificationConfig()
-	}
-	return config.WarningNotificationsEnabled(sessionProfileRuntimeScope(ctx, session, true), "tui", notificationConfig)
+	return config.WarningNotificationsEnabled(sessionProfileRuntimeScope(ctx, session, true), "tui")
 }
 
 // Status line update of an agent, dropped when a warning status may not present
@@ -72,7 +68,7 @@ func emitReasoningDelta(ctx context.Context, sid string, text string) {
 		return
 	}
 	payload := map[string]any{"text": text}
-	if sessionVerbose(sid) {
+	if sessionVerbose(ctx, sid) {
 		payload["verbose"] = true
 	}
 	emitEvent(ctx, "reasoning.delta", sid, payload)
@@ -110,7 +106,7 @@ func agentCbs(ctx context.Context, sid string) agentCallbackSet {
 			onToolProgress(ctx, sid, event, name, preview, extra)
 		},
 		ToolGen: func(name string) {
-			if toolProgressEnabled(sid) {
+			if toolProgressEnabled(ctx, sid) {
 				emitEvent(ctx, "tool.generating", sid, map[string]any{"name": name})
 			}
 		},

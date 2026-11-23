@@ -14,18 +14,6 @@ import (
 var sessionInterruptRegistry = &handlerRegistry{}
 
 func init() {
-	sessionInterruptRegistry.method("session.interrupt", sessionInterrupt)
-	correctionMethod("session.steer", "steer", "queued", func(a any) bool {
-		_, steers := a.(interface{ Steer(string) bool })
-		return steers
-	}, "agent does not support steer")
-	correctionMethod("session.redirect", "redirect", "redirected", func(a any) bool {
-		r, redirects := a.(interface {
-			Redirect(string) bool
-			SupportsActiveTurnRedirect() bool
-		})
-		return redirects && r.SupportsActiveTurnRedirect()
-	}, "agent does not support active-turn redirect")
 	sessionInterruptRegistry.install()
 }
 

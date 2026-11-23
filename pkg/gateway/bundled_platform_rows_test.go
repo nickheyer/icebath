@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/bluebubbles"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/dingtalk"
@@ -28,6 +27,7 @@ import (
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/whatsappcloud"
 	_ "github.com/nickheyer/icebath/pkg/gateway/platforms/yuanbao"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // AUTHZ and ENV_ENABLE_CREDENTIALS of every upstream plugins/platforms gateway_env module, wecom_callback under its CALLBACK_ prefix
@@ -85,7 +85,7 @@ func TestCoreHintAndDisplayTablesHoldNoBundledPluginPlatform(t *testing.T) {
 			t.Fatalf("prompt hint row for bundled %q", name)
 		}
 	}
-	for _, name := range config.CoreDisplayPlatforms() {
+	for _, name := range settings.CorePlatforms() {
 		if bundled[name] {
 			t.Fatalf("display default row for bundled %q", name)
 		}

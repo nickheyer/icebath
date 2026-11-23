@@ -478,8 +478,8 @@ func httpxPreparedLines(req *http.Request, h *pyhttpx.Headers, length int) *pyht
 }
 
 // Guardrail headers of the AnthropicBedrock client in the order bedrock_guardrail_headers declares them
-func bedrockGuardrailHeaderDict(cfg map[string]any) *pyHeaderDict {
-	headers := bedrockGuardrailHeaders(cfg)
+func bedrockGuardrailHeaderDict(ctx context.Context) *pyHeaderDict {
+	headers := bedrockGuardrailHeaders(ctx)
 	d := &pyHeaderDict{}
 	for _, name := range []string{"X-Amzn-Bedrock-GuardrailIdentifier", "X-Amzn-Bedrock-GuardrailVersion", "X-Amzn-Bedrock-Trace"} {
 		if v, ok := headers[name]; ok {

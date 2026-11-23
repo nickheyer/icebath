@@ -2,6 +2,7 @@ package keys
 
 import (
 	"slices"
+	"sync/atomic"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -34,11 +35,18 @@ var option = func() map[rune][]string {
 	return out
 }()
 
-var optionOn bool
+// Whether Option typed characters read as alt chords, a setting for Mac keyboards whose terminal types symbols for Option
+var optionOn atomic.Bool
 
-// Alt chords
+// Reads the characters Option types on a US Mac keyboard as alt chords, or stops doing so
+func SetOption(on bool) { optionOn.Store(on) }
+
+// Whether Option typed characters read as alt chords
+func OptionOn() bool { return optionOn.Load() }
+
+// Alt chords an Option typed character stands for while the setting is on, none for any other key
 func optionChords(msg tea.KeyPressMsg) []string {
-	if !optionOn || msg.Mod&^(tea.ModShift|tea.ModCapsLock|tea.ModNumLock|tea.ModScrollLock) != 0 {
+	if !optionOn.Load() || msg.Mod&^(tea.ModShift|tea.ModCapsLock|tea.ModNumLock|tea.ModScrollLock) != 0 {
 		return nil
 	}
 	if chords, ok := option[msg.ShiftedCode]; ok {

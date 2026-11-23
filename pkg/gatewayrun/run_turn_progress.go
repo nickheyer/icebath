@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -153,7 +154,7 @@ func (t *TurnRunner) progressSubagentNotice(preview any, kwargs map[string]any) 
 			return nil, t.runner.deliverPlatformNotice(ctx, tc.source, line)
 		}, "subagent failure notice scheduling error")
 		return nil
-	}, string(tc.source.Platform), false, tc.userConfig)
+	}, string(tc.source.Platform), false)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("subagent failure notice failed: %s", err))
 	}
@@ -195,9 +196,7 @@ func (t *TurnRunner) progressOnboardingHint(kwargs map[string]any) {
 	if duration < tc.longToolThresholdS || tc.progressMode != "all" {
 		return
 	}
-	cfg := gateway.LoadGatewayConfigMap(t.turnCtx, "")
-	gate, _ := config.CfgGet(cfg, "display", "tool_progress_command")
-	if !isTruthyValue(gate, false) || tools.IsSeen(cfg, tools.OnboardingToolProgressFlag) {
+	if !settings.DisplayToolProgressCommand.Get(t.turnCtx) || config.Truthy(settings.OnboardingSeen.Get(t.turnCtx)[tools.OnboardingToolProgressFlag]) {
 		return
 	}
 	tc.longToolHintFired = true

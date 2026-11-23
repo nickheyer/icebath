@@ -69,7 +69,7 @@ func TestLeftCoreSingularityConfigUnsetRemovesTheEnvCopyCoreUsedToWrite(t *testi
 
 func TestLeftCoreSingularityConfigSetAndGetStillRecognizeTheImageKey(t *testing.T) {
 	h, out, errOut := singularityFacadeHome(t, "", "terminal:\n  backend: singularity\n")
-	if err := config.SetConfigValue(context.Background(), h, "terminal.singularity_image", "docker://python:3.12", false, moaCommandSources()); err != nil {
+	if err := config.SetConfigValue(context.Background(), h, "terminal.singularity_image", "docker://python:3.12", moaCommandSources()); err != nil {
 		t.Fatal(err, errOut)
 	}
 	if err := config.GetConfigValue(context.Background(), h, "terminal.singularity_image", false, false, moaCommandSources()); err != nil {

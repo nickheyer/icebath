@@ -2139,7 +2139,7 @@ func maybeReapDockerOrphans(env *Env, containerConfig map[string]any) error {
 	if err != nil {
 		return err
 	}
-	lifetime, err := parseTerminalInt(policy, "TERMINAL_LIFETIME_SECONDS", "300")
+	lifetime, err := parseTerminalInt(policy, "lifetime_seconds")
 	if err != nil {
 		lifetime = 300
 	}

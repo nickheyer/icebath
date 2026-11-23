@@ -124,7 +124,7 @@ func (b *BasePlatformAdapter) WarningNotificationsEnabled(ctx context.Context, l
 	if logicalPlatform == "" {
 		logicalPlatform = b.Platform
 	}
-	return config.WarningNotificationsEnabled(ctx, string(logicalPlatform), nil)
+	return config.WarningNotificationsEnabled(ctx, string(logicalPlatform))
 }
 
 // Spoken script of chat markdown, a markup strip when the normalizer fails

@@ -35,7 +35,7 @@ func TestModelSeedRetainsResolvableCustomEndpoint(t *testing.T) {
 		if !reflect.DeepEqual(seed["model"], model) {
 			t.Fatalf("%s: model = %v", c.provider, seed["model"])
 		}
-		copied := CompatibleCustomProviders(seed)
+		copied := ProviderEntries(seed)
 		if len(copied) != 1 || copied[0]["base_url"] != seedURL || copied[0]["api_key"] != "${LAB_TOKEN}" {
 			t.Fatalf("%s: copied = %v", c.provider, copied)
 		}
@@ -58,7 +58,7 @@ func TestModelSeedBuiltinNameCollisionOnlyCopiesExplicitCustomSelection(t *testi
 	} {
 		seed := LaunchModelSeed(context.Background(), map[string]any{
 			"model": map[string]any{"provider": c.provider, "default": "synthetic-model"}, c.schema: c.catalog})
-		if got := len(CompatibleCustomProviders(seed)) > 0; got != c.copied {
+		if got := len(ProviderEntries(seed)) > 0; got != c.copied {
 			t.Fatalf("%s: copied = %v", c.provider, got)
 		}
 	}

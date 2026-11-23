@@ -119,6 +119,13 @@ func (a *app) petView() *petView {
 	return p
 }
 
+// Moves the pet to the card of the session, its mood following that session from here on
+func (p *petView) host(a *app) {
+	if a != nil {
+		p.a = a
+	}
+}
+
 // Animated pet of an app with nothing selected yet, asking for graphics when stdout is a terminal
 func newPetView(a *app) *petView {
 	return &petView{a: a, state: string(pet.StateIdle), cells: map[string]*petFrames{}, graphics: isatty.IsTerminal(os.Stdout.Fd())}

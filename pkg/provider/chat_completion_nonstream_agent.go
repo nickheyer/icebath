@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // CodexWatchdogState is the watchdog clock one codex request shares with the codex stream its worker runs
@@ -182,9 +183,9 @@ func agentHighEffortSilenceFloor(cfg map[string]any) float64 {
 	return HighEffortSilenceFloorSeconds
 }
 
-// Local provider stale ceiling from agent.local_stream_stale_timeout, overridden by the env
+// Local provider stale ceiling from agent.local_stream_stale_timeout
 func localStreamStaleTimeoutDefault(ctx context.Context) float64 {
-	return envFloat(LocalStreamStaleTimeoutEnv, loadWireSettings(ctx).localStreamStale)
+	return settings.AgentLocalStreamStaleTimeout.Get(ctx).Seconds()
 }
 
 var resolveAgentNonstreamWatchdogs = resolveAgentNonstreamWatchdogsOf

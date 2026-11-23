@@ -72,7 +72,7 @@ func listingStoreFacts(ctx context.Context, db *state.SessionDB, sessionIDs []st
 	err = db.ReadCtx(ctx, func(conn state.SQLiteConn) error {
 		result, err := conn.QueryContext(ctx,
 			"SELECT s.id, s.source, s.title, s.started_at, s.ended_at, s.message_count, s.model, s.hidden, "+
-				"s.archived, s.runtime_revision, s.runtime_generation, "+
+				"s.archived, s.pinned, s.runtime_revision, s.runtime_generation, "+state.PreviewSQL("s.id")+", "+
 				"(SELECT t.ended_at FROM state_meta m JOIN sessions t ON t.id = CASE WHEN json_valid(m.value) "+
 				"THEN json_extract(m.value, '$.entry.session_id') END WHERE m.key = ? || s.id) AS target_ended_at "+
 				"FROM sessions s WHERE s.id IN (SELECT value FROM json_each(?))", state.LocalPolicyPrefix, ids)

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -214,7 +215,7 @@ func TestOneTimeUserNotice(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("agent: [unclosed\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if got := healEscalationThreshold(context.Background()); got != emptyHealEscalateAfter {
+		if got := healEscalationThreshold(context.Background()); got != settings.AgentSanitizerHealEscalationThreshold.Default {
 			t.Fatalf("threshold %d", got)
 		}
 	})

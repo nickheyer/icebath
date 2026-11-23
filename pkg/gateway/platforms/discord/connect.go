@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Health reasons that confirm the transport is dead, escalated on the first strike
@@ -39,11 +40,12 @@ func NewDiscordAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Disco
 	a.playbackTimeoutSeconds = loadPlaybackTimeout(ctx)
 	a.voiceFXCfg = loadVoiceFXConfig(ctx)
 	a.threads = gateway.NewThreadParticipationTracker(ctx, "discord", 500)
-	a.livenessIntervalSeconds = a.finitePositiveConfigFloat(ctx, "websocket_liveness_interval_seconds", 15.0, "ICEBATH_DISCORD_LIVENESS_INTERVAL_SECONDS")
-	a.livenessFailureThreshold = a.livenessConfigInt(ctx, "websocket_liveness_failure_threshold", 2, "ICEBATH_DISCORD_LIVENESS_FAILURE_THRESHOLD")
-	a.heartbeatAckMaxAgeSeconds = a.finitePositiveConfigFloat(ctx, "websocket_heartbeat_ack_max_age_seconds", 60.0, "")
-	a.maxLatencySeconds = a.finitePositiveConfigFloat(ctx, "websocket_max_latency_seconds", 30.0, "")
-	a.eventMaxSilenceSeconds = a.finitePositiveConfigFloat(ctx, "websocket_event_max_silence_seconds", 14400.0, "")
+	sctx := gateway.SettingsContext(ctx)
+	a.livenessIntervalSeconds = livenessSeconds(settings.DiscordWebsocketLivenessIntervalSeconds.Get(sctx))
+	a.livenessFailureThreshold = max(settings.DiscordWebsocketLivenessFailureThreshold.Get(sctx), 0)
+	a.heartbeatAckMaxAgeSeconds = livenessSeconds(settings.DiscordWebsocketHeartbeatAckMaxAgeSeconds.Get(sctx))
+	a.maxLatencySeconds = livenessSeconds(settings.DiscordWebsocketMaxLatencySeconds.Get(sctx))
+	a.eventMaxSilenceSeconds = livenessSeconds(settings.DiscordWebsocketEventMaxSilenceSeconds.Get(sctx))
 	a.recoveryStore = NewDiscordRecoveryStore(ctx, home.Dir(ctx))
 	a.dedup = gateway.NewMessageDeduplicator(2000, 300)
 	a.replyToMode = "first"
@@ -97,7 +99,7 @@ func (a *DiscordAdapter) connect(ctx context.Context, token string) (bool, error
 	if !acquired {
 		return false, nil
 	}
-	a.snapshotGateEnv(ctx)
+	a.bindProfile(ctx)
 	allowedUsers := a.getAllowedUsers(ctx)
 	allowedRoles, err := a.getAllowedRoles(ctx)
 	if err != nil {

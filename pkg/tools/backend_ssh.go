@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Windows OpenSSH has no Unix socket ControlMaster, so multiplexing is skipped there
@@ -495,18 +497,19 @@ func sshProbeConnection(host, user, port, key string) (bool, string) {
 func (sshBackend) SetupInstructions(env *Env) []string {
 	return []string{
 		"Run commands on a remote machine via SSH.",
-		"Set TERMINAL_SSH_HOST and TERMINAL_SSH_USER, with TERMINAL_SSH_PORT and TERMINAL_SSH_KEY when they differ from the defaults.",
-		"The remote sshd must AcceptEnv the names in terminal.env_passthrough for secrets to reach the remote shell.",
+		"Set the SSH host and user in /settings Terminal, plus the port and key file when they differ from the defaults.",
+		"Secrets reach the remote shell only for names the remote SSH server accepts (AcceptEnv).",
 	}
 }
 
 // DoctorChecks reports the configured host and a live connection probe
 func (sshBackend) DoctorChecks() []DoctorCheck {
-	host := os.Getenv("TERMINAL_SSH_HOST")
+	ctx := context.Background()
+	host := settings.TerminalSSHHost.Get(ctx)
 	if host == "" {
 		return []DoctorCheck{{OK: false, Label: "SSH host not configured", Detail: "(needed for the 'ssh' terminal backend)"}}
 	}
-	ok, detail := sshProbeConnection(host, os.Getenv("TERMINAL_SSH_USER"), os.Getenv("TERMINAL_SSH_PORT"), os.Getenv("TERMINAL_SSH_KEY"))
+	ok, detail := sshProbeConnection(host, settings.TerminalSSHUser.Get(ctx), strconv.Itoa(settings.TerminalSSHPort.Get(ctx)), settings.TerminalSSHKey.Get(ctx))
 	return []DoctorCheck{{OK: ok, Label: "SSH connection to " + host, Detail: detail}}
 }
 

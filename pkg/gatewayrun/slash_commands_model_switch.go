@@ -3,20 +3,19 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -365,37 +364,10 @@ func (r *GatewayRunner) commitModelSwitchLocked(ctx context.Context, result *pro
 	return reply, nil
 }
 
-// Walks or creates nested dicts along keys, replacing any non dict value on the path
-func nestedDict(root map[string]any, keys ...string) map[string]any {
-	for _, key := range keys {
-		child, ok := root[key].(map[string]any)
-		if !ok {
-			child = map[string]any{}
-			root[key] = child
-		}
-		root = child
-	}
-	return root
-}
-
-// Saves a dot separated key to the gateway config file, false when the write failed
+// Saves a setting of the profile in ctx through the settings writer, false when the write failed
 func (r *GatewayRunner) saveGatewayConfigKey(ctx context.Context, keyPath string, value any) bool {
-	configHome := home.Dir(ctx)
-	configPath := filepath.Join(configHome, "config.yaml")
-	err := func() error {
-		userConfig, err := config.ReadUserConfigRaw(ctx, configPath)
-		if err != nil {
-			return err
-		}
-		if userConfig == nil {
-			userConfig = map[string]any{}
-		}
-		parts := strings.Split(keyPath, ".")
-		nestedDict(userConfig, parts[:len(parts)-1]...)[parts[len(parts)-1]] = value
-		return config.AtomicConfigWrite(ctx, configHome, configPath, userConfig, "")
-	}()
-	if err != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to save config key %s: %s", keyPath, pyrepr.ExceptionMessage(err)))
+	if _, err := settings.Set(ctx, keyPath, value, settings.Global); err != nil {
+		pkgLog().Error(fmt.Sprintf("Failed to save %s: %s", keyPath, pyrepr.ExceptionMessage(err)))
 		return false
 	}
 	return true
@@ -414,8 +386,9 @@ func (r *GatewayRunner) applyReasoningSelection(ctx context.Context, sessionKey,
 	if show, ok := reasoningDisplayToggles[value]; ok {
 		r.showReasoning = show
 		if live != nil {
-			flag := show
-			live.ShowReasoning = &flag
+			if _, err := settings.Set(settings.WithSession(ctx, live.Source.ChatID), settings.ShowThinking.Key, show, settings.Session); err != nil {
+				pkgLog().Warn("could not keep the session's reasoning display", "err", err)
+			}
 		}
 		r.saveGatewayConfigKey(ctx, "display.platforms."+platformKey+".show_reasoning", show)
 		key := "gateway.reasoning.display_set_off"

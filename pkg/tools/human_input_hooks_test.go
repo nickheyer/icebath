@@ -8,8 +8,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 const (
@@ -196,7 +194,7 @@ func TestApprovalCliCallbackPromptRedactsCommand(t *testing.T) {
 func TestApprovalGatewayDecisionFiresPair(t *testing.T) {
 	capture := captureHumanInputHooks(t)
 	sessionKey := "human-input-gateway"
-	env := &Env{Config: config.Tree{"approvals": map[string]any{"timeout": 5}}}
+	env := approvalYAMLEnv(t, "approvals:\n  timeout: 5\n")
 	notify := func(map[string]any) error {
 		time.AfterFunc(50*time.Millisecond, func() { ResolveGatewayApproval(sessionKey, "session", false, "", "") })
 		return nil
@@ -217,7 +215,7 @@ func TestApprovalGatewayNotifyFailureStillResolves(t *testing.T) {
 	capture := captureHumanInputHooks(t)
 	notify := func(map[string]any) error { return errors.New("adapter offline") }
 	approvalData := map[string]any{"command": "rm -rf build", "description": "d", "pattern_key": "rm", "pattern_keys": []any{"rm"}}
-	decision := awaitGatewayDecision(context.Background(), &Env{}, "human-input-notify-fail", notify, approvalData, "gateway")
+	decision := awaitGatewayDecision(context.Background(), approvalYAMLEnv(t, ""), "human-input-notify-fail", notify, approvalData, "gateway")
 	if !decision.NotifyFailed {
 		t.Fatalf("decision %+v", decision)
 	}
@@ -241,7 +239,7 @@ func TestApprovalPluginTransportFiresPair(t *testing.T) {
 		return &RegisteredApprovalTransport{Name: "phone", Present: present, PluginID: "phone-fixture"}, nil
 	})
 	t.Cleanup(func() { RegisterApprovalTransportResolver(previous) })
-	env := &Env{Config: config.Tree{"security": map[string]any{"approval": map[string]any{"transport": "phone"}}}}
+	env := approvalYAMLEnv(t, "security:\n  approval:\n    transport: phone\n")
 	attempt := presentWithSelectedTransport(context.Background(), env, transportRequest{
 		command: humanHookCommand, description: "d", patternKey: "sudo", patternKeys: []string{"sudo"},
 		sessionKey: "human-input-transport", surface: "cli", allowSession: true, allowPermanent: true})

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Adapter built from an extra without the test defaults, or the construction error
@@ -24,12 +25,17 @@ func buildAdapter(ctx context.Context, extra map[string]any, homeChannel *gatewa
 func TestConstructorReadsCredentialsEndpointsAndHomeState(t *testing.T) {
 	isolatedHome(t)
 	ctx := context.Background()
-	adapter, err := buildAdapter(ctx, map[string]any{"app_id": "  key  ", "app_secret": " sec ", "api_domain": "https://api.example.com//",
-		"route_env": " pre ", "dm_policy": " Allowlist ", "dm_allow_from": "u1, ,u2"}, nil)
+	for key, value := range map[string]string{settings.YuanbaoAPIDomain.Key: "https://api.example.com//", settings.YuanbaoRouteEnv.Key: " pre ",
+		settings.YuanbaoDmPolicy.Key: " Allowlist ", settings.YuanbaoDmAllowFrom.Key: "u1, ,u2"} {
+		if _, err := settings.Set(ctx, key, value, settings.Global); err != nil {
+			t.Fatal(err)
+		}
+	}
+	adapter, err := buildAdapter(ctx, map[string]any{"app_id": "  key  ", "app_secret": " sec "}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if adapter.appKey != "key" || adapter.appSecret != "sec" || adapter.apiDomain != "https://api.example.com" || adapter.wsURL != defaultWSGatewayURL ||
+	if adapter.appKey != "key" || adapter.appSecret != "sec" || adapter.apiDomain != "https://api.example.com" || adapter.wsURL != settings.YuanbaoWsURL.Default ||
 		adapter.routeEnv != "pre" || adapter.botIDValue() != nil || adapter.MediaResolveConcurrency != defaultResolveConcurrency ||
 		adapter.autoSethomeDoneValue() || !adapter.EnforcesOwnAccessPolicy() || !adapter.Traits.SplitsLongMessages || adapter.Name() != "Yuanbao" {
 		t.Fatalf("adapter %+v", adapter)
@@ -38,11 +44,8 @@ func TestConstructorReadsCredentialsEndpointsAndHomeState(t *testing.T) {
 	if policy.DMPolicy != "allowlist" || policy.GroupPolicy != "pairing" || !reflect.DeepEqual(policy.AllowFromSnapshot(), map[string]bool{"u1": true, "u2": true}) {
 		t.Fatalf("policy %q %q %v", policy.DMPolicy, policy.GroupPolicy, policy.AllowFromSnapshot())
 	}
-	for extraKey, want := range map[string]string{"app_id": "app_id must be text, got a number", "api_domain": "api_domain must be text, got a number",
-		"group_allow_from": "group_allow_from must be text, got a number"} {
-		if _, err := buildAdapter(ctx, map[string]any{extraKey: int64(42)}, nil); err == nil || err.Error() != want {
-			t.Fatalf("%s of the wrong type: %v", extraKey, err)
-		}
+	if _, err := buildAdapter(ctx, map[string]any{"app_id": int64(42)}, nil); err == nil || err.Error() != "app_id must be text, got a number" {
+		t.Fatalf("app_id of the wrong type: %v", err)
 	}
 	for chatID, done := range map[string]bool{"direct:alice": true, "group:grp-1": false} {
 		adapter, err := buildAdapter(ctx, nil, gateway.NewHomeChannel(gateway.PlatformYuanbao, chatID, "Home"))
@@ -51,26 +54,29 @@ func TestConstructorReadsCredentialsEndpointsAndHomeState(t *testing.T) {
 		}
 	}
 	t.Setenv("YUANBAO_HOME_CHANNEL", "direct:env-user")
-	t.Setenv("YUANBAO_GROUP_POLICY", "OPEN")
+	if _, err := settings.Set(ctx, settings.YuanbaoGroupPolicy.Key, "OPEN", settings.Global); err != nil {
+		t.Fatal(err)
+	}
 	if adapter, err := buildAdapter(ctx, nil, nil); err != nil || !adapter.autoSethomeDoneValue() || adapter.accessPolicy.GroupPolicy != "open" {
-		t.Fatalf("env settings ignored %v", err)
+		t.Fatalf("home channel or group policy ignored %v", err)
 	}
 }
 
-func TestScopedConstructionReadsAuthzFromTheSecretScope(t *testing.T) {
+func TestConstructionReadsAuthzFromTheProfilesOwnSettings(t *testing.T) {
 	isolatedHome(t)
-	t.Setenv("YUANBAO_DM_POLICY", "pairing")
-	t.Setenv("YUANBAO_DM_ALLOW_FROM", "default-user")
-	scoped := withMultiplexScope(t, map[string]string{"YUANBAO_DM_POLICY": "allowlist", "YUANBAO_DM_ALLOW_FROM": "scoped-user"})
-	adapter, err := buildAdapter(scoped, nil, nil)
-	if err != nil || adapter.accessPolicy.DMPolicy != "allowlist" || !reflect.DeepEqual(adapter.accessPolicy.AllowFromSnapshot(), map[string]bool{"scoped-user": true}) {
-		t.Fatalf("scoped authz %v", err)
+	other := home.WithOverride(context.Background(), t.TempDir())
+	for key, value := range map[string]string{settings.YuanbaoDmPolicy.Key: "allowlist", settings.YuanbaoDmAllowFrom.Key: "scoped-user"} {
+		if _, err := settings.Set(other, key, value, settings.Global); err != nil {
+			t.Fatal(err)
+		}
 	}
-	t.Setenv("YUANBAO_DM_POLICY", "allowlist")
-	miss := withMultiplexScope(t, map[string]string{"SOMETHING_ELSE": "x"})
-	adapter, err = buildAdapter(miss, nil, nil)
+	adapter, err := buildAdapter(other, nil, nil)
+	if err != nil || adapter.accessPolicy.DMPolicy != "allowlist" || !reflect.DeepEqual(adapter.accessPolicy.AllowFromSnapshot(), map[string]bool{"scoped-user": true}) {
+		t.Fatalf("profile authz %v", err)
+	}
+	adapter, err = buildAdapter(context.Background(), nil, nil)
 	if err != nil || adapter.accessPolicy.DMPolicy != "pairing" || len(adapter.accessPolicy.AllowFromSnapshot()) != 0 {
-		t.Fatalf("a scoped miss borrowed the default profile authz %v", err)
+		t.Fatalf("the default profile borrowed another profile's authz %v", err)
 	}
 }
 

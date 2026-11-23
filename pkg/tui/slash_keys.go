@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -13,6 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/lang"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -21,26 +24,46 @@ func keybindsPath(ctx context.Context) string {
 	return filepath.Join(home.Dir(ctx), keys.FileName)
 }
 
-// Applies the keybind file of the profile at launch, a notice naming any entry it could not take
+// Applies the keybind file of the profile at launch, a notice naming any entry it could not take, and lets catalog texts name the keys as bound
 func (a *app) loadKeybinds() tea.Cmd {
-	if err := a.keys.Load(keybindsPath(a.ctx)); err != nil {
-		return wm.Notify("keybinds: "+err.Error(), wm.Warn)
+	km := a.keys
+	lang.InstallKeys(func(id string) string {
+		if chord := km.Chord(id); chord != "" {
+			return chord
+		}
+		if act, ok := km.Action(id); ok {
+			return act.LabelText()
+		}
+		return id
+	})
+	if err := km.Load(keybindsPath(a.ctx)); err != nil {
+		return wm.Notify(tr(txt.KeysPanelFileError, err.Error()), wm.Warn)
 	}
 	return nil
 }
 
 // Commands that show the key bindings and change them
 func (a *app) keyCommands() []slashCommand {
-	return []slashCommand{{name: "keys", aliases: []string{"keybinds", "hotkeys"}, help: "show key bindings; /keys edit changes them",
-		usage: "[filter|edit|reload|reset]", suggest: func(string) []string { return []string{"edit", "reload", "reset"} },
+	return []slashCommand{{name: "keys", help: tr(txt.SlashHelpKeys), helpFn: helpOf(txt.SlashHelpKeys),
+		usage: "[filter|edit|reload|reset|option on|off]", suggest: func(string) []string { return []string{"edit", "reload", "reset", "option"} },
+		suggestAfter: func(done []string) []string {
+			if len(done) == 1 && done[0] == "option" {
+				return []string{"on", "off"}
+			}
+			return nil
+		},
 		run: func(r *slashRun) tea.Cmd {
-			switch arg := trimJS(r.arg); strings.ToLower(arg) {
+			arg := trimJS(r.arg)
+			word, rest, _ := strings.Cut(strings.ToLower(arg), " ")
+			switch word {
 			case "edit":
 				return a.editKeybinds()
 			case "reload":
 				return a.reloadKeybinds()
 			case "reset":
 				return a.resetKeybinds()
+			case "option":
+				return a.optionKey(trimJS(rest))
 			default:
 				a.showKeybinds(arg)
 				return nil
@@ -48,7 +71,54 @@ func (a *app) keyCommands() []slashCommand {
 		}}}
 }
 
-// Panel of every action with the keys it is on, grouped by where it applies, narrowed to the actions whose name, help or keys hold the filter
+// Why this terminal may not send a chord, empty when it can: the reasons the keymap knows, and on a Mac an alt chord while Option types symbols
+func (a *app) chordProblem(chord string) string {
+	switch a.keys.Unsendable(chord) {
+	case "kitty":
+		return tr(txt.KeysPanelNeedsKitty)
+	case "cmd":
+		return tr(txt.KeysPanelNeedsCmd)
+	}
+	if runtime.GOOS == "darwin" && strings.Contains(chord, "alt+") && !keys.OptionOn() {
+		return tr(txt.KeysPanelNeedsOption)
+	}
+	return ""
+}
+
+// Chords of an action as the panel shows them, each one this terminal cannot send marked
+func (a *app) panelChords(id string) string {
+	var out []string
+	for _, chord := range a.keys.Keys(id) {
+		shown := keys.Format(chord)
+		if problem := a.chordProblem(chord); problem != "" {
+			shown += " (" + problem + ")"
+		}
+		out = append(out, shown)
+	}
+	if len(out) == 0 {
+		return tr(txt.KeysPanelUnbound)
+	}
+	return strings.Join(out, ", ")
+}
+
+// Window keys a terminal window passes on rather than sending them to its program: the leader and the global alt keys
+func (a *app) terminalPasses() []string {
+	out := []string{keys.Format(a.keys.First("leader"))}
+	for _, act := range a.keys.Actions() {
+		if act.Context != keys.Global {
+			continue
+		}
+		for _, chord := range a.keys.Keys(act.ID) {
+			if strings.Contains(chord, "alt+") || strings.Contains(chord, "super+") {
+				out = append(out, keys.Format(chord))
+			}
+		}
+	}
+	return slices.Compact(out)
+}
+
+// Panel of every action with the keys it is on, grouped by where it applies, narrowed to the actions whose name, help or keys hold the filter; keys
+// this terminal cannot send are marked, and the keys a terminal window passes on are named
 func (a *app) showKeybinds(filter string) {
 	needle := strings.ToLower(filter)
 	var sections []panelSection
@@ -58,16 +128,16 @@ func (a *app) showKeybinds(filter string) {
 			if act.Context != ctx || !keyLinked(act.ID) {
 				continue
 			}
-			chords := a.keys.DisplayAll(act.ID)
-			if chords == "" {
-				chords = "unbound"
-			}
+			chords := a.panelChords(act.ID)
 			label := act.LabelText()
 			if doc := act.DocText(); doc != "" && doc != label {
 				label += " — " + doc
 			}
 			if needle != "" && !strings.Contains(strings.ToLower(label+" "+chords+" "+act.ID), needle) {
 				continue
+			}
+			if ctx == keys.Leader {
+				chords = keys.Format(a.keys.First("leader")) + " " + chords
 			}
 			rows = append(rows, [2]string{chords, label})
 		}
@@ -80,12 +150,37 @@ func (a *app) showKeybinds(filter string) {
 		}
 		sections = append(sections, panelSection{Rows: rows, Title: &title})
 	}
-	note := "Change them with /keys edit (" + home.Display(a.keys.Path()) + "). They apply as soon as the editor closes."
-	if len(sections) == 0 {
-		note = "No action matches \"" + filter + "\". " + note
+	passes := tr(txt.KeysPanelTerminalPasses, strings.Join(a.terminalPasses(), ", "))
+	option := tr(txt.KeysPanelOptionOff)
+	if keys.OptionOn() {
+		option = tr(txt.KeysPanelOptionOn)
 	}
-	sections = append(sections, panelSection{Text: &note})
-	a.panel("Key bindings", sections)
+	note := tr(txt.KeysPanelNote, home.Display(a.keys.Path()))
+	if len(sections) == 0 {
+		note = tr(txt.KeysPanelNoMatch, filter) + " " + note
+	}
+	sections = append(sections, panelSection{Text: &passes}, panelSection{Text: &option}, panelSection{Text: &note})
+	a.panel(tr(txt.KeysPanelTitle), sections)
+}
+
+// Turns reading Option typed characters as alt chords on or off and keeps the choice in the keybind file, or says how it stands
+func (a *app) optionKey(word string) tea.Cmd {
+	switch word {
+	case "on", "off":
+		keys.SetOption(word == "on")
+		if err := a.keys.Save(); err != nil {
+			a.sys(errorLine(err.Error()))
+			return nil
+		}
+	case "":
+	default:
+		a.sys(errorLine(tr(txt.KeysPanelOptionUsage)))
+		return nil
+	}
+	if keys.OptionOn() {
+		return wm.Notify(tr(txt.KeysPanelOptionOn), wm.Info)
+	}
+	return wm.Notify(tr(txt.KeysPanelOptionOff), wm.Info)
 }
 
 // Opens the keybind file in the user's editor in a terminal window beside the session, writing the bindings in force first when there is no
@@ -93,7 +188,7 @@ func (a *app) showKeybinds(filter string) {
 func (a *app) editKeybinds() tea.Cmd {
 	path := a.keys.Path()
 	if path == "" {
-		a.sys(errorLine("no keybind file for this profile"))
+		a.sys(errorLine(tr(txt.KeysPanelNoFile)))
 		return nil
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
@@ -112,21 +207,22 @@ func (a *app) reloadKeybinds() tea.Cmd {
 	err := a.keys.Reload()
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return tea.Batch(changed, wm.Notify("no keybind file yet, /keys edit makes one", wm.Info))
+		return tea.Batch(changed, wm.Notify(tr(txt.KeysPanelNoFileYet), wm.Info))
 	case err != nil:
 		a.sys(warningLine(err.Error()))
-		return tea.Batch(changed, wm.Notify("key bindings applied, with errors", wm.Warn))
+		return tea.Batch(changed, wm.Notify(tr(txt.KeysPanelAppliedErrors), wm.Warn))
 	}
-	return tea.Batch(changed, wm.Notify("key bindings applied", wm.Success))
+	return tea.Batch(changed, wm.Notify(tr(txt.KeysPanelApplied), wm.Success))
 }
 
 // Puts every action back on its default keys and removes the keybind file
 func (a *app) resetKeybinds() tea.Cmd {
 	a.keys.ResetAll()
+	keys.SetOption(false)
 	if path := a.keys.Path(); path != "" {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			a.sys(errorLine(err.Error()))
 		}
 	}
-	return tea.Batch(func() tea.Msg { return keys.ChangedMsg{} }, wm.Notify("key bindings reset to the defaults", wm.Success))
+	return tea.Batch(func() tea.Msg { return keys.ChangedMsg{} }, wm.Notify(tr(txt.KeysPanelReset), wm.Success))
 }

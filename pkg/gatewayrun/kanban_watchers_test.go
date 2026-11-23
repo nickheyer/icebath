@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -82,11 +82,12 @@ func TestNotifierWatcherPollsWithoutDispatchOwnership(t *testing.T) {
 }
 
 func TestDisabledWhenFlagFalse(t *testing.T) {
-	enabled, _, err := resolveAutoDecomposeSettings(func() (config.Tree, error) {
-		return config.Tree{"kanban": map[string]any{"auto_decompose": false}}, nil
-	})
-	if err != nil || enabled {
-		t.Fatalf("enabled %v err %v", enabled, err)
+	h := t.TempDir()
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("kanban:\n  auto_decompose: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, _ := resolveAutoDecomposeSettings(home.WithOverride(context.Background(), h)); enabled {
+		t.Fatal("auto decompose stayed on")
 	}
 }
 

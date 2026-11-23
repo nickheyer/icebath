@@ -3,11 +3,14 @@ package gatewayrun
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Agent whose last activity carries the description and provenance, aged by the given seconds
@@ -21,7 +24,9 @@ func provenanceAgent(idleSeconds float64, description, provenance string) *agent
 // test_session_stall_watchdog.py test_session_stall_watcher_disabled_when_timeout_zero
 func TestSessionStallWatcherDisabledWhenTimeoutZero(t *testing.T) {
 	r, a := runnerForStall(t)
-	t.Setenv("ICEBATH_SESSION_STALL_TIMEOUT", "0")
+	if err := os.WriteFile(filepath.Join(os.Getenv(home.EnvHome), "config.yaml"), []byte("agent:\n  session_stall_timeout: 0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	key := "agent:main:telegram:dm:6"
 	a.MergePendingMessage(key, pendingStallEvent(), false)
 	r.sessionState(key).turn.agent = idleAgent(999)
@@ -29,7 +34,7 @@ func TestSessionStallWatcherDisabledWhenTimeoutZero(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- r.sessionStallWatcher(ctx, 1) }()
 	time.Sleep(1300 * time.Millisecond)
-	if got := r.sessionStallTimeoutSeconds(); got != 0 {
+	if got := r.sessionStallTimeoutSeconds(ctx); got != 0 {
 		t.Fatalf("timeout %v", got)
 	}
 	cancel()

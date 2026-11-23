@@ -22,7 +22,7 @@ func shadowHome(t *testing.T, name, builtinEnv string) string {
 		t.Fatal(err)
 	}
 	writeConfigYAML(t, h, string(raw))
-	auth, _ := json.Marshal(map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{}})
+	auth, _ := json.Marshal(map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{}})
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), auth, 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -10,16 +10,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/kanban"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var (
@@ -96,17 +94,8 @@ func (r *GatewayRunner) sleepBetweenTicks(ctx context.Context, interval float64)
 
 // Polls kanban notify subscriptions and delivers terminal task events to their chats
 func (r *GatewayRunner) kanbanNotifierWatcher(ctx context.Context, interval float64) error {
-	kanbanCfg := map[string]any{}
-	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
-	if err == nil {
-		kanbanCfg, err = kanbanSection(cfg)
-	}
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("kanban notifier: cannot load config (%s); continuing enabled", pyrepr.Str(err)))
-		kanbanCfg = map[string]any{}
-	}
-	if enabled, ok := kanbanCfg["notify_in_gateway"]; ok && !pyrepr.Truthy(enabled) {
-		pkgLog().Info("kanban notifier: disabled via config kanban.notify_in_gateway=false")
+	if !settings.KanbanNotifyInGateway.Get(ctx) {
+		pkgLog().Info("kanban notifier: turned off in settings")
 		return nil
 	}
 
@@ -304,32 +293,13 @@ func isPayloadMapping(v any) bool {
 	return false
 }
 
-// Boot state of the embedded dispatcher, its live config loader and the kanban config read at boot
-type kanbanDispatcherBootState struct {
-	loadConfig func() (config.Tree, error)
-	kanbanCfg  map[string]any
-}
+// Boot state of the embedded dispatcher
+type kanbanDispatcherBootState struct{}
 
-// Resolves config and the singleton lock, nil when the dispatcher must not run
+// Resolves the setting and the singleton lock, nil when the dispatcher must not run
 func (r *GatewayRunner) kanbanDispatcherBoot(ctx context.Context) (*kanbanDispatcherBootState, error) {
-	loadConfig := func() (config.Tree, error) { return config.LoadContext(ctx, home.Dir(ctx), nil) }
-	envOverride := pystr.Lower(pystr.Strip(os.Getenv("ICEBATH_KANBAN_DISPATCH_IN_GATEWAY")))
-	switch envOverride {
-	case "0", "false", "no", "off":
-		pkgLog().Info("kanban dispatcher: disabled via ICEBATH_KANBAN_DISPATCH_IN_GATEWAY env")
-		return nil, nil
-	}
-	cfg, err := loadConfig()
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: cannot load config (%s); disabled", pyrepr.Str(err)))
-		return nil, nil
-	}
-	kanbanCfg, err := kanbanSection(cfg)
-	if err != nil {
-		return nil, err
-	}
-	if enabled, ok := kanbanCfg["dispatch_in_gateway"]; ok && !pyrepr.Truthy(enabled) {
-		pkgLog().Info("kanban dispatcher: disabled via config kanban.dispatch_in_gateway=false")
+	if !settings.KanbanDispatchInGateway.Get(ctx) {
+		pkgLog().Info("kanban dispatcher: turned off in settings")
 		return nil, nil
 	}
 
@@ -352,7 +322,7 @@ func (r *GatewayRunner) kanbanDispatcherBoot(ctx context.Context) (*kanbanDispat
 		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: advisory lock unavailable at %s; proceeding "+
 			"on config control alone.", lockPath))
 	}
-	return &kanbanDispatcherBootState{loadConfig: loadConfig, kanbanCfg: kanbanCfg}, nil
+	return &kanbanDispatcherBootState{}, nil
 }
 
 // Embedded kanban dispatcher ticking every dispatch interval while the gateway runs
@@ -361,8 +331,8 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 	if err != nil || boot == nil {
 		return err
 	}
-	settings := resolveDispatcherSettings(boot.kanbanCfg)
-	interval := settings.interval
+	dispatch := resolveDispatcherSettings(ctx)
+	interval := dispatch.interval
 
 	if err := asyncioSleep(ctx, 5); err != nil {
 		return err
@@ -371,7 +341,7 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 	badTicks := 0
 	lastWarnAt := int64(0)
 	var results []boardDispatch
-	dispatcher := newKanbanDispatcher(settings)
+	dispatcher := newKanbanDispatcher(dispatch)
 
 	pkgLog().Info(fmt.Sprintf("kanban dispatcher: embedded in gateway (interval=%.1fs)", interval))
 	for r.running.Load() {
@@ -400,10 +370,7 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 			if !kanbanDispatchAllowed(ctx) {
 				badTicks = 0
 			} else {
-				adEnabled, adPerTick, err := resolveAutoDecomposeSettings(boot.loadConfig)
-				if err != nil {
-					return err
-				}
+				adEnabled, adPerTick := resolveAutoDecomposeSettings(ctx)
 				if adEnabled {
 					if _, err := toThreadProcessService(ctx, func(fresh context.Context) (int, error) {
 						return dispatcher.autoDecomposeTick(fresh, adPerTick)

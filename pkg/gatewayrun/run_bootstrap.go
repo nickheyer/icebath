@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -20,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -192,8 +192,8 @@ func launchHomeMayMultiplex(ctx context.Context, cfg *gateway.GatewayConfig) (bo
 	return false, &gateway.SystemExitError{Code: gateway.GatewayFatalConfigExitCode}
 }
 
-// Resolves an empty or directory free TERMINAL_CWD to the messaging default the gateway runs tools in
-func startGatewayResolveTerminalCwd() error {
+// Resolves an empty or directory free launch working folder to the messaging default the gateway runs tools in
+func startGatewayResolveTerminalCwd(ctx context.Context) error {
 	configured := os.Getenv("TERMINAL_CWD")
 	if configured != "" && !tools.CwdNamesNoDirectory(configured) {
 		return nil
@@ -202,21 +202,12 @@ func startGatewayResolveTerminalCwd() error {
 	if err != nil {
 		return err
 	}
-	mount := strings.ToLower(envOr("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false"))
-	resolved, ok := tools.ResolvePlaceholderTerminalCwd(configured, os.Getenv("TERMINAL_ENV"), os.Getenv("MESSAGING_CWD"),
-		mount == "true" || mount == "1" || mount == "yes", homeFallback)
+	resolved, ok := tools.ResolvePlaceholderTerminalCwd(configured, settings.WhereCommandsRun.Get(ctx), "",
+		settings.TerminalDockerMountCwdToWorkspace.Get(ctx), homeFallback)
 	if !ok {
 		return os.Unsetenv("TERMINAL_CWD")
 	}
 	return os.Setenv("TERMINAL_CWD", resolved)
-}
-
-// Environment value of name, fallback when unset
-func envOr(name, fallback string) string {
-	if value, ok := os.LookupEnv(name); ok {
-		return value
-	}
-	return fallback
 }
 
 // Wait a booting gateway gives a browse reconcile holding a profile lock, its budget plus margin
@@ -289,15 +280,8 @@ func startGatewayEarlyEnvironmentProbe(ctx context.Context) {
 			pkgLog().Debug("early environment probe did not start", "error", rec)
 		}
 	}()
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		pkgLog().Debug("early environment probe did not start", "error", err)
+	if !settings.AgentEnvironmentProbe.Get(ctx) {
 		return
-	}
-	if agentCfg, ok := cfg["agent"].(map[string]any); ok {
-		if probe, set := agentCfg["environment_probe"]; set && !pyrepr.Truthy(probe) {
-			return
-		}
 	}
 	tools.WarmEnvironmentProbeAsync()
 }

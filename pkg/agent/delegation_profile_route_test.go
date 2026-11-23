@@ -197,7 +197,7 @@ func TestNamedCustomProfileChildLeasesItsOwnAccountOnASharedUrl(t *testing.T) {
 	entry := func(cid, key string) map[string]any {
 		return map[string]any{"id": cid, "label": cid, "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": key, "base_url": url}
 	}
-	auth, _ := json.Marshal(map[string]any{"version": 1, "credential_pool": map[string]any{
+	auth, _ := json.Marshal(map[string]any{"version": 2, "credential_pool": map[string]any{
 		"claude-ai": []any{entry("a", "pool-key-a")}, "open-ai": []any{entry("b", "pool-key-b")}}})
 	if err := os.WriteFile(filepath.Join(coder, "auth.json"), auth, 0o600); err != nil {
 		t.Fatal(err)

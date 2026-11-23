@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -261,8 +262,7 @@ func syncAgentDaybreak(ctx context.Context, a *agent.AIAgent) {
 	}
 	on := false
 	if agent.DaybreakSources[a.Platform()] {
-		agentCfg, _ := loadCfg(ctx)["agent"].(map[string]any)
-		on = agentCfg["daybreak"] == true
+		on = settings.Daybreak.Get(ctx)
 	}
 	a.SetDaybreak(on)
 }
@@ -766,6 +766,7 @@ func init() { runPromptSubmit = runPromptSubmitTurn }
 
 // Admits and starts one prompt turn on its own goroutine, false when it never started
 func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuihost.Session, text any, o promptSubmitOptions) bool {
+	ctx = sessionSettings(ctx, sid)
 	if err := ensureSessionDBRow(ctx, session); err != nil {
 		storage := state.DescribeStorageFailure(ctx, storeCause(err))
 		tuihost.Emit(ctx, "error", sid, map[string]any{"message": fmt.Sprintf("Session storage is unavailable, so this turn was not started. "+
@@ -778,8 +779,7 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuih
 	}
 	displayKind := o.displayKind
 	scoped := sessionProfileRuntimeScope(ctx, session, true)
-	notificationConfig := agent.NotificationConfigSnapshot(scoped)
-	muted := config.DiagnosticTurnMuted(scoped, o.displayMetadata, "tui", notificationConfig)
+	muted := config.DiagnosticTurnMuted(scoped, o.displayMetadata, "tui")
 	if muted {
 		displayKind = "hidden"
 	}
@@ -877,7 +877,7 @@ func runPromptSubmitTurn(ctx context.Context, rid any, sid string, session *tuih
 		return st.result, goalFollowup
 	}
 	run := func(ctx context.Context) {
-		restorePolicy := a.NotificationPolicySnapshot("tui", notificationConfig)
+		restorePolicy := a.NotificationPolicySnapshot("tui")
 		turnCtx, endTurn := a.NotificationTurn(ctx, muted, sid)
 		result, goalFollowup := func() (map[string]any, string) {
 			defer restorePolicy()

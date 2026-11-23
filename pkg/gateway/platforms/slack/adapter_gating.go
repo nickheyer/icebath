@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -28,68 +29,75 @@ var slackExtToAudioMime = map[string]string{
 	".mpga": "audio/mpeg", ".wav": "audio/wav", ".webm": "audio/webm", ".ogg": "audio/ogg",
 	".aac": "audio/aac", ".flac": "audio/flac"}
 
-// Method factory reading one opt in flag through extraOrEnvFlag
-func extraOrEnvFlagGetter(key, envVar string, strip bool) func(a *SlackAdapter, ctx context.Context) bool {
-	return func(a *SlackAdapter, ctx context.Context) bool { return a.extraOrEnvFlag(ctx, key, envVar, strip) }
-}
-
-// Method factory reading one channel id set through extraOrEnvChannelSet
-func extraOrEnvChannelSetGetter(key, envVar string, coerceScalar bool) func(a *SlackAdapter, ctx context.Context) map[string]bool {
-	return func(a *SlackAdapter, ctx context.Context) map[string]bool {
-		return a.extraOrEnvChannelSet(ctx, key, envVar, coerceScalar)
-	}
-}
-
-var (
-	slackThreadFollowupSilenceGetter   = extraOrEnvFlagGetter("thread_followup_silence", "SLACK_THREAD_FOLLOWUP_SILENCE", false)
-	slackStrictMentionGetter           = extraOrEnvFlagGetter("strict_mention", "SLACK_STRICT_MENTION", false)
-	slackIgnoreOtherUserMentionsGetter = extraOrEnvFlagGetter("ignore_other_user_mentions", "SLACK_IGNORE_OTHER_USER_MENTIONS", false)
-	slackThreadRequireMentionGetter    = extraOrEnvFlagGetter("thread_require_mention", "SLACK_THREAD_REQUIRE_MENTION", false)
-	slackDisableDMsGetter              = extraOrEnvFlagGetter("disable_dms", "SLACK_DISABLE_DMS", true)
-	slackFreeResponseChannelsGetter    = extraOrEnvChannelSetGetter("free_response_channels", "SLACK_FREE_RESPONSE_CHANNELS", true)
-	slackAllowedChannelsGetter         = extraOrEnvChannelSetGetter("allowed_channels", "SLACK_ALLOWED_CHANNELS", false)
-	slackRequireMentionChannelsGetter  = extraOrEnvChannelSetGetter("require_mention_channels", "SLACK_REQUIRE_MENTION_CHANNELS", false)
-	slackIgnoredChannelsGetter         = extraOrEnvChannelSetGetter("ignored_channels", "SLACK_IGNORED_CHANNELS", true)
-)
-
 // Whether unaddressed thread follow ups may stay silent
 func (a *SlackAdapter) slackThreadFollowupSilence(ctx context.Context) bool {
-	return slackThreadFollowupSilenceGetter(a, ctx)
+	return settings.SlackThreadFollowupSilence.Get(gateway.SettingsContext(ctx))
 }
 
 // Whether the bot ignores channels until mentioned again
 func (a *SlackAdapter) slackStrictMention(ctx context.Context) bool {
-	return slackStrictMentionGetter(a, ctx)
+	return settings.SlackStrictMention.Get(gateway.SettingsContext(ctx))
 }
 
 // Whether messages opening with another user's mention are ignored
 func (a *SlackAdapter) slackIgnoreOtherUserMentions(ctx context.Context) bool {
-	return slackIgnoreOtherUserMentionsGetter(a, ctx)
+	return settings.SlackIgnoreOtherUserMentions.Get(gateway.SettingsContext(ctx))
 }
 
 // Whether thread replies need an explicit mention
 func (a *SlackAdapter) slackThreadRequireMention(ctx context.Context) bool {
-	return slackThreadRequireMentionGetter(a, ctx)
+	return settings.SlackThreadRequireMention.Get(gateway.SettingsContext(ctx))
 }
 
 // Whether Slack DMs are refused
 func (a *SlackAdapter) slackDisableDMs(ctx context.Context) bool {
-	return slackDisableDMsGetter(a, ctx)
+	return settings.SlackDisableDms.Get(gateway.SettingsContext(ctx))
 }
 
 // Channels answered without a mention
 func (a *SlackAdapter) slackFreeResponseChannels(ctx context.Context) map[string]bool {
-	return slackFreeResponseChannelsGetter(a, ctx)
+	return channelSetting(ctx, settings.SlackFreeResponseChannels)
 }
 
 // Channels the bot may answer in, every channel when empty
 func (a *SlackAdapter) slackAllowedChannels(ctx context.Context) map[string]bool {
-	return slackAllowedChannelsGetter(a, ctx)
+	return channelSetting(ctx, settings.SlackAllowedChannels)
 }
 
 // Channels that always need a mention even when mentions are otherwise optional
 func (a *SlackAdapter) slackRequireMentionChannels(ctx context.Context) map[string]bool {
-	return slackRequireMentionChannelsGetter(a, ctx)
+	return channelSetting(ctx, settings.SlackRequireMentionChannels)
+}
+
+// Channels where the generic gateway stays silent
+func (a *SlackAdapter) slackIgnoredChannels(ctx context.Context) map[string]bool {
+	return channelSetting(ctx, settings.SlackIgnoredChannels)
+}
+
+// Channel ids a list setting holds, written as a list or as comma separated text
+func channelSetting(ctx context.Context, e settings.Entry) map[string]bool {
+	v, err := settings.Resolve(gateway.SettingsContext(ctx), e.Info().Key)
+	if err != nil {
+		pkgLog().Warn("Slack: reading a channel list setting failed", "key", e.Info().Key, "err", err)
+		return map[string]bool{}
+	}
+	out := map[string]bool{}
+	var parts []string
+	switch t := v.Value.(type) {
+	case []any:
+		for _, item := range t {
+			parts = append(parts, pyrepr.Str(item))
+		}
+	case nil:
+	default:
+		parts = strings.Split(pyrepr.Str(t), ",")
+	}
+	for _, part := range parts {
+		if id := pystr.Strip(part); id != "" {
+			out[id] = true
+		}
+	}
+	return out
 }
 
 var addressedUserRe = mustPyRe(`\A\s*<@([^>|\s]+)(?:\|[^>]*)?>`)

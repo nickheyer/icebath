@@ -509,7 +509,6 @@ func LoadYAMLLayer(ctx context.Context, h string, gwData map[string]any) error {
 	warned := map[[2]string]bool{}
 	BridgePlatformSharedKeys(yamlCfg, gatewayPlatforms, gwData, platformsData, targets, warned, authored)
 	ApplyPluginYAMLHooks(ctx, yamlCfg, gatewayPlatforms, platformsData, registry, warned, authored, managedExtra, entries)
-	BridgeCoreEnvSettings(ctx, yamlCfg, platformsData)
 	return nil
 }
 

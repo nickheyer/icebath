@@ -51,7 +51,7 @@ func (discordPlugin) Register(ctx *plugins.Context) error {
 	_, err := ctx.RegisterPlatform(plugins.PlatformSpec{Name: "discord", Label: "Discord",
 		AdapterFactory: gateway.AdapterFactory(func(c context.Context, cfg *gateway.PlatformConfig) (any, error) { return NewDiscordAdapter(c, cfg) }),
 		Check:          discordDepsPresent, RequiredEnv: []string{"DISCORD_BOT_TOKEN"},
-		InstallHint: "Start `icebath` and type `/setup gateway` to install Discord support.", Extra: extra})
+		InstallHint: "Start `icebath` and type `/setup chat-apps` to install Discord support.", Extra: extra})
 	return err
 }
 

@@ -79,7 +79,7 @@ func inheritParentEndpoint(parent *AIAgent, surfaceBaseURL string, surfaceAPIKey
 var loadedPoolFn = loadedPool
 
 func loadedPool(ctx context.Context, key string) *provider.Pool {
-	pool := provider.LoadPool(agentPoolEnv(ctx), key)
+	pool := provider.LoadSelectedPool(agentPoolEnv(ctx), key)
 	if pool != nil && pool.HasCredentials() {
 		return pool
 	}

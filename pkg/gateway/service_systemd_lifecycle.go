@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -21,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Raised when systemctl --user cannot reach the user D-Bus session, the message is the remediation
@@ -844,49 +844,9 @@ func recoverPendingSystemdRestart(ctx context.Context, system bool, previousPid 
 	return false, nil
 }
 
-// Agent section of the raw config of the home in effect, empty when it is not a mapping
-func agentConfigSection(ctx context.Context) (map[string]any, bool, error) {
-	cfg, err := config.ReadRawConfig(ctx, home.Dir(ctx))
-	if err != nil {
-		return nil, false, err
-	}
-	agent, ok := cfg["agent"].(map[string]any)
-	return agent, ok, nil
-}
-
-// Configured restart drain timeout from the environment or agent.restart_drain_timeout
+// Configured restart drain timeout in seconds of the home in effect
 func getRestartDrainTimeout(ctx context.Context) (float64, error) {
-	raw := pystr.Strip(os.Getenv("ICEBATH_RESTART_DRAIN_TIMEOUT"))
-	if raw == "" {
-		agent, _, err := agentConfigSection(ctx)
-		if err != nil {
-			return 0, err
-		}
-		v, ok := agent["restart_drain_timeout"]
-		if !ok {
-			v = DefaultGatewayRestartDrainTimeout
-		}
-		raw = pyStrConfig(v)
-	}
-	return ParseRestartDrainTimeout(raw), nil
-}
-
-// Python str of a raw config value
-func pyStrConfig(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case nil:
-		return "None"
-	case bool:
-		if x {
-			return "True"
-		}
-		return "False"
-	case float64:
-		return pyrFloat(x)
-	}
-	return fmt.Sprint(v)
+	return ParseRestartDrainTimeout(settings.AgentRestartDrainTimeout.Get(ctx).Seconds()), nil
 }
 
 // Python repr of a float
@@ -897,24 +857,9 @@ func pyrFloat(f float64) string {
 	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
-// Parsed environment override when set, else the parsed agent config key, else parse of None
-func agentTimeoutSetting(ctx context.Context, envVar, key string, parse func(any) float64) (float64, error) {
-	if raw, ok := os.LookupEnv(envVar); ok && pystr.Strip(raw) != "" {
-		return parse(raw), nil
-	}
-	agent, isMap, err := agentConfigSection(ctx)
-	if err != nil {
-		return 0, err
-	}
-	if v, ok := agent[key]; isMap && ok {
-		return parse(v), nil
-	}
-	return parse(nil), nil
-}
-
 // Configured cron and api server drain floor in seconds
 func getCronDrainTimeout(ctx context.Context) (float64, error) {
-	return agentTimeoutSetting(ctx, "ICEBATH_CRON_DRAIN_TIMEOUT", "cron_drain_timeout", ParseCronDrainTimeout)
+	return ParseCronDrainTimeout(settings.AgentCronDrainTimeout.Get(ctx).Seconds()), nil
 }
 
 // CLI wait for gateway exit after SIGUSR1 covering the after turn wait, drain and cron floor
@@ -923,10 +868,7 @@ func GetRestartExitWaitBudget(ctx context.Context) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	afterTurn, err := agentTimeoutSetting(ctx, "ICEBATH_RESTART_AFTER_TURN_TIMEOUT", "restart_after_turn_timeout", ParseRestartAfterTurnTimeout)
-	if err != nil {
-		return 0, err
-	}
+	afterTurn := ParseRestartAfterTurnTimeout(settings.AgentRestartAfterTurnTimeout.Get(ctx).Seconds())
 	cron, err := getCronDrainTimeout(ctx)
 	if err != nil {
 		return 0, err

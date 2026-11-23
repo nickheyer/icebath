@@ -34,7 +34,6 @@ const (
 	weixinCopyLineWidth = 120
 
 	ilinkBaseURL          = "https://ilinkai.weixin.qq.com"
-	weixinCDNBaseURL      = "https://novac2c.cdn.weixin.qq.com/c2c"
 	ilinkAppID            = "bot"
 	channelVersion        = "2.2.0"
 	ilinkAppClientVersion = (2 << 16) | (2 << 8) | 0

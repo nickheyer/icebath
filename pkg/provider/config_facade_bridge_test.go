@@ -6,12 +6,9 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -101,30 +98,6 @@ func TestStaticDeclaredEnvNamesSkipPlatformInjectedNames(t *testing.T) {
 	}
 }
 
-// The v38 step drops only the removed Relay plugin keys through the plugins lane hook
-func TestFacadeMigrationDropsOnlyLegacyRelayPluginKeys(t *testing.T) {
-	h := camofoxFresh(t)
-	writeConfigYAML(t, h, "_config_version: 37\nplugins:\n  enabled:\n  - keep-me\n  - observability/nemo_relay\n  - nemo_relay\n")
-	config.ResetCache()
-	res, err := config.MigrateConfig(home.WithOverride(context.Background(), h), h, false, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	plugins, _ := camofoxConfig(t, h)["plugins"].(map[string]any)
-	if enabled, _ := plugins["enabled"].([]any); !slices.Equal(enabled, []any{"keep-me"}) {
-		t.Fatalf("plugins %v", plugins)
-	}
-	hits := 0
-	for _, w := range res.Warnings {
-		if strings.Contains(w, "ICEBATH_NEMO_RELAY_PLUGINS_TOML") {
-			hits++
-		}
-	}
-	if hits != 1 {
-		t.Fatalf("warnings %v", res.Warnings)
-	}
-}
-
 func TestExplicitToolsetKeysUnionsConfigurableAndPluginKeys(t *testing.T) {
 	prev := tools.PluginToolsetCatalog.KeysNowait
 	tools.PluginToolsetCatalog.KeysNowait = func(context.Context) map[string]bool { return map[string]bool{"myplug": true} }
@@ -140,16 +113,5 @@ func TestExplicitToolsetKeysUnionsConfigurableAndPluginKeys(t *testing.T) {
 	}
 	if len(got) != len(tools.ConfigurableKeys())+1 {
 		t.Fatalf("exact union, got %d keys", len(got))
-	}
-}
-
-func TestConfigFacadeStampHooksAndBrowserEnvSourcesExports(t *testing.T) {
-	hooks := ConfigFacadeStampHooks()
-	if hooks.RecordCoreUse == nil || hooks.AdoptAgentBrowserEnv == nil || hooks.WorkerSnapshotActive == nil {
-		t.Fatal("stamp hooks incomplete")
-	}
-	sources := ConfigFacadeBrowserEnvSources(t.TempDir())
-	if sources.HomeDotenv == nil || sources.IsLaunchHome == nil || sources.PMStoreRoots == nil || sources.DeferStartupNotice == nil {
-		t.Fatal("browser env sources incomplete")
 	}
 }

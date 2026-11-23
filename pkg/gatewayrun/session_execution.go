@@ -288,7 +288,7 @@ func (t *TurnRunner) resolveTurnAgent(ctx context.Context, route turnRoute, plat
 		t.releaseEvictedAgent(ctx, found.evicted)
 	}
 	if a == nil {
-		inline := tools.GatewayDelegationInline(tc.userConfig, platformKey, tc.interimAssistantMessagesEnabled)
+		inline := tools.GatewayDelegationInline(ctx, platformKey, tc.interimAssistantMessagesEnabled)
 		if a, err = t.buildFreshAgent(tools.GatewayDelegationInlineScope(ctx, inline), route, platformKey, combinedEphemeral,
 			maxIterations, reasoningConfig, pr, skip); err != nil {
 			return nil, false, err

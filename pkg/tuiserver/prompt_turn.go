@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -72,15 +73,7 @@ func isSuccessfulGoalTurn(result map[string]any, status string, raw any) bool {
 
 // Goal manager of the session when a goal is active, else nil
 func activeGoalManager(ctx context.Context, session *tuihost.Session) *goals.GoalManager {
-	maxTurns := int64(20)
-	if goalsCfg, ok := loadCfg(ctx)["goals"].(map[string]any); ok {
-		if raw, present := goalsCfg["max_turns"]; present && pyrepr.Truthy(raw) {
-			if n, err := pyint.Int64(raw); err == nil && n != 0 {
-				maxTurns = n
-			}
-		}
-	}
-	mgr := goals.NewGoalManager(ctx, strOr(session.Get("session_key")), maxTurns)
+	mgr := goals.NewGoalManager(ctx, strOr(session.Get("session_key")), goalMaxTurns(ctx))
 	if mgr.IsActive() {
 		return mgr
 	}
@@ -264,7 +257,7 @@ func startTurnVoice(ctx context.Context) (*ttsTurnQueue, bool) {
 	if !voiceModeEnabled() {
 		return queue, false
 	}
-	if bargeIn, present := voiceCfgDict(ctx)["barge_in"]; !present || truthy(bargeIn) {
+	if settings.VoiceBargeIn.Get(ctx) {
 		armFullDuplexListener(ctx)
 	}
 	started := false
@@ -355,14 +348,10 @@ func goalFollowupAfterTurn(ctx context.Context, sid string, session *tuihost.Ses
 	if err := catchPanic(func() {
 		recoveryPrompt, recoveryNotice := planGoalCompressionRecovery(ctx, session, result, status, raw)
 		if recoveryNotice != "" {
-			var userConfig map[string]any
-			if a := sessionAgent(session); a != nil {
-				userConfig = a.NotificationConfig()
-			}
 			if _, err := config.RenderNotification(ctx, func() error {
 				tuihost.Emit(ctx, "status.update", sid, map[string]any{"kind": "goal", "text": recoveryNotice})
 				return nil
-			}, "tui", false, userConfig); err != nil {
+			}, "tui", false); err != nil {
 				panic(err)
 			}
 		}

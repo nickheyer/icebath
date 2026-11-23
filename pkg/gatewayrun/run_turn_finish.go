@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Cancels the turn's background tasks, flushes the stream, aborts streaming TTS and releases the session slot
@@ -232,8 +233,8 @@ func longRunningStatusDetail(ctx context.Context, activity map[string]any, wantI
 // Periodic still working heartbeat edited in place where supported, until the run loses its slot or finishes
 func (r *GatewayRunner) runAgentNotifyLongRunning(ctx context.Context, disp *runAgentDisplay, tc *TurnContext, executorTask *atomic.Pointer[gatewayTask]) error {
 	notifyStart := time.Now()
-	interval := floatEnv("ICEBATH_AGENT_NOTIFY_INTERVAL", 180)
-	longRunningMode := disp.displaySurfaceMode("long_running_notifications", true, nil, true)
+	interval := settings.AgentGatewayNotifyInterval.Get(ctx).Seconds()
+	longRunningMode := settings.DisplayLongRunningNotifications.Get(disp.settingsCtx(ctx))
 	if interval <= 0 || longRunningMode == "off" {
 		return nil
 	}
@@ -264,7 +265,7 @@ func (r *GatewayRunner) runAgentNotifyLongRunning(ctx context.Context, disp *run
 			return nil
 		}
 		elapsedMins := int(time.Since(notifyStart).Seconds()) / 60
-		wantIterationDetail := pyrepr.Truthy(disp.resolveDisplaySetting(ctx, disp.userConfig, disp.platformKey, "busy_ack_detail", true))
+		wantIterationDetail := settings.DisplayBusyAckDetail.Get(disp.settingsCtx(ctx))
 		statusDetail := ""
 		suppressPanic(func() {
 			statusDetail = longRunningStatusDetail(ctx, agentActivitySummary(tc.currentAgent()), wantIterationDetail)

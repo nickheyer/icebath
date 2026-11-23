@@ -10,15 +10,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Newest user images resent on turns rebuilt from the session store
-const DefaultReplayRecentImages = 3
 
 var (
 	replayHintRe   = regexp.MustCompile(`^\[Image attached(?P<local> at)?: (?P<ref>.+)\]$`)
@@ -38,26 +35,9 @@ type imageReplayWindow struct {
 	keep            int
 }
 
-// vision.replay_recent_images as a non negative int, an unusable value warning and disabling replay
-func ResolveReplayRecentImages(cfg map[string]any) int {
-	vision, _ := cfg["vision"].(map[string]any)
-	raw, ok := vision["replay_recent_images"]
-	if !ok || raw == nil {
-		return DefaultReplayRecentImages
-	}
-	switch n := raw.(type) {
-	case int:
-		if n >= 0 {
-			return n
-		}
-	case int64:
-		if n >= 0 {
-			return int(n)
-		}
-	}
-	pkgLog().Warn(fmt.Sprintf("vision.replay_recent_images=%s is not a non-negative integer (0 = off, default %d); not replaying earlier images",
-		errchain.Show(raw), DefaultReplayRecentImages))
-	return 0
+// vision.replay_recent_images of ctx's home, a negative value turning replay off
+func ResolveReplayRecentImages(ctx context.Context) int {
+	return max(0, settings.VisionReplayRecentImages.Get(ctx))
 }
 
 // One part of a rebuilt user row, text or an image reference with its detail and marker line
@@ -263,7 +243,7 @@ func (a *AIAgent) turnReplayWindow(ctx context.Context) int {
 	if err != nil {
 		panic(err)
 	}
-	keep := ResolveReplayRecentImages(map[string]any(tree))
+	keep := ResolveReplayRecentImages(ctx)
 	if keep > 0 && tools.DecideImageInputModeWithConfig(ctx, a.env, provider, model, map[string]any(tree), "") != "native" {
 		keep = 0
 	}

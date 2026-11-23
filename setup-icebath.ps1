@@ -14,7 +14,7 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 
 Write-Host "-> Building icebath..." -ForegroundColor Cyan
 $env:CGO_ENABLED = "0"
-go build -tags goolm -trimpath -o icebath.exe ./cmd/icebath
+go build -tags goolm -trimpath -ldflags "-s -w" -o icebath.exe ./cmd/icebath
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Write-Host "OK Built $PSScriptRoot\icebath.exe" -ForegroundColor Green
 

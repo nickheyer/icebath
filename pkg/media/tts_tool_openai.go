@@ -318,7 +318,7 @@ var ttsOpenAISleep = time.Sleep
 func generateDeepInfraTTS(ctx context.Context, env *tools.Env, text, outputPath string, ttsConfig map[string]any) (string, error) {
 	apiKey := ttsResolveProviderKey(env, "DEEPINFRA_API_KEY", "deepinfra")
 	if apiKey == "" {
-		return "", &ttsValueError{msg: "DEEPINFRA_API_KEY not set. Start `icebath` and type `/setup tts` to configure, or set the env var directly."}
+		return "", &ttsValueError{msg: "DEEPINFRA_API_KEY not set. Start `icebath` and type `/setup voice` to configure, or set the env var directly."}
 	}
 	diConfig := ttsSection(ttsConfig, "deepinfra")
 	model, ok := diConfig["model"].(string)

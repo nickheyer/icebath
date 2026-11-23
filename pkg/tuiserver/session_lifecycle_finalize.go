@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -235,8 +236,9 @@ func announceSessionReclaimed(session *tuihost.Session, endReason string) {
 			pkgLog().Debug("session.reclaimed broadcast failed", "exc_info", failureText(failure))
 		}
 	}()
-	broadcastGlobalEvent("session.reclaimed", map[string]any{
-		"session_id": strOr(session.Get("_sid")), "stored_session_id": strOr(session.Get("session_key")), "reason": endReason})
+	sid := strOr(session.Get("_sid"))
+	broadcastSessionEvent("session.reclaimed", sid, map[string]any{
+		"session_id": sid, "stored_session_id": strOr(session.Get("session_key")), "reason": endReason})
 }
 
 // Broadcasts approval.cancelled naming the pending gateway approvals an interrupt or teardown drops
@@ -273,7 +275,7 @@ func announceCancelledGatewayApprovals(session *tuihost.Session, reason, session
 			pkgLog().Debug("approval.cancelled broadcast failed", "exc_info", failureText(failure))
 		}
 	}()
-	broadcastGlobalEvent("approval.cancelled", map[string]any{"session_id": sessionID, "stored_session_id": sessionKey,
+	broadcastSessionEvent("approval.cancelled", sessionID, map[string]any{"session_id": sessionID, "stored_session_id": sessionKey,
 		"reason": reason, "cancelled_count": len(pending), "request_ids": requestIDs})
 }
 
@@ -282,6 +284,7 @@ func teardownSession(ctx context.Context, session *tuihost.Session, endReason st
 	if session == nil || len(session.Fields()) == 0 {
 		return
 	}
+	defer settings.EndSession(strOr(session.Get("session_key")))
 	finalizeSession(ctx, session, endReason)
 	announceSessionReclaimed(session, endReason)
 	suppress(func() { announceCancelledGatewayApprovals(session, endReason, "") })

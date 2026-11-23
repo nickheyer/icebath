@@ -18,15 +18,6 @@ import (
 // Bytes of a live transcript a tail read returns at most
 const subagentTailBytes = 16384
 
-var subagentsRegistry = &handlerRegistry{}
-
-func init() {
-	subagentsRegistry.method("subagent.list", subagentList)
-	subagentsRegistry.method("subagent.interrupt", subagentInterrupt)
-	subagentsRegistry.method("subagent.tail", subagentTail)
-	subagentsRegistry.install()
-}
-
 // Typed value of a generic row a sender projects, a misfit reported against the method
 func typedRow[T any](method string, raw any) T {
 	var row T

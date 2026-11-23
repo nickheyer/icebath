@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -85,7 +86,7 @@ func argKind(a slashArg) (string, bool, bool) {
 			return "", false, false
 		}
 		return argModels, true, len(positional(a.done, map[string]bool{"--provider": true, "--reasoning": true})) == 0
-	case "sessions", "session", "switch", "resume":
+	case "sessions":
 		return argSessions, true, len(a.done) == 0
 	case "export":
 		if last == "-o" {
@@ -93,7 +94,7 @@ func argKind(a slashArg) (string, bool, bool) {
 		}
 		return argProfiles, false, len(positional(a.done, map[string]bool{"-o": true})) == 0
 	case "import":
-		return argPaths, false, len(positional(a.done, map[string]bool{"--name": true})) == 0 && last != "--name"
+		return argPaths, false, len(positional(a.done, nil)) == 0
 	case "image":
 		return argPaths, false, len(a.done) == 0
 	case "save":
@@ -137,14 +138,16 @@ func localArgOffers(c *slashCommand, a slashArg) []cards.Offer {
 
 // Offers of one value kind from the gateway, cached while fresh, or the failure when the read fails
 func (a *app) argValues(kind string, then func([]cards.Offer, error) tea.Cmd) tea.Cmd {
-	if e, ok := a.argCache[kind]; ok && a.store.now().Sub(e.at) < argValuesTTL {
+	// Keyed by session too, the values depending on it; the session list is read every time, a session opened or ended a moment ago counting
+	cacheKey := kind + "\x00" + a.store.ui.Sid
+	if e, ok := a.argCache[cacheKey]; ok && kind != argSessions && a.store.now().Sub(e.at) < argValuesTTL {
 		return then(e.offers, nil)
 	}
 	keep := func(offers []cards.Offer) tea.Cmd {
 		if a.argCache == nil {
 			a.argCache = map[string]argCacheEntry{}
 		}
-		a.argCache[kind] = argCacheEntry{at: a.store.now(), offers: offers}
+		a.argCache[cacheKey] = argCacheEntry{at: a.store.now(), offers: offers}
 		return then(offers, nil)
 	}
 	switch kind {
@@ -157,7 +160,7 @@ func (a *app) argValues(kind string, then func([]cards.Offer, error) tea.Cmd) te
 			return keep(modelArgOffers(r, kind))
 		})
 	case argSessions:
-		return requestSessions(a.gw, a.gw.canonical(), "", func(sessions []listedSession, err error) tea.Cmd {
+		return requestSessions(a.gw, true, func(sessions []listedSession, err error) tea.Cmd {
 			if err != nil {
 				return then(nil, err)
 			}
@@ -248,6 +251,20 @@ func (a *app) mergeNameOffers(input string, offers []cards.Offer) []cards.Offer 
 			}
 		}
 	}
+	// Names that start with what was typed lead the fuzzy matches
+	typed := strings.ToLower(strings.TrimPrefix(input, "/"))
+	starts := func(o cards.Offer) bool {
+		return strings.HasPrefix(strings.ToLower(strings.TrimPrefix(strings.TrimSpace(o.Text), "/")), typed)
+	}
+	slices.SortStableFunc(offers, func(x, y cards.Offer) int {
+		switch sx, sy := starts(x), starts(y); {
+		case sx && !sy:
+			return -1
+		case sy && !sx:
+			return 1
+		}
+		return 0
+	})
 	return offers
 }
 

@@ -1,9 +1,11 @@
 package provider
 
 import (
+	"context"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -57,8 +59,9 @@ func toolState(key string, s ToolFeatureState) ToolFeatureState {
 }
 
 // Web search and extract state with per capability overrides deciding the active backend
-func webToolFeature(env PoolEnv, webCfg map[string]any, toolEnabled bool) ToolFeatureState {
-	backend, search, extract := toolNorm(webCfg["backend"], ""), toolNorm(webCfg["search_backend"], ""), toolNorm(webCfg["extract_backend"], "")
+func webToolFeature(env PoolEnv, toolEnabled bool) ToolFeatureState {
+	ctx := env.loginCtx()
+	backend, search, extract := toolNorm(settings.WebSearch.Get(ctx), ""), toolNorm(settings.WebSearchBackend.Get(ctx), ""), toolNorm(settings.WebExtractBackend.Get(ctx), "")
 	keylessTavily := backend == "tavily" || search == "tavily" || extract == "tavily"
 	direct := map[string]bool{
 		"exa":        toolAnyEnv(env, "EXA_API_KEY"),
@@ -95,8 +98,9 @@ func falToolFeature(key string, toolEnabled, direct, hasSelected bool) ToolFeatu
 }
 
 // Text to speech and speech to text states, STT reported toolset enabled since no tool gates it
-func audioToolFeatures(env PoolEnv, ttsCfg, sttCfg map[string]any, ttsToolEnabled bool) (ToolFeatureState, ToolFeatureState) {
-	ttsCurrent, sttCurrent := toolNorm(ttsCfg["provider"], "edge"), toolNorm(sttCfg["provider"], "local")
+func audioToolFeatures(env PoolEnv, ttsToolEnabled bool) (ToolFeatureState, ToolFeatureState) {
+	ctx := env.loginCtx()
+	ttsCurrent, sttCurrent := toolNorm(settings.SpeechVoice.Get(ctx), "edge"), toolNorm(settings.RecognitionService.Get(ctx), "local")
 	audioKey := toolFeatureAudioKeyFn(env) != ""
 	ttsAvailable := false
 	switch ttsCurrent {
@@ -109,7 +113,7 @@ func audioToolFeatures(env PoolEnv, ttsCfg, sttCfg map[string]any, ttsToolEnable
 	case "mistral":
 		ttsAvailable = toolAnyEnv(env, "MISTRAL_API_KEY")
 	}
-	_, ttsSet := ttsCfg["provider"]
+	ttsSet := toolSettingSet(ctx, settings.SpeechVoice.Key)
 	tts := toolState("tts", ToolFeatureState{Available: ttsAvailable, Active: ttsToolEnabled && ttsAvailable, ToolsetEnabled: ttsToolEnabled,
 		CurrentProvider: toolProviderLabel("tts", ttsCurrent), ExplicitConfigured: ttsSet && ttsCurrent != "edge"})
 	sttAvailable := false
@@ -123,23 +127,25 @@ func audioToolFeatures(env PoolEnv, ttsCfg, sttCfg map[string]any, ttsToolEnable
 	case "mistral":
 		sttAvailable = toolAnyEnv(env, "MISTRAL_API_KEY")
 	}
-	_, sttSet := sttCfg["provider"]
+	sttSet := toolSettingSet(ctx, settings.RecognitionService.Key)
 	stt := toolState("stt", ToolFeatureState{Available: sttAvailable, Active: sttAvailable, ToolsetEnabled: true,
 		CurrentProvider: toolProviderLabel("stt", sttCurrent), ExplicitConfigured: sttSet})
 	return tts, stt
 }
 
 // Browser state resolved with the same precedence the runtime uses
-func browserToolFeature(env PoolEnv, browserCfg map[string]any, toolEnabled bool) ToolFeatureState {
-	rawProvider, explicit := browserCfg["cloud_provider"]
+func browserToolFeature(env PoolEnv, toolEnabled bool) ToolFeatureState {
+	ctx := env.loginCtx()
+	cloud, err := settings.Resolve(ctx, "browser.cloud_provider")
+	explicit := err == nil && cloud.Source != settings.SourceDefault
 	provider := tools.NormalizeBrowserCloudProvider("")
 	if explicit {
-		provider = tools.NormalizeBrowserCloudProvider(pyOrStr(rawProvider))
+		provider = tools.NormalizeBrowserCloudProvider(pyOrStr(cloud.Value))
 	}
 	directBrowserbase := toolFeatureEnvValueFn(env, "BROWSERBASE_API_KEY") != "" && toolFeatureEnvValueFn(env, "BROWSERBASE_PROJECT_ID") != ""
 	directBrowserUse := toolAnyEnv(env, "BROWSER_USE_API_KEY")
 	directFirecrawl := toolAnyEnv(env, "FIRECRAWL_API_KEY", "FIRECRAWL_API_URL")
-	localRunnable := localBrowserRunnable(env, browserCfg)
+	localRunnable := localBrowserRunnable(env)
 	var current string
 	var available bool
 	switch {
@@ -165,8 +171,8 @@ func browserToolFeature(env PoolEnv, browserCfg map[string]any, toolEnabled bool
 }
 
 // Modal terminal state, a non modal backend counting as available and a modal one on its direct credentials
-func modalToolFeature(env PoolEnv, terminalCfg map[string]any, toolEnabled bool) ToolFeatureState {
-	backend := toolNorm(terminalCfg["backend"], "local")
+func modalToolFeature(env PoolEnv, toolEnabled bool) ToolFeatureState {
+	backend := toolNorm(settings.WhereCommandsRun.Get(env.loginCtx()), "local")
 	isModal := backend == "modal"
 	available, active := true, toolEnabled
 	if isModal && !toolFeatureDirectModalFn(env) {
@@ -181,28 +187,25 @@ func modalToolFeature(env PoolEnv, terminalCfg map[string]any, toolEnabled bool)
 }
 
 // GetToolFeatures resolves every tool feature's state from the config and the configured credentials
-func GetToolFeatures(env PoolEnv, cfg map[string]any) ToolFeatures {
-	if cfg == nil {
-		cfg = toolFeatureLoadConfig(env)
-	}
+func GetToolFeatures(env PoolEnv) ToolFeatures {
+	ctx := env.loginCtx()
 	enabled := map[string]bool{}
 	for _, key := range []string{"web", "image_gen", "video_gen", "tts", "browser", "terminal"} {
-		enabled[key] = toolFeatureToolsetEnabledFn(env, cfg, key)
+		enabled[key] = toolFeatureToolsetEnabledFn(env, key)
 	}
 	falConfigured := toolFeatureFalKeyFn(env)
 	fal := func(key string) ToolFeatureState {
-		_, set := toolSection(cfg, key)["provider"]
-		return falToolFeature(key, enabled[key], falConfigured, set)
+		return falToolFeature(key, enabled[key], falConfigured, toolSettingSet(ctx, key+".provider"))
 	}
-	tts, stt := audioToolFeatures(env, toolSection(cfg, "tts"), toolSection(cfg, "stt"), enabled["tts"])
+	tts, stt := audioToolFeatures(env, enabled["tts"])
 	return ToolFeatures{Features: map[string]ToolFeatureState{
-		"web":       webToolFeature(env, toolSection(cfg, "web"), enabled["web"]),
+		"web":       webToolFeature(env, enabled["web"]),
 		"image_gen": fal("image_gen"),
 		"video_gen": fal("video_gen"),
 		"tts":       tts,
 		"stt":       stt,
-		"browser":   browserToolFeature(env, toolSection(cfg, "browser"), enabled["browser"]),
-		"modal":     modalToolFeature(env, toolSection(cfg, "terminal"), enabled["terminal"]),
+		"browser":   browserToolFeature(env, enabled["browser"]),
+		"modal":     modalToolFeature(env, enabled["terminal"]),
 	}}
 }
 
@@ -232,22 +235,10 @@ func toolFeatureEnvValue(env PoolEnv, name string) string {
 	return env.envFile()[name]
 }
 
-// Profile config when the caller passes none, an empty mapping when nothing loads
-func toolFeatureLoadConfig(env PoolEnv) map[string]any {
-	cfg := env.config()
-	if cfg == nil {
-		cfg = ConfigLoader(envHome(env))()
-	}
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	return cfg
-}
-func toolSection(cfg map[string]any, key string) map[string]any {
-	if m, ok := cfg[key].(map[string]any); ok {
-		return m
-	}
-	return map[string]any{}
+// Whether the profile sets a setting itself rather than leaving it at its default
+func toolSettingSet(ctx context.Context, key string) bool {
+	v, err := settings.Resolve(ctx, key)
+	return err == nil && v.Source != settings.SourceDefault
 }
 
 // Lowercased stripped text of value or the default when the value is falsy
@@ -260,8 +251,8 @@ func toolNorm(value any, def string) string {
 }
 
 // Some platform's configured toolsets cover every tool of the toolset
-func toolFeatureToolsetEnabled(env PoolEnv, cfg map[string]any, toolsetKey string) bool {
-	platforms, _ := cfg["platform_toolsets"].(map[string]any)
+func toolFeatureToolsetEnabled(env PoolEnv, toolsetKey string) bool {
+	platforms := settings.ToolGroups.Get(env.loginCtx())
 	if len(platforms) == 0 {
 		platforms = map[string]any{"cli": []any{toolDefaultPlatform["cli"]}}
 	}
@@ -298,8 +289,8 @@ func toolFeatureToolsetEnabled(env PoolEnv, cfg map[string]any, toolsetKey strin
 }
 
 // Local browser starts when lightpanda or a runnable Chromium backs it
-func localBrowserRunnable(env PoolEnv, browserCfg map[string]any) bool {
-	if toolNorm(browserCfg["engine"], "auto") == "lightpanda" {
+func localBrowserRunnable(env PoolEnv) bool {
+	if toolNorm(settings.BrowserEngine.Get(env.loginCtx()), "auto") == "lightpanda" {
 		return true
 	}
 	return toolFeatureChromiumFn(env) != ""

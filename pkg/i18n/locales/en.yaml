@@ -1475,7 +1475,7 @@ platform:
       error: "❌ {verb} error: {error}"
       appended_by: "— {label} by {user}"
     user_fallback: "User"
-    install_hint: "Start `icebath` and type `/setup gateway` to install Telegram support."
+    install_hint: "Start `icebath` and type `/setup chat-apps` to install Telegram support."
 
 # Slash-command DESCRIPTIONS (names are identifiers and never translated). Owned by lane W1a; the
 # keys below are the ones the Discord native command table shares verbatim with the CLI registry.

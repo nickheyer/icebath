@@ -10,11 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-// Declares the title, archive, hidden and reaction methods on the session module registry
-func registerSessionMetaHandlers() {
-	sessionRegistry.method("session.title", withSession(withSessionDB(5007, sessionTitle)))
-}
-
 // Stored title of a session, applying a queued pending title when the row now takes it
 func titleRead(ctx context.Context, session *tuihost.Session, db *state.DB, key string) (resolved string) {
 	fallback := ""

@@ -153,24 +153,12 @@ func (a *app) enterWorktree(r *slashRun, tree Worktree) tea.Cmd {
 	if r.sid == "" {
 		return entered()
 	}
-	if a.gw.canonical() {
-		return a.store.mutateCanonical(a.gw, r.sid, "workspace", map[string]any{"cwd": tree.Path}, r.stale, func(m *mutationOutcome, err error) tea.Cmd {
-			switch {
-			case err != nil:
-				return refused(err)
-			case m == nil:
-				return a.settleRefusedWorktree(r, ref)
-			}
-			return entered()
-		})
-	}
-	key := a.store.ui.StoredSid
-	if key == "" {
-		key = r.sid
-	}
-	return call(a.gw, tuigateway.SessionWorkspaceMove, tuigateway.SessionWorkspaceMoveParams{SessionKey: key, Cwd: tree.Path}, func(_ *tuigateway.SessionWorkspaceMoveResult, err error) tea.Cmd {
-		if err != nil {
+	return a.store.mutateCanonical(a.gw, r.sid, "workspace", map[string]any{"cwd": tree.Path}, r.stale, func(m *mutationOutcome, err error) tea.Cmd {
+		switch {
+		case err != nil:
 			return refused(err)
+		case m == nil:
+			return a.settleRefusedWorktree(r, ref)
 		}
 		return entered()
 	})

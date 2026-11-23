@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Whether any inference provider is usable in the bound profile, assigned from cmd/icebath in wiring.go
@@ -24,36 +25,14 @@ func ReadinessFailure(err error) *pyjson.Object {
 	return out
 }
 
-// Model the profile config pins, nil when none
-func configuredModelOf(cfgModel any) *string {
-	if section, ok := cfgModel.(map[string]any); ok {
-		value := section["default"]
-		if !pyrepr.Truthy(value) {
-			value = section["model"]
-		}
-		if !pyrepr.Truthy(value) {
-			return nil
-		}
-		if text := pyrepr.Str(value); text != "" {
-			return &text
-		}
-		return nil
-	}
-	if text, ok := cfgModel.(string); ok && text != "" {
-		return &text
-	}
-	return nil
-}
-
 // Readiness verdict of the runtime a session would be built with, a failure naming the provider the user pinned
 func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileScope bool) (*pyjson.Object, error) {
 	h := home.Dir(ctx)
-	cfg := loadProfileConfig(ctx, h)
-	cfgModel := cfg["model"]
-	configured := configuredModelOf(cfgModel)
-	target := ""
-	if configured != nil {
-		target = *configured
+	sctx := profileEnvScope(ctx, h)
+	target := strings.TrimSpace(settings.Model.Get(sctx))
+	var configured *string
+	if target != "" {
+		configured = &target
 	}
 	var runtime *provider.Runtime
 	var model any
@@ -89,9 +68,7 @@ func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileS
 	source := runtime.Source
 	pinned := requested
 	if pinned == "" {
-		if section, ok := cfgModel.(map[string]any); ok && pyrepr.Truthy(section["provider"]) {
-			pinned = strings.TrimSpace(pyrepr.Str(section["provider"]))
-		}
+		pinned = strings.TrimSpace(settings.ModelProvider.Get(sctx))
 	}
 	blamed := pinned
 	if blamed == "" {

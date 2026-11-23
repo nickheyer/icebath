@@ -171,7 +171,7 @@ func (s *inlineImages) layout(spots []imageSpot, viewTop, limit int) {
 	}
 	s.desired = want
 	s.layoutGen++
-	if gen := s.layoutGen; s.a.post != nil {
+	if gen := s.layoutGen; s.a.posts() {
 		s.a.post(asyncDoneMsg{run: func() tea.Cmd { return s.moved(gen) }})
 	}
 }

@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 
 	tea "charm.land/bubbletea/v2"
-	uv "github.com/charmbracelet/ultraviolet"
 
 	"github.com/nickheyer/icebath/pkg/ui/anim"
 	"github.com/nickheyer/icebath/pkg/ui/cards"
@@ -29,20 +28,20 @@ const (
 	exitCloseLimit = 1500 * time.Millisecond
 	// Window in which a second interrupt key on an idle empty prompt quits
 	exitConfirmWindow = 2 * time.Second
-	// Gap between refreshes of the agent, process, live session and control snapshots
-	refreshEvery = 1500 * time.Millisecond
-	// Exit status that asks the launcher to run the update
-	exitForUpdate = 42
+	// Gap between refreshes of the agent, process and live session snapshots while a turn runs or the dock shows something, and the
+	// longer gap while everything is idle
+	refreshEvery     = 1500 * time.Millisecond
+	idleRefreshEvery = 10 * time.Second
 )
 
 // Session detach finished or timed out, the program quits with the status
 type exitMsg struct{ code int }
 
-// Periodic refresh of the session rosters
-type refreshTickMsg struct{ gen int }
+// Periodic refresh of the session rosters, of the chain of ticks that was current when it was scheduled
+type refreshTickMsg struct{ chain int }
 
-// Text the composer changed, so the streaming batch follows the typing
-type typingIdleMsg struct{ gen int }
+// A second after a key was typed while a reply streams, the streaming batch relaxing unless another key followed
+type typingIdleMsg struct{ typedAt time.Time }
 
 // Busy input mode and destination captured when the user committed an input
 type busyControl struct {
@@ -51,55 +50,40 @@ type busyControl struct {
 	generation  *int64
 }
 
-// Terminal UI of one icebath session over the shared gateway
+// One session card and everything its session needs, over the shell every session shares
 type app struct {
-	ctx     context.Context
-	host    Host
-	wm      *wm.Model
-	keys    *keys.Map
-	gw      *gatewayClient
-	store   *tuiStore
-	turn    *turnController
-	events  *eventHandler
-	life    *sessionLifecycle
-	prompts *promptSubmitter
-	queue   *composerQueue
-	config  *configSync
-	inputs  *composerHistory
-	card    *sessionCard
-	git     *gitBranchTracker
-	battery *batteryPoller
-	resize  *resizeCoalescer
-	arena   arenaView
-	post    func(tea.Msg)
-	// Terminal graphics the pet and the arena draw through, probed on their first use
-	graphics *gfx.Terminal
+	*shell
+	// Number of the session card, its key among the cards
+	num int
+	// What was typed into each queued input while stepping through them, by queue index
+	queueSlots map[int]string
+	store      *tuiStore
+	turn       *turnController
+	events     *eventHandler
+	life       *sessionLifecycle
+	prompts    *promptSubmitter
+	queue      *composerQueue
+	config     *configSync
+	card       *sessionCard
+	git        *gitBranchTracker
+	arena      arenaView
 	// Pictures the transcript draws inline
-	images         *inlineImages
-	graphicsProbed bool
+	images *inlineImages
 
-	history       []msg
-	lastUserMsg   string
-	stickyPrompt  string
-	sessionStart  float64
-	droppedTurns  int
-	argCache      map[string]argCacheEntry
-	turnStartedAt time.Time
-	catalog       *slashCatalog
-	tokens        []composerToken
-	localCommands []slashCommand
-	// Terminal windows opened so far, numbering the next, and those whose program may still run
-	terminalCount  int
-	terminals      []*cards.Terminal
-	draftRevision  int
+	history        []msg
+	lastUserMsg    string
+	stickyPrompt   string
+	sessionStart   float64
+	droppedTurns   int
+	argCache       map[string]argCacheEntry
+	turnStartedAt  time.Time
+	catalog        *slashCatalog
+	tokens         []composerToken
+	localCommands  []slashCommand
 	editorRevision int
 	editorTarget   submissionDestination
-	queueEdit      *int
-	// When escape and enter on an empty prompt were last pressed, a second press inside its window acting on the draft, the turn or the queue
-	lastEscape     time.Time
-	lastEmptyEnter time.Time
-	// Session keys as they were bound before the configured voice key took a chord from them, bound so again when it changes
-	voiceDisplaced []keys.Action
+	// When escape was last pressed and when an escape last closed something
+	lastEscape, lastEscapeClosed time.Time
 	// Collapsed paste expanded into the draft for editing, nil when none is, and the draft as it read when the span was last placed on it
 	pasteSpan  *pasteSpan
 	pasteDraft string
@@ -107,8 +91,8 @@ type app struct {
 	rewindPending    *pendingRewind
 	rewindPrimed     string
 	rewindPrimeCount int
-	rewindGeneration int
-	expandWith       func(string) string
+	// Rewind on its way to the owner, armed again when it fails unless it was cancelled meanwhile
+	rewindFlight *pendingRewind
 
 	bellComplete    bool
 	bellPrompt      bool
@@ -116,61 +100,32 @@ type app struct {
 	voiceTTS        bool
 	voiceRecording  bool
 	voiceProcessing bool
-	voiceKey        voiceRecordKey
 
-	recoverSid       string
-	recoveryAttempts []float64
-	gaveUp           bool
-	seenSid          string
-	seenOffline      bool
-	seenAttach       string
-	seenCwd          string
-	seenBusy         bool
-	seenTheme        theme
-	toolkit          uitheme.Theme
-	themeLook        string
-	refreshGen       int
-	typingGen        int
-	slashFlight      int
-	lastInterrupt    time.Time
-	exitCode         int
-	quitting         bool
-	exitReason       string
-	lastWords        func()
-	boot             tea.Cmd
-	dialogs          dialogState
-	widgets          *widgetHost
-	pet              petCard
-	stash            *promptStash
-	clipboardRead    *clipboardRead
-	// Sessions this view left running, watched for the end of their turn or a question waiting
-	background *backgroundWatch
-	// Id this UI takes the bot screen under
-	screenViewer string
-	// Hints about the host terminal still to show, held until the first session stands since a session start clears the activity feed
-	terminalHints      []terminalHint
+	recoverSid string
+	gaveUp     bool
+	// When the prompt last took a key while a reply streamed
+	lastTypedAt time.Time
+	// Chain of roster refresh ticks in force, a tick of an older chain doing nothing
+	refreshChain int
+	// Commands the session's state changes ask for, handed to the program once the update that caused them ends
+	effects            []tea.Cmd
+	boot               tea.Cmd
+	dialogs            dialogState
+	widgets            *widgetHost
+	pet                petCard
+	stash              *promptStash
+	clipboardRead      *clipboardRead
 	clipboardSeq       int
 	spawnSections      map[string]bool
 	agentDockCollapsed bool
-	dockClockArmed     bool
 	observeUnsupported bool
 	completion         composerCompletion
 	// Reloads the session switcher while it is open, nil when it is closed
 	switcherReload func() tea.Cmd
 	// Reads the live sessions of the open session switcher again on the roster tick, nil when it is closed
 	switcherPoll func() tea.Cmd
-	// Status facts the store does not hold, the live sessions the roster poll counted and when the last turn ended
-	liveSessions  int
+	// When the last turn ended, counted from in the status bar
 	lastTurnEnded time.Time
-	// Whether the one second repaint of the status clocks runs, and whether a loop countdown was showing at the last update
-	statusClockArmed bool
-	seenLoopTicking  bool
-	// Reaction the affection heart last lit for, when it goes out and the tone it drew
-	heartSeen  int
-	heartUntil time.Time
-	heartTone  int
-	// Whether the missing clipboard tool was named already this run, the advice shown once
-	clipboardWarned bool
 }
 
 var (
@@ -188,29 +143,31 @@ func tuiKeymap() *keys.Map {
 	km := keys.Default()
 	for _, a := range []keys.Action{
 		{ID: "tui.model", Context: tuiContext, Label: "model", Doc: "choose the model of the session", Default: []string{"ctrl+o"}},
-		{ID: "tui.cut", Context: tuiContext, Label: "cut", Doc: "cut the selected prompt text to the clipboard", Default: []string{"ctrl+x"}},
-		{ID: "tui.queue.delete", Context: tuiContext, Label: "delete queued", Doc: "delete the queued input being edited", Default: []string{"ctrl+x"}},
-		{ID: "tui.sessions", Context: tuiContext, Label: "sessions", Doc: "switch between live and stored sessions", Default: []string{"ctrl+x"}},
-		{ID: "tui.agents", Context: tuiContext, Label: "agents", Doc: "open the spawn tree of the agents of the session", Default: []string{"ctrl+t"}},
-		{ID: "tui.editor", Context: tuiContext, Label: "editor", Doc: "edit the prompt in the external editor", Default: []string{"ctrl+g", "alt+g"}},
+		{ID: "tui.cut", Context: tuiContext, Label: "cut", Doc: "cut the selected prompt text to the clipboard"},
+		{ID: "tui.queue.delete", Context: tuiContext, Label: "delete queued", Doc: "delete the queued input being edited"},
+		{ID: "tui.sessions", Context: tuiContext, Label: "sessions", Doc: "switch between live and stored sessions"},
+		{ID: "tui.agents", Context: tuiContext, Label: "agents", Doc: "show the agents this session started", Default: []string{"ctrl+t"}},
+		{ID: "tui.editor", Context: tuiContext, Label: "editor", Doc: "edit the prompt in the external editor", Default: []string{"ctrl+g"}},
 		{ID: "tui.redraw", Context: tuiContext, Label: "redraw", Doc: "repaint the screen", Default: []string{"ctrl+l"}},
+		{ID: "tui.help", Context: keys.Global, Label: "help", Doc: "list every key and command", Default: []string{"f1"}},
 		{ID: "tui.suspend", Context: tuiContext, Label: "suspend", Doc: "suspend to the shell, fg brings it back"},
 		{ID: "tui.exit", Context: tuiContext, Label: "exit", Doc: "quit on an empty prompt", Default: []string{"ctrl+d"}},
-		{ID: "tui.queue.send", Context: tuiContext, Label: "send queued", Doc: "send the first queued input now, an unconfirmed one again", Default: []string{"alt+k", "super+k"}},
-		{ID: "tui.queue.drop", Context: tuiContext, Label: "drop queued", Doc: "drop the newest queued input", Default: []string{"ctrl+k"}},
-		{ID: "tui.yolo", Context: tuiContext, Label: "yolo", Doc: "turn yolo on or off without spending a turn", Default: []string{"shift+tab"}},
-		{ID: "tui.paste.image", Context: tuiContext, Label: "paste image", Doc: "attach the clipboard image", Default: []string{"alt+v"}},
-		{ID: "tui.paste.expand", Context: tuiContext, Label: "pasted text", Doc: "open the pasted text chip under the cursor to read and edit it or fold it back, else show or hide the pasted text under the sent prompts", Default: []string{"ctrl+p"}},
+		{ID: "tui.queue.send", Context: tuiContext, Label: "send queued", Doc: "send the first queued prompt now", Default: []string{"super+k"}},
+		{ID: "tui.queue.drop", Context: tuiContext, Label: "drop queued", Doc: "drop the newest queued input"},
+		{ID: "tui.yolo", Context: tuiContext, Label: "yolo", Doc: "run commands without asking, or ask again (yolo)", Default: []string{"shift+tab"}},
+		{ID: "tui.paste.image", Context: tuiContext, Label: "paste image", Doc: "attach the clipboard image"},
+		{ID: "tui.paste.expand", Context: tuiContext, Label: "pasted text", Doc: "show or fold pasted text"},
 		{ID: "tui.voice", Context: tuiContext, Label: "voice", Doc: "start or stop voice recording", Default: defaultVoiceRecordKey.chords()},
 		{ID: "tui.scroll.line.up", Context: tuiContext, Label: "line up", Doc: "scroll the transcript up a line", Default: []string{"shift+up"}, Quiet: true},
 		{ID: "tui.scroll.line.down", Context: tuiContext, Label: "line down", Doc: "scroll the transcript down a line", Default: []string{"shift+down"}, Quiet: true},
-		{ID: "tui.newline", Context: tuiContext, Label: "newline", Doc: "break the line in the prompt", Default: []string{"shift+enter", "ctrl+j", "alt+enter", "ctrl+enter", "super+enter"}, Quiet: true},
 	} {
 		if keyLinked(a.ID) {
 			km.Register(a)
 		}
 	}
 	registerListKeys(km)
+	registerHubKeys(km)
+	registerSettingsKeys(km)
 	registerRoomKeys(km)
 	registerSpawnTreeKeys(km)
 	registerJourneyKeys(km)
@@ -224,36 +181,68 @@ func tuiKeymap() *keys.Map {
 	return km
 }
 
-// App over a fresh store and the launcher's host, its gateway client not started yet
+// First session of a new shell over the launcher's host, the gateway client not started yet
 func newApp(ctx context.Context, host Host) *app {
-	store := newTUIStore()
-	turn := newTurnController(store)
 	gw := newGatewayClient(host.Attach)
 	setRPCErrorLogSink(gw.recordLog)
-	a := &app{ctx: ctx, host: host, keys: tuiKeymap(), gw: gw, store: store, turn: turn, git: newGitBranchTracker(), battery: &batteryPoller{},
-		resize: newResizeCoalescer(32 * time.Millisecond), inputs: newComposerHistory(newInputHistory(ctx))}
+	sh := &shell{ctx: ctx, host: host, keys: tuiKeymap(), gw: gw, resize: newResizeCoalescer(32 * time.Millisecond), ui: newSharedUI(),
+		themes: &themeSync{configPinned: loadBootTheme().seededPin}, subs: newSubscriptions(), battery: &batteryPoller{},
+		inputs: newComposerHistory(newInputHistory(ctx)), background: newBackgroundWatch(), graphics: gfx.New()}
+	sh.ui.themeChanged, sh.widgets = sh.themeChanged, newWidgetHost(sh)
+	sh.themeChanged()
+	a := sh.newSession()
 	keysLoaded := a.loadKeybinds()
-	a.background = newBackgroundWatch()
-	a.events, a.boot = newEventHandler(store, turn, gw, a)
-	a.life = newSessionLifecycle(store, turn, gw, a)
-	a.prompts = &promptSubmitter{store: store, turn: turn, gw: gw, deps: a}
-	a.queue = newComposerQueue(store, gw, a.uncaught)
-	a.config = newConfigSync(store, turn, gw, a)
-	a.graphics = gfx.New()
-	a.images = newInlineImages(a)
-	store.screenCleared = a.images.redraw
 	var probe tea.Cmd
-	if a.images.graphics && !a.graphicsProbed {
-		a.graphicsProbed = true
-		probe = a.graphics.Probe()
+	if a.images.graphics && !sh.graphicsProbed {
+		sh.graphicsProbed = true
+		probe = sh.graphics.Probe()
 	}
+	sh.wm = wm.New(wm.WithTheme(sh.toolkit), wm.WithKeys(sh.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(sh.motion()))
+	// Every command of a card comes back to the session that opened the card
+	sh.wm.SetRoute(func(owner any, cmd tea.Cmd) tea.Cmd {
+		s, _ := owner.(*app)
+		sh.touch(s)
+		return sh.tag(s, cmd)
+	})
+	var open tea.Cmd
+	a.boot = tea.Batch(a.boot, sh.wm.As(a, func() tea.Cmd {
+		_, open = sh.wm.AddWorkspace(sh.nextWorkspaceID(), a.card)
+		return tea.Batch(open, sh.restoreLayout(a))
+	}), keysLoaded, probe)
+	sh.wm.SetBar(sh.barStatus)
+	sh.wm.SetCommandSource(sh.commands)
+	sh.wm.SetEmptyHints("palette")
+	return a
+}
+
+// Session of a new session card over its own store, sharing the shell's window manager, connection, keys and display preferences
+func (sh *shell) newSession() *app {
+	store := newTUIStore()
+	store.ui.sharedUI, store.themes, store.screenCleared = sh.ui, sh.themes, sh.redrawImages
+	turn := newTurnController(store)
+	sh.made++
+	a := &app{shell: sh, num: sh.made, store: store, turn: turn, git: newGitBranchTracker()}
+	store.busyChanged = a.busyChanged
+	a.events, a.boot = newEventHandler(store, turn, sh.gw, a)
+	// Only the first card resumes the session the launch named
+	if len(sh.sessions) > 0 {
+		a.events.startupResumeID = ""
+	}
+	a.life = newSessionLifecycle(store, turn, sh.gw, a, sh.subs)
+	a.prompts = &promptSubmitter{store: store, turn: turn, gw: sh.gw, deps: a}
+	// Queue journal failures are reported without ending the turn
+	a.queue = newComposerQueue(store, sh.gw, func(err error) {
+		if err != nil {
+			a.sys(errorLine(rpcErrorMessage(err)))
+		}
+	})
+	a.config = newConfigSync(store, turn, sh.gw, a)
+	a.images = newInlineImages(a)
 	a.arena = arenaViewFor(a)
-	a.syncTheme()
-	a.widgets = newWidgetHost(a)
+	a.widgets = sh.widgets
 	a.localCommands = append(append(append(append(append(append(a.coreCommands(), a.transcriptCommands()...), a.opsCommands()...), a.sessionCommands()...), a.controlCommands()...), a.wmCommands()...), a.recoveryCommands()...)
 	a.localCommands = append(a.localCommands, a.nativeCommands()...)
 	a.localCommands = append(a.localCommands, a.agentsCommands()...)
-	a.localCommands = append(a.localCommands, a.mcpCommands()...)
 	a.localCommands = append(a.localCommands, a.roomsCommands()...)
 	a.localCommands = append(a.localCommands, a.terminalCommands()...)
 	a.localCommands = append(a.localCommands, a.keyCommands()...)
@@ -263,14 +252,16 @@ func newApp(ctx context.Context, host Host) *app {
 		a.localCommands = append(a.localCommands, commands(a)...)
 	}
 	a.localCommands = slices.DeleteFunc(a.localCommands, func(c slashCommand) bool { return !localCommandLinked(c.name) })
-	a.pet = petCardFor(a)
+	// One pet for the window, in the card of the session in view
+	if sh.pet == nil {
+		sh.pet = petCardFor(a)
+	}
+	a.pet = sh.pet
 	a.card = newSessionCard(a)
-	a.wm = wm.New(wm.WithTheme(a.toolkit), wm.WithKeys(a.keys), wm.WithWindowTitle("icebath"), wm.WithMotion(a.motion()))
-	_, open := a.wm.AddWorkspace("session", a.card)
-	a.boot = tea.Batch(a.boot, open, keysLoaded, probe)
-	a.wm.SetBar(a.barStatus)
-	a.wm.SetCommands(a.commands())
-	a.wm.SetEmptyHints("palette")
+	sh.sessions = append(sh.sessions, a)
+	if sh.current == nil {
+		sh.current = a
+	}
 	return a
 }
 
@@ -280,14 +271,6 @@ func bootMotion() float64 {
 		return 0
 	}
 	return 1
-}
-
-// Motion scale of the window manager, none under the plain theme
-func (a *app) motion() float64 {
-	if a.toolkit.Plain {
-		return 0
-	}
-	return bootMotion()
 }
 
 // Runs the terminal UI, prints the session summary when it ends and returns the exit status
@@ -305,9 +288,9 @@ func Run(ctx context.Context, host Host) int {
 		panicked = true
 		recordPanic(value)
 	})
-	a.post = newMailbox(ctx, p.Send).post
+	a.shell.post = newMailbox(ctx, p.Send).post
 	if meter != nil {
-		meter.post = a.post
+		meter.post = a.shell.post
 	}
 	a.gw.attach(p.Send)
 	a.gw.start()
@@ -321,11 +304,13 @@ func Run(ctx context.Context, host Host) int {
 	return a.exitStatus(err, p.Terminated())
 }
 
-func (a *app) Init() tea.Cmd {
-	return tea.Batch(a.wm.Init(), a.boot, a.scheduleRefresh(), a.widgets.warm(), a.pet.start(), terminalHintsCmd)
+// Work a session starts with once its card stands: its boot, roster refresh, widgets and pet
+func (a *app) start() tea.Cmd {
+	return tea.Batch(a.boot, a.scheduleRefresh())
 }
 
-func (a *app) View() tea.View {
+// Frame of the window manager with this session's colors, mouse mode and tab title
+func (a *app) view() tea.View {
 	v := a.wm.View()
 	if bg := a.store.themes.terminalBg; isPaintableHex(bg) {
 		v.BackgroundColor = toneColor(bg)
@@ -354,38 +339,14 @@ func (a *app) tabMarker() string {
 	return "◇"
 }
 
-func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
+// Takes a message that belongs to this session
+func (a *app) update(m tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	switch m := m.(type) {
-	case uv.KittyGraphicsEvent, uv.CellSizeEvent, uv.PixelSizeEvent, uv.PrimaryDeviceAttributesEvent, uv.UnknownCsiEvent:
-		a.terminalGraphics(m)
-	case tea.FocusMsg, tea.BlurMsg:
-		a.arena.focus(m)
-		_, cmd = a.wm.Update(m)
-	case tea.WindowSizeMsg:
-		a.terminalGraphics(m)
-		_, cmd = a.wm.Update(m)
-		if a.graphicsProbed {
-			cmd = tea.Batch(cmd, a.graphics.Measure())
-		}
-		cmd = tea.Batch(cmd, a.images.redraw())
-	case tea.ResumeMsg:
-		_, cmd = a.wm.Update(m)
-		cmd = tea.Batch(cmd, a.images.redraw())
-		if _, reflow := a.resize.schedule(); reflow != nil {
-			cmd = tea.Batch(cmd, reflow)
-		}
-	case resizeReflowMsg:
-		if a.resize.fire(m) {
-			a.card.view.invalidate()
-			cmd = a.reportResize()
-		}
 	case serverRequestMsg:
 		if !a.store.handleServerRequest(m.Request, a.events) {
 			m.Request.unhandled()
 		}
-	case gatewayExitMsg:
-		a.onGatewayExit(m.Code)
 	case interruptReplyMsg:
 		a.turn.settleInterrupt(m)
 	case resumeScrollMsg:
@@ -394,14 +355,12 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = a.config.onPoll(m)
 	case loopTickMsg:
 		cmd = a.store.onLoopTick(m)
-	case batteryPollMsg:
-		cmd = a.battery.onTick(m, a.store, a.gw)
 	case refreshTickMsg:
-		if m.gen == a.refreshGen {
+		if m.chain == a.refreshChain {
 			cmd = tea.Batch(a.refreshRosters(), a.scheduleRefresh(), a.pollSwitcher())
 		}
 	case typingIdleMsg:
-		if m.gen == a.typingGen {
+		if m.typedAt.Equal(a.lastTypedAt) {
 			a.turn.relaxStreaming()
 		}
 	case cards.SubmitMsg:
@@ -412,15 +371,10 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case editorDoneMsg:
 		cmd = a.onEditorDone(m)
-	case sectionCommandMsg:
-		cmd = a.onSectionCommand(m)
-	case exitMsg:
-		a.exitCode = m.code
-		a.closeTerminals()
-		return a, tea.Quit
 	default:
 		var petCmd tea.Cmd
 		if ev, isEvent := m.(gatewayEventMsg); isEvent {
+			a.store.sawFrame(ev)
 			a.arena.observe(ev)
 			petCmd = a.pet.observe(ev)
 			if ev.Type == tuigateway.SessionsChangedEvent.Name() && a.switcherReload != nil {
@@ -431,8 +385,6 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = c
 		} else if handled, c := a.git.update(m); handled {
 			cmd = c
-		} else if handled, c := a.pet.update(m); handled {
-			cmd = c
 		} else if handled, c := a.updateExtras(m); handled {
 			cmd = c
 		} else {
@@ -440,11 +392,7 @@ func (a *app) Update(m tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmd = tea.Batch(petCmd, cmd)
 	}
-	after := a.afterUpdate()
-	if feedsArena(m) {
-		a.arena.sync()
-	}
-	return a, tea.Batch(cmd, after)
+	return cmd
 }
 
 // Reports whether a message may change what the arena shows, window manager and arena frames never doing so
@@ -456,91 +404,87 @@ func feedsArena(m tea.Msg) bool {
 	return true
 }
 
-// Follows what an update changed, the session in view, the theme, the queue, the open prompts and the turn clock
-func (a *app) afterUpdate() tea.Cmd {
-	var cmds []tea.Cmd
-	cmds = append(cmds, a.turn.takeCmds()...)
+// Hands a command a state change asks for to the program once the update that caused it ends
+func (a *app) effect(cmd tea.Cmd) {
+	if cmd != nil {
+		a.effects = append(a.effects, cmd)
+	}
+}
+
+// What the session does once it took a message: the commands its state changes asked for, the completions of the draft, the prompt it must show
+// and the next queued input
+func (a *app) settle() tea.Cmd {
+	cmds := a.turn.takeCmds()
 	cmds = append(cmds, a.syncCompletion())
 	a.followPaste()
-	ui := &a.store.ui
-	offline := ui.GatewayConnected != nil && !*ui.GatewayConnected
-	reconnected := a.seenOffline && !offline
-	a.seenOffline = offline
-	if reconnected && ui.Sid != "" {
-		cmds = append(cmds, a.events.loadSlashCatalog(ui.Sid))
+	cmds = append(cmds, a.git.track(a.store.sessionCwd()), a.store.syncLoopTicker(), a.syncDialogs(), a.drainQueue())
+	if a.shell.inView(a) {
+		cmds = append(cmds, a.pet.follow())
 	}
-	if ui.Sid != a.seenSid {
-		a.seenSid = ui.Sid
-		a.lastTurnEnded = time.Time{}
-		if !ui.Busy {
-			a.turnStartedAt = time.Time{}
-		}
-		a.card.composer.Bind(ui.Sid)
-		cmds = append(cmds, a.config.syncSession(ui.Sid), a.refreshRosters())
-		if ui.Sid != "" {
-			if !offline && !reconnected {
-				cmds = append(cmds, a.events.loadSlashCatalog(ui.Sid))
-			}
-			for _, hint := range a.terminalHints {
-				a.turn.pushActivity(hint.message, hint.tone, "")
-			}
-			a.terminalHints = nil
-		}
-		if err := a.queue.reconcileReceipts(); err != nil {
-			a.sys(errorLine(err.Error()))
-		}
-	}
-	if attach := a.attachKey(); attach != a.seenAttach {
-		a.seenAttach = attach
-		if ui.Sid == "" {
-			ui.SessionTitle = ""
-			a.liveSessions = 0
-		}
-		cmds = append(cmds, a.readControl())
-	}
-	if ticking := a.store.loopTicking(); ticking != a.seenLoopTicking {
-		a.seenLoopTicking = ticking
-		cmds = append(cmds, a.store.restartLoopTicker())
-	}
-	if cwd := a.store.sessionCwd(); cwd != a.seenCwd {
-		a.seenCwd = cwd
-		cmds = append(cmds, a.git.track(cwd))
-	}
-	if ui.Busy != a.seenBusy {
-		a.seenBusy = ui.Busy
-		if !ui.Busy && !a.turnStartedAt.IsZero() {
-			a.lastTurnEnded = a.store.now()
-		}
-		a.turnStartedAt = time.Time{}
-		if ui.Busy {
-			a.turnStartedAt = a.store.now()
-		}
-		a.card.composer.SetBusy(ui.Busy)
-	}
-	if !themesEqual(ui.Theme, a.seenTheme) {
-		a.syncTheme()
-		a.wm.SetTheme(a.toolkit)
-		a.wm.SetMotion(a.motion())
-		a.card.composer.SetTheme(a.toolkit)
-		a.arena.retheme(a.toolkit)
-		a.card.view.invalidate()
-	}
-	cmds = append(cmds, a.battery.sync(a.store, a.gw), a.syncDialogs(), a.drainQueue(), a.armDockClock(), a.armStatusClock(), a.followGoodVibes(), a.pet.follow())
-	a.wm.Repaint()
+	cmds = append(cmds, a.effects...)
+	a.effects = nil
 	return tea.Batch(cmds...)
 }
 
-// Rebuilds the toolkit palette from the session theme
-func (a *app) syncTheme() {
-	t := a.store.ui.Theme
-	a.seenTheme = t
-	light := false
-	if lum, ok := relativeLuminance(t.Color.Text); ok {
-		light = lum < 0.35
+// The card now shows another session, or none: the queued input held for editing is let go, the turn clock starts over and the session's
+// config, rosters, commands and controls are read
+func (a *app) sessionBound(previous string) {
+	ui := &a.store.ui
+	if previous != "" && previous != ui.Sid {
+		a.queue.dropEdits()
+		a.queueSlots = nil
 	}
-	a.toolkit = toolkitTheme(t, light)
-	a.themeLook = hashText(fmt.Sprint(t.Color, t.Brand))
-	a.toolkit.Name = "session-" + a.themeLook
+	// A running turn of the session now shown counts from when it came into view
+	a.lastTurnEnded, a.turnStartedAt = time.Time{}, time.Time{}
+	if ui.Busy {
+		a.turnStartedAt = a.store.now()
+	}
+	a.card.composer.SetBusy(ui.Busy)
+	a.effect(a.card.composer.Bind(ui.Sid))
+	a.effect(a.config.syncSession(ui.Sid))
+	if ui.Sid == "" {
+		ui.SessionTitle = ""
+	} else {
+		a.effect(a.refreshRosters())
+		if !ui.offline() {
+			a.effect(a.events.loadSlashCatalog(ui.Sid))
+			a.effect(a.readControl())
+		}
+		for _, hint := range a.takeTerminalHints() {
+			a.turn.pushActivity(hint.message, hint.tone, "")
+		}
+		a.shell.focusChanged()
+	}
+	if err := a.queue.reconcileReceipts(); err != nil {
+		a.sys(errorLine(err.Error()))
+	}
+}
+
+// A turn of the session started or ended: the turn clock follows and the prompt shows it
+func (a *app) busyChanged(busy bool) {
+	now := a.store.now()
+	if !busy && !a.turnStartedAt.IsZero() {
+		a.lastTurnEnded = now
+	}
+	a.turnStartedAt = time.Time{}
+	if busy {
+		a.turnStartedAt = now
+		// A turn that starts is watched at the short interval from now, the slow chain of the idle session ending here
+		a.refreshChain++
+		a.effect(tea.Batch(a.refreshRosters(), a.scheduleRefresh()))
+		a.shell.watchLive()
+	}
+	if a.card != nil {
+		a.card.composer.SetBusy(busy)
+	}
+}
+
+// The background service came back: the session's commands and controls are read again
+func (a *app) reconnected() {
+	if sid := a.store.ui.Sid; sid != "" {
+		a.effect(a.events.loadSlashCatalog(sid))
+		a.effect(a.readControl())
+	}
 }
 
 func (a *app) uiTheme() uitheme.Theme { return a.toolkit }
@@ -548,7 +492,7 @@ func (a *app) uiTheme() uitheme.Theme { return a.toolkit }
 // Sends the queue head once the session is idle and attached
 func (a *app) drainQueue() tea.Cmd {
 	ui := a.store.ui
-	if ui.Busy || ui.Sid == "" || a.queueEdit != nil || a.quitting || a.dialogs.waiting() {
+	if ui.Busy || ui.Sid == "" || a.queue.queueEditIndex() != nil || a.quitting || a.dialogs.waiting() {
 		return nil
 	}
 	item, err := a.queue.dequeue(false)
@@ -562,17 +506,20 @@ func (a *app) drainQueue() tea.Cmd {
 	return a.sendQueued(item)
 }
 
-// Tick of the roster refresh
+// Tick of the roster refresh, one chain per session started with its card; an idle session with nothing in its dock is asked rarely
 func (a *app) scheduleRefresh() tea.Cmd {
-	a.refreshGen++
-	gen := a.refreshGen
-	return tea.Tick(refreshEvery, func(time.Time) tea.Msg { return refreshTickMsg{gen: gen} })
+	every := idleRefreshEvery
+	if a.store.ui.Busy || a.dockLive(a.store.nowMillis()) {
+		every = refreshEvery
+	}
+	chain := a.refreshChain
+	return tea.Tick(every, func(time.Time) tea.Msg { return refreshTickMsg{chain: chain} })
 }
 
-// Reads the agents, processes, live sessions and goal and loop controls of the session in view
+// Reads the agents and processes of the session
 func (a *app) refreshRosters() tea.Cmd {
 	sid := a.store.ui.Sid
-	if sid == "" || (a.store.ui.GatewayConnected != nil && !*a.store.ui.GatewayConnected) {
+	if sid == "" || a.store.ui.offline() {
 		return nil
 	}
 	params := tuigateway.SessionIDParams{SessionID: sid}
@@ -589,32 +536,17 @@ func (a *app) refreshRosters() tea.Cmd {
 			}
 			return nil
 		}),
-		requestSessions(a.gw, true, sid, func(sessions []listedSession, err error) tea.Cmd {
-			if err != nil {
-				return nil
-			}
-			title := ""
-			for _, s := range sessions {
-				if s.Current || s.ID == a.store.ui.Sid {
-					title = trimJS(s.Title)
-					break
-				}
-			}
-			a.store.ui.SessionTitle = title
-			if a.store.ui.Sid != "" {
-				a.liveSessions = len(sessions)
-			}
-			return a.noteLiveSessions(sessions, sid)
-		}),
 	)
 }
 
 // Writes the notices of the sessions this view left running into the transcript in view. The live list of the shared gateway says only running or
 // not, so while a shown session is off screen its active list is read too, which says waiting when a question holds the turn
 func (a *app) noteLiveSessions(rows []listedSession, focused string) tea.Cmd {
-	if a.store.ui.Sid != focused {
+	if a.store.ui.Sid != focused || a.shell.active() != a {
 		return nil
 	}
+	// Sessions open in another card are not background work
+	rows = slices.DeleteFunc(slices.Clone(rows), func(r listedSession) bool { return r.ID != focused && a.shell.bySid(r.ID) != nil })
 	a.background.focus(focused)
 	announce := func(rows []listedSession) tea.Cmd {
 		for _, notice := range a.background.update(rows, focused) {
@@ -622,7 +554,7 @@ func (a *app) noteLiveSessions(rows []listedSession, focused string) tea.Cmd {
 		}
 		return nil
 	}
-	if !a.gw.canonical() || !a.background.watching(rows, focused) {
+	if !a.background.watching(rows, focused) {
 		return announce(rows)
 	}
 	params := tuigateway.SessionActiveListParams{CurrentSessionID: &focused}
@@ -664,41 +596,29 @@ func (a *app) readControl() tea.Cmd {
 	})
 }
 
-// Tells a legacy gateway the terminal size, the canonical wire needs none
-func (a *app) reportResize() tea.Cmd {
-	if a.gw.canonical() || a.store.ui.Sid == "" {
-		return nil
-	}
-	w, _ := a.wm.Size()
-	return call(a.gw, tuigateway.TerminalResize, tuigateway.TerminalResizeParams{SessionID: a.store.ui.Sid, Cols: ptr(int64(w))}, func(*tuigateway.TerminalResizeResult, error) tea.Cmd { return nil })
+// Session the card resumes once the background service is back: the one it shows, else the one it was already waiting to recover
+func (a *app) recoveryTarget() string {
+	return firstText(a.store.ui.StoredSid, a.store.ui.Sid, a.recoverSid)
 }
 
-// Gateway transport ended, the turn reset and the session marked for recovery
-func (a *app) onGatewayExit(code int) {
-	a.turn.reset()
+// The connection to the background service ended: the turn is reset and the session marked for recovery. An attached service is reconnected
+// to; one this window started is restarted while restart says the budget lasts
+func (a *app) onGatewayExit(code int, attached, wasConnected, restart bool) {
 	ui := &a.store.ui
-	stored := ui.StoredSid
-	if stored == "" {
-		stored = ui.Sid
-	}
-	off := false
-	if a.gw.attached() {
-		if stored != "" {
-			a.recoverSid = stored
-		}
-		wasConnected := ui.GatewayConnected == nil || *ui.GatewayConnected
-		ui.Busy, ui.Compacting, ui.GatewayConnected, ui.Status = false, false, &off, tr(txt.SessionStatusReconnecting)
+	a.recoverSid = a.recoveryTarget()
+	ui.Compacting = false
+	if attached {
+		// The turn stays as it stands on screen: the reconnect replays what was missed, or reads the session anew
+		ui.Status = tr(txt.SessionStatusReconnecting)
 		if ui.Sid != "" && wasConnected {
 			a.turn.pushActivity(tr(txt.UserMessagesBackendConnectionLostActivity), "warn", "")
 			a.sys(tr(txt.UserMessagesBackendConnectionLost))
 		}
 		return
 	}
-	plan := planGatewayRecovery(stored, a.recoverSid, a.recoveryAttempts, a.store.nowMillis())
-	a.recoveryAttempts = plan.Attempts
-	ui.Busy, ui.Compacting, ui.GatewayConnected, ui.Status = false, false, &off, tr(txt.LibTextGatewayExited)
-	a.recoverSid = plan.Sid
-	if plan.Recover && plan.Sid != "" {
+	a.turn.reset()
+	ui.Status = tr(txt.LibTextGatewayExited)
+	if restart && a.recoverSid != "" {
 		a.turn.pushActivity(tr(txt.UserMessagesBackendRestartingActivity), "warn", "")
 		a.sys(tr(txt.UserMessagesBackendRestarting))
 		return
@@ -734,7 +654,7 @@ func (a *app) setHistoryItems(update func([]msg) []msg) {
 }
 
 func (a *app) setInput(update func(string) string) {
-	a.card.composer.SetValue(update(a.card.composer.Value()))
+	a.effect(a.card.composer.SetValue(update(a.card.composer.Value())))
 }
 
 func (a *app) enqueue(text, display string, destination submissionDestination) {
@@ -754,6 +674,11 @@ func (a *app) newSession(then func() tea.Cmd) tea.Cmd {
 	})
 }
 
+// Attaches the session of the card again after the connection came back
+func (a *app) reattach(id string, then func(err error) tea.Cmd) tea.Cmd {
+	return a.life.reattach(id, then)
+}
+
 func (a *app) resumeByID(id string, then func(err error) tea.Cmd) tea.Cmd {
 	if then == nil {
 		then = func(err error) tea.Cmd {
@@ -770,9 +695,21 @@ func (a *app) setCatalog(c *slashCatalog) {
 	a.catalog = c
 }
 
-func (a *app) setVoiceEnabled(on bool)            { a.voiceEnabled, a.voiceTTS = on, on && a.voiceTTS }
-func (a *app) setVoiceTTS(on bool)                { a.voiceTTS = on }
-func (a *app) setVoiceRecording(on bool)          { a.voiceRecording = on; speech.recording.Store(on) }
+func (a *app) setVoiceEnabled(on bool) { a.voiceEnabled, a.voiceTTS = on, on && a.voiceTTS }
+func (a *app) setVoiceTTS(on bool)     { a.voiceTTS = on }
+
+// Marks the session recording or not. The one microphone belongs to the session that records: taking it stops the session that held it, and
+// only the holder's state says whether the microphone is live
+func (a *app) setVoiceRecording(on bool) {
+	a.voiceRecording = on
+	if on {
+		a.effect(a.shell.claimVoice(a))
+	}
+	if a.shell.voiceOwner == a {
+		speech.recording.Store(on)
+	}
+}
+
 func (a *app) setVoiceProcessing(on bool)         { a.voiceProcessing = on }
 func (a *app) setVoiceRecordKey(k voiceRecordKey) { a.voiceKey = k; a.bindVoiceKey() }
 func (a *app) setBellOnComplete(on bool)          { a.bellComplete = on }
@@ -781,6 +718,9 @@ func (a *app) inlineImageRetry()                  { a.images.retry() }
 
 // Drops the rows drawn in the language in force before, a pack arriving after the first rows are on screen
 func (a *app) languageChanged() { a.card.view.invalidate() }
+
+// Drops the full config the event handler read, after the session or its config changed
+func (a *app) configChanged() { a.events.invalidateConfig() }
 
 func (a *app) recoverSidRef() *string         { return &a.recoverSid }
 func (a *app) bellOnComplete() bool           { return a.bellComplete }
@@ -792,16 +732,12 @@ func (a *app) scroll() scrollHandle           { return a.card.view }
 func (a *app) onFreshSessionStarted(string)   { a.gaveUp = false }
 func (a *app) onGatewayReady()                { a.gaveUp = false }
 func (a *app) leftRunning(sid string)         { a.background.handoff(sid) }
-func (a *app) expand(text string) string {
-	if a.expandWith != nil {
-		return a.expandWith(text)
-	}
-	return expandTokens(a.tokens)(text)
-}
+
+// Expansion of the chips the draft holds right now
+func (a *app) expander() func(string) string { return expandTokens(a.tokens) }
 
 func (a *app) clearComposerTokens() {
 	a.tokens = nil
-	a.draftRevision++
 }
 
 func (a *app) cols() int {
@@ -809,14 +745,15 @@ func (a *app) cols() int {
 	return max(w, 20)
 }
 
-// Failure nothing handled, shown in the transcript with the turn ended
+// Reports a failure that ended the session's turn before it started, leaving the session ready
 func (a *app) uncaught(err error) {
 	if err == nil {
 		return
 	}
 	a.sys(errorLine(rpcErrorMessage(err)))
 	a.turn.idle(false)
-	a.store.ui.Busy, a.store.ui.Status = false, tr(txt.StatusReady)
+	a.store.setBusy(false)
+	a.store.ui.Status = tr(txt.StatusReady)
 }
 
 // Follows typing, the streamed reply batching faster while the user edits the prompt
@@ -825,9 +762,9 @@ func (a *app) typed(cmd tea.Cmd) tea.Cmd {
 		return cmd
 	}
 	a.turn.boostStreamingForTyping()
-	a.typingGen++
-	gen := a.typingGen
-	return tea.Batch(cmd, tea.Tick(time.Second, func(time.Time) tea.Msg { return typingIdleMsg{gen: gen} }))
+	typedAt := a.store.now()
+	a.lastTypedAt = typedAt
+	return tea.Batch(cmd, tea.Tick(time.Second, func(time.Time) tea.Msg { return typingIdleMsg{typedAt: typedAt} }))
 }
 
 // Sends a prompt to the session, staged in the durable queue journal until the owner answers
@@ -854,8 +791,7 @@ func (a *app) send(text string, show bool, display string, opts submitOpts) tea.
 
 // Sends a prompt whose tokens were already expanded
 func (a *app) sendExpanded(text string, show bool, display string, opts submitOpts) tea.Cmd {
-	a.expandWith = func(s string) string { return s }
-	defer func() { a.expandWith = nil }()
+	opts.Expand = func(s string) string { return s }
 	return a.send(text, show, display, opts)
 }
 
@@ -886,7 +822,7 @@ func (a *app) sendQueued(item *queueItem) tea.Cmd {
 	if len(typed) == 0 {
 		return a.sendExpanded(item.Text, true, item.Display, opts)
 	}
-	a.store.ui.Busy = true
+	a.store.setBusy(true)
 	return a.interpolate(typed, *destination, item, func(outputs []string) tea.Cmd {
 		shown, text := spliceInterpolations(item.Display, item.Text, typed, outputs)
 		return a.sendExpanded(text, true, shown, opts)
@@ -905,17 +841,14 @@ func (a *app) shellExec(command string, destination submissionDestination, item 
 		if !focused() {
 			return nil
 		}
-		a.store.ui.Busy, a.store.ui.Status = false, tr(txt.StatusReady)
+		a.store.setBusy(false)
+		a.store.ui.Status = tr(txt.StatusReady)
 		if err != nil {
 			a.sys(errorLine(describeShellExecError(err)))
 			return nil
 		}
-		out := trimJS(strings.Join(slices.DeleteFunc([]string{r.Stdout, r.Stderr}, func(s string) bool { return s == "" }), "\n"))
-		if out != "" {
-			a.sys(out)
-		}
-		if r.Code != 0 || out == "" {
-			a.sys(tr(txt.CommonExitCode, r.Code))
+		for _, m := range shellOutputRows(*r) {
+			a.appendMessage(m)
 		}
 		return nil
 	})
@@ -935,61 +868,37 @@ func (a *app) captureBusyControl() (busyControl, error) {
 	return control, nil
 }
 
-// Admits an input typed while a turn runs, queued, steered into the turn or redirecting it by the busy mode
-func (a *app) handleBusyInput(item *queueItem, fallbackToFront bool, control busyControl) tea.Cmd {
+// Admits an input typed while a turn runs: behind the turn in queue mode, else steered into the turn or redirecting it by the busy mode
+func (a *app) handleBusyInput(item *queueItem, control busyControl) tea.Cmd {
 	destination := control.destination
-	enqueueText := func() tea.Cmd {
-		var err error
-		if fallbackToFront {
-			err = a.queue.prependQ(item, &destination)
-		} else {
-			_, err = a.queue.enqueue(item.Text, item.Display, &destination, item.Attachments)
-		}
-		if err != nil {
-			a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
-		}
-		return nil
-	}
-	if a.gw.canonical() && control.mode != "queue" {
-		staged := item
-		if staged.Settle == nil {
-			var err error
-			if staged, err = a.queue.stage(item.Text, item.Display, &destination, item.Attachments); err != nil {
-				a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
-				return nil
-			}
-		}
-		if staged.ControlMethod == "" {
-			staged.ControlMethod = "session.redirect"
-			if control.mode == "steer" {
-				staged.ControlMethod = "session.steer"
-			}
-		}
-		if staged.ExecutionGeneration == nil {
-			staged.ExecutionGeneration = control.generation
-		}
-		if staged.Attachments == nil {
-			staged.Attachments = item.Attachments
-		}
-		return a.sendExpanded(item.Text, true, item.Display, submitOpts{Destination: &destination, BehindTurn: true, QueueItem: staged, Attachments: item.Attachments})
-	}
 	if control.mode == "queue" {
-		if a.gw.canonical() {
-			opts := submitOpts{Destination: &destination, BehindTurn: true, Attachments: item.Attachments}
-			if item.Settle != nil {
-				opts.QueueItem = item
-			}
-			return a.sendExpanded(item.Text, true, item.Display, opts)
+		opts := submitOpts{Destination: &destination, BehindTurn: true, Attachments: item.Attachments}
+		if item.Settle != nil {
+			opts.QueueItem = item
 		}
-		return enqueueText()
+		return a.sendExpanded(item.Text, true, item.Display, opts)
 	}
-	opts := submitOpts{Destination: &destination, Attachments: item.Attachments}
-	if item.Settle != nil {
-		queued := false
-		item.Queued = &queued
-		opts.QueueItem = item
+	staged := item
+	if staged.Settle == nil {
+		var err error
+		if staged, err = a.queue.stage(item.Text, item.Display, &destination, item.Attachments); err != nil {
+			a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
+			return nil
+		}
 	}
-	return a.sendExpanded(item.Text, true, item.Display, opts)
+	if staged.ControlMethod == "" {
+		staged.ControlMethod = "session.redirect"
+		if control.mode == "steer" {
+			staged.ControlMethod = "session.steer"
+		}
+	}
+	if staged.ExecutionGeneration == nil {
+		staged.ExecutionGeneration = control.generation
+	}
+	if staged.Attachments == nil {
+		staged.Attachments = item.Attachments
+	}
+	return a.sendExpanded(item.Text, true, item.Display, submitOpts{Destination: &destination, BehindTurn: true, QueueItem: staged, Attachments: item.Attachments})
 }
 
 // Routes a sent line, a slash command, a shell line or a prompt by the state of the session
@@ -1011,8 +920,7 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 	notSaved := func(err error) tea.Cmd {
 		a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
 		a.store.ui.Status = tr(txt.CanonicalQueueStatusInputNotSaved)
-		a.card.composer.SetValue(full)
-		return nil
+		return a.card.composer.SetValue(full)
 	}
 	if looksLikeSlashCommand(full) {
 		command, shown := prepareSlashSubmission(full, tokens)
@@ -1035,8 +943,13 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 		clearInput()
 		return a.shellExec(trimJS(full[1:]), destination, nil)
 	}
-	a.store.stagePastes(full, text, tokens)
 	ui := a.store.ui
+	if ui.Sid == "" && ui.SetupRequired {
+		kept := a.card.composer.SetValue(full)
+		a.sys(tr(txt.SessionInputSetupFirst))
+		return tea.Batch(kept, a.openSetup("model"))
+	}
+	a.store.stagePastes(full, text, tokens)
 	if ui.Sid == "" || (ui.GatewayConnected != nil && !*ui.GatewayConnected) {
 		if _, err := a.queue.enqueue(text, full, &destination, attachments); err != nil {
 			return notSaved(err)
@@ -1044,9 +957,9 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 		clearInput()
 		return nil
 	}
-	if a.queueEdit != nil {
-		index := *a.queueEdit
-		a.queueEdit = nil
+	if editing := a.queue.queueEditIndex(); editing != nil {
+		index := *editing
+		a.queueSlots = nil
 		if err := a.queue.setQueueEdit(nil); err != nil {
 			return notSaved(err)
 		}
@@ -1062,13 +975,7 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 				return nil
 			}
 			if editedWhileBusy {
-				if control.mode == "queue" && !a.gw.canonical() {
-					if err := a.queue.prependQ(item, &control.destination); err != nil {
-						a.sys(tr(txt.CanonicalQueueNotSavedDraftKept, err.Error()))
-					}
-					return nil
-				}
-				return a.handleBusyInput(item, true, control)
+				return a.handleBusyInput(item, control)
 			}
 			return a.sendQueued(item)
 		})
@@ -1087,7 +994,7 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 		item := newQueueItem(text, full)
 		item.Attachments = attachments
 		clearInput()
-		return a.handleBusyInput(&item, false, control)
+		return a.handleBusyInput(&item, control)
 	}
 	if shouldInterpolateSubmission(full) {
 		item, err := a.queue.stage(text, full, &destination, attachments)
@@ -1095,7 +1002,7 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 			return notSaved(err)
 		}
 		clearInput()
-		a.store.ui.Busy = true
+		a.store.setBusy(true)
 		typed := typedInterpolations(full, full)
 		return a.interpolate(typed, destination, item, func(outputs []string) tea.Cmd {
 			shown, _ := spliceInterpolations(full, full, typed, outputs)
@@ -1107,13 +1014,10 @@ func (a *app) dispatchSubmission(full string) tea.Cmd {
 	return a.sendExpanded(text, true, full, submitOpts{Destination: &destination, Attachments: attachments})
 }
 
-// Interrupts the running turn of the session in view
-func (a *app) interruptTurn() tea.Cmd { return a.stopTurn(false) }
-
-// Interrupts the running turn, the session staying busy when a queued input goes out as it settles
-func (a *app) stopTurn(keepBusy bool) tea.Cmd {
+// Interrupts the running turn of the session
+func (a *app) interruptTurn() tea.Cmd {
 	deps := interruptDeps{AppendMessage: a.appendMessage, Gateway: a.gw, Sid: a.store.ui.Sid, Sys: a.sys}
-	cmd, err := a.turn.interruptTurn(deps, keepBusy)
+	cmd, err := a.turn.interruptTurn(deps, false)
 	if err != nil {
 		a.uncaught(err)
 		return nil
@@ -1121,18 +1025,23 @@ func (a *app) stopTurn(keepBusy bool) tea.Cmd {
 	return cmd
 }
 
-// Interrupt key, a prompt selection is copied, then a draft clears even while a turn runs, then the running turn stops, then an armed rewind is dropped and a second press within the window quits
+// Interrupt key: copies a prompt selection, else puts the draft aside, else stops the turn, else drops an armed rewind, else a second press quits
 func (a *app) interruptKey() tea.Cmd {
 	now := a.store.now()
 	_, selected := a.card.composer.Selection()
 	switch {
-	case a.wm.Overlay() != nil:
+	case a.wm.Overlay() != nil || a.wm.Sheet(a.card) != nil:
 		return a.interruptOverlay()
 	case selected:
-		return a.card.composer.Action("composer.copy")
+		return a.card.composer.Action("text.copy")
 	case a.card.composer.Value() != "":
 		a.cancelPendingRewind(true)
 		a.lastInterrupt = time.Time{}
+		if a.queue.queueEditIndex() == nil {
+			if stashed, ok := a.stashDraft(); ok {
+				return tea.Batch(stashed, a.wm.Toast(tr(txt.SessionNoticesDraftStashed, a.keys.Display("tui.stash")), wm.Info, wm.DefaultToastTTL))
+			}
+		}
 		return a.clearIn()
 	case a.store.ui.Busy && a.store.ui.Sid != "":
 		a.lastInterrupt = time.Time{}
@@ -1143,29 +1052,51 @@ func (a *app) interruptKey() tea.Cmd {
 		return a.die(0)
 	}
 	a.lastInterrupt = now
-	return wm.Notify(tr(txt.SessionNoticesPressAgainToExit), wm.Info)
+	// The notice lasts exactly as long as a second press still quits
+	return a.wm.Toast(tr(txt.SessionNoticesPressAgainToExit), wm.Info, exitConfirmWindow)
 }
 
-// Escape, a second press within the window discards the draft or stops the turn, any other steps towards the earlier prompts or leaves a queued input being edited
+// Escape removes one layer per press: a selection, a queued or recalled prompt, the running turn, then arms the rewind; it never clears the draft
 func (a *app) escape() tea.Cmd {
 	now := a.store.now()
-	double := !a.lastEscape.IsZero() && now.Sub(a.lastEscape) <= doubleEscapeWindow
-	a.lastEscape = now
-	if double {
-		a.lastEscape = time.Time{}
-		if cmd, acted := a.doubleEscape(); acted {
-			a.rewindPrimed = ""
-			return cmd
+	composer := a.card.composer
+	if _, selected := composer.Selection(); selected {
+		composer.ClearSelection()
+		a.escapeClosed()
+		return nil
+	}
+	if a.queue.queueEditIndex() != nil {
+		a.setQueueEdit(nil)
+		a.escapeClosed()
+		return composer.SetValue("")
+	}
+	if _, recalling := composer.Recalling(); recalling {
+		composer.BackToDraft()
+		a.escapeClosed()
+		return nil
+	}
+	ui := a.store.ui
+	if ui.Busy && ui.Sid != "" && !a.dialogs.waiting() {
+		// The second tap of a double tap that closed something leaves the turn alone
+		if now.Sub(a.lastEscapeClosed) < escapeAfterClose {
+			return nil
 		}
+		return a.interruptTurn()
 	}
-	if cmd, taken := a.backtrackEscape(); taken {
-		return cmd
+	if composer.Value() != "" {
+		a.rewindPrimed = ""
+		return nil
 	}
-	if a.queueEdit != nil {
-		return a.clearIn()
+	if a.rewindPrimed != "" && now.Sub(a.lastEscape) > rewindArmWindow {
+		a.rewindPrimed = ""
 	}
-	return nil
+	a.lastEscape = now
+	cmd, _ := a.backtrackEscape()
+	return cmd
 }
+
+// Notes that an escape closed something, starting the guard that keeps the next one from stopping the turn
+func (a *app) escapeClosed() { a.lastEscapeClosed = a.store.now() }
 
 // Quits with the status after detaching the session, a quit of the person's own named so in the crash log
 func (a *app) die(code int) tea.Cmd {
@@ -1175,7 +1106,7 @@ func (a *app) die(code int) tea.Cmd {
 	return a.dieFor(code, fmt.Sprintf("app.dieWithCode:%d", code))
 }
 
-// Quits after detaching the session, never waiting longer than the close limit, the reason of the first quit standing
+// Quits after detaching every open session, never waiting longer than the close limit, the reason of the first quit standing
 func (a *app) dieFor(code int, reason string) tea.Cmd {
 	if a.quitting {
 		return nil
@@ -1183,10 +1114,15 @@ func (a *app) dieFor(code int, reason string) tea.Cmd {
 	a.quitting = true
 	a.exitReason = reason
 	a.store.ui.Status = tr(txt.SessionStatusClosing)
+	var released, detached []tea.Cmd
+	for _, s := range a.sessions {
+		released = append(released, s.images.release())
+		detached = append(detached, a.tag(s, s.life.closeForExit()))
+	}
 	done := func() tea.Msg { return exitMsg{code: code} }
 	return tea.Batch(
-		a.images.release(),
-		tea.Sequence(a.life.closeForExit(), done),
+		tea.Batch(released...),
+		tea.Sequence(tea.Batch(detached...), done),
 		tea.Tick(exitCloseLimit, func(time.Time) tea.Msg { return exitMsg{code: code} }),
 	)
 }
@@ -1196,25 +1132,27 @@ func (a *app) commands() []wm.Command {
 	idle := func() bool { return !a.dialogs.waiting() }
 	cmds := []wm.Command{
 		{ID: "interrupt", Run: a.interruptKey},
-		{ID: "quit", Title: "quit", Run: func() tea.Cmd { return a.die(0) }},
 		{ID: "session.new", Title: "new session", When: idle, Run: func() tea.Cmd { return a.slash("/new", nil, false) }},
 		{ID: "model.switch", Title: "model", When: idle, Run: a.openModelPicker},
-		{ID: "open.sessions", Title: "sessions", When: idle, Run: a.openSessionSwitcher},
 		{ID: "open.agents", Title: "agents", When: idle, Run: func() tea.Cmd { return a.openSpawnTree(0, nil) }},
-		{ID: "open.skills", Title: "skills", When: idle, Run: a.openSkillsHub},
-		{ID: "open.plugins", Title: "plugins", When: idle, Run: a.openPluginsHub},
+		{ID: "tui.help", Title: "help", Run: a.openHelp},
 		{ID: "open.rooms", Title: "rooms", When: idle, Run: a.openRooms},
 		{ID: "terminal.new", Title: "terminal", Run: func() tea.Cmd { return a.openTerminal("", false) }},
 		{ID: "terminal.tab", Title: "terminal as a tab", Run: func() tea.Cmd { return a.openTerminal("", true) }},
 		{ID: "session.compact", Title: "compact", When: idle, Run: func() tea.Cmd { return a.slash("/compress", nil, false) }},
 		{ID: "run.cancel", Title: "interrupt the turn", When: func() bool { return a.store.ui.Busy }, Run: a.interruptTurn},
-		{ID: "tui.exit", When: func() bool { return idle() && a.card.composer.Value() == "" && a.card.composer.Empty() }, Run: func() tea.Cmd { return a.die(0) }},
+		// Quitting on ctrl+d needs an empty prompt and no turn running; mid turn the key stays the editor's delete
+		{ID: "tui.exit", When: func() bool {
+			return idle() && !a.store.ui.Busy && a.card.composer.Value() == "" && a.card.composer.Empty()
+		}, Run: func() tea.Cmd { return a.die(0) }},
 		{ID: "tui.queue.drop", When: a.hasQueued, Run: a.dropQueued},
 		{ID: "tui.queue.send", When: a.queueHeadWaits, Run: a.sendQueueHead},
-		{ID: "tui.queue.delete", When: func() bool { return a.queueEdit != nil }, Run: a.deleteQueueEdit},
+		{ID: "tui.queue.delete", When: func() bool { return a.queue.queueEditIndex() != nil }, Run: a.deleteQueueEdit},
 		{ID: "tui.cut", When: a.selecting, Run: a.cutSelection},
 	}
-	return append(cmds, a.slashPaletteCommands()...)
+	cmds = append(append(cmds, a.hubPaletteCommands()...), a.slashPaletteCommands()...)
+	// Last in the palette, so a stray enter on the palette never quits
+	return append(cmds, wm.Command{ID: "quit", Title: "quit", Run: func() tea.Cmd { return a.die(0) }})
 }
 
 // Whether any input waits in the queue of the session in view
@@ -1252,7 +1190,9 @@ type statusFact struct {
 
 // Order the status facts give way in
 const (
-	rankModel = iota
+	// Approvals off for the session, never given up for room
+	rankYolo = iota
+	rankModel
 	rankContext
 	rankCost
 	rankDuration
@@ -1292,18 +1232,9 @@ const (
 // Bar of the window manager, the session lane with its signal and the dials of the session, none while the status bar is off or sits in the session window
 func (a *app) barStatus() wm.Status {
 	ui := a.store.ui
-	lane := wm.Lane{Name: a.laneName(), Signal: wm.Idle}
-	switch {
-	case ui.GatewayConnected != nil && !*ui.GatewayConnected:
-		lane.Signal, lane.Detail = wm.Failed, displayStatus(trimJS(ui.Status))
-	case a.dialogs.waiting():
-		lane.Signal, lane.Detail = wm.Blocked, tr(txt.StatusWaitingOnYou)
-	case ui.Busy:
-		lane.Signal, lane.Detail = wm.Working, displayStatus(trimJS(ui.Status))
-	}
 	status := wm.Status{Lanes: map[*wm.Workspace]wm.Lane{}}
-	if ws := a.wm.Active(); ws != nil {
-		status.Lanes[ws] = lane
+	if ws := a.wm.WorkspaceOf(a.card); ws != nil {
+		status.Lanes[ws] = a.lane()
 	}
 	if text, signal, waiting := a.dialogs.notice(); waiting {
 		status.Notice = wm.Notice{Text: text, Signal: signal}
@@ -1317,6 +1248,21 @@ func (a *app) barStatus() wm.Status {
 		status.Dials = append(status.Dials, wm.Segment{Text: facts[i].text, Style: facts[i].style, Action: facts[i].action})
 	}
 	return status
+}
+
+// Chip of the session on the bar, its name and what it is doing
+func (a *app) lane() wm.Lane {
+	ui := a.store.ui
+	lane := wm.Lane{Name: a.laneName(), Signal: wm.Idle}
+	switch {
+	case ui.GatewayConnected != nil && !*ui.GatewayConnected:
+		lane.Signal, lane.Detail = wm.Failed, displayStatus(trimJS(ui.Status))
+	case a.dialogs.waiting():
+		lane.Signal, lane.Detail = wm.Blocked, tr(txt.StatusWaitingOnYou)
+	case ui.Busy:
+		lane.Signal, lane.Detail = wm.Working, displayStatus(trimJS(ui.Status))
+	}
+	return lane
 }
 
 // Name of the session lane, the session title unless a field list leaves the title out
@@ -1333,6 +1279,9 @@ func (a *app) barFacts(cols, folderCols int) []statusFact {
 	ui := a.store.ui
 	info := infoOf(ui.Info)
 	var facts []statusFact
+	if ui.Yolo {
+		facts = append(facts, statusFact{text: tr(txt.SessionInputYoloOn), style: wm.Bad, action: "tui.yolo", rank: rankYolo})
+	}
 	if model := modelLabel(info); model != "" && ui.statusField("model") {
 		facts = append(facts, statusFact{text: model, style: wm.Cool, action: "model.switch", rank: rankModel})
 	}
@@ -1360,8 +1309,8 @@ func (a *app) barFacts(cols, folderCols int) []statusFact {
 	if voice, ok := a.voiceFact(); ok {
 		facts = append(facts, voice)
 	}
-	if a.liveSessions > 0 && ui.StatusBar != "off" {
-		facts = append(facts, statusFact{text: tr(txt.StatusSessionCount, a.liveSessions), style: wm.Cool, action: "open.sessions", rank: rankSessions})
+	if more := a.shell.liveElsewhere(); more > 0 && ui.StatusBar != "off" {
+		facts = append(facts, statusFact{text: tr(txt.StatusSessionCount, more), style: wm.Cool, action: "open.sessions", rank: rankSessions})
 	}
 	if pin := a.stashIndicator(); pin != "" {
 		facts = append(facts, statusFact{text: pin, style: wm.Plain, rank: rankStash})
@@ -1425,10 +1374,11 @@ func (a *app) sessionFacts(cols int) []statusFact {
 		}
 		facts = append(facts, statusFact{text: fmt.Sprintf("◎ %d%%", *pct), style: style, rank: rankCacheHit})
 	}
-	if latency := usage.AvgLatencyS; latency != nil && cols >= latencyCols && ui.statusField("latency") {
+	// The session averages wait for the turn to end, so a running turn never reads as having the last one's speed
+	if latency := usage.AvgLatencyS; latency != nil && !ui.Busy && cols >= latencyCols && ui.statusField("latency") {
 		facts = append(facts, statusFact{text: "◷ " + jsToFixed(*latency, 1) + "s", style: wm.Dim, rank: rankLatency})
 	}
-	if rate := usage.AvgTPS; rate != nil && cols >= tpsCols && ui.statusField("tps") {
+	if rate := usage.AvgTPS; rate != nil && !ui.Busy && cols >= tpsCols && ui.statusField("tps") {
 		facts = append(facts, statusFact{text: "↑ " + spawnNumber(jsRound(*rate)) + " t/s", style: wm.Dim, rank: rankTPS})
 	}
 	return facts
@@ -1442,8 +1392,12 @@ func (a *app) turnFacts(cols int) []statusFact {
 	}
 	var facts []statusFact
 	if !ui.Busy && ui.Sid != "" && !a.lastTurnEnded.IsZero() && cols >= durationCols {
-		idle := fmtDuration(float64(a.store.now().Sub(a.lastTurnEnded).Milliseconds()))
-		facts = append(facts, statusFact{text: "✓ " + idle, style: wm.Dim, rank: rankIdle, turn: true})
+		ago := fmtDuration(float64(a.store.now().Sub(a.lastTurnEnded).Milliseconds()))
+		text := tr(txt.StatusTurnDoneAgo, ago)
+		if trimJS(ui.Status) == "interrupted" || trimJS(ui.Status) == tr(txt.StatusInterrupted) {
+			text = tr(txt.StatusTurnStoppedAgo, ago)
+		}
+		facts = append(facts, statusFact{text: text, style: wm.Dim, rank: rankIdle, turn: true})
 	}
 	if n := len(ui.BgTasks); n > 0 && cols >= bgTasksCols && ui.statusField("bg_tasks") {
 		facts = append(facts, statusFact{text: tr(txt.StatusBgTasks, n), style: wm.Dim, rank: rankBgTasks, turn: true})
@@ -1471,18 +1425,18 @@ func (a *app) statusClockLive() bool {
 	return (a.sessionStart > 0 && ui.statusField("duration")) || (!ui.Busy && !a.lastTurnEnded.IsZero())
 }
 
-// Repaints the status clocks every second while one counts, the tick stopping with them
-func (a *app) armStatusClock() tea.Cmd {
-	if a.statusClockArmed || !a.statusClockLive() {
-		return nil
+// Whether the card shows something that counts by the second: a status clock, or agents and processes in its dock
+func (a *app) clockLive() bool { return a.statusClockLive() || a.dockLive(a.store.nowMillis()) }
+
+// Whether another card of the window already shows the session, that card taking the focus when so
+func (a *app) shownElsewhere(id string) bool {
+	other := a.shell.bySid(id)
+	if other == nil || other == a {
+		return false
 	}
-	a.statusClockArmed = true
-	return tea.Tick(time.Second, func(time.Time) tea.Msg {
-		return asyncDoneMsg{run: func() tea.Cmd {
-			a.statusClockArmed = false
-			return a.armStatusClock()
-		}}
-	})
+	a.shell.current = other
+	a.effect(a.wm.Focus(other.card))
+	return true
 }
 
 // Status as the bar and the status row show it, the state words through the language pack and any other text as it is
@@ -1605,6 +1559,9 @@ func factTone(style wm.SegmentStyle, t theme) string {
 func (a *app) frameStatus() string {
 	ui := a.store.ui
 	var parts []string
+	if ui.Yolo {
+		parts = append(parts, tr(txt.SessionInputYoloOn))
+	}
 	if total := usageOf(ui.Usage).Total; total > 0 {
 		parts = append(parts, tr(txt.StatusTokens, compactNumber(float64(total))))
 	}

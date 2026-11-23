@@ -30,7 +30,6 @@ external_dependencies:
     check: "brv --version"
 config_keys:
   - memory.byterover
-  - memory.provider_config  # legacy block name early docs used
 `
 
 const (
@@ -62,33 +61,18 @@ func coerceBool(value any, def bool) bool {
 	return def
 }
 
-// The memory.byterover block, else the legacy memory.provider_config block, empty on error
+// The memory.byterover block, empty when unset, unreadable or not a mapping
 func loadByteRoverConfig(ctx context.Context, env *tools.Env) map[string]any {
+	out := map[string]any{}
 	tree, err := registryConfig(ctx, env)
 	if err != nil || tree == nil {
-		return map[string]any{}
+		return out
 	}
-	memory, ok := tree.Get("memory").(map[string]any)
-	if !ok {
-		if _, present := tree.Lookup("memory"); present {
-			return map[string]any{}
-		}
-		memory = map[string]any{}
+	block, _ := tree.Get("memory.byterover").(map[string]any)
+	for k, v := range block {
+		out[k] = v
 	}
-	for _, key := range []string{"byterover", "provider_config"} {
-		block, isMap := memory[key].(map[string]any)
-		if _, present := memory[key]; !present {
-			block, isMap = map[string]any{}, true
-		}
-		if isMap && (len(block) > 0 || key == "provider_config") {
-			out := make(map[string]any, len(block))
-			for k, v := range block {
-				out[k] = v
-			}
-			return out
-		}
-	}
-	return map[string]any{}
+	return out
 }
 
 // Resolved brv binary, nil before resolution and empty once resolved missing

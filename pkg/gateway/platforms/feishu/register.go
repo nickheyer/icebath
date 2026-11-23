@@ -82,15 +82,6 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	return map[string]any{"success": true, "platform": "feishu", "chat_id": chatID, "message_id": last.MessageID}, nil
 }
 
-// Bridges feishu.allow_bots into FEISHU_ALLOW_BOTS, env winning, and seeds the extra a secondary profile reads
-func applyYAMLConfig(ctx context.Context, _ map[string]any, feishuCfg map[string]any) (map[string]any, error) {
-	seeded, err := gateway.ApplyYAMLBridge(ctx, feishuCfg, []gateway.YAMLBridgeRow{{Key: "allow_bots", Env: "FEISHU_ALLOW_BOTS", Kind: "lower"}})
-	if err != nil || len(seeded) == 0 {
-		return nil, err
-	}
-	return map[string]any{"allow_bots": pystr.Lower(pyrepr.Str(seeded["allow_bots"]))}, nil
-}
-
 // Connected once an app id is configured
 func isConnected(cfg *gateway.PlatformConfig) bool {
 	return cfg != nil && cfg.Extra != nil && pyrepr.Truthy(cfg.Extra["app_id"])
@@ -125,7 +116,6 @@ func (feishuPlatformPlugin) Register(ctx *plugins.Context) error {
 		"is_connected":           isConnected,
 		"validate_config":        isConnected,
 		"setup_fn":               InteractiveSetup,
-		"apply_yaml_config_fn":   applyYAMLConfig,
 		"cron_deliver_env_var":   "FEISHU_HOME_CHANNEL",
 		"standalone_sender_fn":   standaloneSend,
 		"max_message_length":     maxMessageLength,
@@ -146,7 +136,7 @@ func (feishuPlatformPlugin) Register(ctx *plugins.Context) error {
 		}),
 		Check:       feishuDepsPresent,
 		RequiredEnv: []string{"FEISHU_APP_ID", "FEISHU_APP_SECRET"},
-		InstallHint: "Start `icebath` and type `/setup gateway` to install Feishu support.",
+		InstallHint: "Start `icebath` and type `/setup chat-apps` to install Feishu support.",
 		Extra:       extra,
 	})
 	if err != nil {

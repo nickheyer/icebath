@@ -19,9 +19,6 @@ func TestDefaultAndUserListRoundTrip(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", h)
 	config.ResetCache()
 	t.Cleanup(config.ResetCache)
-	if known, suggestion := config.ValidateConfigKey("terminal.client_env_passthrough", configCommandSources(h)); !known || suggestion != "" {
-		t.Fatalf("validate %v %q", known, suggestion)
-	}
 	load := func() config.Tree {
 		t.Helper()
 		cfg, err := config.Load(h, config.EnvRefLookup)

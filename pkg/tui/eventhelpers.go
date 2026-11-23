@@ -95,7 +95,7 @@ func buildSetupRequiredSections() []panelSection {
 	intro, actions := tr(txt.ContentSetupIntro), tr(txt.ContentSetupActions)
 	return []panelSection{
 		{Text: &intro},
-		{Rows: [][2]string{{"/setup", tr(txt.ContentSetupSetupRow)}, {"/model", tr(txt.ContentSetupModelRow)}}, Title: &actions},
+		{Rows: [][2]string{{"/setup", tr(txt.ContentSetupSetupRow)}}, Title: &actions},
 	}
 }
 

@@ -7,12 +7,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
-
-// Footer fields an unset fields list renders, in order
-var defaultFooterFields = []string{"model", "context_pct", "cwd"}
 
 const footerSep = " · "
 
@@ -45,33 +43,10 @@ func envCwd(ctx context.Context) (string, error) {
 	return tenv(ctx, "TERMINAL_CWD", "")
 }
 
-// Effective footer config, defaults then display.runtime_footer then the platform override
-func ResolveFooterConfig(userConfig map[string]any, platformKey string) (bool, []string) {
-	enabled, fields := false, append([]string(nil), defaultFooterFields...)
-	display, _ := userConfig["display"].(map[string]any)
-	sections := []any{display["runtime_footer"]}
-	if platformKey != "" {
-		platforms, _ := display["platforms"].(map[string]any)
-		if platCfg, ok := platforms[platformKey].(map[string]any); ok {
-			sections = append(sections, platCfg["runtime_footer"])
-		}
-	}
-	for _, raw := range sections {
-		section, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if v, present := section["enabled"]; present {
-			enabled = pyrepr.Truthy(v)
-		}
-		if list, ok := section["fields"].([]any); ok && len(list) > 0 {
-			fields = fields[:0:0]
-			for _, f := range list {
-				fields = append(fields, pyrepr.Str(f))
-			}
-		}
-	}
-	return enabled, fields
+// Whether the footer is on for a platform and the fields it shows, the platform's own choice winning
+func ResolveFooterConfig(ctx context.Context, platformKey string) (bool, []string) {
+	pctx := settings.WithPlatform(ctx, platformKey)
+	return settings.ReplyFooter.Get(pctx), settings.DisplayRuntimeFooterFields.Strings(pctx)
 }
 
 // Turn duration as under a second, whole seconds, or minutes and padded seconds
@@ -142,13 +117,13 @@ func FormatRuntimeFooter(ctx context.Context, in FooterInputs, fields []string) 
 }
 
 // Footer text for the final response, empty when the footer is off or no field has data
-func BuildFooterLine(ctx context.Context, userConfig map[string]any, platformKey string, in FooterInputs) (string, error) {
-	enabled, fields := ResolveFooterConfig(userConfig, platformKey)
+func BuildFooterLine(ctx context.Context, platformKey string, in FooterInputs) (string, error) {
+	enabled, fields := ResolveFooterConfig(ctx, platformKey)
 	if !enabled {
 		return "", nil
 	}
 	if len(fields) == 0 {
-		fields = defaultFooterFields
+		fields = config.AsStrings(settings.DisplayRuntimeFooterFields.Default)
 	}
 	return FormatRuntimeFooter(ctx, in, fields)
 }

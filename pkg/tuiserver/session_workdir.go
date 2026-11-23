@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -108,20 +109,6 @@ func completionCwd(ctx context.Context, params map[string]any) (string, error) {
 	return cwd, err
 }
 
-// Stripped terminal key from config, empty when unset or unreadable
-func workdirTerminalCfg(ctx context.Context, key string) (value string) {
-	defer func() {
-		if recover() != nil {
-			value = ""
-		}
-	}()
-	terminalCfg, ok := loadCfg(ctx)["terminal"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(strOr(terminalCfg[key]))
-}
-
 // Effective terminal policy of a named profile, empty for the launch profile or an unreadable one
 func profileTerminalPolicy(ctx context.Context, profileHome string) tools.TerminalPolicy {
 	if profileHome == "" {
@@ -189,7 +176,7 @@ func sandboxWorkspaceCwd(ctx context.Context, profileHome string) string {
 		backend = effectiveTerminalBackend(ctx)
 		raw = strings.TrimSpace(os.Getenv("TERMINAL_CWD"))
 		if raw == "" {
-			raw = workdirTerminalCfg(ctx, "cwd")
+			raw = strings.TrimSpace(settings.WorkingFolder.Get(ctx))
 		}
 	}
 	if backend == "local" || backend == "ssh" || !isContainerPath(raw) || isDir(raw) {
@@ -295,16 +282,9 @@ func sessionIsLocalBackend(ctx context.Context, session *tuihost.Session) bool {
 	return effectiveTerminalBackend(ctx) == "local"
 }
 
-// Active terminal backend name, TERMINAL_ENV when set else the terminal backend config key, local by default
+// Active terminal backend name of the profile in ctx
 func effectiveTerminalBackend(ctx context.Context) string {
-	backend := strings.ToLower(strings.TrimSpace(os.Getenv("TERMINAL_ENV")))
-	if backend == "" || backend == "local" {
-		backend = strings.ToLower(workdirTerminalCfg(ctx, "backend"))
-	}
-	if backend == "" {
-		return "local"
-	}
-	return backend
+	return strings.ToLower(settings.WhereCommandsRun.Get(ctx))
 }
 
 // Session cwd for display and probes, healed past deleted worktrees with the healed value persisted, local only
@@ -441,7 +421,7 @@ func terminalTaskCwdWithSource(ctx context.Context, session *tuihost.Session) (s
 		}
 		raw := strings.TrimSpace(os.Getenv("TERMINAL_CWD"))
 		if raw == "" {
-			raw = workdirTerminalCfg(ctx, "cwd")
+			raw = strings.TrimSpace(settings.WorkingFolder.Get(ctx))
 		}
 		if raw != "" && !cwdPlaceholders[raw] {
 			return raw, "process"

@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/commands"
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -49,10 +50,18 @@ func stHome(t *testing.T) string {
 
 func stEmptyStatus(provider.PoolEnv) map[string]any { return map[string]any{} }
 
+// Pins the loaded config and writes it as the status home's config.yaml
+func stWriteConfig(cfg map[string]any) {
+	statusLoadConfig = func(context.Context, string) (map[string]any, error) { return cfg, nil }
+	if err := config.SaveUser(context.Background(), os.Getenv("ICEBATH_HOME"), cfg); err != nil {
+		panic(err)
+	}
+}
+
 // Pins the loaded config and the requested, resolved and labelled provider
 func stPinProvider(cfg map[string]any, requested, resolved, label string) {
 	if cfg != nil {
-		statusLoadConfig = func(context.Context, string) (map[string]any, error) { return cfg, nil }
+		stWriteConfig(cfg)
 	}
 	statusResolveRequestedProvider = func(context.Context, string) (string, error) { return requested, nil }
 	statusResolveProvider = func(context.Context, string, string) (string, error) { return resolved, nil }
@@ -118,13 +127,9 @@ func TestShowStatusTermuxGatewaySectionSkipsSystemctl(t *testing.T) {
 
 func TestShowStatusReportsVercelBackendContract(t *testing.T) {
 	h := stHome(t)
-	t.Setenv("TERMINAL_ENV", "vercel_sandbox")
-	t.Setenv("TERMINAL_VERCEL_RUNTIME", "python3.13")
-	t.Setenv("TERMINAL_CONTAINER_PERSISTENT", "true")
 	t.Setenv("VERCEL_OIDC_TOKEN", "oidc-token")
-	statusLoadConfig = func(context.Context, string) (map[string]any, error) {
-		return map[string]any{"terminal": map[string]any{"backend": "vercel_sandbox"}}, nil
-	}
+	stWriteConfig(map[string]any{"terminal": map[string]any{"backend": "vercel_sandbox", "vercel_runtime": "python3.13",
+		"container_persistent": true}})
 	for _, k := range []string{"get_codex_auth_status", "get_qwen_auth_status", "get_xai_oauth_auth_status"} {
 		statusOAuthGetters[k] = stEmptyStatus
 	}

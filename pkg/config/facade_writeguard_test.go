@@ -31,7 +31,7 @@ func managedScopeHome(t *testing.T, managedConfig, managedEnv string) (string, f
 
 func TestConfigSetManagedKeyRejected(t *testing.T) {
 	h, output := managedScopeHome(t, "model:\n  default: managed/model\n", "")
-	err := SetConfigValue(context.Background(), h, "model.default", "user/override", false, pathCommandSources())
+	err := SetConfigValue(context.Background(), h, "model.default", "user/override", pathCommandSources())
 	if code := exitCode(err); code == 0 || code == -1 || !strings.Contains(strings.ToLower(output()), "managed") {
 		t.Fatalf("managed set returned %v output %q", err, output())
 	}
@@ -51,7 +51,7 @@ func TestFileSetAndUnsetStillPrintTheConfigPath(t *testing.T) {
 	h, path := facadeHome(t, "")
 	out, _ := captureFacade(t)
 	ctx := context.Background()
-	if err := SetConfigValue(ctx, h, "agent.max_turns", "7", false, pathCommandSources()); err != nil {
+	if err := SetConfigValue(ctx, h, "agent.max_turns", "7", pathCommandSources()); err != nil {
 		t.Fatal(err)
 	}
 	if err := UnsetConfigValue(ctx, h, "agent.max_turns", pathCommandSources()); err != nil {

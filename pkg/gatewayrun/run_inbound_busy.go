@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -30,7 +31,7 @@ func zeroDecimals(value float64) string {
 
 // Evicts a leaked running slot whose agent idled past the timeout, or reports no activity and outlived the wall ttl
 func (r *GatewayRunner) hmEvictIdleStaleAgent(ctx context.Context, quickKey string) {
-	rawStaleTimeout := floatEnv("ICEBATH_AGENT_TIMEOUT", 1800)
+	rawStaleTimeout := settings.AgentGatewayTimeout.Get(ctx).Seconds()
 	var staleAgent *agent.AIAgent
 	var staleCtx *TurnContext
 	startedTS := 0.0

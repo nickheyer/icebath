@@ -508,8 +508,8 @@ func configuredProviderIdentity(slug string, cfg map[string]any) [4]string {
 		name = strings.ToLower(strings.TrimPrefix(slug, "custom:"))
 	}
 	name = strings.ReplaceAll(name, " ", "-")
-	baseURL := strings.ToLower(strings.TrimRight(msClean(pyOr(entry["base_url"], entry["url"], entry["api"])), "/"))
-	apiKey, keyEnv := msClean(entry["api_key"]), msClean(pyOr(entry["key_env"], entry["api_key_env"]))
+	baseURL := strings.ToLower(strings.TrimRight(msClean(entry["base_url"]), "/"))
+	apiKey, keyEnv := msClean(entry["api_key"]), msClean(entry["key_env"])
 	if strings.HasPrefix(apiKey, "${") && strings.HasSuffix(apiKey, "}") && len(apiKey) >= 3 {
 		apiKey, keyEnv = "", pyStripSpace(apiKey[2:len(apiKey)-1])
 	}
@@ -522,7 +522,7 @@ func configuredProviderIdentity(slug string, cfg map[string]any) [4]string {
 	case msClean(entry["key_cmd"]) != "":
 		credential = "cmd:" + msClean(entry["key_cmd"])
 	}
-	apiMode := msClean(pyOr(entry["api_mode"], entry["transport"]))
+	apiMode := msClean(entry["api_mode"])
 	if apiMode != "" {
 		apiMode = strings.ToLower(CanonicalAPIMode(apiMode))
 	}
@@ -539,7 +539,7 @@ func pyOr(values ...any) any {
 	return values[len(values)-1]
 }
 
-// Slug of the providers row a custom_providers entry is a second view of, empty when it is its own provider
+// Slug of the providers row a normalized entry is a second view of, empty when it is its own provider
 func duplicatesConfiguredRow(slug string, entry map[string]any, rows []configuredRow) string {
 	identity := configuredProviderIdentity(slug, entry)
 	providerKey := strings.ToLower(msClean(entry["provider_key"]))
@@ -598,7 +598,7 @@ func resolveNamedCustomModelID(modelName, targetProvider string, customProviders
 	return modelName
 }
 
-// Mapping shaped entries of a custom_providers list, anything else ignored
+// Mapping shaped entries of a normalized providers list, anything else ignored
 func customEntries(customProviders any) []map[string]any {
 	out := []map[string]any{}
 	switch list := customProviders.(type) {
@@ -637,7 +637,7 @@ func entryConfiguredKey(cfg map[string]any, readEnv func(string) string) string 
 		key = readEnv(key[2 : len(key)-1])
 	}
 	if key == "" {
-		if keyEnv := msClean(pyOr(cfg["key_env"], cfg["api_key_env"])); keyEnv != "" {
+		if keyEnv := msClean(cfg["key_env"]); keyEnv != "" {
 			key = readEnv(keyEnv)
 		}
 	}
@@ -723,7 +723,7 @@ func aggregatorCatalogMatch(newModel string, catalog []string) (string, bool) {
 	return "", false
 }
 
-// Reports whether providers or custom_providers config declares the model for the target provider or base URL
+// Reports whether a providers entry declares the model for the target provider or base URL
 func configDeclaresModel(newModel, targetProvider, baseURL string, userProviders map[string]any, customProviders []any) bool {
 	if len(userProviders) > 0 {
 		if cfg, ok := userProviders[targetProvider].(map[string]any); ok && IsProviderEnabled(cfg) &&

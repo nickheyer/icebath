@@ -31,6 +31,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -85,13 +86,14 @@ var (
 	statusListProviders = provider.ListAuthenticatedProviders
 )
 
-var statusTerminalEnvRows = map[string][]struct {
-	label, env, def string
-	emptyIsUnset    bool
+// Label and setting of each row a terminal backend shows
+var statusTerminalRows = map[string][]struct {
+	label   string
+	setting *settings.String
 }{
-	"ssh":     {{"SSH Host:", "TERMINAL_SSH_HOST", "(not set)", true}, {"SSH User:", "TERMINAL_SSH_USER", "(not set)", true}},
-	"docker":  {{"Docker Image:", "TERMINAL_DOCKER_IMAGE", config.DefaultSandboxImage, false}},
-	"daytona": {{"Daytona Image:", "TERMINAL_DAYTONA_IMAGE", config.DefaultSandboxImage, false}},
+	"ssh":     {{"SSH Host:", settings.TerminalSSHHost}, {"SSH User:", settings.TerminalSSHUser}},
+	"docker":  {{"Docker Image:", settings.ContainerImage}},
+	"daytona": {{"Daytona Image:", settings.TerminalDaytonaImage}},
 }
 
 var statusGatewayFallback = map[string][2]string{"termux": {"unknown", "Termux / manual process"},
@@ -177,14 +179,10 @@ func statusDict(v any) (map[string]any, bool) {
 	return nil, false
 }
 
-// Configured default model of a config, or the not set marker
-func statusConfiguredModelLabel(cfg map[string]any) string {
-	modelCfg := cfg["model"]
-	if m, ok := statusDict(modelCfg); ok {
-		modelCfg = statusOr(m["default"], m["name"], "")
-	}
-	if text, ok := modelCfg.(string); ok && pystr.Strip(text) != "" {
-		return pystr.Strip(text)
+// Configured default model of the status home, or the not set marker
+func (s *statusRun) configuredModelLabel() string {
+	if model := pystr.Strip(settings.Model.Get(home.WithOverride(s.ctx, s.h))); model != "" {
+		return model
 	}
 	return "(not set)"
 }
@@ -217,19 +215,7 @@ func (s *statusRun) effectiveProviderLabel() (string, error) {
 		}
 	}
 	if effective == "openrouter" {
-		var modelCfg any
-		if cfg, err := statusLoadConfig(s.ctx, s.h); err == nil {
-			modelCfg = cfg["model"]
-		}
-		configBaseURL := ""
-		if m, ok := statusDict(modelCfg); ok {
-			raw := statusOr(m["base_url"], "")
-			text, isStr := raw.(string)
-			if !isStr {
-				return "", fmt.Errorf("model.base_url is %s, expected text", errchain.Kind(raw))
-			}
-			configBaseURL = pystr.Strip(text)
-		}
+		configBaseURL := pystr.Strip(settings.ModelBaseURL.Get(home.WithOverride(s.ctx, s.h)))
 		envBase, err := statusGetEnvValue(s.ctx, s.h, "OPENAI_BASE_URL")
 		if err != nil {
 			return "", err
@@ -288,7 +274,7 @@ func (s *statusRun) renderEnvironment() error {
 	_, err := os.Stat(home.EnvPath(s.h))
 	s.kvFlag(".env file:", err == nil, "exists", "not found")
 	s.loadConfig()
-	s.kv("Model:", statusConfiguredModelLabel(s.config))
+	s.kv("Model:", s.configuredModelLabel())
 	label, err := s.effectiveProviderLabel()
 	if err != nil {
 		return err
@@ -299,48 +285,27 @@ func (s *statusRun) renderEnvironment() error {
 
 func (s *statusRun) renderTerminal() error {
 	s.section("Terminal Backend")
-	terminalCfg, ok := statusDict(s.config["terminal"])
-	if !ok {
-		terminalCfg = map[string]any{}
-	}
-	var terminalEnv any = os.Getenv("TERMINAL_ENV")
-	if terminalEnv == "" {
-		terminalEnv = "local"
-		if v, has := terminalCfg["backend"]; has {
-			terminalEnv = v
-		}
-	}
-	s.kv("Backend:", terminalEnv)
-	switch terminalEnv.(type) {
-	case map[string]any, config.Tree, *pyjson.Object, []any:
-		return fmt.Errorf("terminal.backend is %s, expected a backend name", errchain.Kind(terminalEnv))
-	}
-	name, isStr := terminalEnv.(string)
-	if line, refused := tools.TerminalBackendRefusal(name); isStr && refused {
+	sctx := home.WithOverride(s.ctx, s.h)
+	name := settings.WhereCommandsRun.Get(sctx)
+	s.kv("Backend:", name)
+	if line, refused := tools.TerminalBackendRefusal(name); refused {
 		s.kv("Build:", line)
 		return nil
 	}
-	rows, tabled := statusTerminalEnvRows[name]
+	rows, tabled := statusTerminalRows[name]
 	switch {
-	case isStr && tabled:
+	case tabled:
 		for _, r := range rows {
-			value, set := os.LookupEnv(r.env)
-			if r.emptyIsUnset && value == "" || !r.emptyIsUnset && !set {
-				value = r.def
+			value := r.setting.Get(sctx)
+			if value == "" {
+				value = "(not set)"
 			}
 			s.println("  ", pystr.Ljust(r.label, 13), " ", value)
 		}
-	case isStr && name == "vercel_sandbox":
-		persistEnabled := true
-		if persist, set := os.LookupEnv("TERMINAL_CONTAINER_PERSISTENT"); set {
-			lower := strings.ToLower(persist)
-			persistEnabled = lower == "1" || lower == "true" || lower == "yes" || lower == "on"
-		} else if v, has := terminalCfg["container_persistent"]; has {
-			persistEnabled = pyrepr.Truthy(v)
-		}
+	case name == "vercel_sandbox":
+		persistEnabled := settings.TerminalContainerPersistent.Get(sctx)
 		auth := tools.DescribeVercelAuth(nil)
-		image := statusOr(os.Getenv("TERMINAL_VERCEL_RUNTIME"), terminalCfg["vercel_runtime"], os.Getenv("TERMINAL_VERCEL_IMAGE"),
-			terminalCfg["vercel_image"], config.DefaultVercelImage)
+		image := statusOr(settings.TerminalVercelRuntime.Get(sctx), settings.TerminalVercelImage.Get(sctx), config.DefaultVercelImage)
 		s.kv("Image:", image)
 		s.kvFlag("SDK:", tools.GetTerminalBackendScoped(s.ctx, "vercel_sandbox", "") != nil, "installed",
 			"missing (start icebath, type /setup terminal and select Vercel Sandbox, then restart Icebath)")
@@ -355,7 +320,7 @@ func (s *statusRun) renderTerminal() error {
 		}
 		s.kv("Processes:", "live processes do not survive cleanup, snapshots, or sandbox recreation")
 	default:
-		s.renderPluginBackend(terminalEnv)
+		s.renderPluginBackend(name)
 	}
 	s.kvFlag("Sudo:", os.Getenv("SUDO_PASSWORD") != "", "enabled", "disabled")
 	return nil
@@ -806,7 +771,7 @@ func (s *statusRun) renderSummary() error {
 	}
 	s.println()
 	s.loadConfig()
-	s.kv("Model:", statusConfiguredModelLabel(s.config))
+	s.kv("Model:", s.configuredModelLabel())
 	label, err := s.effectiveProviderLabel()
 	if err != nil {
 		return err

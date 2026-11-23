@@ -110,13 +110,6 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		entry             map[string]any
 	}
 	var rawEntries []rawEntry
-	if list, ok := rawCfg["custom_providers"].([]any); ok {
-		for _, e := range list {
-			if m, isMap := e.(map[string]any); isMap {
-				rawEntries = append(rawEntries, rawEntry{dictGet(m, "name", ""), "", m})
-			}
-		}
-	}
 	if providers, ok := rawCfg["providers"].(map[string]any); ok {
 		for _, k := range config.MappingKeys(providers) {
 			if m, isMap := providers[k].(map[string]any); isMap {
@@ -186,15 +179,15 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		return ""
 	}
 	out := newCustomProviderMap()
-	for _, entry := range CompatibleCustomProviders(cfg) {
+	for _, entry := range ProviderEntries(cfg) {
 		if entry == nil {
 			continue
 		}
-		rawName, err := pyOrEmptyStr(entry["name"], "custom_providers name")
+		rawName, err := pyOrEmptyStr(entry["name"], "providers name")
 		if err != nil {
 			return nil, err
 		}
-		rawBase, err := pyOrEmptyStr(entry["base_url"], "custom_providers base_url")
+		rawBase, err := pyOrEmptyStr(entry["base_url"], "providers base_url")
 		if err != nil {
 			return nil, err
 		}
@@ -202,16 +195,13 @@ func namedCustomProviderMap(r *ModelFlowRun, cfg map[string]any) (*customProvide
 		if name == "" || baseURL == "" {
 			continue
 		}
-		rawKey, err := pyOrEmptyStr(entry["provider_key"], "custom_providers provider_key")
+		rawKey, err := pyOrEmptyStr(entry["provider_key"], "providers provider_key")
 		if err != nil {
 			return nil, err
 		}
 		providerKey := pystr.Strip(rawKey)
 		model := dictGet(entry, "model", "")
 		keyEnv := entry["key_env"]
-		if !pyTruthy(keyEnv) {
-			keyEnv = dictGet(entry, "api_key_env", "")
-		}
 		out.set(CustomProviderSlug(name, providerKey), map[string]any{
 			"name":              name,
 			"base_url":          baseURL,
@@ -348,7 +338,7 @@ func buildProviderPickerRows(ctx context.Context, cfg map[string]any, active str
 		add("llamacpp", "Local models (run open models on this machine — no account or API key)", nil, active == "llamacpp")
 	}
 	ordered = append(ordered, providerPickerRow{Key: "custom", Label: "Custom endpoint (enter URL manually)"})
-	if list, ok := cfg["custom_providers"].([]any); ok && len(list) > 0 {
+	if providers, ok := cfg["providers"].(map[string]any); ok && len(providers) > 0 {
 		ordered = append(ordered, providerPickerRow{Key: "remove-custom", Label: "Remove a saved custom provider"})
 	}
 	ordered = append(ordered,
@@ -378,7 +368,7 @@ func resolveActiveProvider(r *ModelFlowRun, cfg map[string]any, modelCfg any, ef
 	}
 	if active == "" && effectiveProvider != "auto" {
 		userProviders, _ := cfg["providers"].(map[string]any)
-		compat := CompatibleCustomProviders(cfg)
+		compat := ProviderEntries(cfg)
 		customProviders := make([]any, len(compat))
 		for i, e := range compat {
 			customProviders[i] = e

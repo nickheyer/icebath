@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -154,6 +155,12 @@ func applyModelSwitch(ctx context.Context, sid string, session *tuihost.Session,
 	if parsed.IsReset() {
 		return resetSessionModelOverride(ctx, sid, session)
 	}
+	if parsed.Login != "" && parsed.ModelInput() == "" && parsed.ExplicitProvider == "" {
+		return switchSessionLoginOnly(ctx, sid, session, parsed.Login, parsed.IsGlobal)
+	}
+	if parsed.Login != "" {
+		ctx = provider.WithLoginSelection(ctx, map[string]string{provider.LoginAnyProvider: parsed.Login})
+	}
 	modelInput, explicitProvider, oneTurn, persistGlobal, reasoningEffort, err := switchRequest(ctx, rawInput, parsed, o.persistOverride)
 	if err != nil {
 		return nil, err
@@ -175,8 +182,8 @@ func applyModelSwitch(ctx context.Context, sid string, session *tuihost.Session,
 			panic(loadErr)
 		}
 		cfg = loaded
-		userProvs, _ = cfg["providers"].(map[string]any)
-		for _, entry := range provider.CompatibleCustomProviders(cfg) {
+		userProvs = settings.Providers.Get(ctx)
+		for _, entry := range provider.ProviderEntries(cfg) {
 			customProvs = append(customProvs, entry)
 		}
 	})
@@ -191,6 +198,12 @@ func applyModelSwitch(ctx context.Context, sid string, session *tuihost.Session,
 			return nil, errors.New(result.ErrorMessage)
 		}
 		return nil, errors.New("model switch failed")
+	}
+	var switchLogin *switchLoginTarget
+	if parsed.Login != "" {
+		if switchLogin, err = resolveSwitchLogin(ctx, &result, parsed.Login); err != nil {
+			return nil, err
+		}
 	}
 	var restoreSnapshot map[string]any
 	if oneTurn && a != nil {
@@ -228,6 +241,11 @@ func applyModelSwitch(ctx context.Context, sid string, session *tuihost.Session,
 	}
 	if persistGlobal {
 		if err := provider.PersistModelSelection(ctx, result, ""); err != nil {
+			return nil, err
+		}
+	}
+	if switchLogin != nil && !oneTurn {
+		if err := pinSwitchLogin(ctx, sid, *switchLogin, persistGlobal); err != nil {
 			return nil, err
 		}
 	}
@@ -362,14 +380,10 @@ func syncAgentModelWithConfig(ctx context.Context, sid string, session *tuihost.
 		return
 	}
 	pkgLog().Warn(fmt.Sprintf("Configured model %s could not be adopted for session %s: %s", model, sid, err))
-	var userConfig map[string]any
-	if current := sessionAgent(session); current != nil {
-		userConfig = current.NotificationConfig()
-	}
 	_, _ = config.RenderNotification(ctx, func() error {
 		tuihost.Emit(ctx, "error", sid, map[string]any{"message": fmt.Sprintf("Could not switch to configured model %s: %s", model, err)})
 		return nil
-	}, "tui", true, userConfig)
+	}, "tui", true)
 }
 
 // Selection guard message for a model queued mid turn, empty when none applies

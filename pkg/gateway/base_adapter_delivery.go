@@ -122,7 +122,7 @@ func (b *BasePlatformAdapter) recordDeliveryObligation(ctx context.Context, even
 		return nil
 	}
 	id, err := func() (*string, error) {
-		if !LedgerEnabled(ctx, nil) {
+		if !LedgerEnabled(ctx) {
 			return nil, nil
 		}
 		source := event.Source
@@ -367,7 +367,7 @@ func (b *BasePlatformAdapter) notifyTurnError(ctx context.Context, event *Messag
 		}
 		scoped, release := b.mediaDeliveryScope(ctx, event.Source)
 		var content *string
-		if !config.DiagnosticWakeMuted(scoped, event, nil) {
+		if !config.DiagnosticWakeMuted(scoped, event) {
 			fallback := i18n.T(scoped, "gateway.notify.turn_error", "", nil)
 			detailed := i18n.T(scoped, "gateway.notify.turn_error_detailed", "", map[string]any{
 				"error_type": pyrepr.ExceptionName(turnErr), "error_detail": detail})
@@ -585,7 +585,7 @@ func (b *BasePlatformAdapter) ProcessMessageBackground(ctx context.Context, even
 			return err
 		}
 		scoped, release := b.mediaDeliveryScope(ctx, event.Source)
-		if config.DiagnosticWakeMuted(scoped, event, nil) {
+		if config.DiagnosticWakeMuted(scoped, event) {
 			response = nil
 		}
 		release()

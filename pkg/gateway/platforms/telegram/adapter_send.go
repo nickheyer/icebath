@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // TypeError raised where a value is unpacked or called with the wrong shape
@@ -1205,17 +1206,9 @@ func (a *TelegramAdapter) GetChatInfo(ctx context.Context, chatID string) (map[s
 	return map[string]any{"name": name, "type": chatType, "username": username, "is_forum": chat.IsForum}, nil
 }
 
-// Whether processing reactions are on, the scoped env first then the profile extra
+// Whether processing reactions are on for the profile
 func (a *TelegramAdapter) ReactionsEnabled(ctx context.Context) bool {
-	configured, err := gateway.ExtraOrSecret(ctx, a.Config.Extra, "reactions", "TELEGRAM_REACTIONS", nil, true)
-	if err != nil || configured == nil {
-		return false
-	}
-	switch pystr.Lower(pyrepr.Str(configured)) {
-	case "false", "0", "no":
-		return false
-	}
-	return true
+	return settings.TelegramReactions.Get(gateway.SettingsContext(ctx))
 }
 
 // Sets one emoji reaction, an empty emoji clearing every bot reaction

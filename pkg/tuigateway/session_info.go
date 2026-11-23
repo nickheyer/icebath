@@ -43,6 +43,8 @@ type SessionInfo struct {
 	MCPServers               []McpServerStatus           `json:"mcp_servers,omitzero"`
 	SystemPrompt             *string                     `json:"system_prompt,omitzero"`
 	CredentialWarning        *string                     `json:"credential_warning,omitzero"`
+	Login                    *SessionLogin               `json:"login,omitzero"`
+	PoolKey                  *string                     `json:"pool_key,omitzero"`
 	CredentialHint           *string                     `json:"credential_hint,omitzero"`
 	ConfigWarning            *string                     `json:"config_warning,omitzero"`
 	Lazy                     *bool                       `json:"lazy,omitzero"`

@@ -3,29 +3,26 @@ package tools
 import (
 	"context"
 	"fmt"
-	"math"
 	"os"
 	"os/exec"
-	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-const (
-	DefaultMaxConcurrentChildren   = 10
-	DelegationMaxDepth             = 1
-	minSpawnDepth                  = 1
-	defaultOneshotMaxChildren      = 2
-	delegationChildTimeoutFloorSec = 30.0
-)
+// Lowest spawn depth a delegation runs with whatever is stored
+const minSpawnDepth = 1
 
-var highConcurrencyWarned, legacyMaxAsyncWarned atomic.Bool
+// Shortest subagent idle limit a set limit is raised to
+const delegationChildTimeoutFloor = 30 * time.Second
+
+var highConcurrencyWarned atomic.Bool
 
 // Surfaces with no human chat thread, matching gateway session_context NON_MESSAGING_SESSION_SURFACES
 var NonMessagingSessionSurfaces = map[string]bool{
@@ -73,109 +70,49 @@ func delegationEnvContext(env *Env) context.Context {
 
 // Dangerous command refusal a subagent sees by default, logged for audit
 func subagentAutoDeny(command, description string, _ map[string]any) string {
-	pkgLog().Warn(fmt.Sprintf("Subagent auto-denied dangerous command: %s (%s). Set delegation.subagent_auto_approve: true to allow.", command, description))
+	pkgLog().Warn(fmt.Sprintf("Subagent auto-denied dangerous command: %s (%s). Turn on subagent auto approve in /settings Agent to allow.", command, description))
 	return "deny"
 }
 
-// One time approval a subagent gets under delegation.subagent_auto_approve, logged for audit
+// One time approval a subagent gets under the subagent auto approve setting, logged for audit
 func subagentAutoApprove(command, description string, _ map[string]any) string {
 	pkgLog().Warn(fmt.Sprintf("Subagent auto-approved dangerous command: %s (%s)", command, description))
 	return "once"
 }
 
-// Non interactive approval callback for subagent workers chosen by delegation.subagent_auto_approve
+// Non interactive approval callback for subagent workers chosen by the subagent auto approve setting
 func SubagentApprovalCallback(ctx context.Context) func(command, description string, kwargs map[string]any) string {
-	v, ok := LoadDelegationConfig(ctx)["subagent_auto_approve"]
-	if !ok {
-		v = false
-	}
-	if isTruthyValue(v, false) {
+	if settings.DelegationSubagentAutoApprove.Get(ctx) {
 		return subagentAutoApprove
 	}
 	return subagentAutoDeny
 }
 
-// Config value over env value over default, a bad config value warned and defaulted, a bad env value ignored
-func delegationKnob[T any](ctx context.Context, key, envVar string, parse func(any) (T, error), def T, invalidMsg string) T {
-	if val := LoadDelegationConfig(ctx)[key]; val != nil {
-		got, err := parse(val)
-		if err != nil {
-			pkgLog().Warn(strings.Replace(invalidMsg, "%r", pyrepr.Repr(val), 1))
-			return def
-		}
-		return got
-	}
-	if envVar != "" {
-		if envVal := os.Getenv(envVar); envVal != "" {
-			if got, err := parse(envVal); err == nil {
-				return got
-			}
-		}
-	}
-	return def
-}
-
-// Python int of a config value as a Go int, saturating values beyond the int range
-func delegationInt(v any) (int, error) {
-	n, err := pyint.Of(v)
-	if err != nil {
-		return 0, err
-	}
-	if n.IsInt64() {
-		return int(n.Int64()), nil
-	}
-	if n.Sign() > 0 {
-		return math.MaxInt, nil
-	}
-	return math.MinInt, nil
-}
-
 // Total children one finite one shot session may spawn, zero for unlimited
 func OneshotMaxChildren(ctx context.Context) int {
-	return delegationKnob(ctx, "oneshot_max_children", "", func(v any) (int, error) {
-		n, err := delegationInt(v)
-		return max(0, n), err
-	}, defaultOneshotMaxChildren, "delegation.oneshot_max_children=%r is not a valid integer; using default 2")
+	return max(0, settings.DelegationOneshotMaxChildren.Get(ctx))
 }
 
-// Parallel child limit from config, then DELEGATION_MAX_CONCURRENT_CHILDREN, then ten, floored at one
+// Parallel child limit, floored at one, warned once when set above ten
 func MaxConcurrentChildren(ctx context.Context) int {
-	result := delegationKnob(ctx, "max_concurrent_children", "DELEGATION_MAX_CONCURRENT_CHILDREN", func(v any) (int, error) {
-		n, err := delegationInt(v)
-		return max(1, n), err
-	}, DefaultMaxConcurrentChildren,
-		fmt.Sprintf("delegation.max_concurrent_children=%%r is not a valid integer; using default %d", DefaultMaxConcurrentChildren))
-	if result > 10 && LoadDelegationConfig(ctx)["max_concurrent_children"] != nil && highConcurrencyWarned.CompareAndSwap(false, true) {
-		pkgLog().Warn(fmt.Sprintf("delegation.max_concurrent_children=%d: each child consumes API tokens "+
-			"independently. High values multiply cost linearly.", result))
+	result := max(1, settings.DelegationMaxConcurrentChildren.Get(ctx))
+	if v, err := settings.Resolve(ctx, settings.DelegationMaxConcurrentChildren.Key); err == nil && v.Source != settings.SourceDefault &&
+		result > 10 && highConcurrencyWarned.CompareAndSwap(false, true) {
+		pkgLog().Warn(fmt.Sprintf("%d parallel subagents: each one uses model tokens on its own, so cost grows with the number.", result))
 	}
 	return result
 }
 
 // Whether a background call splits into per task or per group completion messages
 func IndependentCompletions(ctx context.Context) bool {
-	v, ok := LoadDelegationConfig(ctx)["independent_completions"]
-	if !ok {
-		v = false
-	}
-	return isTruthyValue(v, false)
+	return settings.DelegationIndependentCompletions.Get(ctx)
 }
 
 var gatewayDelegationModes = map[string]bool{"inline": true, "background": false, "async": false}
 
-// Whether a gateway session joins top level delegations in the turn per delegation.gateway_mode
-func GatewayDelegationInline(userConfig any, platformKey string, interimEnabled bool) bool {
-	mode := "auto"
-	if cfg, ok := userConfig.(map[string]any); ok {
-		if section, ok := cfg["delegation"].(map[string]any); ok {
-			raw := section["gateway_mode"]
-			if raw == nil || !pyrepr.Truthy(raw) {
-				raw = "auto"
-			}
-			mode = pystr.Lower(pystr.Strip(pyrepr.Str(raw)))
-		}
-	}
-	if inline, ok := gatewayDelegationModes[mode]; ok {
+// Whether a chat session joins top level delegations in the turn, auto deciding from interim messages and the surface
+func GatewayDelegationInline(ctx context.Context, platformKey string, interimEnabled bool) bool {
+	if inline, ok := gatewayDelegationModes[settings.DelegationGatewayMode.Get(ctx)]; ok {
 		return inline
 	}
 	return !interimEnabled && !NonMessagingSessionSurfaces[pystr.Lower(platformKey)]
@@ -211,74 +148,42 @@ func AgentJoinsDelegation(ctx context.Context, a DelegationInlineAgent) bool {
 
 // Whether each child gets its own git worktree off the parent HEAD
 func WorktreeIsolation(ctx context.Context) bool {
-	return pyrepr.Truthy(LoadDelegationConfig(ctx)["worktree_isolation"])
+	return settings.DelegationWorktreeIsolation.Get(ctx)
 }
 
-// Background delegation cap equal to the concurrent child limit, a legacy max_async_children key warned once
+// Background delegation cap, the same as the parallel child limit
 func MaxAsyncChildren(ctx context.Context) int {
-	if LoadDelegationConfig(ctx)["max_async_children"] != nil && legacyMaxAsyncWarned.CompareAndSwap(false, true) {
-		pkgLog().Warn("delegation.max_async_children is deprecated and ignored; " +
-			"delegation.max_concurrent_children now caps background " +
-			"delegations too. Remove the stale key from config.yaml.")
-	}
 	return MaxConcurrentChildren(ctx)
 }
 
-// Seconds as nil when non positive, else floored at thirty, an error for a non numeric value
-func parseDelegationTimeout(raw any) (*float64, error) {
-	parsed, err := pyint.Float(raw)
-	if err != nil {
-		return nil, err
-	}
-	if parsed <= 0 {
-		return nil, nil
-	}
-	v := math.Max(delegationChildTimeoutFloorSec, parsed)
-	return &v, nil
-}
-
-// Inactivity cap for one child in seconds, nil for no cap
+// Inactivity cap for one child in seconds, nil for no cap, a set cap raised to the floor
 func ChildTimeout(ctx context.Context) *float64 {
-	return delegationKnob(ctx, "child_timeout_seconds", "DELEGATION_CHILD_TIMEOUT_SECONDS", parseDelegationTimeout, nil,
-		"delegation.child_timeout_seconds=%r is not a valid number; using default (no timeout)")
+	d := settings.DelegationChildTimeoutSeconds.Get(ctx)
+	if d <= 0 {
+		return nil
+	}
+	v := max(delegationChildTimeoutFloor, d).Seconds()
+	return &v
 }
 
 // Spawn depth cap floored at one with a warning below the floor
 func MaxSpawnDepth(ctx context.Context) int {
-	return delegationKnob(ctx, "max_spawn_depth", "", func(v any) (int, error) {
-		n, err := delegationInt(v)
-		if err != nil {
-			return 0, err
-		}
-		if n < minSpawnDepth {
-			pkgLog().Warn(fmt.Sprintf("delegation.max_spawn_depth=%d below floor %d; using %d", n, minSpawnDepth, minSpawnDepth))
-		}
-		return max(minSpawnDepth, n), nil
-	}, DelegationMaxDepth, fmt.Sprintf("delegation.max_spawn_depth=%%r is not a valid integer; using default %d", DelegationMaxDepth))
+	n := settings.DelegationMaxSpawnDepth.Get(ctx)
+	if n < minSpawnDepth {
+		pkgLog().Warn(fmt.Sprintf("subagent depth %d is below the floor %d; using %d", n, minSpawnDepth, minSpawnDepth))
+		return minSpawnDepth
+	}
+	return n
 }
 
-// Orchestrator kill switch, true unless a bool false or a falsy string turns it off
+// Orchestrator kill switch
 func OrchestratorEnabled(ctx context.Context) bool {
-	val, ok := LoadDelegationConfig(ctx)["orchestrator_enabled"]
-	if !ok {
-		return true
-	}
-	switch x := val.(type) {
-	case bool:
-		return x
-	case string:
-		switch pystr.Lower(pystr.Strip(x)) {
-		case "true", "1", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return true
+	return settings.DelegationOrchestratorEnabled.Get(ctx)
 }
 
 // Whether narrowed child toolsets keep the parent MCP toolsets
 func InheritMCPToolsets(ctx context.Context) bool {
-	return isTruthyValue(LoadDelegationConfig(ctx)["inherit_mcp_toolsets"], true)
+	return settings.DelegationInheritMcpToolsets.Get(ctx)
 }
 
 // DelegationValueError is the ValueError a delegation credential or route resolver refuses a task with

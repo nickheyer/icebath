@@ -59,18 +59,29 @@ func EventFrame(event, sid string, payload map[string]any) *pyjson.Object {
 
 // Fans a session less event to every connected client, stdio when it is the client channel, else drops it
 func BroadcastGlobalEvent(event string, payload map[string]any, skip ...Transport) {
+	broadcastEvent(event, "", payload, skip...)
+}
+
+// BroadcastSessionEvent fans one session's event to every connected client with the session id on its frame, for a session whose own
+// transport may already be gone
+func BroadcastSessionEvent(event, sid string, payload map[string]any) {
+	broadcastEvent(event, sid, payload)
+}
+
+// Fans an event framed for sid, empty for none, to every connected client, stdio when it is the client channel, else drops it
+func broadcastEvent(event, sid string, payload map[string]any, skip ...Transport) {
 	liveTransportsMu.Lock()
 	targets := slices.DeleteFunc(slices.Clone(liveTransports), func(t Transport) bool { return slices.Contains(skip, t) })
 	liveTransportsMu.Unlock()
 	if len(targets) == 0 && len(skip) == 0 {
 		if stdioIsRPCChannel.Load() {
-			Emit(context.Background(), event, "", payload)
+			Emit(context.Background(), event, sid, payload)
 			return
 		}
 		serverLog().Debug(fmt.Sprintf("global-event broadcast dropped (no connected client) type=%s", event))
 		return
 	}
-	frame := EventFrame(event, "", payload)
+	frame := EventFrame(event, sid, payload)
 	for _, transport := range targets {
 		writeGlobalEvent(transport, frame, event)
 	}

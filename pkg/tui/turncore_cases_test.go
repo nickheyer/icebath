@@ -121,7 +121,6 @@ func fireAll(c *turnController) {
 }
 
 type recordingGateway struct {
-	canon  bool
 	calls  []map[string]any
 	answer map[string]any
 }
@@ -130,8 +129,6 @@ func (g *recordingGateway) request(_ context.Context, method string, params map[
 	g.calls = append(g.calls, map[string]any{"method": method, "params": params})
 	return g.answer, nil
 }
-
-func (g *recordingGateway) canonical() bool { return g.canon }
 
 func TestTurnControllerTurnFlow(t *testing.T) {
 	t.Run("streams deltas on the batch tick and seals the final reply with its reasoning", func(t *testing.T) {
@@ -166,11 +163,11 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		}
 		took := 0.94
 		c.recordToolComplete("t1", "", "", &took, nil, "", nil, toolVerdict{})
-		if !reflect.DeepEqual(c.store.turn.StreamPendingTools, []string{`Read File("main.go") (0.9s) ✓`}) || !reflect.DeepEqual(c.store.turn.TurnTrail, []string{analyzingToolOutput()}) {
+		if !reflect.DeepEqual(c.store.turn.StreamPendingTools, []toolRow{{Call: `Read File("main.go")`, Took: &took}}) || !reflect.DeepEqual(c.store.turn.TurnTrail, []string{analyzingToolOutput()}) {
 			t.Fatalf("pending %#v trail %#v", c.store.turn.StreamPendingTools, c.store.turn.TurnTrail)
 		}
 		result := c.recordMessageComplete(tuigateway.MessageCompletePayload{Text: ptr("done")})
-		if len(result.FinalMessages) != 2 || !reflect.DeepEqual(result.FinalMessages[0].Tools, []string{`Read File("main.go") (0.9s) ✓`}) {
+		if len(result.FinalMessages) != 2 || !reflect.DeepEqual(result.FinalMessages[0].Tools, []toolRow{{Call: `Read File("main.go")`, Took: &took}}) {
 			t.Fatalf("final %#v", result.FinalMessages)
 		}
 	})
@@ -207,7 +204,7 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 		c.store.ui.Info = &tuigateway.SessionInfo{AuthorityEpoch: ptr(int64(3)), ExecutionGeneration: ptr(int64(7))}
 		c.startMessage()
 		c.recordMessageDelta("x")
-		gw := &recordingGateway{canon: true, answer: map[string]any{"execution_state": "running", "execution_generation": float64(7)}}
+		gw := &recordingGateway{answer: map[string]any{"execution_state": "running", "execution_generation": float64(7)}}
 		var appended []msg
 		cmd, err := c.interruptTurn(interruptDeps{AppendMessage: func(m msg) { appended = append(appended, m) }, Gateway: gw, Sid: "s1", Sys: func(string) {}}, true)
 		if err != nil || len(appended) != 0 {

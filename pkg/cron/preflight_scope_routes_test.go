@@ -102,7 +102,7 @@ func TestMissingCodexCredentialVerdictNamesTheHomeItRead(t *testing.T) {
 	for _, h := range []string{root, alpha} {
 		writeTestFile(t, filepath.Join(h, "config.yaml"), "model:\n  default: gpt-5.6-sol\n  provider: openai-codex\n")
 	}
-	writeTestFile(t, filepath.Join(root, "auth.json"), `{"version": 1, "providers": {}}`)
+	writeTestFile(t, filepath.Join(root, "auth.json"), `{"version": 2, "providers": {}}`)
 	t.Setenv("ICEBATH_HOME", root)
 	t.Setenv("HOME", filepath.Join(base, "home"))
 	t.Setenv("ICEBATH_PROFILE", "")

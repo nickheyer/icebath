@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/startupfast"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Release date of this build
@@ -61,7 +60,6 @@ func dispatchChildEntries(ctx context.Context) {
 	provider.DispatchCodexToolsMCPServerEntry()
 	runChildEntries(ctx, childEntriesAfterCodex)
 	agent.DispatchManagedWorkerEntry(exit)
-	tuiserver.DispatchTUIGatewayEntry(ctx, exit)
 	gatewayrun.DispatchGatewayRunModuleEntry(ctx, exit)
 	runChildEntries(ctx, childEntriesLast)
 }
@@ -158,31 +156,6 @@ func loadDotenv() {
 	if _, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{ProjectEnv: projectEnv}); err != nil {
 		pkgLog().Debug(fmt.Sprintf("dotenv load failed: %v", err))
 	}
-}
-
-// Bridges security.redact_secrets into the env before logging snapshots it, reporting network.force_ipv4
-func applyEarlyConfig() bool {
-	ctx := context.Background()
-	cfgPath := home.ConfigPath(home.Dir(ctx))
-	exists, err := config.ConfigExists(ctx, cfgPath)
-	if err != nil || !exists {
-		return false
-	}
-	raw, err := config.LoadUserEffective(cfgPath, nil)
-	if err != nil {
-		return false
-	}
-	if _, set := os.LookupEnv("ICEBATH_REDACT_SECRETS"); !set {
-		if sec, ok := raw["security"].(map[string]any); ok {
-			if redact, ok := sec["redact_secrets"]; ok && redact != nil {
-				os.Setenv("ICEBATH_REDACT_SECRETS", strings.ToLower(pyStr(redact)))
-			}
-		}
-	}
-	if net, ok := raw["network"].(map[string]any); ok && truthy(net["force_ipv4"]) {
-		return true
-	}
-	return false
 }
 
 // Long lived server launches cap glibc malloc arenas before any thread exists

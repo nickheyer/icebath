@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -30,17 +29,6 @@ func execute(ctx context.Context, command, args string, options map[string]any) 
 		options = map[string]any{}
 	}
 	return ExecuteSlashCommand(ctx, command, "gateway", args, options)
-}
-
-// Sets one config leaf through a strict raw round trip so read errors and expanded values never get saved
-func writeRawConfigLeaf(ctx context.Context, configPath string, keys []string, value any) error {
-	raw, err := config.ReadUserConfigRaw(ctx, configPath)
-	if err != nil {
-		return err
-	}
-	parents, leaf := keys[:len(keys)-1], keys[len(keys)-1]
-	nestedDict(raw, parents...)[leaf] = value
-	return config.AtomicConfigWrite(ctx, home.Dir(ctx), configPath, raw, "")
 }
 
 // First limit characters of text with an ellipsis when it was longer

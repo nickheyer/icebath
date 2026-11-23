@@ -2,13 +2,15 @@ package state
 
 import (
 	"context"
-	"math"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -78,11 +80,14 @@ func TestHolderWatchRescansOnTheSideGoroutine(t *testing.T) {
 }
 
 func TestSearchSlowMSReadsTheSessionsSetting(t *testing.T) {
-	ctx := context.Background()
-	for value, want := range map[string]float64{"": 1000, "  ": 1000, "250": 250, " 1_5.5 ": 15.5, "abc": 1000, "0": 0, "inf": math.Inf(1)} {
-		t.Setenv("ICEBATH_SEARCH_SLOW_MS", value)
-		if got, err := searchSlowMS(ctx); err != nil || got != want {
-			t.Errorf("ICEBATH_SEARCH_SLOW_MS=%q = %v %v, want %v", value, got, err, want)
+	dir := t.TempDir()
+	ctx := home.WithOverride(context.Background(), dir)
+	for value, want := range map[string]float64{"": 1000, "250": 250, "15.5": 15.5, "abc": 1000, "0": 0} {
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("sessions:\n  search_slow_ms: "+value+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := searchSlowMS(ctx); got != want {
+			t.Errorf("search_slow_ms %q = %v, want %v", value, got, want)
 		}
 	}
 }

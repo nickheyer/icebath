@@ -59,8 +59,6 @@ func tempHome(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("ICEBATH_LANGUAGE", "")
-	os.Unsetenv("ICEBATH_LANGUAGE")
 	ResetRegistryForTests()
 	ResetLanguageCache()
 	t.Cleanup(func() {
@@ -153,27 +151,14 @@ func TestLanguageIsPerProfileUnderMultiplex(t *testing.T) {
 	defHome, profB := filepath.Join(root, "default"), filepath.Join(root, "b")
 	writeFile(t, filepath.Join(defHome, "config.yaml"), "display:\n  language: fr\n")
 	writeFile(t, filepath.Join(profB, "config.yaml"), "display:\n  language: de\n")
-	t.Setenv("ICEBATH_LANGUAGE", "zh")
 	t.Setenv("ICEBATH_HOME", defHome)
 	ResetLanguageCache()
-	SetSecretReader(func(context.Context, string) (string, bool, error) { return "", false, nil })
-	t.Cleanup(func() { SetSecretReader(nil) })
 	ctx := context.Background()
 	if got := GetLanguage(ctx); got != "fr" {
 		t.Fatalf("scoped miss got %q", got)
 	}
 	if got := GetLanguage(home.WithOverride(ctx, profB)); got != "de" {
 		t.Fatalf("second profile got %q", got)
-	}
-}
-
-func TestUnscopedSecretReadsProcessEnvironment(t *testing.T) {
-	tempHome(t)
-	t.Setenv("ICEBATH_LANGUAGE", "ja")
-	SetSecretReader(func(context.Context, string) (string, bool, error) { return "", false, ErrUnscopedSecret })
-	t.Cleanup(func() { SetSecretReader(nil) })
-	if got := GetLanguage(context.Background()); got != "ja" {
-		t.Fatalf("got %q", got)
 	}
 }
 

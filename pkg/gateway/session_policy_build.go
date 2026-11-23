@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -247,15 +248,7 @@ func profileWorkspaceCwd(ctx context.Context, h string) (string, error) {
 	if name, ok := ProfileNameForHome(h); !ok || name == "default" {
 		return "", nil
 	}
-	raw, err := config.ReadUserConfigRaw(ctx, filepath.Join(h, "config.yaml"))
-	if err != nil {
-		return "", err
-	}
-	terminal, _ := raw["terminal"].(map[string]any)
-	text := ""
-	if pyrepr.Truthy(terminal["cwd"]) {
-		text = strings.TrimSpace(pyrepr.Str(terminal["cwd"]))
-	}
+	text := strings.TrimSpace(settings.WorkingFolder.Get(home.WithOverride(ctx, h)))
 	switch text {
 	case "", ".", "auto", "cwd":
 		return "", nil

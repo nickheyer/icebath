@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -165,6 +166,9 @@ func ResolveManifestWinners(manifests []*Manifest) map[string]*Manifest {
 			pkgLog().Info(fmt.Sprintf("Plugin '%s' at %s (%s) shadows the bundled copy at %s", key, m.Path, m.Source, shadowed.Path))
 		}
 		winners[key] = m
+	}
+	for _, m := range winners {
+		settings.RegisterPluginKeys(m.Name, m.ConfigKeys)
 	}
 	return winners
 }

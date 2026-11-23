@@ -443,6 +443,15 @@ func snapshotInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*py
 	if usage != nil {
 		info.Set("usage", usage)
 	}
+	if !pyTruthy(inventory.GetOr("system_prompt", nil)) {
+		row, err := a.DB.GetSession(ctx, ref.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if row != nil {
+			inventory.Set("system_prompt", anyText(row.GetOr("system_prompt", nil)))
+		}
+	}
 	merged := inventory.Copy()
 	for _, key := range info.Keys {
 		merged.Set(key, info.Vals[key])

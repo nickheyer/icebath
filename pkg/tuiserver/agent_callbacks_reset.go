@@ -20,8 +20,8 @@ func resetSessionAgent(ctx context.Context, sid string, session *tuihost.Session
 		return nil, err
 	}
 	updates := map[string]any{"attached_images": []any{}, "queued_prompt": nil, "_queued_prompt_generation": generation + 1,
-		"edit_snapshots": map[string]any{}, "image_counter": 0, "running": false, "show_reasoning": loadShowReasoning(ctx),
-		"tool_progress_mode": loadToolProgressMode(ctx), "tool_started_at": map[string]any{}}
+		"edit_snapshots": map[string]any{}, "image_counter": 0, "running": false,
+		"tool_started_at": map[string]any{}}
 	sessionKey, hasKey := session.Lookup("session_key")
 	if !hasKey {
 		return nil, fmt.Errorf("'session_key'")

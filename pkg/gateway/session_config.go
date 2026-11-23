@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -146,18 +147,14 @@ func readSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 	if err != nil {
 		return nil, err
 	}
-	settings := tuihost.ClientConfig(cfg)
+	client := tuigateway.ClientConfigOf(settings.WithSession(sctx, ref.SessionID))
 	displayValue := func(word string) (map[string]any, error) {
 		return map[string]any{"value": word}, nil
 	}
 	configPath := filepath.Join(profileHome, "config.yaml")
 	switch key {
 	case "full":
-		user, err := config.LoadUserEffective(configPath, config.EnvRefLookupContext(sctx))
-		if err != nil {
-			return nil, err
-		}
-		full := tuihost.ClientConfig(user)
+		full := tuigateway.ClientConfigOf(settings.WithSession(sctx, ref.SessionID))
 		return tuigateway.Plain(tuigateway.ConfigGetResult{Config: &full}), nil
 	case "mtime":
 		version, err := config.ConfigVersionOrNone(sctx, configPath)
@@ -172,37 +169,21 @@ func readSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 	case "reasoning":
 		return reasoningSetting(sctx, c, ref, agent, policy, cfg)
 	case "fast":
-		return fastSetting(sctx, c, ref, policy, agent, cfg)
+		return fastSetting(sctx, c, ref, policy, agent)
 	case "daybreak":
-		section, err := pyGet(cfg, "agent", nil)
-		if err != nil {
-			return nil, err
-		}
-		if !pyrepr.Truthy(section) {
-			section = map[string]any{}
-		}
-		value, err := pyGet(section, "daybreak", nil)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"value": value == true}, nil
+		return map[string]any{"value": settings.Daybreak.Get(sctx)}, nil
 	case "skin":
-		display, _ := cfg["display"].(map[string]any)
-		skin, isText := display["skin"].(string)
-		if !isText {
-			skin = "default"
-		}
-		return displayValue(skin)
+		return displayValue(settings.Skin.Get(sctx))
 	case "theme":
-		return displayValue(string(settings.Display.Theme))
+		return displayValue(string(client.Display.Theme))
 	case "indicator":
-		return displayValue(string(settings.Display.Indicator))
+		return displayValue(string(client.Display.Indicator))
 	case "details_mode":
-		return displayValue(string(settings.Display.DetailsMode))
+		return displayValue(string(client.Display.DetailsMode))
 	case "approvals.mode", "approval_mode":
 		return map[string]any{"value": tools.GetApprovalMode(tools.EnvForProfileHome(sctx, nil, profileHome))}, nil
 	case "project":
-		return projectSetting(sctx, params, policy, cfg)
+		return projectSetting(sctx, params, policy)
 	case "profile":
 		return map[string]any{"home": profileHome, "display": profileHome}, nil
 	}
@@ -263,7 +244,7 @@ func voiceSetting(c *AuthorityConnection, ref SessionRef) (map[string]any, error
 }
 
 // Fast tier word of the session's next turn, else the profile's configured tier
-func fastSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy *LocalSessionPolicy, agent any, cfg map[string]any) (map[string]any, error) {
+func fastSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy *LocalSessionPolicy, agent any) (map[string]any, error) {
 	var tier string
 	if ref.SessionID != "" {
 		current, err := currentTier(ctx, c, ref, policy)
@@ -278,19 +259,7 @@ func fastSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, po
 			tier = a.ServiceTier()
 		}
 		if tier == "" {
-			section, err := pyGet(cfg, "agent", map[string]any{})
-			if err != nil {
-				return nil, err
-			}
-			raw, err := pyGet(section, "service_tier", nil)
-			if err != nil {
-				return nil, err
-			}
-			word := ""
-			if pyrepr.Truthy(raw) {
-				word = pyrepr.Str(raw)
-			}
-			tier = provider.ParseServiceTier(word)
+			tier = provider.ParseServiceTier(settings.FastMode.Get(ctx))
 		}
 	}
 	word := "normal"
@@ -326,31 +295,21 @@ func reasoningSetting(ctx context.Context, c *AuthorityConnection, ref SessionRe
 	} else if e, ok := value["effort"]; ok {
 		effort = e
 	}
-	shown := true
-	if v, ok := config.LocalDisplayConfig(cfg["display"])["show_reasoning"]; ok {
-		shown = pyrepr.Truthy(v)
-	}
 	mode := "hide"
-	if shown {
+	if settings.ShowThinking.Get(settings.WithPlatform(ctx, settings.LocalPlatform)) {
 		mode = "show"
 	}
 	return map[string]any{"value": effort, "display": mode}, nil
 }
 
 // Working directory a project read names and its git branch
-func projectSetting(ctx context.Context, params *pyjson.Object, policy *LocalSessionPolicy, cfg map[string]any) (map[string]any, error) {
+func projectSetting(ctx context.Context, params *pyjson.Object, policy *LocalSessionPolicy) (map[string]any, error) {
 	cwd, _ := params.Get("cwd")
 	if !pyrepr.Truthy(cwd) {
 		if policy != nil {
 			cwd = policy.Cwd
 		} else {
-			terminal, err := pyGet(cfg, "terminal", map[string]any{})
-			if err != nil {
-				return nil, err
-			}
-			if cwd, err = pyGet(terminal, "cwd", nil); err != nil {
-				return nil, err
-			}
+			cwd = settings.WorkingFolder.Get(ctx)
 		}
 	}
 	if !pyrepr.Truthy(cwd) {

@@ -8,11 +8,10 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -203,24 +202,9 @@ func remoteBackendHint(ctx context.Context, env *tools.Env, backend string) (str
 		"If you need them, probe directly with a terminal call like `uname -a && whoami && pwd`.", description), nil
 }
 
-// Embedder environment description, ICEBATH_ENVIRONMENT_HINT winning over agent.environment_hint
-func embedderEnvironmentHint(env *tools.Env) (string, error) {
-	if v := pystr.Strip(os.Getenv("ICEBATH_ENVIRONMENT_HINT")); v != "" {
-		return v, nil
-	}
-	agentCfg := tools.ContextConfigReadonly(env, "agent.environment_hint")["agent"]
-	if agentCfg == nil || agentCfg == false || agentCfg == "" {
-		return "", nil
-	}
-	section, ok := agentCfg.(map[string]any)
-	if !ok {
-		return "", fmt.Errorf("config agent section is %s where a mapping was expected", errchain.Kind(agentCfg))
-	}
-	hint, ok := section["environment_hint"]
-	if !ok {
-		return "", nil
-	}
-	return pystr.Strip(pyrepr.Str(hint)), nil
+// Embedder environment description from agent.environment_hint
+func embedderEnvironmentHint(ctx context.Context) string {
+	return pystr.Strip(settings.AgentEnvironmentHint.Get(ctx))
 }
 
 // Host OS, home, cwd and scratch block for a local backend, plus the bash hint on native Windows
@@ -273,11 +257,7 @@ func BuildEnvironmentHints(ctx context.Context, env *tools.Env) (string, error) 
 	if hostinfo.IsWSL() {
 		hints = append(hints, WSLEnvironmentHint)
 	}
-	embedder, err := embedderEnvironmentHint(env)
-	if err != nil {
-		return "", err
-	}
-	hints = append(hints, embedder)
+	hints = append(hints, embedderEnvironmentHint(tools.WithEnvHome(ctx, env)))
 	kept := []string{}
 	for _, h := range hints {
 		if h != "" {

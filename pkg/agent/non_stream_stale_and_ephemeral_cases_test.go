@@ -3,9 +3,11 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Minimal anthropic_messages agent of tests/agent/test_ctx_halving_fix.py TestEphemeralMaxOutputTokens
@@ -52,12 +54,43 @@ func TestExplicitUserConfigOverridesDefault(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv(provider.APICallStaleTimeoutEnv, "")
-	os.Unsetenv(provider.APICallStaleTimeoutEnv)
 	a := &AIAgent{model: "gpt-5.5", provider: "openai-codex", apiKey: "sk-dummy", platform: "cli", apiMode: "codex_responses"}
 	a.setBaseURL("https://chatgpt.com/backend-api/codex")
 	got, err := a.ComputeNonStreamStaleTimeout(map[string]any{"input": "hi"})
 	if err != nil || got != 1800.0 {
 		t.Fatalf("stale %v %v", got, err)
+	}
+}
+
+// Writes settings into the test home's config.yaml, giving the test a fresh home unless it already has a temporary one
+func setSettingsForTest(t *testing.T, values map[string]any) {
+	t.Helper()
+	h := os.Getenv(home.EnvHome)
+	if h == "" || !strings.HasPrefix(h, os.TempDir()) {
+		h = t.TempDir()
+		t.Setenv(home.EnvHome, h)
+	}
+	path := filepath.Join(h, "config.yaml")
+	doc := map[string]any{}
+	if data, err := os.ReadFile(path); err == nil {
+		parsed, err := config.FastSafeLoad(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m, ok := parsed.(map[string]any); ok {
+			doc = m
+		}
+	}
+	for key, value := range values {
+		if err := config.Tree(doc).Set(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := config.SafeDump(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

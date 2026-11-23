@@ -7,12 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/containerinit"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
@@ -33,21 +31,7 @@ func DispatchStageEntry(ctx context.Context) {
 }
 
 func runStage(ctx context.Context, name string, args []string) int {
-	home := containerinit.DataHome()
 	switch name {
-	case "config-migrate":
-		backend := provider.SelectedConfigBackendName(home)
-		switch {
-		case backend == "remote":
-			fmt.Println("[stage2] ICEBATH_CONFIG_BACKEND=remote: skipping the config migration")
-		case backend == "":
-			fmt.Println("[stage2] Warning: could not determine the config backend; skipping the config migration")
-		case isFile(filepath.Join(home, "config.yaml")):
-			if config.DockerConfigMigrateMain(ctx, home) != 0 {
-				fmt.Println("[stage2] Warning: config migration failed; continuing")
-			}
-		}
-		return 0
 	case "dependencies":
 		root := pm.InstallRoot()
 		state, err := pm.RefreshDependencies(ctx, root)

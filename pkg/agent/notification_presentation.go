@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
@@ -33,23 +32,15 @@ func DiagnosticProcessEvent(event map[string]any) bool {
 	return false
 }
 
-// Owning profile effective config read once per turn as a fresh copy
-func NotificationConfigSnapshot(ctx context.Context) map[string]any {
-	return config.EffectiveUserConfig(ctx)
-}
-
-// Binds one foreground warning policy for callbacks and returns the restore of the previous binding
-func (a *AIAgent) NotificationPolicySnapshot(platform string, cfg map[string]any) (restore func()) {
-	savedPlatform, savedConfig := a.notificationPlatform, a.notificationConfig
-	a.notificationConfig, a.notificationPlatform = cfg, &platform
-	return func() { a.notificationPlatform, a.notificationConfig = savedPlatform, savedConfig }
+// Binds the platform whose warning policy callbacks follow and returns the restore of the previous binding
+func (a *AIAgent) NotificationPolicySnapshot(platform string) (restore func()) {
+	saved := a.notificationPlatform
+	a.notificationPlatform = &platform
+	return func() { a.notificationPlatform = saved }
 }
 
 // Reports whether the running notification turn mutes its reply on every surface
 func (a *AIAgent) MuteNotificationReply() bool { return a.muteNotificationReply }
-
-// Foreground notification config bound for the running turn, nil outside one
-func (a *AIAgent) NotificationConfig() map[string]any { return a.notificationConfig }
 
 type presentationSnapshot struct {
 	streamDelta, interimAssistant, reasoning, toolProgress, toolStart, toolComplete, toolGen any

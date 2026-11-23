@@ -2,16 +2,12 @@ package gatewayrun
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"regexp"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Host and container halves of a docker volume spec with its optional options
@@ -66,7 +62,7 @@ func (r *GatewayRunner) initGatewayRunner(ctx context.Context) error {
 
 // Warns when a docker backed messaging gateway has no host visible output mount for MEDIA delivery
 func (r *GatewayRunner) warnIfDockerMediaDeliveryIsRisky(ctx context.Context) {
-	if strings.ToLower(strings.TrimSpace(os.Getenv("TERMINAL_ENV"))) != "docker" {
+	if settings.WhereCommandsRun.Get(ctx) != "docker" {
 		return
 	}
 	messaging := 0
@@ -78,19 +74,7 @@ func (r *GatewayRunner) warnIfDockerMediaDeliveryIsRisky(ctx context.Context) {
 	if messaging == 0 {
 		return
 	}
-	var volumes []string
-	if raw := strings.TrimSpace(os.Getenv("TERMINAL_DOCKER_VOLUMES")); raw != "" {
-		parsed, err := pyjson.Loads(raw)
-		if err != nil {
-			pkgLog().Debug("Could not parse TERMINAL_DOCKER_VOLUMES for gateway media warning", "error", err)
-		} else if list, ok := parsed.([]any); ok {
-			for _, v := range list {
-				if s, ok := v.(string); ok {
-					volumes = append(volumes, s)
-				}
-			}
-		}
-	}
+	volumes := settings.TerminalDockerVolumes.Strings(ctx)
 	container := dockerVolumeSpecRE.SubexpIndex("container")
 	for _, spec := range volumes {
 		if m := dockerVolumeSpecRE.FindStringSubmatch(spec); m != nil && dockerMediaOutputContainerPaths[m[container]] {
@@ -101,11 +85,6 @@ func (r *GatewayRunner) warnIfDockerMediaDeliveryIsRisky(ctx context.Context) {
 		"output mount (for example '/home/user/.icebath/cache/documents:/output') is configured. " +
 		"This is fine if the model already emits host-visible paths, but MEDIA file delivery can fail " +
 		"for container-local paths like '/workspace/...' or '/output/...'.")
-}
-
-// File holding the per chat voice modes, under the process home
-func (r *GatewayRunner) voiceModePath() string {
-	return filepath.Join(home.Process(), "gateway_voice_mode.json")
 }
 
 // Whether the gateway asked to exit cleanly

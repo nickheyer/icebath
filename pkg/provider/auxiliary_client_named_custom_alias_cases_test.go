@@ -69,7 +69,7 @@ func TestResolveProviderClientNamedCustomNamedCustomProvider(t *testing.T) {
 
 func TestResolveProviderClientNamedCustomProvidersDictUsesDurablePoolWhenNoInlineKey(t *testing.T) {
 	ctx := auxMainTestHome(t, "providers:\n  b-ai:\n    name: B.AI\n    base_url: https://api.b.ai/v1\n")
-	auth, _ := json.Marshal(map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{"b-ai": []any{map[string]any{
+	auth, _ := json.Marshal(map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{"b-ai": []any{map[string]any{
 		"id": "k1", "label": "primary", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-real-b-ai-pool-key-12345"}}}})
 	if err := os.WriteFile(filepath.Join(home.Dir(ctx), "auth.json"), auth, 0o600); err != nil {
 		t.Fatal(err)

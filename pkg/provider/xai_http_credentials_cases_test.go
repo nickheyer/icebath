@@ -71,7 +71,7 @@ func TestSuppressedEnvKeyDoesNotOverrideOauth(t *testing.T) {
 			h := t.TempDir()
 			t.Setenv("ICEBATH_HOME", h)
 			store, err := json.Marshal(map[string]any{
-				"version": 1,
+				"version": 2,
 				"providers": map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{
 					"access_token": "oauth-live-token", "refresh_token": "r",
 					"expires_at": time.Now().UnixMilli() + 3_600_000}}},

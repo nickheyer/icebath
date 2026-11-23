@@ -20,6 +20,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -190,15 +191,9 @@ func (a *SlackAdapter) warnIfInchannelWithoutFlatReply(teamName string) {
 	}
 }
 
-// Normalized bot message policy, none, mentions or all
+// Bot message policy, none, mentions or all
 func (a *SlackAdapter) slackAllowBots(ctx context.Context) string {
-	raw, _ := gateway.ExtraOrSecret(ctx, a.extra(), "allow_bots", "SLACK_ALLOW_BOTS", "none", true)
-	value := pystr.Strip(pystr.Lower(pyrepr.Str(raw)))
-	if value != "none" && value != "mentions" && value != "all" {
-		pkgLog().Warn(fmt.Sprintf("[Slack] Unknown allow_bots=%s; treating as 'none'", pyrepr.Repr(raw)))
-		return "none"
-	}
-	return value
+	return settings.SlackAllowBots.Get(gateway.SettingsContext(ctx))
 }
 
 // User ids whose Web API posts count as human, from config or SLACK_API_HUMAN_USERS
@@ -538,14 +533,9 @@ func (a *SlackAdapter) RemoveReaction(ctx context.Context, chatID, messageID str
 	return nil
 }
 
-// Whether message reactions are enabled, SLACK_REACTIONS then config, on by default
+// Whether progress reactions are on
 func (a *SlackAdapter) ReactionsEnabled(ctx context.Context) bool {
-	configured, _ := gateway.ExtraOrSecret(ctx, a.extra(), "reactions", "SLACK_REACTIONS", "true", true)
-	switch pystr.Lower(pyrepr.Str(configured)) {
-	case "false", "0", "no":
-		return false
-	}
-	return true
+	return settings.SlackReactions.Get(gateway.SettingsContext(ctx))
 }
 
 // Message ts, team and marker of an event under reaction tracking, ok false otherwise
@@ -1027,68 +1017,7 @@ func (a *SlackAdapter) lookupAssistantThreadMetadata(event map[string]any, chann
 	return merged
 }
 
-// Whether channel messages need a mention, unrecognised values keeping the gate on
+// Whether channel messages need a mention
 func (a *SlackAdapter) slackRequireMention(ctx context.Context) bool {
-	configured, ok := a.extra()["require_mention"]
-	if !ok || configured == nil {
-		configured, _ = gateway.GetScopedSecret(ctx, "SLACK_REQUIRE_MENTION", "true", false)
-	}
-	if s, ok := configured.(string); ok {
-		switch pystr.Lower(s) {
-		case "false", "0", "no", "off":
-			return false
-		}
-		return true
-	}
-	return pyrepr.Truthy(configured)
-}
-
-// Opt in boolean, config extra first then the environment variable, false by default
-func (a *SlackAdapter) extraOrEnvFlag(ctx context.Context, key, envVar string, strip bool) bool {
-	configured, _ := gateway.ExtraOrSecret(ctx, a.extra(), key, envVar, "false", false)
-	if s, ok := configured.(string); ok {
-		if strip {
-			s = pystr.Strip(s)
-		}
-		switch pystr.Lower(s) {
-		case "true", "1", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return pyrepr.Truthy(configured)
-}
-
-// Channel id set from config extra as a list or CSV, else the environment variable CSV
-func (a *SlackAdapter) extraOrEnvChannelSet(ctx context.Context, key, envVar string, coerceScalar bool) map[string]bool {
-	raw, _ := gateway.ExtraOrSecret(ctx, a.extra(), key, envVar, "", false)
-	out := map[string]bool{}
-	if list, ok := raw.([]any); ok {
-		for _, part := range list {
-			if s := pystr.Strip(pyrepr.Str(part)); s != "" {
-				out[s] = true
-			}
-		}
-		return out
-	}
-	if coerceScalar {
-		if raw == nil {
-			raw = ""
-		} else {
-			raw = pystr.Strip(pyrepr.Str(raw))
-		}
-	}
-	if s, ok := raw.(string); ok && pystr.Strip(s) != "" {
-		for _, part := range strings.Split(s, ",") {
-			if p := pystr.Strip(part); p != "" {
-				out[p] = true
-			}
-		}
-	}
-	return out
-}
-
-// Channels where the generic gateway stays silent
-func (a *SlackAdapter) slackIgnoredChannels(ctx context.Context) map[string]bool {
-	return slackIgnoredChannelsGetter(a, ctx)
+	return settings.SlackRequireMention.Get(gateway.SettingsContext(ctx))
 }

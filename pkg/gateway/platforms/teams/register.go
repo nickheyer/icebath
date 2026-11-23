@@ -177,7 +177,7 @@ func checkTeamsRequirements(context.Context) (bool, error) { return true, nil }
 
 // Setup flow pointer shown when the Teams support is reported missing
 func installHint() string {
-	return "Teams SDK missing — start `icebath`, type `/setup gateway`, configure Teams, then restart the gateway"
+	return "Teams SDK missing — start `icebath`, type `/setup chat-apps`, configure Teams, then restart the gateway"
 }
 
 // Model facing description of Teams markdown support

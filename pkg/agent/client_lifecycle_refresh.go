@@ -2,9 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
-	"maps"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -12,11 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
-
-// Turn boundary credential watch state of the env refresh
-type credentialRefreshState struct {
-	envCredsSeen *[2]string
-}
 
 // Python str of an arbitrary value, empty for nil
 func pyStrValue(v any) string {
@@ -29,53 +21,6 @@ func pyStrValue(v any) string {
 	return pyrepr.Str(v)
 }
 
-// Adopts only env edits since the last look, never drift from pool rotation or a configured base url
-func (a *AIAgent) shouldAdoptEnvCredentials(apiKey, baseURL, defaultBase string) bool {
-	prev := a.envCredsSeen
-	currentBase := strings.TrimRight(strings.TrimSpace(a.baseURL), "/")
-	unchanged := baseURL == currentBase && apiKey == a.apiKey
-	if prev == nil {
-		poolRotated := apiKey != a.apiKey && a.credentialPool != nil && a.credentialPoolEntryID != ""
-		return currentBase == defaultBase && !unchanged && !poolRotated
-	}
-	return (baseURL != prev[0] || apiKey != prev[1]) && (currentBase == defaultBase || currentBase == prev[0]) && !unchanged
-}
-
-// Adopts .env credential and base url edits at the turn boundary, rolling back when the client rebuild fails
-func (a *AIAgent) tryRefreshEnvClientCredentials(ctx context.Context) (bool, error) {
-	if a.apiMode != "chat_completions" || a.fallbackActivated {
-		return false, nil
-	}
-	apiKey, baseURL, defaultBase, ok := provider.ResolveEnvCredentials(agentPoolEnv(ctx), a.provider, a.requestedProvider)
-	if !ok {
-		return false, nil
-	}
-	if !a.shouldAdoptEnvCredentials(apiKey, baseURL, defaultBase) {
-		a.envCredsSeen = &[2]string{baseURL, apiKey}
-		return false, nil
-	}
-	routeChanged := provider.NormalizeRouteBaseURL(a.baseURL) != provider.NormalizeRouteBaseURL(baseURL)
-	priorAPIKey, priorBaseURL := a.apiKey, a.baseURL
-	priorClientKwargs := maps.Clone(a.clientKwargs)
-	a.apiKey = apiKey
-	a.setBaseURL(baseURL)
-	a.syncClientKwargsCredentials()
-	if err := a.reapplyRouteClientConfig(ctx, routeChanged); err != nil {
-		return false, err
-	}
-	if !a.replacePrimaryOpenAIClient("env_credential_refresh") {
-		a.apiKey = priorAPIKey
-		a.setBaseURL(priorBaseURL)
-		clear(a.clientKwargs)
-		maps.Copy(a.clientKwargs, priorClientKwargs)
-		return false, nil
-	}
-	syncCredentialPoolEntryID(a)
-	a.envCredsSeen = &[2]string{baseURL, apiKey}
-	pkgLog().Info(fmt.Sprintf("Applied updated .env credentials for %s: endpoint %s", a.provider, a.baseURL))
-	return true, nil
-}
-
 // Recomputes TLS material and default headers for the current base url after it may have moved
 func (a *AIAgent) reapplyRouteClientConfig(ctx context.Context, routeChanged bool) error {
 	if a.clientKwargs == nil {
@@ -84,7 +29,7 @@ func (a *AIAgent) reapplyRouteClientConfig(ctx context.Context, routeChanged boo
 	delete(a.clientKwargs, "ssl_verify")
 	delete(a.clientKwargs, "ssl_ca_cert")
 	cfg := provider.LoadConfigSafe(ctx, home.Dir(ctx))
-	provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, a.baseURL, provider.CompatibleCustomProviders(cfg), cfg)
+	provider.ApplyCustomProviderTLSToClientKwargs(a.clientKwargs, a.baseURL, provider.ProviderEntries(cfg), cfg)
 	return a.applyClientHeadersForBaseURL(ctx, a.baseURL, !routeChanged)
 }
 
@@ -96,7 +41,7 @@ func aiGatewayRouteHeaders(context.Context, string, string) (map[string]string, 
 // Route default headers a client rebuild applies, the first matching host winning
 var routeDefaultHeadersTable = []hostDefaultHeaders{
 	{"openrouter.ai", func(ctx context.Context, _, _ string) (map[string]string, error) {
-		return provider.BuildORHeaders(ctx, nil)
+		return provider.BuildORHeaders(ctx), nil
 	}},
 	{"ai-gateway.vercel.sh", aiGatewayRouteHeaders},
 	{"integrate.api.nvidia.com", func(_ context.Context, _, base string) (map[string]string, error) {

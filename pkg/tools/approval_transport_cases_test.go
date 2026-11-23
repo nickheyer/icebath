@@ -8,8 +8,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Request of the request fixture
@@ -182,7 +180,7 @@ func TestTransportResolutionErrorDoesNotLogPluginException(t *testing.T) {
 	atInstallResolver(t, func(*Env, string) (*RegisteredApprovalTransport, error) {
 		return nil, errors.New("plugin-owned-secret-value")
 	})
-	env := &Env{Config: config.Tree{"security": map[string]any{"approval": map[string]any{"transport": "phone"}}}}
+	env := approvalYAMLEnv(t, "security:\n  approval:\n    transport: phone\n")
 	attempt := presentWithSelectedTransport(context.Background(), env, transportRequest{
 		command: "rm -rf /tmp/example", description: "dangerous", patternKey: "rm_recursive", patternKeys: []string{"rm_recursive"},
 		sessionKey: "session-a", surface: "cli", allowSession: true, allowPermanent: true})

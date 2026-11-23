@@ -199,7 +199,7 @@ func writeCooldownPool(t *testing.T, h, provider, cooldown, model string) map[st
 	case "model_cooldown":
 		entry["model_cooldowns"] = map[string]any{model: now + 3*3600}
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{},
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{provider: []any{entry}}})
 	return entry
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -20,8 +21,6 @@ import (
 const (
 	MaxDiscussionMembers    = 6
 	MinDiscussionMembers    = 2
-	MaxDiscussionRounds     = 3
-	MaxDiscussionMessages   = 10
 	maxDiscussionDeltaLines = 24
 	maxUserTextBytes        = 64 * 1024
 	maxMemberTextBytes      = 64 * 1024
@@ -106,7 +105,7 @@ func NewDiscussionLimits(maxRounds, maxMessages any) (DiscussionLimits, error) {
 
 // Default scheduling ceilings
 func DefaultDiscussionLimits() DiscussionLimits {
-	return DiscussionLimits{MaxDiscussionRounds, MaxDiscussionMessages}
+	return DiscussionLimits{int64(settings.HostedRoomsDiscussionMaxRounds.Default), int64(settings.HostedRoomsDiscussionMaxMessages.Default)}
 }
 
 // One immutable local or peer member of the hosted room

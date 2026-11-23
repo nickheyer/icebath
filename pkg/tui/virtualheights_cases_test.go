@@ -6,7 +6,7 @@ import (
 
 func TestVirtualHeightEstimates(t *testing.T) {
 	t.Run("uses stable content keys across resumed message objects", func(t *testing.T) {
-		m := msg{Role: "assistant", Text: "same text", Tools: []string{"Search Files [long message]"}}
+		m := msg{Role: "assistant", Text: "same text", Tools: []toolRow{{Call: "Search Files [long message]"}}}
 		copied := m
 		if messageHeightKey(m) != messageHeightKey(copied) {
 			t.Fatal("keys differ")

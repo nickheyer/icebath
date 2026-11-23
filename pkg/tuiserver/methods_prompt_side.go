@@ -14,14 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-var promptSideRegistry = &handlerRegistry{}
-
-func init() {
-	promptSideRegistry.method("prompt.background", promptBackground)
-	promptSideRegistry.method("prompt.btw", promptBtw)
-	promptSideRegistry.install()
-}
-
 // Final response of a side turn result, the whole result as text when it is no dict
 func finalResponseText(result any) string {
 	if dict, isDict := result.(map[string]any); isDict {

@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -31,7 +32,7 @@ func selfContainedPromptContent(ctx context.Context, header, body string, codeBl
 
 // User mentions of numeric allowlist entries for approval prompts when approval_mentions is on
 func (a *DiscordAdapter) approvalMentionContent(ctx context.Context) string {
-	if !a.extraOrEnvFlag(ctx, "approval_mentions", "DISCORD_APPROVAL_MENTIONS", "false", true) {
+	if !settings.DiscordApprovalMentions.Get(a.sctx(ctx)) {
 		return ""
 	}
 	a.mu.Lock()

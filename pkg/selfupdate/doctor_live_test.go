@@ -54,6 +54,9 @@ func doctorLiveTestEnv(t *testing.T, cfg map[string]any) (*doctorLiveEnv, *bytes
 	if cfg == nil {
 		cfg = map[string]any{}
 	}
+	if err := config.SaveUser(context.Background(), h, cfg); err != nil {
+		t.Fatal(err)
+	}
 	e.loadConfig = func() (map[string]any, error) { return cfg, nil }
 	e.browserAvailable = func() bool { return false }
 	spoken := filepath.Join(t.TempDir(), "check.ogg")
@@ -290,7 +293,7 @@ func TestBrowserAvailableFollowsChromiumSelection(t *testing.T) {
 				if err := os.WriteFile(chrome, []byte("#!/bin/sh\n"), 0o755); err != nil {
 					t.Fatal(err)
 				}
-				seed := fmt.Sprintf("_config_version: %d\nbrowser:\n  executable_path: %s\n", config.LatestConfigVersion(), chrome)
+				seed := fmt.Sprintf("browser:\n  executable_path: %s\n", chrome)
 				if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(seed), 0o644); err != nil {
 					t.Fatal(err)
 				}
@@ -397,9 +400,13 @@ func TestTimeoutHandlingProbeTimeoutBoundedAndConfigurable(t *testing.T) {
 	if seen != 3 {
 		t.Fatalf("timeout = %v", seen)
 	}
-	for raw, want := range map[any]float64{0.2: 1, "7": 7, "soon": 10, nil: 10} {
-		if got, err := doctorLiveTimeout(map[string]any{"doctor": map[string]any{"live_probe_timeout": raw}}); err != nil || got != want {
-			t.Fatalf("timeout of %v = %v %v, want %v", raw, got, err, want)
+	for raw, want := range map[string]float64{"0.2": 1, "'7'": 7, "soon": 10, "null": 10} {
+		h := t.TempDir()
+		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("doctor:\n  live_probe_timeout: "+raw+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := doctorLiveTimeout(context.Background(), h); got != want {
+			t.Fatalf("timeout of %v = %v, want %v", raw, got, want)
 		}
 	}
 }

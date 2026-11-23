@@ -4,11 +4,10 @@ package tuiserver
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/pet"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Puts the active pet watch ahead of the session and skill watches
@@ -28,13 +27,7 @@ func activePet(ctx context.Context) (*pet.InstalledPet, float64, error) {
 // Slug, spritesheet revision and scale of the active pet, the off signature when none renders
 func petSig(ctx context.Context) (sig any) {
 	off := []any{"off"}
-	rawDisplay := loadCfg(ctx)["display"]
-	display, isDict := rawDisplay.(map[string]any)
-	if truthy(rawDisplay) && !isDict {
-		panic(fmt.Sprintf("the display section of the config must be a mapping, got %s", errchain.Kind(rawDisplay)))
-	}
-	petConf, _ := display["pet"].(map[string]any)
-	if len(petConf) == 0 || !isTruthyValueDefault(petConf["enabled"], false) {
+	if !settings.Pet.Get(ctx) {
 		return off
 	}
 	defer func() {

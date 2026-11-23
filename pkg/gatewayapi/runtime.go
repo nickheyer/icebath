@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -704,7 +705,7 @@ func (a *APIServerAdapter) createAgent(ctx context.Context, o agentOptions) (*ag
 	}
 	sort.Strings(enabledToolsets)
 	interim := o.interimAssistantCb
-	if !pyrepr.Truthy(config.ResolveDisplaySetting(ctx, userConfig, "api_server", "interim_assistant_messages", true)) {
+	if !settings.DisplayInterimAssistantMessages.Get(settings.WithPlatform(ctx, "api_server")) {
 		interim = nil
 	}
 	maxIterations := gateway.CurrentMaxIterations(ctx)

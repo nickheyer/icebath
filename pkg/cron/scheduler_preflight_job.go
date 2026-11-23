@@ -153,7 +153,7 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 			}
 		}
 		if !connected[strings.ToLower(platform)] && !s.deliveryPlatformRoutedFromPrimaryGateway(ctx, platform) {
-			msg := fmt.Sprintf("delivery platform '%s' has no gateway credentials configured (not connected). Configure it (start `icebath` and type `/setup gateway`) or change the job's `deliver` target.", platform)
+			msg := fmt.Sprintf("delivery platform '%s' has no gateway credentials configured (not connected). Configure it (start `icebath` and type `/setup chat-apps`) or change the job's `deliver` target.", platform)
 			return &msg
 		}
 	}

@@ -26,7 +26,7 @@ func auxRecoverRaise(fn func()) (err error) {
 // Credential pool of the provider when it holds credentials, nil otherwise with a load failure logged at debug
 func auxLoadPoolWithCredentials(ctx context.Context, provider, note string) *Pool {
 	var pool *Pool
-	if err := auxRecoverRaise(func() { pool = LoadPool(modelsPoolEnv(ctx), provider) }); err != nil {
+	if err := auxRecoverRaise(func() { pool = LoadSelectedPool(modelsPoolEnv(ctx), provider) }); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Auxiliary client: could not load pool for %s%s: %v", provider, note, err))
 		return nil
 	}

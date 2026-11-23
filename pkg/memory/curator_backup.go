@@ -26,15 +26,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 )
 
 const (
-	curatorBackupDefaultKeep = 2
-	curatorCronJobsFilename  = "cron-jobs.json"
-	curatorArchiveName       = "skills.tar.gz"
-	curatorStagingPrefix     = ".rollback-staging-"
-	curatorUnrestoredPrefix  = ".rollback-unrestored-"
+	curatorCronJobsFilename = "cron-jobs.json"
+	curatorArchiveName      = "skills.tar.gz"
+	curatorStagingPrefix    = ".rollback-staging-"
+	curatorUnrestoredPrefix = ".rollback-unrestored-"
 )
 
 var curatorExcludeTopLevel = map[string]bool{".curator_backups": true, ".hub": true, ".locks": true, ".git": true, ".archive": true, ".curator_ledger.jsonl": true}
@@ -142,11 +142,6 @@ func curatorUTCID(now time.Time) string {
 	return now.UTC().Format("2006-01-02T15-04-05") + "Z"
 }
 
-// curator.backup section of the config, replaced by tests
-var curatorBackupConfig = func(ctx context.Context) map[string]any {
-	return curatorConfigSection(ctx, "curator backup", pkgLog(), "curator", "backup")
-}
-
 // Snapshot id clock, snapshot entry, move and rename the rollback and curator run reach, replaced by tests
 var (
 	curatorUTCIDNow       = curatorUTCID
@@ -157,24 +152,12 @@ var (
 
 // Snapshot before mutating passes, on unless curator.backup.enabled is false
 func CuratorBackupEnabled(ctx context.Context) bool {
-	v, ok := curatorBackupConfig(ctx)["enabled"]
-	if !ok {
-		v = true
-	}
-	return pyrepr.Truthy(v)
+	return settings.CuratorBackupEnabled.Get(ctx)
 }
 
 // Snapshots kept by the prune, at least one
 func CuratorBackupKeep(ctx context.Context) int {
-	v, ok := curatorBackupConfig(ctx)["keep"]
-	if !ok {
-		v = curatorBackupDefaultKeep
-	}
-	n, err := pyint.Of(v)
-	if err != nil {
-		return curatorBackupDefaultKeep
-	}
-	return max(1, curatorBigToInt(n))
+	return max(1, settings.CuratorBackupKeep.Get(ctx))
 }
 
 // SKILL.md files under base that skill scanners would not skip

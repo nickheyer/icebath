@@ -78,7 +78,6 @@ func strippedText(v *string) string { return stripAnsi(val(v)) }
 
 // Dispatches one gateway event to the store, the turn controller and the app
 func (h *eventHandler) handle(ev gatewayEventMsg) {
-	h.renewOnRedraw()
 	sid := h.store.ui.Sid
 	if ev.SessionID != "" && sid != "" && ev.SessionID != sid && !strings.HasPrefix(ev.Type, "gateway.") {
 		h.store.withdrawOutOfView(ev)
@@ -100,6 +99,10 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	case tuigateway.ConnectionRequestEvent.Name():
 		if request, ok := eventPayload(h, tuigateway.ConnectionRequestEvent, p); ok {
 			h.store.applyConnectionRequest(request)
+		}
+	case tuigateway.LoginExhausted.Name():
+		if ex, ok := eventPayload(h, tuigateway.LoginExhausted, p); ok {
+			h.queue(h.app.loginExhausted(ex))
 		}
 	case tuigateway.ConnectionUpdateEvent.Name():
 		if update, ok := eventPayload(h, tuigateway.ConnectionUpdateEvent, p); ok {
@@ -177,11 +180,9 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 	case "voice.interrupted":
 		h.setStatus(tr(txt.GatewayMsgStatusVoiceInterrupted))
 		h.turn.restoreStatusAfter(statusNoteHold)
-		if h.gw.canonical() {
-			speech.latch()
-			if h.store.ui.Busy {
-				h.queue(h.app.interruptTurn())
-			}
+		speech.latch()
+		if h.store.ui.Busy {
+			h.queue(h.app.interruptTurn())
 		}
 	case tuigateway.VoiceSpeechEvent.Name():
 		if spoken, ok := eventPayload(h, tuigateway.VoiceSpeechEvent, p); ok {
@@ -254,7 +255,7 @@ func (h *eventHandler) handle(ev gatewayEventMsg) {
 			h.turn.pushTrail(tr(txt.ToolDrafting, generating.Name))
 		}
 	case "reaction":
-		h.store.flashGoodVibes()
+		h.queue(h.store.flashGoodVibes())
 		h.store.flashPet("jump", petFlashDefault)
 	case tuigateway.ToolStartEvent.Name():
 		if start, ok := eventPayload(h, tuigateway.ToolStartEvent, p); ok {
@@ -468,26 +469,10 @@ func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
 			return next
 		})
 	}
+	for _, m := range finishedTurnRows(done, p, h.turn.summaryLine()) {
+		h.app.appendMessage(m)
+	}
 	if !done.WasInterrupted {
-		errText := val(p.Error)
-		failed := val(p.Status) == "error" && !val(p.Partial) && isBareErrorText(done.FinalText, errText)
-		var msgs []msg
-		switch {
-		case failed:
-			for i, m := range done.FinalMessages {
-				if !(i == len(done.FinalMessages)-1 && m.Role == "assistant" && isBareErrorText(m.Text, errText)) {
-					msgs = append(msgs, m)
-				}
-			}
-			msgs = append(msgs, msg{Role: "assistant", Text: describeTurnFailure(p)})
-		case len(done.FinalMessages) > 0:
-			msgs = done.FinalMessages
-		default:
-			msgs = []msg{{Role: "assistant", Text: done.FinalText}}
-		}
-		for _, m := range msgs {
-			h.app.appendMessage(m)
-		}
 		beat := "wave"
 		if isTodoDone(h.store.turn.Todos) {
 			beat = "jump"
@@ -496,9 +481,6 @@ func (h *eventHandler) messageComplete(ev gatewayEventMsg) {
 		if h.app.bellOnComplete() {
 			h.queue(tea.Raw("\x07"))
 		}
-	}
-	if line := h.turn.summaryLine(); line != "" {
-		h.app.appendMessage(msg{Kind: "event", Role: "system", Text: line})
 	}
 	h.setStatus("ready")
 	if warning := val(p.Warning); warning != "" {
@@ -524,8 +506,10 @@ func (h *eventHandler) handleErrorEvent(failure tuigateway.ErrorPayload, version
 	h.store.flashPet("failed", petFlashDefault)
 	h.turn.pushActivity(message, "error", "")
 	if noProviderRe.MatchString(message) {
+		h.store.ui.SetupRequired = true
 		h.app.panel(setupRequiredTitle(), buildSetupRequiredSections())
 		h.setStatus(tr(txt.SessionStatusSetupRequired))
+		h.queue(h.app.offerGetStarted())
 		return
 	}
 	h.app.sys(errorLine(describeRPCError(errors.New(message))))
@@ -553,7 +537,7 @@ func (h *eventHandler) applySessionInfo(ev gatewayEventMsg) {
 		h.store.markBubbleShown(started.InputID)
 		row := tuigateway.TranscriptMessage{Role: "user", Text: &started.User, DisplayKind: started.DisplayKind, DisplayMetadata: started.DisplayMetadata}
 		staged, typedHere := h.store.takePastes(started.User)
-		for _, shown := range toTranscriptMessages([]tuigateway.TranscriptMessage{row}) {
+		for _, shown := range toTranscriptMessages([]tuigateway.TranscriptMessage{row}, h.store.ui) {
 			if typedHere && shown.Role == "user" && shown.Kind == "" {
 				shown.Text, shown.Pastes = staged.display, staged.pastes
 			}
@@ -561,7 +545,8 @@ func (h *eventHandler) applySessionInfo(ev gatewayEventMsg) {
 		}
 	}
 	if running := incoming.Running; running != nil && *running {
-		h.store.ui.Busy, h.store.ui.Status = true, "running…"
+		h.store.setBusy(true)
+		h.store.ui.Status = "running…"
 	}
 	if running := incoming.Running; running != nil && !*running {
 		h.turn.clearStatusTimer()

@@ -23,7 +23,7 @@ func (pendingSpawn) Pid() int          { return 1 }
 // Ready verdict of a current owner serving home
 func readyVerdict(h string) ObservedEndpoint {
 	return ObservedEndpoint{State: "ready", Endpoint: &GatewayEndpoint{ProfileID: h, InstanceID: "new", AuthorityEpoch: big.NewInt(1),
-		RuntimeProtocol: 1, APIOrigin: "http://127.0.0.1:1", Supervisor: "none", Capabilities: map[string]bool{"session-authority-v1": true}}}
+		RuntimeProtocol: 1, APIOrigin: "http://127.0.0.1:1", Supervisor: "none"}}
 }
 
 // Resolved temp home with the update fence open
@@ -64,16 +64,6 @@ func TestEnsureReplacesAnIncompatibleOwnerOfThisHome(t *testing.T) {
 	result, err := EnsureGatewayRuntime(context.Background(), h, 5, false)
 	if err != nil || result.State != "ready" || len(*stopped) != 1 || (*stopped)[0] != h {
 		t.Fatalf("%+v %v %v", result, err, *stopped)
-	}
-}
-
-func TestACurrentProtocolOwnerWithoutSessionAuthorityIsNotReplaced(t *testing.T) {
-	h := replaceHome(t)
-	scriptVerdicts(t, ObservedEndpoint{State: "incompatible", ReasonCode: "session_authority_unavailable"})
-	calls := recordReplacements(t, "")
-	result, err := EnsureGatewayRuntime(context.Background(), h, 5, false)
-	if err != nil || result.ReasonCode != "session_authority_unavailable" || len(*calls) != 0 {
-		t.Fatalf("%+v %v %v", result, err, *calls)
 	}
 }
 

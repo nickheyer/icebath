@@ -441,7 +441,7 @@ func (s *Store) customStoredKeyError(ctx context.Context, bu string) (string, er
 	}
 	configured = append(configured, provider.GetSecretStr(ctx, "OPENAI_BASE_URL", ""), provider.OpenRouterBaseURL)
 	configured = append(configured, cronProviderResolver.registryURLs()...)
-	for _, entry := range provider.CompatibleCustomProviders(map[string]any(cfg)) {
+	for _, entry := range provider.ProviderEntries(map[string]any(cfg)) {
 		if u, ok := entry["base_url"]; ok && pyrepr.Truthy(u) {
 			configured = append(configured, pyrepr.Str(u))
 		}

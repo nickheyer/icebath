@@ -32,8 +32,6 @@ import (
 )
 
 const (
-	defaultWSGatewayURL       = "wss://bot-wss.yuanbao.tencent.com/wss/connection"
-	defaultBotAPIDomain       = "https://bot.yuanbao.tencent.com"
 	heartbeatIntervalSeconds  = 30.0
 	connectTimeoutSeconds     = 15.0
 	authTimeoutSeconds        = 10.0

@@ -85,7 +85,7 @@ func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuihost
 				tuihost.Emit(scoped, "status.update", sid, map[string]any{"kind": "process", "text": "Resuming interrupted turn…"})
 				tuihost.Emit(scoped, "message.start", sid, nil)
 				return nil
-			}, "tui", diagnostic, nil); err != nil {
+			}, "tui", diagnostic); err != nil {
 				panic(err)
 			}
 			o := promptSubmitOptions{displayKind: "auto_continue"}

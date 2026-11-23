@@ -5,11 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Budget of bot authored inbound messages per conversation and the cooldown once it trips
@@ -20,73 +16,26 @@ type BotLoopGuardSettings struct {
 	CooldownSeconds float64
 }
 
-// Default bot loop guard budget of 20 messages per 300 seconds with a 600 second cooldown
+// Bot loop guard budget the registry gives by default
 func DefaultBotLoopGuardSettings() BotLoopGuardSettings {
-	return BotLoopGuardSettings{Enabled: true, MaxEvents: 20, WindowSeconds: 300.0, CooldownSeconds: 600.0}
+	return BotLoopGuardSettings{Enabled: settings.GatewayBotLoopGuardEnabled.Default, MaxEvents: settings.GatewayBotLoopGuardMaxEvents.Default,
+		WindowSeconds: settings.GatewayBotLoopGuardWindowSeconds.Default.Seconds(), CooldownSeconds: settings.GatewayBotLoopGuardCooldownSeconds.Default.Seconds()}
 }
 
-// Boolean of a config value, the default for anything that is not a recognised token
-func botGuardBool(raw any, def bool) bool {
-	if b, ok := raw.(bool); ok {
-		return b
-	}
-	text := ""
-	if raw != nil {
-		text = pystr.Lower(pystr.Strip(pyrepr.Str(raw)))
-	}
-	switch text {
-	case "true", "1", "yes", "on":
-		return true
-	case "false", "0", "no", "off":
-		return false
-	}
-	return def
-}
-
-// Positive float of a config value, the default for a bool, an unparseable or a non positive value
-func botGuardPositive(raw any, def float64) float64 {
-	if _, isBool := raw.(bool); isBool {
-		return def
-	}
-	value, err := pyint.Float(raw)
-	if err != nil || !(value > 0) {
-		return def
-	}
-	return value
-}
-
-// Positive whole number of a config value, the default unless it is an integral value of at least one
-func botGuardPositiveInt(raw any, def int) int {
-	value := botGuardPositive(raw, 0.0)
-	if value >= 1 && value == float64(int64(value)) {
-		return int(value)
-	}
-	return def
-}
-
-// Settings of the gateway.bot_loop_guard config block, an unusable value keeping its default
-func BotLoopGuardSettingsFromConfig(cfg map[string]any) BotLoopGuardSettings {
-	defaults := DefaultBotLoopGuardSettings()
-	raw, _ := config.CfgGet(cfg, "gateway", "bot_loop_guard")
-	block, ok := raw.(map[string]any)
-	if !ok {
-		return defaults
-	}
-	return BotLoopGuardSettings{
-		Enabled:         botGuardBool(block["enabled"], defaults.Enabled),
-		MaxEvents:       botGuardPositiveInt(block["max_events"], defaults.MaxEvents),
-		WindowSeconds:   botGuardPositive(block["window_seconds"], defaults.WindowSeconds),
-		CooldownSeconds: botGuardPositive(block["cooldown_seconds"], defaults.CooldownSeconds),
-	}
-}
-
-// Settings of the live config.yaml, the defaults when it cannot be read
+// Bot loop guard budget of the profile in ctx, a non positive count or span keeping its default
 func LoadBotLoopGuardSettings(ctx context.Context) BotLoopGuardSettings {
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return DefaultBotLoopGuardSettings()
+	out := DefaultBotLoopGuardSettings()
+	out.Enabled = settings.GatewayBotLoopGuardEnabled.Get(ctx)
+	if n := settings.GatewayBotLoopGuardMaxEvents.Get(ctx); n > 0 {
+		out.MaxEvents = n
 	}
-	return BotLoopGuardSettingsFromConfig(cfg)
+	if d := settings.GatewayBotLoopGuardWindowSeconds.Get(ctx); d > 0 {
+		out.WindowSeconds = d.Seconds()
+	}
+	if d := settings.GatewayBotLoopGuardCooldownSeconds.Get(ctx); d > 0 {
+		out.CooldownSeconds = d.Seconds()
+	}
+	return out
 }
 
 var botGuardEpoch = time.Now()

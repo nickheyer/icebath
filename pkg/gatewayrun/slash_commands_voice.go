@@ -32,17 +32,13 @@ func (r *GatewayRunner) handleVoiceCommand(ctx context.Context, event *gateway.M
 		return "", err
 	}
 	currentMode := func() string {
-		if r.voiceMode == nil {
-			return "off"
-		}
-		if mode, ok := r.voiceMode.Get(voiceKey); ok {
+		if mode, ok := chatVoiceMode(voiceKey); ok {
 			return mode
 		}
 		return "off"
 	}
 	setMode := func(mode string) {
-		r.setVoiceMode(voiceKey, mode)
-		r.saveVoiceModes()
+		storeChatVoiceMode(voiceKey, mode)
 		gateway.LocalVoiceTransition(event.Source, mode)
 		if adapter == nil {
 			return

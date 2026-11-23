@@ -24,7 +24,6 @@ func init() {
 	learningMutation("edit", []string{"id", "content"}, func(ctx context.Context, args []string) (map[string]any, error) {
 		return memory.EditNode(ctx, configEnv(ctx), args[0], args[1])
 	})
-	guardedRPC(toolsLearningRegistry, "skills.reload", 5025, rpcShape{}, skillsReload)
 	toolsLearningRegistry.install()
 }
 

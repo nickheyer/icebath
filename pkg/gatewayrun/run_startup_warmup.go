@@ -11,24 +11,18 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Default seconds the boot auto resume and the boot warm up may hold the inbound gate shut
-const (
-	startupRestoreDrainTimeoutSecsDefault = 30.0
-	startupWarmupTimeoutSecsDefault       = 20.0
-)
-
 // Seconds the startup restore holds the inbound gate for boot auto resume, non positive disabling the bound
-func startupRestoreDrainTimeoutSecs() float64 {
-	return floatEnv("ICEBATH_STARTUP_RESTORE_DRAIN_TIMEOUT", startupRestoreDrainTimeoutSecsDefault)
+func startupRestoreDrainTimeoutSecs(ctx context.Context) float64 {
+	return settings.AgentGatewayStartupRestoreDrainTimeout.Get(ctx).Seconds()
 }
 
 // Seconds the boot warm up may hold the inbound gate shut, non positive disabling it
-func startupWarmupTimeoutSecs() float64 {
-	return floatEnv("ICEBATH_STARTUP_WARMUP_TIMEOUT", startupWarmupTimeoutSecsDefault)
+func startupWarmupTimeoutSecs(ctx context.Context) float64 {
+	return settings.AgentGatewayStartupWarmupTimeout.Get(ctx).Seconds()
 }
 
 // Initializes the first turn prerequisites and returns how many tool schemas were materialized
@@ -44,13 +38,7 @@ func warmTurnMachinerySync(ctx context.Context) (int, error) {
 		sort.Strings(enabled)
 	}
 	defs := tools.Default.ToolDefinitions(ctx, nil, tools.DefinitionOptions{Enabled: enabled, Quiet: true})
-	cfg, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
-	if err != nil {
-		return 0, err
-	}
-	agentCfg, isDict := cfg["agent"].(map[string]any)
-	probe, set := agentCfg["environment_probe"]
-	if !isDict || !set || pyrepr.Truthy(probe) {
+	if settings.AgentEnvironmentProbe.Get(ctx) {
 		tools.EnvironmentProbeLine(nil, false)
 	}
 	modelCtx := resolveGatewayModelContext(ctx, "", nil)
@@ -60,7 +48,7 @@ func warmTurnMachinerySync(ctx context.Context) (int, error) {
 
 // Starts the boot turn machinery warm up so it overlaps the platform connects
 func (r *GatewayRunner) startStartupWarmup(ctx context.Context) {
-	if startupWarmupTimeoutSecs() <= 0 {
+	if startupWarmupTimeoutSecs(ctx) <= 0 {
 		r.startupWarmupTask = nil
 		return
 	}
@@ -109,7 +97,7 @@ func (r *GatewayRunner) awaitStartupWarmup(ctx context.Context) {
 	if task == nil || task.isDone() {
 		return
 	}
-	timeout := startupWarmupTimeoutSecs()
+	timeout := startupWarmupTimeoutSecs(ctx)
 	if timeout <= 0 {
 		return
 	}

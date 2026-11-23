@@ -95,7 +95,7 @@ func ProviderOwnsRoute(provider, baseURL string) (owned bool, known bool) {
 	return providerOwnsRouteIn(provider, baseURL, nil)
 }
 
-// Route ownership against the user's providers and custom_providers config sections
+// Route ownership against the user's providers config section
 func providerOwnsRouteIn(provider, baseURL string, cfg map[string]any) (owned bool, known bool) {
 	host := Hostname(baseURL)
 	if host == "" {
@@ -106,16 +106,8 @@ func providerOwnsRouteIn(provider, baseURL string, cfg map[string]any) (owned bo
 	if canonical == "custom" || canonical == "local" {
 		return true, true
 	}
-	var userProviders map[string]any
-	var customProviders []any
-	if cfg != nil {
-		userProviders, _ = cfg["providers"].(map[string]any)
-		customProviders, _ = cfg["custom_providers"].([]any)
-	}
+	userProviders, _ := cfg["providers"].(map[string]any)
 	userDef := resolveUserProvider(raw, userProviders)
-	if userDef == nil {
-		userDef = resolveCustomProvider(raw, customProviders)
-	}
 	if userDef != nil && userDef.BaseURL != "" {
 		return Hostname(userDef.BaseURL) == host, true
 	}

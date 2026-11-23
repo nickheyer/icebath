@@ -100,7 +100,7 @@ func TestExternalProcessStatusRejectsWrongAuthType(t *testing.T) {
 
 func TestGetAuthStatusFallsThroughForUnknownAndEmpty(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	if status := GetAuthStatus(env, ""); status["logged_in"] != false {
 		t.Fatalf("empty target %v", status)
 	}
@@ -117,7 +117,7 @@ func TestGetAuthStatusFallsThroughForUnknownAndEmpty(t *testing.T) {
 func writeGatewayPool(t *testing.T, h, key, rowBase string) {
 	t.Helper()
 	writeAuthStore(t, h, map[string]any{
-		"version": 1, "providers": map[string]any{},
+		"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai-codex": []any{map[string]any{
 			"id": "gw", "label": "gateway", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": key, "base_url": rowBase}}},
 	})
@@ -153,18 +153,18 @@ func poolOnlyCodexHome(t *testing.T, accessTokens []string) (string, PoolEnv, *[
 			"id": "codex-pool-entry-" + string(rune('0'+i)), "label": "device_code-" + string(rune('0'+i)), "auth_type": "oauth", "source": "device_code",
 			"priority": i, "request_count": 0, "access_token": token, "refresh_token": "codex-refresh-token-" + string(rune('0'+i)), "base_url": DefaultCodexBaseURL})
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"openai-codex": entries}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"openai-codex": entries}})
 	refreshCalls := &[]string{}
 	transient := func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		*refreshCalls = append(*refreshCalls, refreshToken)
 		return nil, codexErr("Codex token refresh failed with status 503.", "codex_refresh_failed", false)
 	}
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = transient
-	tokensSingletonProviders["openai-codex"] = spec
+	spec.refresh = pairRefresh(transient)
+	oauthRefreshProviders["openai-codex"] = spec
 	codexRefreshPureFn = transient
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	return h, env, refreshCalls
 }
 
@@ -219,7 +219,7 @@ func singletonOnlyCodexHome(t *testing.T, tokens, cliTokens map[string]any) (str
 	t.Helper()
 	h, env := codexTestEnv(t)
 	seedCodexHomes(t, h, tokens, cliTokens)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "openai-codex", "providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens, "auth_mode": "chatgpt"}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openai-codex", "providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens, "auth_mode": "chatgpt"}}})
 	return h, env
 }
 
@@ -248,11 +248,11 @@ func TestStatusSnapshotNeverRefreshesAnExpiredSingleton(t *testing.T) {
 		return map[string]any{"access_token": jwtExpiringIn(86400), "refresh_token": "rotated-refresh"}, nil
 	}
 	codexRefreshPureFn = rotate
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = rotate
-	tokensSingletonProviders["openai-codex"] = spec
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	spec.refresh = pairRefresh(rotate)
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	status := GetCodexAuthStatus(env)
 	if len(refreshCalls) != 0 {
 		t.Fatal("a status read spent the single use singleton refresh token")
@@ -468,10 +468,10 @@ func TestRequireReadableConfigRefusesABrokenFile(t *testing.T) {
 
 func TestLogoutResetsCodexConfigWhenAuthStateAlreadyCleared(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{}})
 	writeConfigYAML(t, h, "model:\n  default: gpt-5.3-codex\n  provider: openai-codex\n  base_url: https://chatgpt.com/backend-api/codex\n")
 	var out bytes.Buffer
-	if err := LogoutCommand(env, "openai-codex", &out); err != nil {
+	if err := LogoutLogin(env, "openai-codex", false, &out); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(h, "config.yaml"))
@@ -486,10 +486,10 @@ func TestLogoutResetsCodexConfigWhenAuthStateAlreadyCleared(t *testing.T) {
 
 func TestLogoutFallsBackToConfigSelectedOAuthProvider(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "a", "refresh_token": "r"}}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "a", "refresh_token": "r"}}}})
 	writeConfigYAML(t, h, "model:\n  provider: openai-codex\n")
 	var out bytes.Buffer
-	if err := LogoutCommand(env, "", &out); err != nil {
+	if err := LogoutLogin(env, "", false, &out); err != nil {
 		t.Fatal(err)
 	}
 	providers, _ := readAuthStore(t, h)["providers"].(map[string]any)
@@ -500,28 +500,28 @@ func TestLogoutFallsBackToConfigSelectedOAuthProvider(t *testing.T) {
 		t.Fatal("config provider not reset")
 	}
 	out.Reset()
-	if err := LogoutCommand(env, "", &out); err != nil || !strings.Contains(out.String(), "No provider is currently logged in.") {
+	if err := LogoutLogin(env, "", false, &out); err != nil || !strings.Contains(out.String(), "No provider is currently logged in.") {
 		t.Fatalf("second logout %v %q", err, out.String())
 	}
 }
 
 func TestLogoutUnknownProviderAndUntouchedConfig(t *testing.T) {
 	h, env := codexTestEnv(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{"access_token": "a"}}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{"access_token": "a"}}}})
 	writeConfigYAML(t, h, "model:\n  provider: openrouter\n")
 	var out bytes.Buffer
-	err := LogoutCommand(env, "no-such-provider", &out)
+	err := LogoutLogin(env, "no-such-provider", false, &out)
 	if err == nil || err.Error() != "Unknown provider: no-such-provider" {
 		t.Fatalf("unexpected %v", err)
 	}
-	if err := LogoutCommand(env, "xai-oauth", &out); err != nil {
+	if err := LogoutLogin(env, "xai-oauth", false, &out); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "Model provider configuration was unchanged.") || readModelCfg(t, h)["provider"] != "openrouter" {
 		t.Fatalf("output %q cfg %v", out.String(), readModelCfg(t, h))
 	}
 	out.Reset()
-	if err := LogoutCommand(env, "xai-oauth", &out); err != nil || !strings.Contains(out.String(), "No auth state found for") {
+	if err := LogoutLogin(env, "xai-oauth", false, &out); err != nil || !strings.Contains(out.String(), "No auth state found for") {
 		t.Fatalf("repeat logout %v %q", err, out.String())
 	}
 }
@@ -559,12 +559,12 @@ func TestGetMinimaxOAuthAuthStatus(t *testing.T) {
 	if status := GetMinimaxOAuthAuthStatus(env); status["logged_in"] != false {
 		t.Fatalf("no state %v", status)
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"minimax-oauth": map[string]any{"access_token": "tok", "expires_at": isoIn(3600), "region": "cn"}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"minimax-oauth": map[string]any{"access_token": "tok", "expires_at": isoIn(3600), "region": "cn"}}})
 	status := GetMinimaxOAuthAuthStatus(env)
 	if status["logged_in"] != true || status["region"] != "cn" {
 		t.Fatalf("valid %v", status)
 	}
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{"minimax-oauth": map[string]any{"access_token": "tok", "expires_at": isoIn(-3600)}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"minimax-oauth": map[string]any{"access_token": "tok", "expires_at": isoIn(-3600)}}})
 	status = GetMinimaxOAuthAuthStatus(env)
 	if status["logged_in"] != false || status["region"] != "global" {
 		t.Fatalf("expired %v", status)

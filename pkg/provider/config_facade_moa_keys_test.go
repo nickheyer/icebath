@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 const unknownKeyNotice = "not a recognized config key"
@@ -48,16 +47,11 @@ func moaKeysHome(t *testing.T, data map[string]any) (string, *bytes.Buffer, *byt
 // Command sources with the provider owners and no plugin declared keys
 func moaCommandSources() config.ConfigCommandSources {
 	return config.ConfigCommandSources{
-		RuntimeKeyOwners: config.RuntimeKeyOwners{
-			SelectionConfigKeys: tools.SelectionConfigKeys,
-			ActiveManifests:     func() []config.PluginConfigKeys { return nil },
-		},
-		LeftCoreTerminalKeys: LeftCoreTerminalKeys,
-		IsEnvSettingKey:      IsEnvSettingKey,
-		SaveEnvSetting:       SaveEnvSetting,
-		ReadEnvSetting:       ReadEnvSetting,
-		RemoveEnvSetting:     RemoveEnvSetting,
-		DropStaleModelRoute:  DropStaleModelRoute,
+		IsEnvSettingKey:     IsEnvSettingKey,
+		SaveEnvSetting:      SaveEnvSetting,
+		ReadEnvSetting:      ReadEnvSetting,
+		RemoveEnvSetting:    RemoveEnvSetting,
+		DropStaleModelRoute: DropStaleModelRoute,
 	}
 }
 
@@ -70,7 +64,7 @@ func setNotice(t *testing.T, h, key, value string, out, errOut *bytes.Buffer) bo
 	t.Helper()
 	out.Reset()
 	errOut.Reset()
-	if err := config.SetConfigValue(context.Background(), h, key, value, false, moaCommandSources()); err != nil {
+	if err := config.SetConfigValue(context.Background(), h, key, value, moaCommandSources()); err != nil {
 		t.Fatalf("set %s: %v %s", key, err, errOut)
 	}
 	if !strings.Contains(out.String(), "Set "+key) {

@@ -98,7 +98,6 @@ type overlayState struct {
 	Confirm        *confirmReq
 	Connection     *connectionOverlay
 	Secret         *secretReq
-	Sessions       bool
 	Sudo           *sudoReq
 	VaultCode      *vaultCodeReq
 	VaultSaveLogin *vaultSaveLoginReq
@@ -111,9 +110,10 @@ func (s *tuiStore) dismissConnectionOperation(opID string) {
 	s.clearConnectionOperation()
 }
 
-// Drops the flow prompts of a finished turn and keeps the panels the user opened
+// Drops the prompts a finished turn asked and keeps what the user opened: the agents panel, the connection card and a confirmation, whose
+// answer is the user's to give whenever the turn ends
 func (s *tuiStore) resetFlowOverlays() {
-	s.overlay = overlayState{Agents: s.overlay.Agents, Connection: s.overlay.Connection, Sessions: s.overlay.Sessions}
+	s.overlay = overlayState{Agents: s.overlay.Agents, Confirm: s.overlay.Confirm, Connection: s.overlay.Connection}
 }
 
 // Request id of an open prompt card, empty when the card is closed

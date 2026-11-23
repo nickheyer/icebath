@@ -85,7 +85,7 @@ func TestThreeRoundBound(t *testing.T) {
 	db, room := hdRoomDB(t)
 	room["members"] = hdMembers[:2]
 	hdAppendUser(t, db, "user-1", "Discuss.", "thread-1")
-	for index := range MaxDiscussionRounds * 2 {
+	for index := range DefaultDiscussionLimits().MaxRounds * 2 {
 		task := hdNextTask(t, room, db)
 		peer := "research"
 		if task.Member.Profile == "research" {
@@ -106,7 +106,7 @@ func TestTenMessageBound(t *testing.T) {
 	}
 	room := hrOK(CreateRoom(context.Background(), db, CreateRoomInput{RoomID: "room-1", Name: "Large", Members: members, AuthorityGatewayID: "gateway-a", Now: hrFloatPtr(1)}))
 	hdAppendUser(t, db, "user-1", "Discuss.", "thread-1")
-	for index := range MaxDiscussionMessages {
+	for index := range DefaultDiscussionLimits().MaxMessages {
 		hdSettleNext(t, room, db, fmt.Sprintf("Reply %d. @everyone", index))
 	}
 	if decision := hdDecide(t, room, db); decision.Status != "bounded" || decision.Reason != "max_messages" {

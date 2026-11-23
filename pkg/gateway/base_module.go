@@ -729,8 +729,11 @@ func GetScopedSecret(ctx context.Context, name, def string, externalFallback boo
 	return val, nil
 }
 
-// Scope aware credential read reporting whether the name is set at all, the None of get_scoped_secret as false
+// Scope aware credential read reporting whether the name is set at all, the None of get_scoped_secret as false; a name folded into a setting reads the setting
 func LookupScopedSecret(ctx context.Context, name string, externalFallback bool) (string, bool, error) {
+	if v, folded := FoldedEnvValue(ctx, name); folded {
+		return v, v != "", nil
+	}
 	val, found, err := provider.GetSecret(ctx, name)
 	var unscoped *provider.UnscopedSecretError
 	if errors.As(err, &unscoped) {

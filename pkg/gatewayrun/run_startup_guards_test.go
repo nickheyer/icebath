@@ -44,20 +44,23 @@ func faulthandlerChild(dir string) {
 
 func TestAgentBudgetLineMatchesEnforcedLimit(t *testing.T) {
 	for _, tc := range []struct {
-		maxTurns map[string]any
+		config   string
 		expected string
 	}{
-		{map[string]any{"max_turns": int64(50)}, "50"},
-		{map[string]any{}, "90"},
-		{map[string]any{"max_turns": "unlimited"}, "unlimited"},
+		{"agent:\n  max_turns: 50\n", "50"},
+		{"", "unlimited"},
+		{"agent:\n  max_turns: unlimited\n", "unlimited"},
 	} {
 		hermetic.Run(t, tc.expected, func(t *testing.T) {
-			t.Setenv("ICEBATH_HOME", t.TempDir())
-			t.Setenv("ICEBATH_MAX_ITERATIONS", "90")
-			gateway.BridgeMaxTurnsToEnv(tc.maxTurns)
-			enforced := gateway.CurrentMaxIterations(context.Background())
+			h := t.TempDir()
+			t.Setenv("ICEBATH_HOME", h)
+			if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(tc.config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			enforced := gateway.CurrentMaxIterations(ctx)
 			logs := captureLevel(t, slog.LevelInfo)
-			logAgentBudget()
+			logAgentBudget(ctx)
 			var line string
 			for _, l := range strings.Split(logs.String(), "\n") {
 				if strings.Contains(l, "Agent budget") {

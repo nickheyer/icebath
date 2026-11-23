@@ -93,8 +93,7 @@ func ResolveProvider(ctx context.Context, env *tools.Env, requireReferences bool
 		return &SpriteProvider{Name: name, Provider: active, SupportsReferences: false}, nil
 	}
 	return nil, &GenerationError{Msg: "Pet generation needs an image backend that supports reference images. " +
-		"Open `icebath tools` → Image Generation and configure " +
-		"OpenRouter or OpenAI (gpt-image-2) with an API key."}
+		"Pick OpenRouter or OpenAI in /settings → Images & media and add its key."}
 }
 
 // Local path of an image reference, downloading a URL first

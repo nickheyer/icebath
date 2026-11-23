@@ -28,16 +28,6 @@ var StatusReport struct {
 	Lines  func(fields map[string]any, keys ...string) []string
 }
 
-func registerSessionRuntimeHandlers() {
-	sessionMethod("session.status", false, sessionStatus)
-	sessionMethod("session.history", false, sessionHistory)
-	sessionMethod("session.undo", true, sessionUndo)
-	sessionRegistry.scopedMethod("session.compress", sessionCompress)
-	sessionMethod("session.save", true, sessionSave)
-	sessionRegistry.method("session.close", sessionClose)
-	sessionMethod("terminal.resize", false, terminalResize)
-}
-
 // Stored row of the key from the live session's bound profile db first, else params profile or launch
 func statusRow(ctx context.Context, session *tuihost.Session, params map[string]any, key string) map[string]any {
 	if key == "" {
@@ -117,17 +107,31 @@ func sessionHistory(ctx context.Context, rid any, params map[string]any, session
 
 // Drops the last real user turn and what followed, refused while a turn runs
 func sessionUndo(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) map[string]any {
-	busy := rpcErr(rid, 4009, busyMessage("undo", truthy(session.Get("_manual_compress_active"))), nil)
-	if truthy(session.Get("running")) {
-		return busy
+	kept, undone, removed, busy, err := rewindLastExchange(ctx, session)
+	if busy {
+		return rpcErr(rid, 4009, busyMessage("undo", truthy(session.Get("_manual_compress_active"))), nil)
 	}
-	removed := 0
-	var kept []map[string]any
-	var undone map[string]any
-	unlock := lockHistory(session)
+	if err != nil {
+		return rpcErr(rid, 5008, "undo: "+pyrepr.Str(err), nil)
+	}
+	result := map[string]any{"removed": removed}
+	if removed > 0 && strOr(params["intent"]) != "retry" {
+		if hint := undoRollbackHint(ctx, session, undone, kept); hint != nil {
+			result["undo_hint"] = tuigateway.Plain(*hint)
+		}
+	}
+	return ok(rid, result)
+}
+
+// Rewinds a session's history to just before its last user turn, the kept history, the undone message and the count removed; busy while a turn runs
+func rewindLastExchange(ctx context.Context, session *tuihost.Session) (kept []map[string]any, undone map[string]any, removed int, busy bool, err error) {
 	if truthy(session.Get("running")) {
-		unlock()
-		return busy
+		return nil, nil, 0, true, nil
+	}
+	unlock := lockHistory(session)
+	defer unlock()
+	if truthy(session.Get("running")) {
+		return nil, nil, 0, true, nil
 	}
 	history := historyWithoutEphemeralScaffolding(historyList(session.Get("history")))
 	userTurns := 0
@@ -136,26 +140,15 @@ func sessionUndo(ctx context.Context, rid any, params map[string]any, session *t
 			userTurns++
 		}
 	}
-	if userTurns > 0 {
-		var rewindErr error
-		if failure := catchPanic(func() {
-			kept, undone, removed, rewindErr = rewindActiveSessionHistory(ctx, session, userTurns-1, false)
-		}); failure != nil {
-			rewindErr = fmt.Errorf("%s", pyrepr.Str(failure))
-		}
-		if rewindErr != nil {
-			unlock()
-			return rpcErr(rid, 5008, "undo: "+pyrepr.Str(rewindErr), nil)
-		}
+	if userTurns == 0 {
+		return nil, nil, 0, false, nil
 	}
-	unlock()
-	result := map[string]any{"removed": removed}
-	if removed > 0 && strOr(params["intent"]) != "retry" {
-		if hint := undoRollbackHint(ctx, session, undone, kept); hint != nil {
-			result["undo_hint"] = tuigateway.Plain(*hint)
-		}
+	if failure := catchPanic(func() {
+		kept, undone, removed, err = rewindActiveSessionHistory(ctx, session, userTurns-1, false)
+	}); failure != nil {
+		err = fmt.Errorf("%s", pyrepr.Str(failure))
 	}
-	return ok(rid, result)
+	return kept, undone, removed, false, err
 }
 
 // Files the turns an undo removed changed, read from the session agent's checkpoints, nil when checkpoints are off, refused for the session's backend or untouched by the span

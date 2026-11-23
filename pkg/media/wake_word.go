@@ -682,8 +682,7 @@ func CheckWakeWordRequirements(ctx context.Context, cfg map[string]any, supporte
 		if !ttsOK {
 			missing = append(missing, "text-to-speech")
 		}
-		hint = fmt.Sprintf("Wake word needs %s configured — run `icebath tools` "+
-			"(Voice section) or see the voice-mode docs.", strings.Join(missing, " and "))
+		hint = fmt.Sprintf("Wake word needs %s. Set it up in /settings → Voice.", strings.Join(missing, " and "))
 	}
 	micOK := depsOK && audioOK
 	return WakeRequirements{

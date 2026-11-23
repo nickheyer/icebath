@@ -20,7 +20,6 @@ const (
 	sttDefaultLocalModel    = "base"
 	sttDefaultLocalLanguage = "en"
 	sttDefaultTimeout       = 60.0
-	xaiSTTModelEnv          = "STT_XAI_MODEL"
 	legacyXAISTTModel       = "grok-stt"
 	localSTTCommandEnv      = "ICEBATH_LOCAL_STT_COMMAND"
 	localSTTLanguageEnv     = "ICEBATH_LOCAL_STT_LANGUAGE"
@@ -36,10 +35,10 @@ func sttEnvDefault(name, def string) string {
 }
 
 var (
-	sttDefaultOpenAIModel     = sttEnvDefault("STT_OPENAI_MODEL", "whisper-1")
-	sttDefaultGroqModel       = sttEnvDefault("STT_GROQ_MODEL", "whisper-large-v3-turbo")
-	sttDefaultMistralModel    = sttEnvDefault("STT_MISTRAL_MODEL", "voxtral-mini-latest")
-	sttDefaultElevenLabsModel = sttEnvDefault("STT_ELEVENLABS_MODEL", "scribe_v2")
+	sttDefaultOpenAIModel     = "whisper-1"
+	sttDefaultGroqModel       = "whisper-large-v3-turbo"
+	sttDefaultMistralModel    = "voxtral-mini-latest"
+	sttDefaultElevenLabsModel = "scribe_v2"
 	groqSTTBaseURL            = sttEnvDefault("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 	openAISTTBaseURL          = sttEnvDefault("STT_OPENAI_BASE_URL", "https://api.openai.com/v1")
 	xaiSTTBaseURL             = sttEnvDefault("XAI_STT_BASE_URL", "https://api.x.ai/v1")
@@ -96,13 +95,10 @@ type sttResponseError struct{ msg string }
 
 func (e *sttResponseError) Error() string { return e.msg }
 
-// Valid xAI model with blank or the grok-stt alias resolved through STT_XAI_MODEL then the catalog default
+// Valid xAI model with blank or the grok-stt alias resolved to the catalog default
 func normalizeXAISTTModel(model string) string {
 	value := pystr.Strip(model)
 	if value == "" || value == legacyXAISTTModel {
-		if env := pystr.Strip(os.Getenv(xaiSTTModelEnv)); env != "" {
-			return env
-		}
 		return sttModelCatalog["xai"][0]
 	}
 	return value

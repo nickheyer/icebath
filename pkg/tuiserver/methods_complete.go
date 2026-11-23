@@ -46,9 +46,6 @@ var (
 
 func init() {
 	completeRegistry.method("paste.collapse", pasteCollapse)
-	completeRegistry.method("complete.path", catch(5021, completePath))
-	completeRegistry.method("complete.slash", catch(5020, completeSlash))
-	completeRegistry.scopedMethod("model.options", catch(5033, modelOptions))
 	completeRegistry.scopedMethod("model.save_key", catch(5034, modelSaveKey))
 	completeRegistry.scopedMethod("model.disconnect", catch(5035, modelDisconnect))
 	completeRegistry.install()
@@ -348,7 +345,8 @@ func dirListingItems(ctx context.Context, root, word, pathPart, prefixTag string
 		if isContext && (fuzzyFallbackExcludes[entry.name] || (prefixTag == "" && strings.HasPrefix(entry.name, "."))) {
 			continue
 		}
-		if prefixTag != "" && (prefixTag == "folder") != entry.isDir {
+		// A file reference lists the folders too, each one ending in a slash so taking it descends into it
+		if prefixTag == "folder" && !entry.isDir {
 			continue
 		}
 		full := pth.join(searchDir, entry.name)
@@ -554,31 +552,22 @@ func modelOptions(ctx context.Context, rid any, params map[string]any) (map[stri
 	return ok(rid, payload), nil
 }
 
-// Saves an API key for the provider and answers its refreshed picker row marked authenticated
+// Saves an API key as an owned login of the provider, its profile default, and answers its refreshed picker row marked authenticated
 func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	if skew := modelSkewErr(ctx, rid); skew != nil {
 		return skew, nil
 	}
 	slug, apiKey := pystr.Strip(strOr(params["slug"])), pystr.Strip(strOr(params["api_key"]))
 	if slug == "" || apiKey == "" {
-		return rpcErr(rid, 4001, "slug and api_key are required", nil), nil
-	}
-	h := home.Dir(ctx)
-	if config.IsManaged(ctx, h) {
-		return rpcErr(rid, 4006, "managed install — credentials are read-only", nil), nil
+		return rpcErr(rid, tuihost.LoginCodeMissing, "slug and api_key are required", nil), nil
 	}
 	pconfig := provider.RegistryRow(ctx, slug)
 	if pconfig == nil {
-		return rpcErr(rid, 4002, "unknown provider: "+slug, nil), nil
+		return rpcErr(rid, tuihost.LoginCodeUnknownProvider, "unknown provider: "+slug, map[string]any{"reason": "unknown_provider"}), nil
 	}
-	if pconfig.AuthType != provider.AuthTypeAPIKey {
-		return rpcErr(rid, 4003, fmt.Sprintf("%s uses %s auth — run `icebath model` to configure", pconfig.Label(), pconfig.AuthType), nil), nil
-	}
-	if len(pconfig.KeyEnv) == 0 {
-		return rpcErr(rid, 4004, "no env var defined for "+pconfig.Label(), nil), nil
-	}
-	if _, err := provider.SaveProviderEnvCredential(ctx, h, pconfig.KeyEnv[0], apiKey); err != nil {
-		return nil, err
+	if _, err := tuihost.AddKeyLogin(ctx, nil, tuigateway.LoginAddKeyParams{Provider: slug, APIKey: apiKey,
+		Name: pystr.Strip(strOr(params["name"])), MakeDefault: true}); err != nil {
+		return loginRefusalFrame(rid, err), nil
 	}
 	pc, err := modelPickerContext(ctx, paramsSessionAgent(params))
 	if err != nil {
@@ -604,7 +593,7 @@ func modelSaveKey(ctx context.Context, rid any, params map[string]any) (map[stri
 	return ok(rid, map[string]any{"provider": providerData}), nil
 }
 
-// Removes every env key and OAuth or pool credential of the provider, refusing before any removal when one is locked
+// Removes the provider's default or named login, or with all every env key and OAuth or pool credential, refusing before any removal when one is locked
 func modelDisconnect(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	slug := pystr.Strip(strOr(params["slug"]))
 	if slug == "" {
@@ -612,6 +601,11 @@ func modelDisconnect(ctx context.Context, rid any, params map[string]any) (map[s
 	}
 	h := home.Dir(ctx)
 	pconfig := provider.RegistryRow(ctx, slug)
+	if !truthy(params["all"]) {
+		if resp, handled, err := disconnectOneLogin(ctx, rid, slug, pystr.Strip(strOr(params["login"])), pconfig); handled || err != nil {
+			return resp, err
+		}
+	}
 	var envVars []string
 	if pconfig != nil {
 		envVars = pconfig.KeyEnv

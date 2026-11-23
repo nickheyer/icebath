@@ -20,11 +20,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const singularityInstallURL = "https://apptainer.org/docs/admin/main/installation.html"
@@ -54,27 +54,9 @@ func singularityTimeoutText(argv []string, seconds int) string {
 	return fmt.Sprintf("Command '%s' timed out after %d seconds", pyrepr.Repr(argv), seconds)
 }
 
-// Image from terminal.singularity_image, else TERMINAL_SINGULARITY_IMAGE, else the default sandbox image as a docker reference
+// Image from the Apptainer image setting, else the default sandbox image as a docker reference
 func singularityConfiguredImage(ctx context.Context, env *Env) (string, error) {
-	h := envHome(env)
-	cfg, err := config.LoadReadonly(ctx, h, nil)
-	if err != nil {
-		return "", err
-	}
-	terminal, _ := map[string]any(cfg)["terminal"].(map[string]any)
-	value := terminal["singularity_image"]
-	if value == nil || pystr.Strip(pyrepr.Str(value)) == "" {
-		envValue, _, err := config.GetEnvValue(ctx, h, "TERMINAL_SINGULARITY_IMAGE")
-		if err != nil {
-			return "", err
-		}
-		value = envValue
-	}
-	text := ""
-	if truthy(value) {
-		text = pystr.Strip(pyrepr.Str(value))
-	}
-	if text != "" {
+	if text := pystr.Strip(settings.TerminalSingularityImage.Get(envHomeCtx(ctx, env))); text != "" {
 		return text, nil
 	}
 	return "docker://" + defaultSandboxImage, nil

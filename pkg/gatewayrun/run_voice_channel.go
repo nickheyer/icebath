@@ -82,14 +82,10 @@ func (r *GatewayRunner) handleVoiceChannelJoin(ctx context.Context, event *gatew
 	}
 	if holder, ok := adapter.(voiceModeGetterHolder); ok {
 		holder.SetVoiceModeGetter(func(chatID any) string {
-			if r.voiceMode == nil {
-				return "off"
+			if mode, found := chatVoiceMode(voiceKey(gateway.PlatformDiscord, pyrepr.Str(chatID), voiceProfile)); found {
+				return mode
 			}
-			mode, found := r.voiceMode.Get(voiceKey(gateway.PlatformDiscord, pyrepr.Str(chatID), voiceProfile))
-			if !found {
-				return "off"
-			}
-			return mode
+			return "off"
 		})
 	}
 	success, err := joiner.JoinVoiceChannel(ctx, voiceChannel)

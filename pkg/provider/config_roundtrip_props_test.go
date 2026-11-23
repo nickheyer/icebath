@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/config/roundtrip"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var propSchema = sync.OnceValue(func() *roundtrip.Schema {
@@ -39,7 +40,7 @@ func propCLIHome(t *testing.T, c *roundtrip.Case) (string, string) {
 func propConfigSet(h, key, value string) (int, error) {
 	src := moaCommandSources()
 	src.Language = LanguageCatalog()
-	src.RuntimeKeyOwners.ActiveManifests = func() []config.PluginConfigKeys { return plugins.ActiveConfigKeyManifests(h) }
+	src.LoadPluginSettings = func() { plugins.RegisterActiveSettings(h) }
 	err := config.ConfigCommand(context.Background(), h, config.ConfigArgs{Command: "set", Key: key, Value: &value}, src)
 	if exit, ok := err.(*config.ConfigExit); ok {
 		return exit.Code, err
@@ -80,7 +81,8 @@ func TestP2RealCLIConfigSetChangesExactlyOneKey(t *testing.T) {
 	}{
 		{"documented-existing", 401, func(c *roundtrip.Case) string {
 			for _, p := range c.LeafOrder {
-				if p[0] != "providers" && p[0] != "_config_version" {
+				// A free text setting, the one kind any text value replaces in place
+				if _, isText := settings.Find(roundtrip.CLIKey(p)).(*settings.String); isText && p[0] != "providers" && p[0] != "_config_version" {
 					return roundtrip.CLIKey(p)
 				}
 			}
@@ -185,39 +187,6 @@ func TestP2EnvLockRefusalIsNotReportedAsSuccess(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestP5MigrationIsIdempotentAndKeepsUserValues(t *testing.T) {
-	for _, version := range roundtrip.MigrationStarts(config.MigrationVersions(), config.SupportFloorVersion) {
-		name, seed := roundtrip.MigrationStartName(version)
-		t.Run(name, func(t *testing.T) {
-			h, _, _ := moaKeysHome(t, map[string]any{})
-			t.Setenv(config.EnvManagedDir, filepath.Join(filepath.Dir(h), "no-managed"))
-			config.InvalidateManagedCache()
-			cfg, envPath := filepath.Join(h, "config.yaml"), filepath.Join(h, ".env")
-			if err := roundtrip.MigrationProperty(propMigrationHome(cfg, envPath, func() error {
-				config.ResetCache()
-				_, err := config.MigrateConfig(context.Background(), h, false, true)
-				return err
-			}), version, seed, propSchema().Latest); err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
-}
-
-// Migration home over real files with caches dropped before every migrate
-func propMigrationHome(cfg, envPath string, migrate func() error) roundtrip.MigrationHome {
-	read := func(path string) func() (string, error) {
-		return func() (string, error) { data, err := os.ReadFile(path); return string(data), err }
-	}
-	write := func(path string) func(string) error {
-		return func(text string) error { return os.WriteFile(path, []byte(text), 0o600) }
-	}
-	return roundtrip.MigrationHome{
-		WriteConfig: write(cfg), WriteEnv: write(envPath), Migrate: migrate,
-		ReadConfig: read(cfg), ReadEnv: read(envPath), Load: config.FastSafeLoad,
 	}
 }
 

@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -93,50 +93,32 @@ func AutoPruneDiskSnapshot(ctx context.Context, h string) *DiskSnapshot {
 	return &DiskSnapshot{DBBytes: st.Size(), FreeBytes: int64(free), TotalBytes: int64(total)}
 }
 
-// Sessions block of the home's effective user config, false when the file cannot be read
-func autoPruneSessions(ctx context.Context, h string) (map[string]any, bool) {
-	cfg, err := config.LoadUserEffectiveFailClosed(filepath.Join(pruneAdvisorHome(ctx, h), "config.yaml"), os.LookupEnv)
-	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("auto-prune advice: config unreadable: %s", err))
-		return nil, false
-	}
-	sessions, ok := cfg["sessions"].(map[string]any)
-	if !ok {
-		return map[string]any{}, true
-	}
-	return sessions, true
+// Settings context of the home the advisor looks at
+func pruneSettings(ctx context.Context, h string) context.Context {
+	return home.WithOverride(ctx, pruneAdvisorHome(ctx, h))
 }
 
-// Retention days coerced the way maintenance coerces them, an unusable value reading as ninety
-func autoPruneRetentionDays(sessions map[string]any) (int64, error) {
-	raw, ok := sessions["retention_days"]
-	if !ok {
-		return 90, nil
+// Days ended sessions are kept, a negative value reading as the default
+func autoPruneRetentionDays(ctx context.Context, h string) int64 {
+	keep := settings.SessionsRetentionDays.Get(pruneSettings(ctx, h))
+	if keep < 0 {
+		keep = settings.SessionsRetentionDays.Default
 	}
-	n, err := pyint.Of(raw)
-	var conv *pyint.Error
-	if errors.As(err, &conv) && (conv.Kind == "TypeError" || conv.Kind == "ValueError") {
-		return 90, nil
-	}
+	return int64(keep / (24 * time.Hour))
+}
+
+// Whether auto prune is on, and whether anyone set it at all
+func autoPruneSetting(ctx context.Context, h string) (on, set bool) {
+	v, err := settings.Resolve(pruneSettings(ctx, h), settings.AutoPrune.Key)
 	if err != nil {
-		return 0, err
+		return false, false
 	}
-	if n.Sign() < 0 {
-		return 90, nil
-	}
-	if !n.IsInt64() {
-		return 1<<63 - 1, nil
-	}
-	return n.Int64(), nil
+	return settings.AutoPrune.Get(pruneSettings(ctx, h)), v.Source != settings.SourceDefault
 }
 
 // Reports a home whose user and managed config both leave sessions.auto_prune unset
 func AutoPruneUndecided(ctx context.Context, h string) bool {
-	sessions, ok := autoPruneSessions(ctx, h)
-	if !ok {
-		return false
-	}
-	_, set := sessions["auto_prune"]
+	_, set := autoPruneSetting(ctx, h)
 	return !set
 }
 
@@ -265,14 +247,7 @@ func AutoPruneAdvise(ctx context.Context, h string) (*PruneAdvice, error) {
 	if snap == nil {
 		return nil, nil
 	}
-	sessions, _ := autoPruneSessions(ctx, h)
-	if sessions == nil {
-		sessions = map[string]any{}
-	}
-	retention, err := autoPruneRetentionDays(sessions)
-	if err != nil {
-		return nil, err
-	}
+	retention := autoPruneRetentionDays(ctx, h)
 	estimateOK := true
 	prunable, total, prunableBytes, totalBytes, err := autoPruneEstimate(ctx, h, retention, snap)
 	if err != nil {
@@ -284,7 +259,7 @@ func AutoPruneAdvise(ctx context.Context, h string) (*PruneAdvice, error) {
 		reclaim = exactScaled(snap.DBBytes, prunableBytes, totalBytes)
 	}
 	advice := &PruneAdvice{Disk: *snap, RetentionDays: retention, PrunableSessions: prunable, TotalSessions: total,
-		ReclaimBytes: reclaim, EstimateOK: estimateOK, VacuumAfterPrune: vacuumAfterPrune(sessions)}
+		ReclaimBytes: reclaim, EstimateOK: estimateOK, VacuumAfterPrune: settings.SessionsVacuumAfterPrune.Get(pruneSettings(ctx, h))}
 	if estimateOK {
 		stored := pyjson.NewObject()
 		for _, kv := range [][2]any{{"retention_days", retention}, {"prunable", prunable}, {"total", total},
@@ -294,12 +269,6 @@ func AutoPruneAdvise(ctx context.Context, h string) (*PruneAdvice, error) {
 		autoPruneStoreEstimate(ctx, h, "advice", stored)
 	}
 	return advice, nil
-}
-
-// Vacuum after prune setting, true when absent
-func vacuumAfterPrune(sessions map[string]any) bool {
-	v, ok := sessions["vacuum_after_prune"]
-	return !ok || pyrepr.Truthy(v)
 }
 
 // Estimate sidecar of a home, empty when missing, unreadable or not an object
@@ -447,41 +416,36 @@ func AutoPruneNoticeDue(ctx context.Context, h string, shown map[string]float64)
 }
 
 // Reports an administrator pinning sessions.auto_prune
-func autoPruneManaged() bool { return config.IsKeyManaged("sessions.auto_prune") }
+func autoPruneManaged(ctx context.Context, h string) bool {
+	v, err := settings.Resolve(pruneSettings(ctx, h), settings.AutoPrune.Key)
+	return err == nil && v.Locked
+}
 
 // Saves the answer as an explicit sessions.auto_prune, false when the save failed or a managed value wins
 func AutoPruneDecide(ctx context.Context, enable bool, h string) bool {
-	if autoPruneManaged() {
+	if autoPruneManaged(ctx, h) {
 		return false
 	}
-	path := filepath.Join(pruneAdvisorHome(ctx, h), "config.yaml")
-	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not save sessions.auto_prune: %s", err))
-		return false
-	}
-	if err := config.WriteConfigKey(ctx, path, "sessions.auto_prune", enable); err != nil {
+	if _, err := settings.Set(pruneSettings(ctx, h), settings.AutoPrune.Key, enable, settings.Global); err != nil {
 		pkgLog().Warn(fmt.Sprintf("Could not save sessions.auto_prune: %s", err))
 		return false
 	}
 	_ = os.Remove(autoPruneSnoozePath(ctx, h))
-	sessions, _ := autoPruneSessions(ctx, h)
-	return pyrepr.Truthy(sessions["auto_prune"]) == enable
+	on, _ := autoPruneSetting(ctx, h)
+	return on == enable
 }
 
 // Reply of the autoprune command with on, off, later or status, the one handler every surface shares
 func AutoPruneCommand(ctx context.Context, args, h string) (string, error) {
 	arg := pystr.Lower(pystr.Strip(args))
-	sessions, _ := autoPruneSessions(ctx, h)
-	if sessions == nil {
-		sessions = map[string]any{}
-	}
+	on, set := autoPruneSetting(ctx, h)
 	state := "off"
-	if pyrepr.Truthy(sessions["auto_prune"]) {
+	if on {
 		state = "on"
 	}
 	switch arg {
 	case "on", "off", "enable", "disable", "yes", "no", "later", "snooze":
-		if autoPruneManaged() {
+		if autoPruneManaged(ctx, h) {
 			return "Auto-prune is " + state + ", set by your administrator; it cannot be changed here.", nil
 		}
 	}
@@ -503,9 +467,9 @@ func AutoPruneCommand(ctx context.Context, args, h string) (string, error) {
 		return "OK, I'll ask again in a week if the disk is still low.", nil
 	}
 	chosen := "your setting"
-	if autoPruneManaged() {
+	if autoPruneManaged(ctx, h) {
 		chosen = "set by your administrator"
-	} else if _, set := sessions["auto_prune"]; !set {
+	} else if !set {
 		chosen = "default"
 	}
 	disk := ""
@@ -516,9 +480,6 @@ func AutoPruneCommand(ctx context.Context, args, h string) (string, error) {
 		}
 		disk = fmt.Sprintf(" state.db %s; %s free of %s%s.", pruneGB(snap.DBBytes), pruneGB(snap.FreeBytes), pruneGB(snap.TotalBytes), low)
 	}
-	retention, err := autoPruneRetentionDays(sessions)
-	if err != nil {
-		return "", err
-	}
+	retention := autoPruneRetentionDays(ctx, h)
 	return fmt.Sprintf("Auto-prune is %s (%s), retention %d days.%s Usage: /autoprune on | off | later", state, chosen, retention, disk), nil
 }

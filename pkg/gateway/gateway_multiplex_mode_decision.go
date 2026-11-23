@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -67,24 +66,13 @@ func PersistResolvedDefault(ctx context.Context, decision MultiplexDecision, def
 	}
 	cfgPath := filepath.Join(defaultHome, "config.yaml")
 	inFile, err := func() (any, error) {
-		cfg := map[string]any{}
-		exists, err := config.ConfigExists(ctx, cfgPath)
+		flag, err := ExplicitMultiplexFlag(ctx, defaultHome)
 		if err != nil {
 			return nil, err
 		}
-		if exists {
-			raw, err := config.ReadUserConfigRaw(ctx, cfgPath)
-			if err != nil {
-				return nil, err
-			}
-			if raw != nil {
-				cfg = raw
-			}
-		}
-		section, _ := cfg["gateway"].(map[string]any)
-		inFile, ok := cfg["multiplex_profiles"]
-		if !ok {
-			inFile = section["multiplex_profiles"]
+		var inFile any
+		if flag != nil {
+			inFile = *flag
 		}
 		if inFile == true {
 			return inFile, errAlreadyPersisted

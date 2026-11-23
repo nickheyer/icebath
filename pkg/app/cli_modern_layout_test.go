@@ -112,9 +112,8 @@ func TestLayoutDefaultsThroughTheConfigLoader(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(tc.yaml), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		loaded, _ := LoadCLIConfig(context.Background())["display"].(map[string]any)
-		if layoutFromConfig(loaded) != tc.modern {
-			t.Fatalf("%q gave layout %v", tc.yaml, layoutFromConfig(loaded))
+		if got := layoutFromConfig(context.Background()); got != tc.modern {
+			t.Fatalf("%q gave layout %v", tc.yaml, got)
 		}
 	}
 }

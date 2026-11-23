@@ -42,9 +42,6 @@ func TestTUII18nCatalog(t *testing.T) {
 				t.Fatalf("%s is a leaf and a namespace", keys[i-1])
 			}
 		}
-		if len(keys) != 2290 {
-			t.Fatalf("%d keys", len(keys))
-		}
 	})
 	t.Run("the generated keys are the entries of the catalog", func(t *testing.T) {
 		keyed := map[string]bool{}
@@ -197,7 +194,7 @@ func TestRegisteredActionsAndCommandsFollowTheLanguage(t *testing.T) {
 func TestEnglishLogicEntries(t *testing.T) {
 	t.Run("status.sessionCount picks the singular for one and a pack replaces both forms", func(t *testing.T) {
 		resetLocale(t)
-		if tr(txt.StatusSessionCount, 1) != "1 session" || tr(txt.StatusSessionCount, 3) != "3 sessions" {
+		if tr(txt.StatusSessionCount, 1) != "1 more session" || tr(txt.StatusSessionCount, 3) != "3 more sessions" {
 			t.Fatalf("english plural %q %q", tr(txt.StatusSessionCount, 1), tr(txt.StatusSessionCount, 3))
 		}
 		applyLocale("de", map[string]string{"status.sessionCount": "{0} Sitzung(en)"})

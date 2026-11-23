@@ -1,10 +1,10 @@
 package tui
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/ui/keys"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
 // Parsed voice push to talk chord, a modifier with a letter or a named key
@@ -14,8 +14,8 @@ type voiceRecordKey struct {
 	Named string
 }
 
-// Ctrl+B, the chord used when the configured one is missing or invalid
-var defaultVoiceRecordKey = voiceRecordKey{Ch: "b", Mod: "ctrl"}
+// No chord of its own, the key recording through the leader alone, which is what a missing, invalid or reserved configured key leaves
+var defaultVoiceRecordKey = voiceRecordKey{}
 
 var voiceModAliases = map[string]string{
 	"alt": "alt", "control": "ctrl", "ctrl": "ctrl", "option": "alt", "opt": "alt",
@@ -28,12 +28,12 @@ var voiceNamedKeyAliases = map[string]string{
 }
 
 var (
-	reservedCtrlChars     = map[string]bool{"c": true, "d": true, "l": true, "r": true}
+	reservedCtrlChars     = map[string]bool{"c": true, "d": true, "l": true, "r": true, "x": true}
 	reservedSuperChars    = map[string]bool{"c": true, "d": true, "l": true, "v": true}
 	reservedAltCharsOnMac = map[string]bool{"c": true, "d": true, "l": true}
 )
 
-// Voice chord of a voice.record_key config value, the default for anything invalid or reserved
+// Voice chord of a voice.record_key config value, none for anything invalid or reserved
 func parseVoiceRecordKey(text string) voiceRecordKey {
 	lower := strings.ToLower(strings.TrimSpace(text))
 	if lower == "" {
@@ -72,8 +72,11 @@ func parseVoiceRecordKey(text string) voiceRecordKey {
 	return defaultVoiceRecordKey
 }
 
-// Keymap chords of the voice key, the default one also answering the command key on a Mac, none when the keymap cannot spell it
+// Keymap chords of the voice key, none for the key of its own left unset or one the keymap cannot spell
 func (k voiceRecordKey) chords() []string {
+	if k == defaultVoiceRecordKey {
+		return nil
+	}
 	key := k.Ch
 	if k.Named == "escape" {
 		key = "esc"
@@ -82,50 +85,47 @@ func (k voiceRecordKey) chords() []string {
 	if err != nil {
 		return nil
 	}
-	if isMac && k == defaultVoiceRecordKey {
-		return []string{chord, "super+" + k.Ch}
-	}
 	return []string{chord}
 }
 
-// Binds the voice action to the configured chord. Session keys that act in every state give the chord up while it is the voice key and take it back
-// when the voice key changes; keys that act only in some state, such as deleting a queued input being edited, keep it and come first
+// Contexts a chord of the voice key competes in, those of the session window
+var voiceKeyContexts = []string{tuiContext, keys.Session, keys.Text, keys.Global}
+
+// Binds the voice action to the configured chord as its default: keys a person bound to it themselves stay, and a chord another key of the session
+// window already holds is refused with a notice naming that key rather than taken from it
 func (a *app) bindVoiceKey() {
 	const id = "tui.voice"
-	action, linked := a.keys.Action(id)
-	if !linked {
+	if _, linked := a.keys.Action(id); !linked {
 		return
 	}
-	chords := a.voiceKey.chords()
-	if len(chords) == 0 {
-		chords = defaultVoiceRecordKey.chords()
-	}
-	if slices.Equal(a.keys.Keys(id), chords) {
-		return
-	}
-	for _, displaced := range a.voiceDisplaced {
-		a.keys.Register(displaced)
-	}
-	a.voiceDisplaced = nil
-	conditional := map[string]bool{}
-	for _, c := range a.commands() {
-		conditional[c.ID] = c.When != nil
-	}
-	for _, other := range a.keys.Actions() {
-		if other.ID == id || other.Context != tuiContext || conditional[other.ID] {
+	var free []string
+	for _, chord := range a.voiceKey.chords() {
+		holder := ""
+		for _, other := range a.keys.Lookup(voiceKeyContexts, keys.Press(chord)) {
+			if other != id {
+				holder = other
+				break
+			}
+		}
+		if holder == "" {
+			free = append(free, chord)
 			continue
 		}
-		kept := slices.DeleteFunc(slices.Clone(other.Default), func(c string) bool { return slices.Contains(chords, c) })
-		if len(kept) == len(other.Default) {
-			continue
+		if warned := keys.Format(chord) + ":" + holder; warned != a.voiceKeyWarned {
+			a.voiceKeyWarned = warned
+			act, _ := a.keys.Action(holder)
+			a.sys(warningLine(tr(txt.SessionInputVoiceKeyTaken, keys.Format(chord), act.LabelText(), a.keys.Chord("leader.tui.voice"))))
 		}
-		a.voiceDisplaced = append(a.voiceDisplaced, other)
-		other.Default = kept
-		a.keys.Register(other)
 	}
-	action.Default = chords
-	a.keys.Register(action)
+	if err := a.keys.SetDefault(id, free); err != nil {
+		a.sys(warningLine(err.Error()))
+	}
 }
 
-// Chord the voice action is bound to as /voice names it, empty in a build without voice
-func (a *app) voiceKeyLabel() string { return keys.Format(a.keys.First("tui.voice")) }
+// Keys that record voice as /voice names them, the chord of its own or else the leader key, empty in a build without voice
+func (a *app) voiceKeyLabel() string {
+	if k := a.keys.Display("tui.voice"); k != "" {
+		return k
+	}
+	return a.keys.Chord("leader.tui.voice")
+}

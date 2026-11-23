@@ -6,10 +6,11 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Longest wait every platform can express, DWORD milliseconds on Windows and one year elsewhere
@@ -279,18 +280,9 @@ func normalizeApprovalMode(mode any) string {
 	return "manual"
 }
 
-// Live approvals config block, callers must not mutate it
-func getApprovalConfig(env *Env) map[string]any {
-	tree, err := liveConfigTree(env)
-	if err != nil {
-		envLog(env).Warn(fmt.Sprintf("Failed to load approval config: %s", err))
-		return map[string]any{}
-	}
-	section := tree.Map("approvals")
-	if section == nil {
-		return map[string]any{}
-	}
-	return section
+// Context the approval settings of an env resolve in, its profile home
+func approvalCtx(env *Env) context.Context {
+	return envHomeCtx(context.Background(), env)
 }
 
 // Approval mode manual, smart, or off with a hosted room policy overriding config
@@ -300,29 +292,18 @@ func getApprovalMode(env *Env) string {
 			return mode
 		}
 	}
-	mode, ok := getApprovalConfig(env)["mode"]
-	if !ok {
-		mode = "manual"
-	}
-	return normalizeApprovalMode(mode)
+	return settings.ApprovalMode.Get(approvalCtx(env))
 }
 
 // Exported getApprovalMode for the approvals command of other packages
 func GetApprovalMode(env *Env) string { return getApprovalMode(env) }
 
-// Configured approvals.timeout in seconds, default 300, clamped to the platform safe maximum
+// Approval wait in seconds, clamped to the platform safe maximum
 func getApprovalTimeout(env *Env) int {
-	raw := 300
-	if v, ok := getApprovalConfig(env)["timeout"]; ok {
-		n, isInt := asIntValue(v)
-		if !isInt {
-			return 300
-		}
-		raw = n
-	}
+	raw := int(settings.ApprovalsTimeout.Get(approvalCtx(env)) / time.Second)
 	safeCap := int(MaxSafeTimeoutSeconds)
 	if raw > safeCap {
-		pkgLog().Warn(fmt.Sprintf("approvals.timeout=%d exceeds the platform-safe maximum; clamping to %ds", raw, safeCap))
+		pkgLog().Warn(fmt.Sprintf("the approval wait of %ds exceeds the platform-safe maximum; clamping to %ds", raw, safeCap))
 		return safeCap
 	}
 	return raw
@@ -358,20 +339,6 @@ func approvalTimeoutNoticeKwargs(env *Env) map[string]any {
 	return map[string]any{"waited": formatApprovalWindow(seconds), "suggested": seconds * 3}
 }
 
-// Reads approvals key as approve or deny, default deny
-func binaryApprovalMode(env *Env, key string) string {
-	raw, ok := getApprovalConfig(env)[key]
-	if !ok || raw == nil {
-		raw = "deny"
-	}
-	mode := strings.TrimSpace(strings.ToLower(pyStr(raw)))
-	switch mode {
-	case "approve", "off", "allow", "yes":
-		return "approve"
-	}
-	return "deny"
-}
-
 // Python str() of a config scalar
 func pyStr(v any) string {
 	switch x := v.(type) {
@@ -390,23 +357,27 @@ func pyStr(v any) string {
 	return fmt.Sprint(v)
 }
 
-func getCronApprovalMode(env *Env) string        { return binaryApprovalMode(env, "cron_mode") }
-func getSingleQueryApprovalMode(env *Env) string { return binaryApprovalMode(env, "single_query_mode") }
-func getUnattendedApprovalMode(env *Env) string  { return binaryApprovalMode(env, "unattended_mode") }
+// Approve or deny for risky commands in scheduled jobs
+func getCronApprovalMode(env *Env) string { return settings.ApprovalsCronMode.Get(approvalCtx(env)) }
 
-// Explicitly selected approval transport and the fail closed fallback, empty when none
+// Approve or deny for risky commands in one-shot runs
+func getSingleQueryApprovalMode(env *Env) string {
+	return settings.ApprovalsSingleQueryMode.Get(approvalCtx(env))
+}
+
+// Approve or deny for risky commands on chat platforms
+func getUnattendedApprovalMode(env *Env) string {
+	return settings.ApprovalsUnattendedMode.Get(approvalCtx(env))
+}
+
+// Selected approval transport and the fail closed fallback, empty when the fallback denies
 func getApprovalTransportConfig(env *Env) (string, string) {
-	tree, err := liveConfigTree(env)
-	if err != nil {
-		return "config-error", ""
-	}
-	section := config.AsMap(tree.Get("security.approval"))
-	selected := strings.ToLower(strings.TrimSpace(pyStrOrEmpty(section["transport"])))
-	fallback := strings.ToLower(strings.TrimSpace(pyStrOrEmpty(section["transport_fallback"])))
+	ctx := approvalCtx(env)
+	selected := strings.ToLower(strings.TrimSpace(settings.SecurityApprovalTransport.Get(ctx)))
 	if selected == "" {
 		selected = "builtin"
 	}
-	if fallback == "builtin" {
+	if settings.SecurityApprovalTransportFallback.Get(ctx) == "builtin" {
 		return selected, "builtin"
 	}
 	return selected, ""

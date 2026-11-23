@@ -17,9 +17,8 @@ func TestImage25SelectionRoutesGenerationAndEdits(t *testing.T) {
 	for _, variant := range []string{"flare", "sunburst"} {
 		for aspect, size := range map[string]string{"landscape": "landscape_4_3", "square": "square_hd", "portrait": "portrait_4_3"} {
 			model := "openai/gpt-image-2.5/" + variant + "/text-to-image"
-			t.Setenv("FAL_IMAGE_MODEL", model)
 			t.Setenv("FAL_KEY", "test-key")
-			env := &tools.Env{Home: t.TempDir(), Config: config.Tree{}}
+			env := &tools.Env{Home: t.TempDir(), Config: config.Tree{"image_gen": map[string]any{"model": model}}}
 			selected, meta := resolveFalModel(env)
 			if selected != model {
 				t.Fatalf("selected %s", selected)
@@ -133,12 +132,10 @@ func TestFalPayloadSizeFamiliesAndFilters(t *testing.T) {
 }
 
 func TestFalModelResolution(t *testing.T) {
-	t.Setenv("FAL_IMAGE_MODEL", "")
 	env := &tools.Env{Home: t.TempDir(), Config: config.Tree{}}
 	if id, _ := resolveFalModel(env); id != falDefaultModel {
 		t.Fatal(id)
 	}
-	t.Setenv("FAL_IMAGE_MODEL", "fal-ai/z-image/turbo")
 	env.Config = config.Tree{"image_gen": map[string]any{"model": "fal-ai/flux-2-pro"}}
 	if id, _ := resolveFalModel(env); id != "fal-ai/flux-2-pro" {
 		t.Fatal(id)

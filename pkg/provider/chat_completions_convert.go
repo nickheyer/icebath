@@ -29,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -1966,52 +1967,51 @@ type ccBuild struct {
 
 // Settings read from the home configuration that shape requests
 type wireSettings struct {
-	minCodingScore        float64
-	streamMaxLifetime     float64
-	streamDrainTimeout    float64
-	localStreamStale      float64
-	streamStale           float64
-	showCommentary        bool
-	textVerbosity         string
-	reasoningEcho         bool
-	providerRouting       map[string]any
-	providers             map[string]any
-	compressionEnabled    bool
-	nativeCompaction      bool
-	compactThreshold      any
-	compressionThreshold  any
-	compressionThresholdT any
-	replayRecentImages    int
+	minCodingScore     float64
+	streamMaxLifetime  float64
+	streamDrainTimeout float64
+	localStreamStale   float64
+	streamStale        float64
+	showCommentary     bool
+	textVerbosity      string
+	reasoningEcho      bool
+	providerRouting    map[string]any
+	providers          map[string]any
+	compressionEnabled bool
+	nativeCompaction   bool
+	compactThreshold   any
+	replayRecentImages int
+	apiTimeout         float64
+	apiCallStale       float64
+	apiCallStaleSet    bool
 }
-
-var settingsMu sync.Mutex
 
 // Configuration knobs of the home in effect for the context
 func loadWireSettings(ctx context.Context) wireSettings {
-	settingsMu.Lock()
-	defer settingsMu.Unlock()
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		tree = config.Defaults()
+	var compactThreshold any
+	if n, set := settings.CompressionCodexResponsesCompactThreshold.Lookup(ctx); set {
+		compactThreshold = n
 	}
+	apiCallStale, err := settings.Resolve(ctx, settings.AgentApiCallStaleTimeout.Key)
+	apiCallStaleSet := err == nil && apiCallStale.Source != settings.SourceDefault
 	return wireSettings{
-		minCodingScore:        tree.Float("openrouter.min_coding_score", 0.65),
-		streamMaxLifetime:     tree.Float("agent.stream_max_lifetime", 0),
-		streamDrainTimeout:    tree.Float("agent.stream_drain_timeout", 2.0),
-		localStreamStale:      tree.Float("agent.local_stream_stale_timeout", 900),
-		streamStale:           tree.Float("agent.stream_stale_timeout", 180),
-		showCommentary:        tree.Bool("display.show_commentary", true),
-		textVerbosity:         tree.String("agent.text_verbosity", ""),
-		reasoningEcho:         tree.Bool("agent.reasoning_echo", false) || tree.Bool("model.reasoning_echo", false),
-		providerRouting:       tree.Map("provider_routing"),
-		providers:             tree.Map("providers"),
-		compressionEnabled:    tree.Bool("compression.enabled", true),
-		nativeCompaction:      tree.Bool("codex_responses.native_compaction", false),
-		compactThreshold:      tree.Get("codex_responses.compact_threshold"),
-		compressionThreshold:  tree.Get("compression.threshold"),
-		compressionThresholdT: tree.Get("compression.threshold_tokens"),
-		replayRecentImages:    tree.Int("vision.replay_recent_images", 3),
+		minCodingScore:     settings.OpenrouterMinCodingScore.Get(ctx),
+		streamMaxLifetime:  settings.AgentStreamMaxLifetime.Get(ctx).Seconds(),
+		streamDrainTimeout: settings.AgentStreamDrainTimeout.Get(ctx).Seconds(),
+		localStreamStale:   settings.AgentLocalStreamStaleTimeout.Get(ctx).Seconds(),
+		streamStale:        settings.AgentStreamStaleTimeout.Get(ctx).Seconds(),
+		showCommentary:     settings.DisplayShowCommentary.Get(ctx),
+		textVerbosity:      settings.AgentTextVerbosity.Get(ctx),
+		reasoningEcho:      settings.AgentReasoningEcho.Get(ctx),
+		providerRouting:    settings.ProviderRouting.Get(ctx),
+		providers:          settings.Providers.Get(ctx),
+		compressionEnabled: settings.AutoCompress.Get(ctx),
+		nativeCompaction:   settings.CompressionCodexResponsesNative.Get(ctx),
+		compactThreshold:   compactThreshold,
+		replayRecentImages: settings.VisionReplayRecentImages.Get(ctx),
+		apiTimeout:         settings.AgentApiTimeout.Get(ctx).Seconds(),
+		apiCallStale:       settings.AgentApiCallStaleTimeout.Get(ctx).Seconds(),
+		apiCallStaleSet:    apiCallStaleSet,
 	}
 }
 

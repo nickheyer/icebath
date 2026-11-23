@@ -12,7 +12,7 @@ func RedactSensitiveTextInProfile(ctx context.Context, text string) string {
 		return text
 	}
 	scoped := &Env{Home: home.Dir(ctx)}
-	if !redactEnabledFor(ctx, liveSecretScope) {
+	if !redactEnabledFor(ctx) {
 		return redactRegisteredVaultValues(scoped, text)
 	}
 	return RedactSensitiveTextWith(scoped, text, RedactOptions{Force: true})

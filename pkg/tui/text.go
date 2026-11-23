@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"math"
 	"math/big"
 	"regexp"
@@ -23,6 +24,9 @@ const (
 // Status words the face ticker cycles through while the agent thinks
 var thinkingVerbs = []string{"pondering", "contemplating", "musing", "cogitating", "ruminating", "deliberating", "mulling",
 	"reflecting", "processing", "reasoning", "analyzing", "computing", "synthesizing", "formulating", "brainstorming"}
+
+// Status word the agent's ticker wrote straight into the reasoning, with its three dots, ahead of the reasoning text on the same line
+var thinkingStatusLead = regexp.MustCompile(`(?i)^(?:` + strings.Join(thinkingVerbs, "|") + `)\.\.\.[` + jsWS + `]*`)
 
 var (
 	wsRun               = regexp.MustCompile(`[` + jsWS + `]+`)
@@ -216,7 +220,7 @@ func headingBreaks(s string) string {
 func cleanThinkingText(reasoning string) string {
 	var kept []string
 	for line := range strings.SplitSeq(reasoning, "\n") {
-		line = strings.TrimFunc(thinkingStatusChunk.ReplaceAllString(line, ""), isJSSpace)
+		line = strings.TrimFunc(thinkingStatusChunk.ReplaceAllString(thinkingStatusLead.ReplaceAllString(strings.TrimFunc(line, isJSSpace), ""), ""), isJSSpace)
 		if line != "" && !thinkingStatusRe.MatchString(strings.TrimFunc(strings.TrimSuffix(line, "..."), isJSSpace)) {
 			kept = append(kept, line)
 		}
@@ -309,11 +313,11 @@ func toolTrailLabel(name string) string {
 	return name
 }
 
-// Tool call label with its context preview
+// Tool call label with what was asked, whole, the row cutting it to the width
 func formatToolCall(name, context string) string {
 	label := toolTrailLabel(name)
-	if preview := compactPreview(context, 64); preview != "" {
-		return label + `("` + preview + `")`
+	if asked := collapseWS(context); asked != "" {
+		return label + `("` + asked + `")`
 	}
 	return label
 }
@@ -331,7 +335,7 @@ func formatToolLabel(label toolLabel) string {
 	if label.Preview != "" {
 		text = label.Text + "  " + label.Preview
 	}
-	return label.Emoji + " " + compactPreview(text, 72)
+	return label.Emoji + " " + collapseWS(text)
 }
 
 // First label of a call and how many more it bundles
@@ -384,52 +388,66 @@ func verdictNote(v toolVerdict) string {
 	return v.Reason
 }
 
-// Finished trail row of an already phrased call, a failed or refused one with its reason on the lines below
-func toolTrailLine(call string, v toolVerdict, note string, duration *float64) string {
-	line := call + tookSuffix(duration)
-	if v.Failed && v.Reason != "" {
-		return line + " " + resultMark(v) + "\n" + verdictNote(v)
-	}
-	if detail := compactPreview(note, 72); detail != "" {
-		line += " :: " + detail
-	}
-	return line + " " + resultMark(v)
+// One finished tool call as the transcript shows it: the phrased call, how long it ran, the verdict, the note the service gave, the input sent
+// at the verbose level and what the call printed
+type toolRow struct {
+	Call    string
+	Took    *float64
+	Verdict toolVerdict
+	Note    string
+	Args    string
+	Output  string
 }
 
-// Finished trail row of a named call with its context
-func buildToolTrailLine(name, context string, v toolVerdict, note string, duration *float64) string {
-	return toolTrailLine(formatToolCall(name, context), v, note, duration)
+// Finished row of a named call with what was asked
+func namedToolRow(name, context string, v toolVerdict) toolRow {
+	return toolRow{Call: formatToolCall(name, context), Verdict: v}
 }
 
-// Labeled block of a verbose row, capped to a small persisted preview
-func verboseToolBlock(label, text string) string {
-	body := strings.TrimFunc(text, isJSSpace)
-	if body == "" {
-		return ""
+// Rows of a finished call, one per label with the note, input and output on the last; the live turn and a stored turn both build them here
+func finishedToolRows(name, context string, labels []toolLabel, args, note, output string, took *float64, v toolVerdict) []toolRow {
+	heads := make([]string, 0, max(len(labels), 1))
+	for _, label := range labels {
+		heads = append(heads, formatToolLabel(label))
 	}
-	return label + ":\n" + boundedLiveRenderText(body, verboseTrailMaxChars, verboseTrailMaxLines)
+	if len(heads) == 0 {
+		heads = append(heads, formatToolCall(name, context))
+	}
+	out := make([]toolRow, len(heads))
+	for i, head := range heads {
+		out[i] = toolRow{Call: head}
+	}
+	last := &out[len(out)-1]
+	last.Took, last.Verdict, last.Note, last.Args = took, v, strings.TrimFunc(note, isJSSpace), strings.TrimFunc(args, isJSSpace)
+	last.Output = toolOutputText(output)
+	if last.Output == v.Reason {
+		last.Output = ""
+	}
+	return out
 }
 
-// Finished trail row with the Args and Result blocks of an already phrased call
-func verboseToolTrailLine(call string, v toolVerdict, duration *float64, argsText, resultText string) string {
-	resultLabel := tr(txt.LibTextTextResultLabel)
-	if v.Failed {
-		resultLabel = tr(txt.LibTextTextErrorLabel)
+// Text telling two lists of tool rows apart wherever they would paint differently
+func toolRowsSignature(rows []toolRow) string {
+	var b strings.Builder
+	for _, row := range rows {
+		b.WriteString(row.Call + "\x01" + tookSuffix(row.Took) + "\x01" + resultMark(row.Verdict) + row.Verdict.Reason + "\x01" + row.Note + "\x01" + row.Args + "\x01" + row.Output + "\x02")
 	}
-	if v.Refused && v.Reason != "" {
-		resultText = verdictNote(v)
+	return b.String()
+}
+
+// What a call printed as the person reads it: the output field of a command result, else the text as it came, without trailing blank lines
+func toolOutputText(result string) string {
+	text := strings.TrimRightFunc(stripAnsi(result), isJSSpace)
+	if !strings.HasPrefix(strings.TrimLeftFunc(text, isJSSpace), "{") {
+		return strings.Trim(text, "\n")
 	}
-	var blocks []string
-	for _, block := range []string{verboseToolBlock(tr(txt.LibTextTextArgsLabel), argsText), verboseToolBlock(resultLabel, resultText)} {
-		if block != "" {
-			blocks = append(blocks, block)
-		}
+	var fields struct {
+		Output *string `json:"output"`
 	}
-	line := call + tookSuffix(duration)
-	if detail := strings.Join(blocks, "\n"); detail != "" {
-		line += " :: " + detail
+	if json.Unmarshal([]byte(text), &fields) == nil && fields.Output != nil {
+		return strings.Trim(strings.TrimRightFunc(*fields.Output, isJSSpace), "\n")
 	}
-	return line + " " + resultMark(v)
+	return text
 }
 
 // Whether a trail line is a passing status that a real row replaces, the drafting line of the language in effect or the analyzing line

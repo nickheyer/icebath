@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -83,6 +84,8 @@ type TurnRunner struct {
 	localToolMu        sync.Mutex
 	localToolStarts    map[string]float64
 	localEditSnapshots map[string]*tools.LocalEditSnapshot
+	// Completion fields of local viewer tool calls worked out as their results were stored, published with their tool.complete
+	localToolFields map[string]*pyjson.Object
 	// Terminal scope of the session policy while the turn runs inside it
 	policyScope atomic.Pointer[tools.TerminalScope]
 	// Launch policy of the session while the turn runs inside its scope
@@ -91,7 +94,7 @@ type TurnRunner struct {
 
 // Turn runner bound to the turn context, owned by the session authority when one holds the session
 func newTurnRunner(ctx context.Context, runner *GatewayRunner, tc *TurnContext) (*TurnRunner, error) {
-	tr := &TurnRunner{runner: runner, ctx: tc, turnCtx: ctx}
+	tr := &TurnRunner{runner: runner, ctx: tc, turnCtx: settings.WithSession(ctx, tc.sessionID)}
 	authority, err := gateway.ActiveAuthority(ctx, runner)
 	if err != nil || authority == nil {
 		return tr, err

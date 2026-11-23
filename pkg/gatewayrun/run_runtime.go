@@ -187,7 +187,7 @@ func (r *GatewayRunner) initializeGatewayRuntime(ctx context.Context) error {
 	instanceID := hex.EncodeToString(raw)
 	descriptor := map[string]any{
 		"instance_id": instanceID, "runtime_protocol": 1, "state": "starting",
-		"capabilities": []any{}, "served_profiles": []any{},
+		"served_profiles": []any{},
 	}
 	r.sessionRuntimeDescriptor.store(descriptor)
 	registry := gateway.NewSessionAuthorities(homes[0].Home, r.multiplexing())

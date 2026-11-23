@@ -13,11 +13,11 @@ import (
 // Commands of the spawn tree, its window with pause and status words, the replay of finished trees and their diff
 func (a *app) agentsCommands() []slashCommand {
 	return []slashCommand{
-		{name: "agents", aliases: []string{"tasks"}, help: "open the spawn-tree dashboard (live audit + kill/pause controls)", usage: "[pause|resume|status]",
+		{name: "agents", help: "open the spawn-tree dashboard (live audit + kill/pause controls)", usage: "[pause|resume|status]",
 			suggest: func(string) []string { return []string{"pause", "resume", "status"} },
 			run: func(r *slashRun) tea.Cmd {
 				switch sub := strings.ToLower(trimJS(r.arg)); sub {
-				case "pause", "resume", "unpause":
+				case "pause", "resume":
 					params := tuigateway.DelegationPauseParams{Paused: ptr(sub == "pause")}
 					return ask(r.rpc, r.sys, tuigateway.DelegationPause, params, func(res *tuigateway.DelegationPauseResult) tea.Cmd {
 						if res == nil {
@@ -58,7 +58,7 @@ func (a *app) agentsCommands() []slashCommand {
 				}
 				return a.openSpawnTree(0, nil)
 			}},
-		{name: "processes", aliases: []string{"ps"}, help: "list the background processes of the session, read their output or kill one",
+		{name: "processes", help: "list the background processes of the session, read their output or kill one",
 			run: func(r *slashRun) tea.Cmd {
 				if r.sid == "" {
 					r.sys(tr(txt.ProcessesNone))

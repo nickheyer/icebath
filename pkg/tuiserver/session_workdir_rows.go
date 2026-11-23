@@ -172,6 +172,7 @@ func workdirRowModelConfig(ctx context.Context, session *tuihost.Session) (strin
 			modelConfig[flag] = true
 		}
 	}
+	storeSessionOwnedConfig(ctx, session, modelConfig)
 	if composer, isDict := session.Get("composer_override_profile").(map[string]any); isDict {
 		modelConfig["composer_override_profile"] = composer
 	}

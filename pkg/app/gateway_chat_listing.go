@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -46,17 +47,7 @@ func gatewayListingSelection(ctx context.Context, args map[string]any) ([]string
 	if err != nil {
 		return nil, nil, err
 	}
-	disabled := []string{}
-	if raw, ok := cfg.Sub("agent")["disabled_toolsets"]; ok && pyrepr.Truthy(raw) {
-		switch list := raw.(type) {
-		case []any:
-			for _, item := range list {
-				disabled = append(disabled, pyrepr.Str(item))
-			}
-		case []string:
-			disabled = append(disabled, list...)
-		}
-	}
+	disabled := append([]string{}, settings.AgentDisabledToolsets.Strings(ctx)...)
 	enabled := sortedKeys(tools.Default.PlatformTools(ctx, tools.ScopeKey(h), cfg, "cli", tools.PlatformToolsOptions{IncludeDefaultMCPServers: true}))
 	return enabled, disabled, nil
 }

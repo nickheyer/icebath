@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -239,16 +240,12 @@ func (r *GatewayRunner) handleReloadMCPCommand(ctx context.Context, event *gatew
 	if err != nil {
 		return nil, err
 	}
-	userConfig := r.readUserConfig(ctx)
-	if approvals, ok := userConfig["approvals"].(map[string]any); ok {
-		gate, present := approvals["mcp_reload_confirm"]
-		if present && !pyrepr.Truthy(gate) {
-			reply, err := r.executeMCPReload(ctx, event)
-			if err != nil {
-				return nil, err
-			}
-			return &reply, nil
+	if !settings.ApprovalsMcpReloadConfirm.Get(ctx) {
+		reply, err := r.executeMCPReload(ctx, event)
+		if err != nil {
+			return nil, err
 		}
+		return &reply, nil
 	}
 	onConfirm := func(ctx context.Context, choice string) (string, error) {
 		if choice == "cancel" {

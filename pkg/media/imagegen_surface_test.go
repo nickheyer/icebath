@@ -359,7 +359,7 @@ func TestImageFalStrictSelection(t *testing.T) {
 	err := falKeyMissingError(sel("fal"))
 	var ve *imageValueError
 	if !errors.As(err, &ve) || !strings.Contains(err.Error(), "FAL_KEY") || !strings.Contains(err.Error(), "image_gen is configured to use fal") ||
-		!strings.Contains(err.Error(), "icebath tools") {
+		!strings.Contains(err.Error(), "/settings → Images & media") {
 		t.Fatalf("fal without key %v", err)
 	}
 	if checkFalAPIKey(sel("fal")) {

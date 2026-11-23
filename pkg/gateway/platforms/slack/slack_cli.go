@@ -130,7 +130,7 @@ func ManifestCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) 
 		"     slash commands changed.\n"+
 		"  4. Make sure Socket Mode is enabled and you have a bot token\n"+
 		"     (xoxb-...) and app token (xapp-...) configured: start\n"+
-		"     `icebath` and type `/setup gateway`.\n\n", target)
+		"     `icebath` and type `/setup chat-apps`.\n\n", target)
 	return 0, nil
 }
 

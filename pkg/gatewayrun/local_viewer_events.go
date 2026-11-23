@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
@@ -72,10 +73,11 @@ func showLocalReasoning(ctx context.Context, t *TurnRunner) (bool, error) {
 	if !ok || live == nil {
 		return false, nil
 	}
-	if live.ShowReasoning != nil {
-		return *live.ShowReasoning, nil
+	if shown, ok := gateway.SessionOwnSetting(ctx, live, settings.ShowThinking.Key); ok {
+		on, _ := shown.(bool)
+		return on, nil
 	}
-	return gateway.LaunchShowsReasoningActive(ctx, owner.authority)
+	return gateway.LaunchShowsReasoningActive(ctx), nil
 }
 
 // Whether a subagent event belongs to a delegate this turn's agent spawned
@@ -254,6 +256,37 @@ func noteLocalToolStart(t *TurnRunner, callID any, toolName *string, args any) {
 		t.localEditSnapshots[key] = snapshot
 		t.localToolMu.Unlock()
 	}
+}
+
+// Display metadata stored with a local viewer tool result, its duration, inline diff and image, the fields kept for its tool.complete so the
+// stored row and the live row read the same
+func (t *TurnRunner) localToolResultMetadata(callID, name string, args map[string]any, result string) map[string]any {
+	fields := localCompleteFields(t.turnCtx, t, callID, &name, args, result)
+	t.localToolMu.Lock()
+	if t.localToolFields == nil {
+		t.localToolFields = map[string]*pyjson.Object{}
+	}
+	t.localToolFields[callID] = fields
+	t.localToolMu.Unlock()
+	stored := map[string]any{}
+	for _, key := range []string{"duration_s", "inline_diff", "image_path"} {
+		if value := fields.Vals[key]; value != nil {
+			stored[key] = value
+		}
+	}
+	return stored
+}
+
+// Completion fields of a local viewer tool call, the ones worked out when its result was stored, else worked out now for a call that stored none
+func (t *TurnRunner) takeLocalCompleteFields(callID string, toolName *string, args, result any) *pyjson.Object {
+	t.localToolMu.Lock()
+	fields, kept := t.localToolFields[callID]
+	delete(t.localToolFields, callID)
+	t.localToolMu.Unlock()
+	if kept {
+		return fields
+	}
+	return localCompleteFields(t.turnCtx, t, callID, toolName, args, result)
 }
 
 // Duration, rendered inline diff and task list snapshot of a completed local viewer tool call

@@ -36,7 +36,7 @@ func effortWatchdogs(t *testing.T, ctx context.Context, agent *fakeChatAgent, ef
 func effortCodexAgent(t *testing.T) *fakeChatAgent {
 	t.Helper()
 	agent := agentFormCodexAgent(t, "openai-codex", "https://chatgpt.com/backend-api/codex")
-	unsetEnvForTest(t, APICallStaleTimeoutEnv, CodexHardTimeoutEnv)
+	unsetEnvForTest(t, CodexHardTimeoutEnv)
 	return agent
 }
 
@@ -72,7 +72,7 @@ func TestDefaultEffortTiersAndExplicitOperatorValuesAreUntouched(t *testing.T) {
 	agent := effortCodexAgent(t)
 	t.Setenv(CodexEventStaleTimeoutEnv, "20")
 	t.Setenv(CodexTTFBTimeoutEnv, "45")
-	t.Setenv(APICallStaleTimeoutEnv, "75")
+	setSettingsForTest(t, map[string]any{"agent.api_call_stale_timeout": 75})
 	explicitTyped, explicitForm := effortWatchdogs(t, t.Context(), agent, "high", true)
 	want := [3]float64{20, 45, 75}
 	if fuses(explicitTyped) != want || fuses(explicitForm.codexWatchdogs) != want {

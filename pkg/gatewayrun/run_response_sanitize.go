@@ -7,7 +7,6 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -16,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -155,48 +155,9 @@ func sanitizeGatewayFinalResponse(ctx context.Context, platform gateway.Platform
 }
 
 // Whether display.platforms of the platform explicitly sets the setting
-func hasPlatformDisplayOverride(userConfig map[string]any, platformKey, setting string) bool {
-	display, ok := userConfig["display"].(map[string]any)
-	if !ok {
-		return false
-	}
-	platforms, ok := display["platforms"].(map[string]any)
-	if !ok {
-		return false
-	}
-	platformCfg, ok := platforms[platformKey].(map[string]any)
-	if !ok {
-		return false
-	}
-	_, present := platformCfg[setting]
-	return present
-}
-
-// Boolean display setting with an optional platform only opt in for noisy threaded surfaces
-func resolveGatewayDisplayBool(ctx context.Context, userConfig map[string]any, platformKey, setting string, def bool, platform gateway.Platform, requirePlatformOverrideFor []gateway.Platform) bool {
-	current := gatewayPlatformValue(platform)
-	if platform == "" {
-		current = gatewayPlatformValue(gateway.Platform(platformKey))
-	}
-	for _, p := range requirePlatformOverrideFor {
-		if gatewayPlatformValue(p) == current && !hasPlatformDisplayOverride(userConfig, platformKey, setting) {
-			return false
-		}
-	}
-	switch v := config.ResolveDisplaySetting(ctx, userConfig, platformKey, setting, def).(type) {
-	case bool:
-		return v
-	case string:
-		switch strings.ToLower(pystr.Strip(v)) {
-		case "true", "yes", "1", "on":
-			return true
-		}
-		return false
-	case nil:
-		return def
-	default:
-		return pyrepr.Truthy(v)
-	}
+func hasPlatformDisplayOverride(ctx context.Context, platformKey string, e settings.Entry) bool {
+	_, set := settings.PlatformOverrides(ctx, e)[platformKey]
+	return set
 }
 
 // Scope aware TERMINAL_CWD for footer and context surfaces, an active refusal scope raising

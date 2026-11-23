@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Effective gateway model route and context window
@@ -24,31 +24,12 @@ func resolveGatewayModelContext(ctx context.Context, model string, route map[str
 		resolvedModel = gateway.ResolveGatewayModel(ctx, nil)
 	}
 	var configContextLength *int
-	var providerName, baseURL, apiKey, configuredModel, configuredProvider, configuredBaseURL string
-	var customProviders []map[string]any
-	if data := gateway.LoadGatewayConfigMap(ctx, ""); len(data) > 0 {
-		if modelCfg, ok := data["model"].(map[string]any); ok {
-			configuredModel = noneText(modelCfg["default"])
-			if !pyrepr.Truthy(modelCfg["default"]) {
-				configuredModel = noneText(modelCfg["model"])
-			}
-			if raw, present := modelCfg["context_length"]; present && raw != nil {
-				if n, err := pyint.Int64(raw); err == nil {
-					value := int(n)
-					configContextLength = &value
-				}
-			}
-			if pyrepr.Truthy(modelCfg["provider"]) {
-				configuredProvider = noneText(modelCfg["provider"])
-			}
-			providerName = configuredProvider
-			if pyrepr.Truthy(modelCfg["base_url"]) {
-				configuredBaseURL = noneText(modelCfg["base_url"])
-			}
-			baseURL = configuredBaseURL
-		}
-		customProviders = provider.CompatibleCustomProviders(data)
+	if n, set := settings.ModelContextLength.Lookup(ctx); set {
+		configContextLength = &n
 	}
+	configuredModel, configuredProvider, configuredBaseURL := settings.Model.Get(ctx), settings.ModelProvider.Get(ctx), settings.ModelBaseURL.Get(ctx)
+	providerName, baseURL, apiKey := configuredProvider, configuredBaseURL, ""
+	customProviders := provider.ProviderEntries(gateway.LoadGatewayConfigMap(ctx, ""))
 	if route != nil && pyrepr.Truthy(route["base_url"]) {
 		if pyrepr.Truthy(route["provider"]) {
 			providerName = noneText(route["provider"])

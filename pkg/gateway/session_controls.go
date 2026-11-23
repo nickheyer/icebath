@@ -146,7 +146,6 @@ type AuthorityConnection struct {
 	nativeOwner   bool
 	mu            sync.Mutex
 	subscriptions map[string]any
-	replayCursors map[string]ReplayCursor
 	handedBack    map[string]bool
 	identity      map[string]any
 	operator      bool
@@ -192,7 +191,7 @@ func NewAuthorityConnection(a *SessionAuthority, transport tuihost.Transport, id
 	}
 	c := &AuthorityConnection{authority: a, transport: transport,
 		actor:         Principal{Subject: subject, ProfileID: profileID, Capabilities: capabilities, TransportID: uuidHex()},
-		subscriptions: map[string]any{}, replayCursors: map[string]ReplayCursor{}, handedBack: map[string]bool{},
+		subscriptions: map[string]any{}, handedBack: map[string]bool{},
 		identity: identity, operator: operator, siblings: map[string]*AuthorityConnection{}}
 	bindNativeTransport(a, c.actor, identity)
 	c.nativeOwner = identity["native_bootstrap"] == true

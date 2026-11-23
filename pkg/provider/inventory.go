@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // PickerConfigContext is the disk config snapshot every picker consumer reads
@@ -104,53 +104,23 @@ func (pc PickerConfigContext) WithOverrides(currentProvider, currentModel, curre
 	return pc
 }
 
-// Disk config snapshot of the current model, providers and catalog exclusions
+// Settings snapshot of the current model, providers and catalog exclusions
 func loadPickerContext(ctx context.Context) (PickerConfigContext, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return PickerConfigContext{}, err
-	}
-	cfg := map[string]any(tree)
-	var pc PickerConfigContext
-	modelCfg, has := cfg["model"]
-	if !has {
-		modelCfg = map[string]any{}
-	}
-	if m, ok := modelCfg.(map[string]any); ok {
-		def, hasDefault := m["default"]
-		if !hasDefault {
-			def = pyGetAny(m, "name", "")
-		}
-		pc.CurrentModel = pyOrStr(def)
-		pc.CurrentProvider = CoerceProviderID(pyGetAny(m, "provider", ""))
-		pc.CurrentBaseURL = pyOrStr(pyGetAny(m, "base_url", ""))
-	} else {
-		pc.CurrentModel = pyOrStr(modelCfg)
-	}
-	catalog, has := cfg["model_catalog"]
-	if !has {
-		catalog = map[string]any{}
-	}
-	catalogMap, ok := catalog.(map[string]any)
-	if !ok {
-		return PickerConfigContext{}, fmt.Errorf("the model catalog is %s, expected a mapping", errchain.Kind(catalog))
-	}
-	if excluded, ok := catalogMap["excluded_providers"].([]any); ok {
-		for _, p := range excluded {
-			if p != nil {
-				pc.ExcludedProviders = append(pc.ExcludedProviders, pyStr(p))
-			}
-		}
-	}
-	pc.UserProviders = StringifyProviderMap(cfg["providers"])
-	for _, entry := range CompatibleCustomProviders(cfg) {
+	pc := PickerConfigContext{CurrentModel: settings.Model.Get(ctx), CurrentProvider: CoerceProviderID(settings.ModelProvider.Get(ctx)),
+		CurrentBaseURL: settings.ModelBaseURL.Get(ctx), ExcludedProviders: settings.ModelCatalogExcludedProviders.Strings(ctx),
+		UserProviders: StringifyProviderMap(settings.Providers.Get(ctx))}
+	for _, entry := range ProviderEntries(customProviderSettings(ctx)) {
 		pc.CustomProviders = append(pc.CustomProviders, entry)
 	}
 	return pc, nil
+}
+
+// Providers of the home in ctx, shaped like the config document the custom provider helpers read
+func customProviderSettings(ctx context.Context) map[string]any {
+	return map[string]any{"providers": settings.Providers.Get(ctx)}
 }
 
 // Lowercased trimmed slug of a row
@@ -927,10 +897,8 @@ func appendUnconfiguredRows(ctx context.Context, rows []map[string]any, pc Picke
 // True when Anthropic was authenticated through OAuth, device flow, Claude Code login or a pooled OAuth entry
 func anthropicOAuthCredentialsPresent(ctx context.Context) bool {
 	env := modelsPoolEnv(ctx)
-	for _, read := range []func(PoolEnv) map[string]any{ReadIcebathOAuthCredentials, ReadClaudeCodeCredentials} {
-		if pyTruthy(read(env)["accessToken"]) {
-			return true
-		}
+	if pyTruthy(ReadClaudeCodeCredentials(env)["accessToken"]) {
+		return true
 	}
 	entries, err := env.Store.ReadCredentialPool("anthropic")
 	if err != nil {

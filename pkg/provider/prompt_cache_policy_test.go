@@ -157,7 +157,7 @@ func TestConfiguredCacheTTLReadsValidTiers(t *testing.T) {
 }
 
 func TestConfiguredCacheTTLNoneForDisabledOrUnknown(t *testing.T) {
-	for _, value := range []any{"off", false, nil, "2h"} {
+	for _, value := range []any{"off", false, "2h"} {
 		cacheTestHome(t, value)
 		if got := configuredCacheTTL(context.Background()); got != "" {
 			t.Fatalf("%v gave %q", value, got)

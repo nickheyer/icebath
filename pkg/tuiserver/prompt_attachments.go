@@ -11,10 +11,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/filedrop"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -135,33 +136,13 @@ func sessionHomeDir(ctx context.Context, session *tuihost.Session, name string) 
 	return filepath.Join(profileHome, name)
 }
 
-// attachments.storage of the session profile's own config, empty unless it opts into workspace
+// Attachment storage of the session profile, its own home's setting else the launch home's
 func profileAttachmentsStorage(ctx context.Context, profileHome string) string {
 	h := profileHome
 	if h == "" {
 		h = launchHome()
 	}
-	cfgPath := filepath.Join(h, "config.yaml")
-	exists, err := config.ConfigExists(ctx, cfgPath)
-	if err == nil && exists {
-		var cfg map[string]any
-		cfg, err = config.LoadUserEffective(cfgPath, config.EnvRefLookupContext(ctx))
-		if err == nil {
-			if attachments, ok := cfg["attachments"].(map[string]any); ok {
-				storage := ""
-				if truthy(attachments["storage"]) {
-					storage = strOr(attachments["storage"])
-				}
-				return strings.ToLower(pystr.Strip(storage))
-			}
-			return ""
-		}
-	}
-	var unavailable *config.ConfigBackendUnavailable
-	if errors.As(err, &unavailable) {
-		pkgLog().Warn(fmt.Sprintf("attachments.storage for %s unavailable (%s); staging in the profile home", h, unavailable.Message))
-	}
-	return ""
+	return settings.AttachmentsStorage.Get(home.WithOverride(ctx, h))
 }
 
 // Session workspace when workspace storage can write to it, empty for a remote or missing cwd

@@ -22,7 +22,6 @@ func TestRootCredentialPathsFollowThePythonOrder(t *testing.T) {
 
 func TestStoredWebappSignInStateIsNeverDelivered(t *testing.T) {
 	_, dir := withRemoteEnv(t)
-	t.Setenv("ICEBATH_MEDIA_DELIVERY_STRICT", "")
 	token, notes := filepath.Join(dir, "webapp", "session-token"), filepath.Join(dir, "notes", "plan.txt")
 	for _, p := range []string{token, notes} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {

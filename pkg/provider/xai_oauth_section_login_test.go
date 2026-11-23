@@ -10,7 +10,7 @@ import (
 
 func TestXAIOAuthSectionLoginSavesTokensWithoutSwitchingProvider(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "openrouter", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openrouter", "providers": map[string]any{}})
 	prevLogin, prevGetenv := xaiOAuthDeviceCodeLoginFn, oauthGetenv
 	t.Cleanup(func() { xaiOAuthDeviceCodeLoginFn, oauthGetenv = prevLogin, prevGetenv })
 	oauthGetenv = func(string) string { return "" }

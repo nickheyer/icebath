@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
+	"gopkg.in/yaml.v3"
 )
 
 // Clears every piece of process wide approval state between tests
@@ -47,7 +48,14 @@ func approvalTestEnv(t *testing.T, sessionKey string, approvals map[string]any, 
 	if approvals == nil {
 		approvals = map[string]any{"mode": "manual"}
 	}
-	env := &Env{Home: t.TempDir(), Config: config.Tree{"approvals": approvals}, Values: &sync.Map{}}
+	env := &Env{Home: t.TempDir(), Values: &sync.Map{}}
+	doc, err := yaml.Marshal(map[string]any{"approvals": approvals})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), doc, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if os.Getenv("ICEBATH_HOME") == "" {
 		t.Setenv("ICEBATH_HOME", env.Home)
 	}

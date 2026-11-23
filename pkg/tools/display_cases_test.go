@@ -101,8 +101,8 @@ func TestPrepareToolPreviewRecoversAndDescribesTruncatedUrl(t *testing.T) {
 	resetPreviewLen(t)
 	url := "https://example.com/a/very/long/path/to/a/page"
 	SetToolPreviewMaxLen(20)
-	preview := PrepareToolPreview(nil, "web_extract", map[string]any{"urls": []any{url}}, url[:17]+"...", 20)
-	if preview.Text != url[:17]+"..." || !preview.Truncated || preview.URL != url {
+	preview := PrepareToolPreview(nil, "web_extract", map[string]any{"urls": []any{url}}, url[:19]+"…", 20)
+	if preview.Text != url[:19]+"…" || !preview.Truncated || preview.URL != url {
 		t.Fatalf("preview %+v", preview)
 	}
 }

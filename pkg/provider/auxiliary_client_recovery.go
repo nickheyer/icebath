@@ -322,7 +322,9 @@ var auxResolveXaiOAuthForceRefreshFn = func(ctx context.Context) (map[string]any
 
 // Anthropic credential seams over the pool, the Claude Code login and its OAuth refresh
 var (
-	auxLoadProviderPoolFn          = func(ctx context.Context, provider string) *Pool { return LoadPool(modelsPoolEnv(ctx), provider) }
+	auxLoadProviderPoolFn = func(ctx context.Context, provider string) *Pool {
+		return LoadSelectedPool(modelsPoolEnv(ctx), provider)
+	}
 	auxReadClaudeCodeCredentialsFn = func(ctx context.Context) map[string]any { return ReadClaudeCodeCredentials(modelsPoolEnv(ctx)) }
 	auxRefreshClaudeOAuthTokenFn   = func(ctx context.Context, creds map[string]any) string {
 		return refreshClaudeCodeOAuthToken(modelsPoolEnv(ctx), creds)

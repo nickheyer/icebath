@@ -29,6 +29,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -58,8 +59,6 @@ var mediaTypeByMimePrefix = []struct {
 var outcomeReaction = map[gateway.ProcessingOutcome]string{gateway.ProcessingSuccess: "✅", gateway.ProcessingFailure: "❌"}
 
 var quoteAuthorKeys = []string{"author", "authorNumber", "authorUuid", "authorAci", "authorServiceId", "authorServiceIdString"}
-
-var truthyStrings = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 
 var (
 	imageExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
@@ -449,24 +448,13 @@ func NewSignalAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Sig
 		return nil, noAttr(rawAccount, "strip")
 	}
 	a.account = account
-	a.ignoreStories = pyrepr.Truthy(getOr(extra, "ignore_stories", true))
+	a.ignoreStories = settings.SignalIgnoreStories.Get(gateway.SettingsContext(ctx))
 	groups, err := gateway.GetScopedSecret(ctx, "SIGNAL_GROUP_ALLOWED_USERS", "", false)
 	if err != nil {
 		return nil, err
 	}
 	a.groupAllowFrom = commaSet(groups)
-	if cfg := extra["require_mention"]; cfg != nil {
-		a.requireMention = pyrepr.Truthy(cfg)
-	} else {
-		secret, err := gateway.GetScopedSecret(ctx, "SIGNAL_REQUIRE_MENTION", "false", false)
-		if err != nil {
-			return nil, err
-		}
-		if secret == "" {
-			secret = "false"
-		}
-		a.requireMention = truthyStrings[pystr.Lower(secret)]
-	}
+	a.requireMention = settings.SignalRequireMention.Get(gateway.SettingsContext(ctx))
 	allowed, err := gateway.GetScopedSecret(ctx, "SIGNAL_ALLOWED_USERS", "*", false)
 	if err != nil {
 		return nil, err

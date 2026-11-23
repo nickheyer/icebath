@@ -132,7 +132,6 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	bf(cfgGet, "raw", "", "Print credential values unmasked (default masks api_key/token/secret-shaped values)")
 	cfgSet := c.newCmd(config, "set", "Set a configuration value", "")
 	c.pos(cfgSet, pOpt("key"), pOpt("value"))
-	bf(cfgSet, "force", "", "Write a key the running version doesn't recognize: an unknown path under a known section is otherwise refused, and an unknown top-level key is written with a notice.")
 	cfgUnset := c.newCmd(config, "unset", "Remove a configuration value", "")
 	c.pos(cfgUnset, pOpt("key"))
 	c.newCmd(config, "path", "Print config file path", "")

@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Sets the home channel from the QQBOT names, else the deprecated QQ names with a rename warning
@@ -41,15 +42,15 @@ var envEnableCredentials = []string{"QQ_APP_ID", "QQ_CLIENT_SECRET"}
 
 var envOverrides = []gateway.EnvStep{
 	&gateway.EnvCred{Platform: gateway.PlatformQQBot, Creds: [][]string{{"QQ_APP_ID", "QQ_CLIENT_SECRET"}},
-		Optional:         []gateway.EnvSpec{{Key: "app_id", Env: "QQ_APP_ID"}, {Key: "client_secret", Env: "QQ_CLIENT_SECRET"}},
-		OptionalStripped: []gateway.EnvSpec{{Key: "allow_from", Env: "QQ_ALLOWED_USERS"}, {Key: "group_allow_from", Env: "QQ_GROUP_ALLOWED_USERS"}},
-		Then:             qqHome},
+		Optional: []gateway.EnvSpec{{Key: "app_id", Env: "QQ_APP_ID"}, {Key: "client_secret", Env: "QQ_CLIENT_SECRET"}},
+		Then:     qqHome},
 }
 
 var authz = map[string]any{"allowed_users_env": "QQ_ALLOWED_USERS", "allow_all_env": "QQ_ALLOW_ALL_USERS",
 	"own_policy_env": []string{"", ""}, "group_allowed_chats_env": "QQ_GROUP_ALLOWED_USERS", "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled qqbot directory with the gateway config bridge at load
+// Registers the env declarations of the bundled qqbot directory and the settings its allowlist names moved to
 func init() {
 	gateway.RegisterBundledEnv("qqbot", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
+	gateway.RegisterEnvSettings(map[string]settings.Entry{"QQ_ALLOWED_USERS": settings.QqbotAllowFrom, "QQ_GROUP_ALLOWED_USERS": settings.QqbotGroupAllowFrom})
 }

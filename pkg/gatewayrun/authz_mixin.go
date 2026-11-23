@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var (
@@ -630,7 +631,7 @@ func (r *GatewayRunner) principalAuthorized(ctx context.Context, source *gateway
 		if granted {
 			return true, nil
 		}
-		return envTruthy(ctx, "GATEWAY_ALLOW_ALL_USERS"), nil
+		return settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx)), nil
 	}
 	if isGroupOrForum && source.ChatID != "" {
 		if groupChatAllowlist != "" && allows(coerceAllowSet(groupChatAllowlist), source.ChatID) {

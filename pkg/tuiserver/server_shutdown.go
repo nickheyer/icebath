@@ -53,6 +53,7 @@ func loadServerModule() error {
 	if _, err := provider.LoadIcebathDotenv(context.Background(), options); err != nil {
 		return err
 	}
+	tuihost.RegisterSessionSettingsStore()
 	registerAtExit(shutdownSessions)
 	startIdleReaper()
 	serverModule.loaded = true

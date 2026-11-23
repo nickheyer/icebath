@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	AuthStoreVersion             = 1
+	AuthStoreVersion             = 2
 	AuthLockTimeout              = 15 * time.Second
 	AccessTokenRefreshSkew       = 120 * time.Second
 	DeviceAuthPollIntervalCap    = 1 * time.Second

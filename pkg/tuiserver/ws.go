@@ -37,7 +37,6 @@ var (
 
 // Seams of the socket entry, the real functions swapped only where a test installs a fake
 var (
-	wsServerDispatch            = Dispatch
 	wsDispatchRequestFn         = wsDispatchRequest
 	wsNewAuthorityConnection    = newWSAuthorityConnection
 	wsCloseSessionsForTransport = closeSessionsForTransport
@@ -157,11 +156,11 @@ type authorityConn interface {
 	AwaitsProfileStart(ctx context.Context, request map[string]any, held []string) (string, <-chan struct{}, bool, error)
 }
 
-// Authority connection of the socket, nil when the backend has no authority and requests take the legacy dispatcher
+// Authority connection of the socket, an error when the socket was admitted without a session authority
 func wsAuthorityConnection(ws ServedSocket, transport *tuihost.WSTransport, authIdentity map[string]any, operator bool) (authorityConn, error) {
 	authority := ws.SessionAuthority()
 	if authority == nil {
-		return nil, nil
+		return nil, errors.New("the socket was admitted without a session authority")
 	}
 	if authIdentity == nil {
 		authIdentity = map[string]any{}
@@ -189,14 +188,8 @@ func principalCapabilities(actor gateway.Principal) []string {
 	return out
 }
 
-// One request through the authority when attached, else the legacy dispatcher
-func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, reqMethod string, transport *tuihost.WSTransport) (any, error) {
-	if authority == nil {
-		if resp := wsServerDispatch(ctx, req, transport); resp != nil {
-			return resp, nil
-		}
-		return nil, nil
-	}
+// One request answered by the connection's session authority, a response frame settling its open server request
+func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, transport *tuihost.WSTransport) (any, error) {
 	request, isDict := req.(*pyjson.Object)
 	if isDict && request != nil && tuihost.IsResponseFrame(request) && tuihost.ResolveResponseOf(request, transport) {
 		return nil, nil
@@ -205,23 +198,10 @@ func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, re
 		return nil, fmt.Errorf("a request must be a mapping, got %s", errchain.Kind(req))
 	}
 	reply, err := authority.Dispatch(ctx, request)
-	if err != nil {
+	if err != nil || reply == nil {
 		return nil, err
 	}
-	var resp any
-	if reply != nil {
-		resp = reply
-	}
-	actor := authority.Actor()
-	if isUnknownMethod(resp) && lookupMethod(reqMethod) != nil && legacyFallbackAllowed(principalCapabilities(actor), reqMethod) {
-		reqMap, _ := plainRequest(req).(map[string]any)
-		legacy := dispatchLegacy(ctx, reqMap, transport, actor)
-		if legacy == nil {
-			return nil, nil
-		}
-		resp = legacy
-	}
-	return resp, nil
+	return reply, nil
 }
 
 // Starts the backend heartbeat refresher and the startup orphan sweep once, logging a failure of either
@@ -345,7 +325,7 @@ func requestMethodHashable(req any) error {
 
 // Dispatches one request and writes its inline reply, a crash answered with -32603
 func (c *wsConnection) dispatchOne(req any) error {
-	reqID, reqMethod := requestIDAndMethod(req)
+	reqID, _ := requestIDAndMethod(req)
 	methodText := requestMethodText(req)
 	var resp any
 	var crash any
@@ -356,7 +336,7 @@ func (c *wsConnection) dispatchOne(req any) error {
 			}
 		}()
 		var err error
-		resp, err = wsDispatchRequestFn(c.ctx, c.authority, req, reqMethod, c.transport)
+		resp, err = wsDispatchRequestFn(c.ctx, c.authority, req, c.transport)
 		if err != nil {
 			crash = err
 		}
@@ -558,9 +538,6 @@ func (c *wsConnection) awaitsProfileStartLocked(req any) (string, <-chan struct{
 
 // Holds a frame naming a profile still starting in its own lane, false when the serial lane takes it
 func (c *wsConnection) holdForProfileStart(req any) (bool, error) {
-	if c.authority == nil {
-		return false, nil
-	}
 	c.mu.Lock()
 	_, _, ok, err := c.awaitsProfileStartLocked(req)
 	c.mu.Unlock()
@@ -771,18 +748,13 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 	c.authority = authority
 	skinPayload := wsResolveSkin(c.ctx)
 	readyPayload := map[string]any{"skin": skinPayload, "change_events": true, "heartbeat": true, "replay_epoch": tuihost.ReplayEpoch(),
-		"build": tuigateway.BuildID(), "contract": int64(tuigateway.ContractVersion)}
-	if authority != nil {
-		readyPayload["session_authority"] = true
-	}
+		"build": tuigateway.BuildID()}
 	readyOK := c.transport.WriteAsync(pyjson.ObjectOf("jsonrpc", "2.0", "method", "event",
 		"params", pyjson.ObjectOf("type", "gateway.ready", "payload", tuigateway.SealPayload("gateway.ready", readyPayload))))
 	if readyOK {
 		wsEnsureSkinWatcher(c.ctx)
 		wsEnsureLeaseWatcher()
-		if authority != nil {
-			c.transport.SkinHome = skinHomeFor(c.ctx, authority.Actor().ProfileID)
-		}
+		c.transport.SkinHome = skinHomeFor(c.ctx, authority.Actor().ProfileID)
 		tuihost.RegisterLiveTransport(c.transport)
 	}
 	wsStartBackendLiveness(c.ctx)

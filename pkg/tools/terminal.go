@@ -505,7 +505,7 @@ const ptyDisabledReason = "PTY disabled for this command because it expects pipe
 // Structured degraded result for an infrastructure failure, or the fatal envelope in fail mode
 func degradedResult(env *Env, e *EnvironmentConnectionError, taskID string) string {
 	policy, err := terminalPolicy(env)
-	if err == nil && strings.ToLower(strings.TrimSpace(policy.Get("TERMINAL_DEGRADED_MODE", "warn"))) == "fail" {
+	if err == nil && strings.ToLower(strings.TrimSpace(policy.Setting("degraded_mode"))) == "fail" {
 		return fatalErrorJSON(env, e)
 	}
 	envLog(env).Warn("terminal backend degraded", "reason", e.Reason)

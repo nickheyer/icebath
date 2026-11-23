@@ -208,7 +208,7 @@ func TestPluginRefreshOutcome(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newTestHome(t)
-			writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+			writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 			registerExamplePlugin(t, tc.hook)
 			sink := &recordingHandler{}
 			env := testEnv(t, h)
@@ -241,7 +241,7 @@ func TestPluginRefreshOutcome(t *testing.T) {
 
 func TestPluginRefreshAdoptsPeerRotationWithoutSpendingToken(t *testing.T) {
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	var calls []string
 	registerExamplePlugin(t, func(entry PooledCredential) (map[string]any, error) {
 		calls = append(calls, entry.RefreshToken)
@@ -288,7 +288,7 @@ func oauthEntry(provider, id, access, refresh string) PooledCredential {
 
 func TestGlobalWriteThroughPreservesConcurrentRootUpdate(t *testing.T) {
 	profile, root := profileAndRoot(t)
-	writeAuthStore(t, root, map[string]any{"version": 1,
+	writeAuthStore(t, root, map[string]any{"version": 2,
 		"providers":       map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{"access_token": "old-xai", "refresh_token": "old-r"}}},
 		"credential_pool": map[string]any{"anthropic": []any{map[string]any{"id": "anthropic-existing"}}, "openrouter": []any{map[string]any{"id": "openrouter-existing"}}}})
 	env := testEnv(t, profile)
@@ -341,17 +341,17 @@ func TestCodexPoolRefreshHoldsAuthStoreLockAcrossPost(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
 	held := false
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
+	spec.refresh = pairRefresh(func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		lock := env.Store.processLock(env.Store.Path())
 		lock.state.Lock()
 		held = lock.depth > 0 && lock.owner == goroutineID()
 		lock.state.Unlock()
 		return map[string]any{"access_token": "rotated-access", "refresh_token": "rotated-refresh", "last_refresh": "2020-01-02T00:00:00Z"}, nil
-	}
-	tokensSingletonProviders["openai-codex"] = spec
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	})
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	entry := oauthEntry("openai-codex", "codex-1", "stale-access", "stale-refresh")
 	pool := NewPool(env, "openai-codex", []PooledCredential{entry})
 	refreshed, ok := pool.refreshEntry(entry, true, "", false)
@@ -361,52 +361,6 @@ func TestCodexPoolRefreshHoldsAuthStoreLockAcrossPost(t *testing.T) {
 	if !held {
 		t.Fatal("the single use token POST must run inside the auth store lock")
 	}
-}
-
-func TestWriteThroughFiresOnEveryRefreshNotJustFirst(t *testing.T) {
-	profile, root := profileAndRoot(t)
-	writeAuthStore(t, root, map[string]any{"version": 1, "providers": map[string]any{"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "root-ac", "refresh_token": "root-rf"}}}})
-	writeAuthStore(t, profile, map[string]any{"version": 1})
-	env := testEnv(t, profile)
-	for i, pair := range [][2]string{{"ac1", "rf1"}, {"ac2", "rf2"}} {
-		entry := oauthEntry("openai-codex", "c"+string(rune('1'+i)), pair[0], pair[1])
-		pool := NewPool(env, "openai-codex", []PooledCredential{entry})
-		pool.syncDeviceCodeEntryToAuthStore(entry)
-		tokens := readAuthStore(t, root)["providers"].(map[string]any)["openai-codex"].(map[string]any)["tokens"].(map[string]any)
-		if tokens["access_token"] != pair[0] || tokens["refresh_token"] != pair[1] {
-			t.Fatalf("refresh %d must reach root: %v", i+1, tokens)
-		}
-		if providers, ok := readAuthStore(t, profile)["providers"].(map[string]any); ok {
-			if _, shadow := providers["openai-codex"]; shadow {
-				t.Fatal("the profile must not accrue a shadowing providers block")
-			}
-		}
-	}
-}
-
-func anthropicTokenServer(t *testing.T, env *PoolEnv, handler func(refreshToken string) (map[string]any, int)) *httptest.Server {
-	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var payload map[string]any
-		body := map[string]any{}
-		raw := make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(raw)
-		if json.Unmarshal(raw, &payload) == nil {
-			body = payload
-		} else {
-			values := strings.Split(string(raw), "&")
-			for _, kv := range values {
-				k, v, _ := strings.Cut(kv, "=")
-				body[k] = v
-			}
-		}
-		resp, status := handler(anyString(body["refresh_token"]))
-		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(resp)
-	}))
-	t.Cleanup(server.Close)
-	env.HTTP = &http.Client{Transport: rewriteTransport{target: server.URL}}
-	return server
 }
 
 // Sends every request to the test server regardless of the configured endpoint host
@@ -420,63 +374,6 @@ func (rt rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return http.DefaultTransport.RoundTrip(clone)
 }
 
-func TestIcebathPKCERefreshWritesBackToSingleton(t *testing.T) {
-	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "providers": map[string]any{}})
-	env := testEnv(t, h)
-	if err := WriteIcebathOAuthCredentials(env, "sk-ant-oat-rt0", "rt0", 0, ""); err != nil {
-		t.Fatal(err)
-	}
-	anthropicTokenServer(t, &env, func(refreshToken string) (map[string]any, int) {
-		return map[string]any{"access_token": "sk-ant-oat-rt1", "refresh_token": "rt1", "expires_in": 3600}, 200
-	})
-	entry := PooledCredential{Provider: "anthropic", ID: "pool-entry", Label: "cred", AuthType: AuthTypeOAuth, Source: "icebath_pkce", AccessToken: "sk-ant-oat-rt0", RefreshToken: "rt0", Extra: map[string]any{}}
-	pool := NewPool(env, "anthropic", []PooledCredential{entry})
-	updated, ok := pool.refreshEntry(entry, true, "", false)
-	if !ok || updated.RefreshToken != "rt1" {
-		t.Fatalf("refresh expected: %+v", updated)
-	}
-	if ReadIcebathOAuthCredentials(env)["refreshToken"] != "rt1" {
-		t.Fatal("the singleton must carry the rotated pair")
-	}
-	var reloaded []PooledCredential
-	for _, e := range LoadPool(env, "anthropic").Entries() {
-		if strings.HasSuffix(e.Source, "icebath_pkce") {
-			reloaded = append(reloaded, e)
-		}
-	}
-	if len(reloaded) == 0 || reloaded[0].RefreshToken != "rt1" {
-		t.Fatalf("a fresh load must keep the rotation: %+v", reloaded)
-	}
-}
-
-func TestManualIcebathPKCERefreshDoesNotCreateDuplicateSingleton(t *testing.T) {
-	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "providers": map[string]any{}})
-	env := testEnv(t, h)
-	anthropicTokenServer(t, &env, func(string) (map[string]any, int) {
-		return map[string]any{"access_token": "manual-at-1", "refresh_token": "manual-rt-1", "expires_in": 3600}, 200
-	})
-	entry := PooledCredential{Provider: "anthropic", ID: "manual-entry", Label: "cred", AuthType: AuthTypeOAuth, Source: "manual:icebath_pkce", AccessToken: "manual-at-0", RefreshToken: "manual-rt-0", Extra: map[string]any{}}
-	pool := NewPool(env, "anthropic", []PooledCredential{entry})
-	refreshed, ok := pool.refreshEntry(entry, true, "", false)
-	if !ok || refreshed.RefreshToken != "manual-rt-1" {
-		t.Fatalf("refresh expected: %+v", refreshed)
-	}
-	if fileExists(IcebathOAuthFile(env)) {
-		t.Fatal("a pool owned manual row must not create a singleton")
-	}
-	var matching []PooledCredential
-	for _, e := range LoadPool(env, "anthropic").Entries() {
-		if e.ID == "manual-entry" {
-			matching = append(matching, e)
-		}
-	}
-	if len(matching) != 1 || matching[0].Source != "manual:icebath_pkce" || matching[0].RefreshToken != "manual-rt-1" {
-		t.Fatalf("the manual row must persist its rotation: %+v", matching)
-	}
-}
-
 // ---- test_anthropic_credential_persist_failure.py ----
 
 const (
@@ -485,32 +382,6 @@ const (
 	rotatedAccess  = "sk-ant-oat01-rotated"
 	rotatedRefresh = "sk-ant-ort01-rotated"
 )
-
-func persistFailureHome(t *testing.T) (string, PoolEnv) {
-	t.Helper()
-	ResetSpentRotationsForTests()
-	t.Cleanup(ResetSpentRotationsForTests)
-	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "providers": map[string]any{}})
-	env := testEnv(t, h)
-	anthropicTokenServer(t, &env, func(string) (map[string]any, int) {
-		return map[string]any{"access_token": rotatedAccess, "refresh_token": rotatedRefresh, "expires_in": 3600}, 200
-	})
-	return h, env
-}
-
-// Fails the durable write of the singleton so the commit never lands, every other write keeps working
-func breakDurableWrite(t *testing.T, path string) {
-	t.Helper()
-	prev := atomicWritePrivate
-	atomicWritePrivate = func(target string, data []byte, mode os.FileMode) error {
-		if filepath.Base(target) == filepath.Base(path) {
-			return errors.New("permission denied")
-		}
-		return prev(target, data, mode)
-	}
-	t.Cleanup(func() { atomicWritePrivate = prev })
-}
 
 func restoreDurableWrite(t *testing.T) {
 	t.Helper()
@@ -531,36 +402,6 @@ func readClaudePair(t *testing.T) (string, string) {
 
 func staleAnthropicEntry(source string) PooledCredential {
 	return PooledCredential{Provider: "anthropic", ID: "anthropic-1", Label: "anthropic oauth", AuthType: AuthTypeOAuth, Source: source, AccessToken: staleAccess, RefreshToken: staleRefresh, ExpiresAtMS: 1000, Extra: map[string]any{}}
-}
-
-func TestClaudeCodeWriterRaisesInsteadOfSwallowing(t *testing.T) {
-	_, env := persistFailureHome(t)
-	writeClaudeCodeCredentials(t, staleAccess, staleRefresh, 1000)
-	breakDurableWrite(t, ClaudeCodeCredentialsPath())
-	err := WriteClaudeCodeCredentials(env, rotatedAccess, rotatedRefresh, 1000+3_600_000, nil, "")
-	var persistErr *CredentialPersistError
-	if !errors.As(err, &persistErr) {
-		t.Fatalf("CredentialPersistError expected, got %v", err)
-	}
-	if a, r := readClaudePair(t); a != staleAccess || r != staleRefresh {
-		t.Fatal("the failed commit must leave the file intact")
-	}
-}
-
-func TestIcebathOAuthWriterRaisesInsteadOfSwallowing(t *testing.T) {
-	_, env := persistFailureHome(t)
-	if err := WriteIcebathOAuthCredentials(env, staleAccess, staleRefresh, 1000, ""); err != nil {
-		t.Fatal(err)
-	}
-	breakDurableWrite(t, IcebathOAuthFile(env))
-	err := WriteIcebathOAuthCredentials(env, rotatedAccess, rotatedRefresh, 1000+3_600_000, "")
-	var persistErr *CredentialPersistError
-	if !errors.As(err, &persistErr) {
-		t.Fatalf("CredentialPersistError expected, got %v", err)
-	}
-	if ReadIcebathOAuthCredentials(env)["refreshToken"] != staleRefresh {
-		t.Fatal("stale pair must survive")
-	}
 }
 
 func TestFailedWriteLeavesNoTempFileBehind(t *testing.T) {
@@ -618,86 +459,6 @@ func TestPoolClaudeCodeFailsClosedAndReloadCannotResurrect(t *testing.T) {
 	}
 }
 
-func TestReauthenticationClearsThePersistFailureQuarantine(t *testing.T) {
-	_, env := persistFailureHome(t)
-	writeClaudeCodeCredentials(t, staleAccess, staleRefresh, 1000)
-	breakDurableWrite(t, ClaudeCodeCredentialsPath())
-	entry := staleAnthropicEntry("claude_code")
-	pool := NewPool(env, "anthropic", []PooledCredential{entry})
-	if _, ok := pool.refreshEntry(entry, true, "", false); ok || pool.Entries()[0].LastStatus != StatusDead {
-		t.Fatal("quarantine expected")
-	}
-	restoreDurableWrite(t)
-	writeClaudeCodeCredentials(t, "sk-ant-oat01-relogin", "sk-ant-ort01-relogin", time.Now().UnixMilli()+3_600_000)
-	var reloaded []PooledCredential
-	for _, e := range LoadPool(env, "anthropic").Entries() {
-		if e.Source == "claude_code" {
-			reloaded = append(reloaded, e)
-		}
-	}
-	if len(reloaded) == 0 || reloaded[0].RefreshToken != "sk-ant-ort01-relogin" || reloaded[0].LastStatus == StatusDead {
-		t.Fatalf("a re-login must clear the quarantine: %+v", reloaded)
-	}
-}
-
-func TestPoolIcebathPKCEFailsClosedAndReloadCannotResurrect(t *testing.T) {
-	_, env := persistFailureHome(t)
-	if err := WriteIcebathOAuthCredentials(env, staleAccess, staleRefresh, 1000, ""); err != nil {
-		t.Fatal(err)
-	}
-	breakDurableWrite(t, IcebathOAuthFile(env))
-	entry := staleAnthropicEntry("icebath_pkce")
-	pool := NewPool(env, "anthropic", []PooledCredential{entry})
-	if _, ok := pool.refreshEntry(entry, true, "", false); ok {
-		t.Fatal("uncommitted rotation must fail closed")
-	}
-	quarantined := pool.Entries()[0]
-	if quarantined.LastStatus != StatusDead || quarantined.LastErrorReason != CredentialPersistFailedReason || quarantined.RefreshToken != staleRefresh {
-		t.Fatalf("quarantine expected: %+v", quarantined)
-	}
-	if ReadIcebathOAuthCredentials(env)["refreshToken"] != staleRefresh {
-		t.Fatal("singleton must stay stale")
-	}
-	var reloaded []PooledCredential
-	for _, e := range LoadPool(env, "anthropic").Entries() {
-		if e.Source == "icebath_pkce" {
-			reloaded = append(reloaded, e)
-		}
-	}
-	if len(reloaded) == 0 || reloaded[0].RefreshToken != staleRefresh || reloaded[0].LastStatus != StatusDead {
-		t.Fatalf("reload must keep the quarantine: %+v", reloaded)
-	}
-}
-
-func TestRetryPathFailsClosedWhenRotationCannotCommit(t *testing.T) {
-	_, env := persistFailureHome(t)
-	var posts []string
-	anthropicTokenServer(t, &env, func(refreshToken string) (map[string]any, int) {
-		posts = append(posts, refreshToken)
-		if refreshToken == staleRefresh {
-			return map[string]any{"error": "invalid_grant"}, 400
-		}
-		return map[string]any{"access_token": rotatedAccess, "refresh_token": rotatedRefresh, "expires_in": 3600}, 200
-	})
-	writeClaudeCodeCredentials(t, "sk-ant-oat01-winner", "sk-ant-ort01-winner", 1000)
-	breakDurableWrite(t, ClaudeCodeCredentialsPath())
-	entry := staleAnthropicEntry("claude_code")
-	pool := NewPool(env, "anthropic", []PooledCredential{entry})
-	if _, ok := pool.refreshEntryImpl(entry, true, "", false); ok {
-		t.Fatal("the retry path must fail closed")
-	}
-	if len(posts) != 2 || posts[0] != staleRefresh || posts[1] != "sk-ant-ort01-winner" {
-		t.Fatalf("the retry branch must re-POST the synced token exactly once: %v", posts)
-	}
-	quarantined := pool.Entries()[0]
-	if quarantined.LastStatus != StatusDead || quarantined.LastErrorReason != CredentialPersistFailedReason || quarantined.AccessToken == rotatedAccess {
-		t.Fatalf("quarantine expected: %+v", quarantined)
-	}
-	if a, r := readClaudePair(t); a != "sk-ant-oat01-winner" || r != "sk-ant-ort01-winner" {
-		t.Fatal("the winner's pair must stay on disk")
-	}
-}
-
 // ---- test_credential_pool_anthropic_refresh_race.py ----
 
 type singleUseTokenServer struct {
@@ -727,54 +488,10 @@ func raceEntry(source string) PooledCredential {
 	return PooledCredential{Provider: "anthropic", ID: "pool-entry", Label: "anthropic oauth", AuthType: AuthTypeOAuth, Source: source, AccessToken: "stale-at", RefreshToken: "stale-rt", Extra: map[string]any{}}
 }
 
-func TestConcurrentIcebathPKCERefreshRecoversViaPoolStore(t *testing.T) {
-	ResetSpentRotationsForTests()
-	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "providers": map[string]any{}})
-	env := testEnv(t, h)
-	server := &singleUseTokenServer{spent: map[string]bool{}}
-	anthropicTokenServer(t, &env, server.refresh)
-	entry := raceEntry("manual:icebath_pkce")
-	poolA := NewPool(env, "anthropic", []PooledCredential{entry})
-	poolB := NewPool(env, "anthropic", []PooledCredential{entry})
-	poolA.persist(false, nil, nil)
-	results := map[string]bool{}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	for key, pool := range map[string]*Pool{"a": poolA, "b": poolB} {
-		wg.Add(1)
-		go func(key string, pool *Pool) {
-			defer wg.Done()
-			_, ok := pool.refreshEntry(pool.Entries()[0], true, "", false)
-			mu.Lock()
-			results[key] = ok
-			mu.Unlock()
-		}(key, pool)
-	}
-	wg.Wait()
-	if len(server.calls) < 1 || len(server.calls) > 2 {
-		t.Fatalf("unexpected call count: %v", server.calls)
-	}
-	for _, c := range server.calls {
-		if c != "stale-rt" {
-			t.Fatalf("only the on disk token may be spent: %v", server.calls)
-		}
-	}
-	if !results["a"] || !results["b"] {
-		t.Fatalf("both processes must end with a usable credential: %v", results)
-	}
-	for _, pool := range []*Pool{poolA, poolB} {
-		e := pool.Entries()[0]
-		if e.LastStatus == StatusExhausted || !strings.HasPrefix(e.AccessToken, "sk-ant-oat-rotated-") {
-			t.Fatalf("the loser must adopt the winner's rotation: %+v", e)
-		}
-	}
-}
-
 func TestConcurrentClaudeCodeRefreshRecoversViaCredentialsFile(t *testing.T) {
 	ResetSpentRotationsForTests()
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic", "providers": map[string]any{}})
 	env := testEnv(t, h)
 	server := &singleUseTokenServer{spent: map[string]bool{}}
 	anthropicTokenServer(t, &env, server.refresh)
@@ -806,7 +523,7 @@ func TestConcurrentClaudeCodeRefreshRecoversViaCredentialsFile(t *testing.T) {
 func barePool(t *testing.T, provider string, sink *recordingHandler) *Pool {
 	t.Helper()
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	env := testEnv(t, h)
 	env.Log = newRecordingLogger(sink)
 	return NewPool(env, provider, nil)
@@ -923,17 +640,17 @@ func TestSelectDoesNotHoldPoolLockDuringDeferredRefresh(t *testing.T) {
 		AccessToken: jwtWithClaims(map[string]any{"exp": 1}), RefreshToken: "rt-stale", Extra: map[string]any{}}
 	pool := NewPool(env, "openai-codex", []PooledCredential{entry})
 	lockFree := false
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
+	spec.refresh = pairRefresh(func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		if pool.mu.TryLock() {
 			lockFree = true
 			pool.mu.Unlock()
 		}
 		return map[string]any{"access_token": jwtWithClaims(map[string]any{"exp": nowEpoch() + 1e6}), "refresh_token": "rt-fresh"}, nil
-	}
-	tokensSingletonProviders["openai-codex"] = spec
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	})
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	selected, ok := pool.Select("")
 	if !lockFree {
 		t.Fatal("select held the pool lock during the deferred refresh network window")
@@ -951,14 +668,14 @@ func TestPendingRefreshSweepLeavesWaiterWindowsBetweenHolds(t *testing.T) {
 	sleepFunc = func(d time.Duration) { slept = append(slept, d) }
 	t.Cleanup(func() { sleepFunc = prevSleep })
 	var refreshed int
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
+	spec.refresh = pairRefresh(func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		refreshed++
 		return map[string]any{"access_token": jwtWithClaims(map[string]any{"exp": nowEpoch() + 1e6}), "refresh_token": refreshToken + "-new"}, nil
-	}
-	tokensSingletonProviders["openai-codex"] = spec
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	})
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	var entries []PooledCredential
 	for i := 0; i < 3; i++ {
 		entries = append(entries, PooledCredential{Provider: "openai-codex", ID: "c" + string(rune('1'+i)), Label: "c", AuthType: AuthTypeOAuth, Source: "device_code",
@@ -983,14 +700,14 @@ func TestAcquireLeaseReselectsAfterDeferredRefresh(t *testing.T) {
 		AccessToken: jwtWithClaims(map[string]any{"exp": 1}), RefreshToken: "rt", Extra: map[string]any{}}
 	pool := NewPool(env, "openai-codex", []PooledCredential{entry})
 	calls := 0
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
+	spec.refresh = pairRefresh(func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		calls++
 		return map[string]any{"access_token": jwtWithClaims(map[string]any{"exp": nowEpoch() + 1e6}), "refresh_token": "rt-new"}, nil
-	}
-	tokensSingletonProviders["openai-codex"] = spec
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	})
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	lease, ok := pool.AcquireLease("")
 	if calls != 1 || !ok || lease != "e1" {
 		t.Fatalf("lease must be granted after the deferred refresh: calls=%d ok=%t lease=%q", calls, ok, lease)
@@ -1009,14 +726,14 @@ func TestAcquireLeaseStillNoneWhenRefreshDoesNotHelp(t *testing.T) {
 		AccessToken: jwtWithClaims(map[string]any{"exp": 1}), RefreshToken: "rt", Extra: map[string]any{}}
 	pool := NewPool(env, "openai-codex", []PooledCredential{entry})
 	calls := 0
-	prev := tokensSingletonProviders["openai-codex"]
+	prev := oauthRefreshProviders["openai-codex"]
 	spec := prev
-	spec.refresh = func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
+	spec.refresh = pairRefresh(func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		calls++
 		return nil, errors.New("token endpoint down")
-	}
-	tokensSingletonProviders["openai-codex"] = spec
-	t.Cleanup(func() { tokensSingletonProviders["openai-codex"] = prev })
+	})
+	oauthRefreshProviders["openai-codex"] = spec
+	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	if _, ok := pool.AcquireLease(""); ok {
 		t.Fatal("no lease when the refresh leaves nothing available")
 	}
@@ -1027,5 +744,165 @@ func TestAcquireLeaseStillNoneWhenRefreshDoesNotHelp(t *testing.T) {
 	defer pool.mu.Unlock()
 	if len(pool.activeLeases) != 0 {
 		t.Fatal("no lease recorded")
+	}
+}
+
+func anthropicTokenServer(t *testing.T, env *PoolEnv, handler func(refreshToken string) (map[string]any, int)) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		body := map[string]any{}
+		raw := make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(raw)
+		if json.Unmarshal(raw, &payload) == nil {
+			body = payload
+		} else {
+			values := strings.Split(string(raw), "&")
+			for _, kv := range values {
+				k, v, _ := strings.Cut(kv, "=")
+				body[k] = v
+			}
+		}
+		resp, status := handler(anyString(body["refresh_token"]))
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(server.Close)
+	env.HTTP = &http.Client{Transport: rewriteTransport{target: server.URL}}
+	return server
+}
+
+// Fails the durable write of the singleton so the commit never lands, every other write keeps working
+func breakDurableWrite(t *testing.T, path string) {
+	t.Helper()
+	prev := atomicWritePrivate
+	atomicWritePrivate = func(target string, data []byte, mode os.FileMode) error {
+		if filepath.Base(target) == filepath.Base(path) {
+			return errors.New("permission denied")
+		}
+		return prev(target, data, mode)
+	}
+	t.Cleanup(func() { atomicWritePrivate = prev })
+}
+
+func persistFailureHome(t *testing.T) (string, PoolEnv) {
+	t.Helper()
+	ResetSpentRotationsForTests()
+	t.Cleanup(ResetSpentRotationsForTests)
+	h := newTestHome(t)
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic", "providers": map[string]any{}})
+	env := testEnv(t, h)
+	anthropicTokenServer(t, &env, func(string) (map[string]any, int) {
+		return map[string]any{"access_token": rotatedAccess, "refresh_token": rotatedRefresh, "expires_in": 3600}, 200
+	})
+	return h, env
+}
+
+func TestClaudeCodeWriterRaisesInsteadOfSwallowing(t *testing.T) {
+	_, env := persistFailureHome(t)
+	writeClaudeCodeCredentials(t, staleAccess, staleRefresh, 1000)
+	breakDurableWrite(t, ClaudeCodeCredentialsPath())
+	err := WriteClaudeCodeCredentials(env, rotatedAccess, rotatedRefresh, 1000+3_600_000, nil, "")
+	var persistErr *CredentialPersistError
+	if !errors.As(err, &persistErr) {
+		t.Fatalf("CredentialPersistError expected, got %v", err)
+	}
+	if a, r := readClaudePair(t); a != staleAccess || r != staleRefresh {
+		t.Fatal("the failed commit must leave the file intact")
+	}
+}
+
+func TestConcurrentIcebathPKCERefreshRecoversViaPoolStore(t *testing.T) {
+	ResetSpentRotationsForTests()
+	h := newTestHome(t)
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic", "providers": map[string]any{}})
+	env := testEnv(t, h)
+	server := &singleUseTokenServer{spent: map[string]bool{}}
+	anthropicTokenServer(t, &env, server.refresh)
+	entry := raceEntry("manual:icebath_pkce")
+	poolA := NewPool(env, "anthropic", []PooledCredential{entry})
+	poolB := NewPool(env, "anthropic", []PooledCredential{entry})
+	poolA.persist(false, nil, nil)
+	results := map[string]bool{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for key, pool := range map[string]*Pool{"a": poolA, "b": poolB} {
+		wg.Add(1)
+		go func(key string, pool *Pool) {
+			defer wg.Done()
+			_, ok := pool.refreshEntry(pool.Entries()[0], true, "", false)
+			mu.Lock()
+			results[key] = ok
+			mu.Unlock()
+		}(key, pool)
+	}
+	wg.Wait()
+	if len(server.calls) < 1 || len(server.calls) > 2 {
+		t.Fatalf("unexpected call count: %v", server.calls)
+	}
+	for _, c := range server.calls {
+		if c != "stale-rt" {
+			t.Fatalf("only the on disk token may be spent: %v", server.calls)
+		}
+	}
+	if !results["a"] || !results["b"] {
+		t.Fatalf("both processes must end with a usable credential: %v", results)
+	}
+	for _, pool := range []*Pool{poolA, poolB} {
+		e := pool.Entries()[0]
+		if e.LastStatus == StatusExhausted || !strings.HasPrefix(e.AccessToken, "sk-ant-oat-rotated-") {
+			t.Fatalf("the loser must adopt the winner's rotation: %+v", e)
+		}
+	}
+}
+
+func TestReauthenticationClearsThePersistFailureQuarantine(t *testing.T) {
+	_, env := persistFailureHome(t)
+	writeClaudeCodeCredentials(t, staleAccess, staleRefresh, 1000)
+	breakDurableWrite(t, ClaudeCodeCredentialsPath())
+	entry := staleAnthropicEntry("claude_code")
+	pool := NewPool(env, "anthropic", []PooledCredential{entry})
+	if _, ok := pool.refreshEntry(entry, true, "", false); ok || pool.Entries()[0].LastStatus != StatusDead {
+		t.Fatal("quarantine expected")
+	}
+	restoreDurableWrite(t)
+	writeClaudeCodeCredentials(t, "sk-ant-oat01-relogin", "sk-ant-ort01-relogin", time.Now().UnixMilli()+3_600_000)
+	var reloaded []PooledCredential
+	for _, e := range LoadPool(env, "anthropic").Entries() {
+		if e.Source == "claude_code" {
+			reloaded = append(reloaded, e)
+		}
+	}
+	if len(reloaded) == 0 || reloaded[0].RefreshToken != "sk-ant-ort01-relogin" || reloaded[0].LastStatus == StatusDead {
+		t.Fatalf("a re-login must clear the quarantine: %+v", reloaded)
+	}
+}
+
+func TestRetryPathFailsClosedWhenRotationCannotCommit(t *testing.T) {
+	_, env := persistFailureHome(t)
+	var posts []string
+	anthropicTokenServer(t, &env, func(refreshToken string) (map[string]any, int) {
+		posts = append(posts, refreshToken)
+		if refreshToken == staleRefresh {
+			return map[string]any{"error": "invalid_grant"}, 400
+		}
+		return map[string]any{"access_token": rotatedAccess, "refresh_token": rotatedRefresh, "expires_in": 3600}, 200
+	})
+	writeClaudeCodeCredentials(t, "sk-ant-oat01-winner", "sk-ant-ort01-winner", 1000)
+	breakDurableWrite(t, ClaudeCodeCredentialsPath())
+	entry := staleAnthropicEntry("claude_code")
+	pool := NewPool(env, "anthropic", []PooledCredential{entry})
+	if _, ok := pool.refreshEntryImpl(entry, true, "", false); ok {
+		t.Fatal("the retry path must fail closed")
+	}
+	if len(posts) != 2 || posts[0] != staleRefresh || posts[1] != "sk-ant-ort01-winner" {
+		t.Fatalf("the retry branch must re-POST the synced token exactly once: %v", posts)
+	}
+	quarantined := pool.Entries()[0]
+	if quarantined.LastStatus != StatusDead || quarantined.LastErrorReason != CredentialPersistFailedReason || quarantined.AccessToken == rotatedAccess {
+		t.Fatalf("quarantine expected: %+v", quarantined)
+	}
+	if a, r := readClaudePair(t); a != "sk-ant-oat01-winner" || r != "sk-ant-ort01-winner" {
+		t.Fatal("the winner's pair must stay on disk")
 	}
 }

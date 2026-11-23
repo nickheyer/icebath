@@ -22,7 +22,7 @@ func effortCodexAgent(t *testing.T, effort string, enabled bool) *AIAgent {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{provider.APICallStaleTimeoutEnv, provider.CodexTTFBTimeoutEnv, provider.CodexEventStaleTimeoutEnv, provider.CodexTTFBMaxEnv} {
+	for _, name := range []string{provider.CodexTTFBTimeoutEnv, provider.CodexEventStaleTimeoutEnv, provider.CodexTTFBMaxEnv} {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
@@ -72,7 +72,7 @@ func TestDefaultEffortTiersAndExplicitOperatorValuesAreUntouched(t *testing.T) {
 	a := effortCodexAgent(t, "high", true)
 	t.Setenv(provider.CodexEventStaleTimeoutEnv, "20")
 	t.Setenv(provider.CodexTTFBTimeoutEnv, "45")
-	t.Setenv(provider.APICallStaleTimeoutEnv, "75")
+	setSettingsForTest(t, map[string]any{"agent.api_call_stale_timeout": 75})
 	explicit := resolveEffortWatchdogs(t, a)
 	if got := [3]float64{explicit.IdleTimeout, explicit.TTFBTimeout, explicit.StaleTimeout}; got != [3]float64{20, 45, 75} {
 		t.Fatalf("explicit %v", got)

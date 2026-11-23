@@ -58,3 +58,35 @@ func OfID(prefix, id, suffix, fallback string) string {
 	}
 	return Or(prefix+id+suffix, fallback)
 }
+
+// Function of the application naming the keys that fire an action, set once its keymap is loaded
+var keyNamer atomic.Pointer[func(id string) string]
+
+// InstallKeys sets the function that names the keys of an action for the {key:action.id} placeholders of catalog texts
+func InstallKeys(name func(id string) string) {
+	keyNamer.Store(&name)
+}
+
+// Keys is the text with every {key:action.id} placeholder replaced by the keys bound to that action, so a text names a key the way it is bound now
+func Keys(text string) string {
+	name := keyNamer.Load()
+	if name == nil || !strings.Contains(text, "{key:") {
+		return text
+	}
+	var out strings.Builder
+	for {
+		start := strings.Index(text, "{key:")
+		if start < 0 {
+			break
+		}
+		end := strings.IndexByte(text[start:], '}')
+		if end < 0 {
+			break
+		}
+		out.WriteString(text[:start])
+		out.WriteString((*name)(text[start+len("{key:") : start+end]))
+		text = text[start+end+1:]
+	}
+	out.WriteString(text)
+	return out.String()
+}

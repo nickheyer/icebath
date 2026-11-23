@@ -6,12 +6,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/cards"
+	uifield "github.com/nickheyer/icebath/pkg/ui/field"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -20,7 +21,7 @@ import (
 // Widest a dialog asks to be
 const dialogWidth = 84
 
-// Keymap context of the prompt dialogs, ahead of the palette keys the manager adds to every overlay
+// Keymap context of the prompt dialogs, ahead of the palette keys the manager adds to every overlay and sheet
 const promptContext = "prompt"
 
 // Wrapped rows of a command an approval shows at once, the page key bringing the rest
@@ -32,7 +33,8 @@ const dialogChromeRows = 5
 // Least cells a field keeps for its text beside its label, a longer label going on rows of its own
 const minFieldRoom = 12
 
-// Registers the keys of the prompt dialogs: declining, stepping through rows and questions, editing the answer being typed and reading the transcript behind
+// Registers the keys of the prompt dialogs: declining, stepping through rows and questions and reading the transcript behind; the answer being typed
+// takes the keys every text field shares
 func registerPromptKeys(km *keys.Map) {
 	if keys.ContextDocs[promptContext] == "" {
 		if err := keys.AddContext(promptContext, "prompt dialogs"); err != nil {
@@ -43,12 +45,6 @@ func registerPromptKeys(km *keys.Map) {
 		{ID: "tui.prompt.cancel", Context: promptContext, Label: "cancel", Doc: "leave the answer being typed, then decline the prompt", Default: []string{"esc"}},
 		{ID: "tui.prompt.next", Context: promptContext, Label: "next", Doc: "go to the next question of a set, or the next row of a prompt", Default: []string{"tab"}, Quiet: true},
 		{ID: "tui.prompt.prev", Context: promptContext, Label: "previous", Doc: "go to the previous question of a set, or the previous row of a prompt", Default: []string{"shift+tab"}, Quiet: true},
-		{ID: "tui.prompt.newline", Context: promptContext, Label: "newline", Doc: "break the line in the answer being typed", Default: []string{"shift+enter", "ctrl+j", "alt+enter", "ctrl+enter", "super+enter"}, Quiet: true},
-		{ID: "tui.prompt.word.left", Context: promptContext, Label: "word left", Doc: "move the cursor one word to the left", Default: []string{"ctrl+left", "alt+left", "alt+b"}, Quiet: true},
-		{ID: "tui.prompt.word.right", Context: promptContext, Label: "word right", Doc: "move the cursor one word to the right", Default: []string{"ctrl+right", "alt+right", "alt+f"}, Quiet: true},
-		{ID: "tui.prompt.delete.word.back", Context: promptContext, Label: "delete word back", Doc: "delete the word before the cursor", Default: []string{"ctrl+backspace", "alt+backspace"}, Quiet: true},
-		{ID: "tui.prompt.delete.word.forward", Context: promptContext, Label: "delete word forward", Doc: "delete the word after the cursor", Default: []string{"ctrl+delete", "alt+d"}, Quiet: true},
-		{ID: "tui.prompt.delete.after", Context: promptContext, Label: "delete to end", Doc: "delete from the cursor to the end of the line", Default: []string{"ctrl+k"}, Quiet: true},
 		{ID: "tui.prompt.scroll.up", Context: promptContext, Label: "line up", Doc: "scroll the transcript behind the prompt up a line", Default: []string{"shift+up"}, Quiet: true},
 		{ID: "tui.prompt.scroll.down", Context: promptContext, Label: "line down", Doc: "scroll the transcript behind the prompt down a line", Default: []string{"shift+down"}, Quiet: true},
 		{ID: "tui.approval.page", Context: keys.Approval, Label: "more", Doc: "show the next page of a long command, the first one after the last", Default: []string{"v", "V"}},
@@ -71,170 +67,24 @@ type dialogChoice struct {
 // the focus and is empty
 type dialogField struct {
 	label     string
-	value     []rune
-	cursor    int
 	masked    bool
 	multiline bool
 	hint      string
+	// Text typed so far with the keys every field shares, made on first use
+	in *uifield.Field
 }
 
-// Puts text in at the caret, control characters dropped and line breaks kept only where the field takes several lines
-func (f *dialogField) insert(text string) {
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
-	if !f.multiline {
-		text = strings.ReplaceAll(strings.TrimRight(text, "\n"), "\n", " ")
+// Field of the text, made on first use and following the mask and line settings of the dialog field
+func (f *dialogField) input() *uifield.Field {
+	if f.in == nil {
+		f.in = uifield.New("")
 	}
-	text = strings.ReplaceAll(text, "\t", "    ")
-	runes := slices.DeleteFunc([]rune(text), func(r rune) bool { return r != '\n' && unicode.IsControl(r) })
-	f.cursor = min(max(f.cursor, 0), len(f.value))
-	f.value = slices.Insert(f.value, f.cursor, runes...)
-	f.cursor += len(runes)
+	f.in.Masked, f.in.Multiline = f.masked, f.multiline
+	return f.in
 }
 
-// Offsets the line the caret is on starts and ends at
-func (f *dialogField) line() (int, int) {
-	start, end := f.cursor, f.cursor
-	for start > 0 && f.value[start-1] != '\n' {
-		start--
-	}
-	for end < len(f.value) && f.value[end] != '\n' {
-		end++
-	}
-	return start, end
-}
-
-// Offset the word before the caret starts at
-func (f *dialogField) wordLeft() int {
-	i := f.cursor
-	for i > 0 && unicode.IsSpace(f.value[i-1]) {
-		i--
-	}
-	for i > 0 && !unicode.IsSpace(f.value[i-1]) {
-		i--
-	}
-	return i
-}
-
-// Offset the word after the caret ends at
-func (f *dialogField) wordRight() int {
-	i := f.cursor
-	for i < len(f.value) && unicode.IsSpace(f.value[i]) {
-		i++
-	}
-	for i < len(f.value) && !unicode.IsSpace(f.value[i]) {
-		i++
-	}
-	return i
-}
-
-// Removes the text between two offsets and leaves the caret where it began
-func (f *dialogField) cut(from, to int) {
-	f.value = slices.Delete(f.value, from, to)
-	f.cursor = from
-}
-
-// Moves the caret a line up or down keeping its column, false when the text has no line there
-func (f *dialogField) vertical(step int) bool {
-	f.cursor = min(max(f.cursor, 0), len(f.value))
-	start, end := f.line()
-	column := f.cursor - start
-	if step < 0 {
-		if start == 0 {
-			return false
-		}
-		f.cursor = start - 1
-		above, _ := f.line()
-		f.cursor = min(above+column, start-1)
-		return true
-	}
-	if end == len(f.value) {
-		return false
-	}
-	f.cursor = end + 1
-	_, below := f.line()
-	f.cursor = min(end+1+column, below)
-	return true
-}
-
-// Carries out an editing action on the text, false for an action that is not one
-func (f *dialogField) edit(id string) bool {
-	f.cursor = min(max(f.cursor, 0), len(f.value))
-	start, end := f.line()
-	switch id {
-	case "palette.left":
-		f.cursor = max(f.cursor-1, 0)
-	case "palette.right":
-		f.cursor = min(f.cursor+1, len(f.value))
-	case "palette.home":
-		f.cursor = start
-	case "palette.end":
-		f.cursor = end
-	case "tui.prompt.word.left":
-		f.cursor = f.wordLeft()
-	case "tui.prompt.word.right":
-		f.cursor = f.wordRight()
-	case "palette.delete.back":
-		if f.cursor > 0 {
-			f.cut(f.cursor-1, f.cursor)
-		}
-	case "palette.delete.forward":
-		if f.cursor < len(f.value) {
-			f.cut(f.cursor, f.cursor+1)
-		}
-	case "palette.delete.word", "tui.prompt.delete.word.back":
-		f.cut(f.wordLeft(), f.cursor)
-	case "tui.prompt.delete.word.forward":
-		f.cut(f.cursor, f.wordRight())
-	case "palette.clear":
-		f.cut(start, f.cursor)
-	case "tui.prompt.delete.after":
-		f.cut(f.cursor, end)
-	case "tui.prompt.newline":
-		if f.multiline {
-			f.insert("\n")
-		}
-	default:
-		return false
-	}
-	return true
-}
-
-// Text of the field as rows of at most room cells, a credential as dots, with the column and row of the caret
-func (f *dialogField) wrapped(room int) (lines []string, cx, cy int) {
-	var row strings.Builder
-	column := 0
-	flush := func() {
-		lines = append(lines, row.String())
-		row.Reset()
-		column = 0
-	}
-	for i, r := range f.value {
-		if r == '\n' {
-			if i == f.cursor {
-				cx, cy = column, len(lines)
-			}
-			flush()
-			continue
-		}
-		cell := string(r)
-		if f.masked {
-			cell = "•"
-		}
-		w := ansi.StringWidth(cell)
-		if column > 0 && column+w > room {
-			flush()
-		}
-		if i == f.cursor {
-			cx, cy = column, len(lines)
-		}
-		row.WriteString(cell)
-		column += w
-	}
-	if f.cursor >= len(f.value) {
-		cx, cy = column, len(lines)
-	}
-	return append(lines, row.String()), cx, cy
-}
+// Text typed so far
+func (f *dialogField) text() string { return f.input().Value() }
 
 // Text wrapped to rows of at most room cells
 func wrapText(text string, room int) []string {
@@ -247,9 +97,11 @@ type clarifyBatch struct {
 	active int
 	// Text went into the answer of an open ended question, the close key leaving that step before it declines
 	typing bool
+	// Answers typed into questions not yet locked, kept while moving between the questions
+	drafts map[string]*uifield.Field
 }
 
-// Dialog over the session, a message with choices to pick, fields to fill, or both
+// Dialog in the frame of the session that asked, a message with choices to pick, fields to fill, or both
 type dialogCard struct {
 	app       *app
 	kind      string
@@ -274,7 +126,7 @@ type dialogCard struct {
 	batch *clarifyBatch
 	// Connection target the dialog asks about and the state it is in
 	subject string
-	// Prompt of the store: an answer or a decline leaves the card open until the store drops the prompt
+	// Prompt of the store: an answer or a decline leaves the card open until the store drops it
 	held bool
 	// First row in view when the rows outgrow the height, and the row kept in view
 	top, anchor int
@@ -287,6 +139,13 @@ type dialogCard struct {
 	cursor   *tea.Cursor
 }
 
+// A question still waiting stays up through a click elsewhere and under the palette or another overlay
+func (d *dialogCard) Sticky() bool { return !d.settled }
+
+// Dialogs a person opens with a key take their keys at once; any other holds its answer keys back for a moment, so keys typed for something else
+// never answer it
+func (d *dialogCard) Guarded() bool { return d.kind != "settingSecret" && d.kind != "loginKey" }
+
 func (d *dialogCard) Title() string  { return d.title }
 func (d *dialogCard) Key() string    { return "dialog:" + d.kind + ":" + d.requestID }
 func (d *dialogCard) Init() tea.Cmd  { return nil }
@@ -296,19 +155,23 @@ func (d *dialogCard) Closable() bool { return true }
 // Wheel turned beside the dialog scrolls the card under the pointer, the transcript the prompt asks about
 func (d *dialogCard) PassesWheel() bool { return true }
 
-// Prompt keys of every dialog, then the verdict keys of an approval while a verdict is highlighted and the yes and no keys of a confirmation
+// Prompt keys of every dialog, then the verdict keys of an approval while a verdict is highlighted and the yes and no keys of a confirmation, the field
+// keys last
 func (d *dialogCard) Contexts() []string {
 	switch {
 	case d.kind == "approval" && d.focus < 0:
-		return []string{promptContext, keys.Approval}
+		return []string{promptContext, keys.Approval, keys.Text}
 	case d.kind == "confirm":
-		return []string{promptContext, keys.Confirm}
+		return []string{promptContext, keys.Confirm, keys.Text}
 	}
-	return []string{promptContext}
+	return []string{promptContext, keys.Text}
 }
 
-// Close key while an answer is typed beside choices: back to the choices, the prompt still open, an open ended question leaving its typing first
-func (d *dialogCard) Back() bool {
+// The close key reaches the dialog itself, which steps back from the answer being typed before it declines
+func (d *dialogCard) ClosesItself() bool { return true }
+
+// Close key while an answer is typed: back to the choices, or an open ended question leaving its typing; false when there is no such step
+func (d *dialogCard) back() bool {
 	switch {
 	case (d.kind == "approval" || d.batch != nil && len(d.choices) > 0) && d.focus >= 0:
 		d.focus = -1
@@ -320,11 +183,17 @@ func (d *dialogCard) Back() bool {
 	return true
 }
 
-// Rows the dialog needs at its width
+// Rows the dialog needs at its width when shown over the stage
 func (d *dialogCard) MinSize() (int, int) {
 	w, _ := d.app.wm.Size()
 	width := min(dialogWidth, max(w-8, 30))
 	return width, len(d.rows(width))
+}
+
+// Columns and rows the dialog takes in the room of the card it shows in
+func (d *dialogCard) FitIn(w, h int) (int, int) {
+	width := min(dialogWidth, w)
+	return width, min(len(d.rows(width)), h)
 }
 
 // Rows of the dialog: the body, the command page, the choices and the fields, then the line naming the keys
@@ -511,12 +380,12 @@ func (d *dialogCard) fieldRows(i, width, margin, at int) []string {
 		}
 		label, indent = "", margin+3
 	}
-	lines, cx, cy := f.wrapped(max(width-indent-1, 4))
+	lines, cx, cy := f.input().Wrapped(max(width-indent-1, 4))
 	text := t.Color.Text
 	if focused {
 		d.cursor = tea.NewCursor(indent+cx, at+len(rows)+cy)
 		d.anchor = at + len(rows) + cy
-		if len(f.value) == 0 && f.hint != "" {
+		if f.input().Empty() && f.hint != "" {
 			lines, text = wrapText(f.hint, width-indent-1), t.Color.Muted
 		}
 	}
@@ -616,8 +485,8 @@ func (d *dialogCard) answer() tea.Cmd {
 		return nil
 	}
 	values := make([]string, len(d.fields))
-	for i, f := range d.fields {
-		values[i] = string(f.value)
+	for i := range d.fields {
+		values[i] = d.fields[i].text()
 	}
 	if d.focus >= 0 && d.focus < len(d.fields)-1 && len(d.choices) == 0 {
 		d.focus++
@@ -663,18 +532,22 @@ func (d *dialogCard) cancel() tea.Cmd {
 	return d.onCancel()
 }
 
-// Close key: the answer being typed is left first, then a prompt of the store is declined in place and any other dialog closes
+// Close key: the answer being typed is left first, then the prompt is declined, a prompt of the store staying in place until the store drops it
+// and any other dialog closing
 func (d *dialogCard) closeKey() tea.Cmd {
-	switch {
-	case d.Back():
+	if d.back() {
 		return nil
-	case d.held:
-		return d.cancel()
 	}
-	return wm.RequestDismissOf(d)
+	declined := d.cancel()
+	if d.held {
+		return declined
+	}
+	d.settled = true
+	return tea.Batch(declined, wm.RequestDismissOf(d))
 }
 
-// Carries out a keymap action: the rows, the answer, the text being typed, and the transcript behind for the keys that scroll
+// Carries out a keymap action: the rows, the answer, the text being typed with the keys every field shares, and the transcript behind for the
+// keys that scroll
 func (d *dialogCard) action(id string) tea.Cmd {
 	f := d.field()
 	switch id {
@@ -691,11 +564,11 @@ func (d *dialogCard) action(id string) tea.Cmd {
 		}
 		d.move(step)
 	case "palette.up", "approval.up":
-		if f == nil || !f.vertical(-1) {
+		if f == nil || !f.input().Vertical(-1) {
 			d.move(-1)
 		}
 	case "palette.down", "approval.down":
-		if f == nil || !f.vertical(1) {
+		if f == nil || !f.input().Vertical(1) {
 			d.move(1)
 		}
 	case "palette.page.up", "approval.page.up":
@@ -720,19 +593,25 @@ func (d *dialogCard) action(id string) tea.Cmd {
 		return d.pick("always")
 	case "confirm.yes":
 		return d.pick("yes")
-	case "palette.left", "palette.right":
+	case "text.left", "text.right":
 		switch {
 		case f != nil:
-			f.edit(id)
-		case id == "palette.left":
+			f.input().Action(id)
+		case id == "text.left":
 			d.move(-1)
 		default:
 			d.move(1)
 		}
 	default:
-		if f != nil && f.edit(id) {
+		if f == nil {
+			return nil
+		}
+		before := f.text()
+		cmd, _ := f.input().Action(id)
+		if f.text() != before {
 			d.wrote()
 		}
+		return cmd
 	}
 	return nil
 }
@@ -744,8 +623,9 @@ func (d *dialogCard) typed(text string) tea.Cmd {
 		return nil
 	}
 	if f := d.field(); f != nil {
-		f.insert(text)
-		d.wrote()
+		if f.input().Insert(text) {
+			d.wrote()
+		}
 		return nil
 	}
 	if text == " " && d.multi {
@@ -769,26 +649,19 @@ func (d *dialogCard) typed(text string) tea.Cmd {
 	}
 	if d.kind != "approval" && len(d.fields) > 0 {
 		d.focus = 0
-		d.fields[0].insert(text)
+		d.fields[0].input().Insert(text)
 		d.wrote()
 	}
 	return nil
 }
 
+// Takes a message for the dialog; the window manager holds keys and clicks back while the dialog is new, and losing the focus never declines it
 func (d *dialogCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 	switch m := m.(type) {
-	case wm.FocusMsg:
-		if !m.Focused && !d.settled {
-			d.settled = true
-			if d.onCancel != nil {
-				return d, d.onCancel()
-			}
-		}
 	case wm.ActionMsg:
 		return d, d.action(m.ID)
-	case tea.PasteMsg:
-		if f := d.field(); f != nil {
-			f.insert(m.Content)
+	case tea.PasteMsg, tea.ClipboardMsg:
+		if f := d.field(); f != nil && f.input().Take(m) {
 			d.wrote()
 		}
 	case tea.KeyPressMsg:
@@ -822,6 +695,14 @@ func (d *dialogCard) showQuestion(index int) {
 	count := len(req.Questions)
 	index = (index%count + count) % count
 	q := req.Questions[index]
+	if d.batch.drafts == nil {
+		d.batch.drafts = map[string]*uifield.Field{}
+	}
+	if len(d.fields) == 1 && d.batch.active < count {
+		if prev := req.Questions[d.batch.active]; prev.QID != q.QID {
+			d.batch.drafts[prev.QID] = d.fields[0].input()
+		}
+	}
 	d.batch.active, d.batch.typing = index, false
 	d.title = tr(txt.PromptClarifyTitle)
 	if count > 1 {
@@ -855,10 +736,16 @@ func (d *dialogCard) showQuestion(index int) {
 			typed = answer
 		}
 	}
-	d.fields = []dialogField{{label: label, value: []rune(typed), cursor: len([]rune(typed)), multiline: true}}
-	if len(q.Choices) == 0 || typed != "" {
+	in := uifield.New(typed)
+	if kept := d.batch.drafts[q.QID]; kept != nil && kept.Value() != "" {
+		in = kept
+	}
+	d.fields = []dialogField{{label: label, multiline: true, in: in}}
+	if len(q.Choices) == 0 || in.Value() != "" {
 		d.focus = 0
 	}
+	// An answer kept from before is typing too, so the close key leaves it before it declines the question
+	d.batch.typing = len(q.Choices) == 0 && in.Value() != ""
 }
 
 // Items of a multiple choice answer, false for an answer that is no list
@@ -891,75 +778,108 @@ func (d *dialogCard) clarifyHint() string {
 	return tr(txt.PromptClarifyHint, enter)
 }
 
-// Dialogs of the session prompts, the one showing and what the bar says while one waits
+// Dialogs of the session prompts in the frame of the session's card, the most urgent first, and what the bar says while one waits outside it
 type dialogState struct {
+	// Most urgent dialog open, nil when none is
 	current *dialogCard
+	// Every dialog open, most urgent first
+	open []*dialogCard
 }
 
-// Kind, request and store object of the prompt that should be showing, by urgency
-func (a *app) wantedDialog() (kind, id string, ref any) {
+// Prompt the store holds, its kind, request and object, ordered by urgency
+type wantedPrompt struct {
+	kind, id string
+	ref      any
+}
+
+// Kind, request and store object of every prompt that should be showing, most urgent first
+func (a *app) wantedDialogs() []wantedPrompt {
 	o := a.store.overlay
-	switch {
-	case o.Approval != nil:
-		return "approval", o.Approval.RequestID, o.Approval
-	case o.Sudo != nil:
-		return "sudo", o.Sudo.RequestID, o.Sudo
-	case o.Secret != nil:
-		return "secret", o.Secret.RequestID, o.Secret
-	case o.VaultUnlock != nil:
-		return "vaultUnlock", o.VaultUnlock.RequestID, o.VaultUnlock
-	case o.VaultSaveLogin != nil:
-		return "vaultSaveLogin", o.VaultSaveLogin.RequestID, o.VaultSaveLogin
-	case o.VaultCode != nil:
-		return "vaultCode", o.VaultCode.RequestID, o.VaultCode
-	case o.Connection != nil && a.store.connectionOp != nil && a.store.connectionOp.OpID == o.Connection.OpID:
+	var out []wantedPrompt
+	add := func(kind, id string, ref any) { out = append(out, wantedPrompt{kind: kind, id: id, ref: ref}) }
+	if o.Approval != nil {
+		add("approval", o.Approval.RequestID, o.Approval)
+	}
+	if o.Sudo != nil {
+		add("sudo", o.Sudo.RequestID, o.Sudo)
+	}
+	if o.Secret != nil {
+		add("secret", o.Secret.RequestID, o.Secret)
+	}
+	if o.VaultUnlock != nil {
+		add("vaultUnlock", o.VaultUnlock.RequestID, o.VaultUnlock)
+	}
+	if o.VaultSaveLogin != nil {
+		add("vaultSaveLogin", o.VaultSaveLogin.RequestID, o.VaultSaveLogin)
+	}
+	if o.VaultCode != nil {
+		add("vaultCode", o.VaultCode.RequestID, o.VaultCode)
+	}
+	if o.Connection != nil && a.store.connectionOp != nil && a.store.connectionOp.OpID == o.Connection.OpID {
 		op := a.store.connectionOp
 		key := op.OpID + ":" + strconv.FormatInt(op.Seq, 10)
 		if target := a.activeConnectionTarget(); target != nil {
 			key += ":" + target.Name + ":" + string(target.State) + ":" + val(target.ConnectURL)
 		}
-		return "connection", key, op
-	case o.Clarify != nil:
-		return "clarify", o.Clarify.RequestID, o.Clarify
-	case o.Confirm != nil:
-		return "confirm", o.Confirm.Title, o.Confirm
+		add("connection", key, op)
 	}
-	return "", "", nil
+	if o.Clarify != nil {
+		add("clarify", o.Clarify.RequestID, o.Clarify)
+	}
+	if o.Confirm != nil {
+		add("confirm", o.Confirm.Title, o.Confirm)
+	}
+	return out
 }
 
 // Whether a prompt waits on the user
-func (s *dialogState) waiting() bool { return s.current != nil && !s.current.settled }
-
-// Bar notice of the waiting prompt
-func (s *dialogState) notice() (string, wm.Signal, bool) {
-	if !s.waiting() {
-		return "", wm.Idle, false
+func (s *dialogState) waiting() bool {
+	for _, d := range s.open {
+		if !d.settled {
+			return true
+		}
 	}
-	return s.current.title, wm.Blocked, true
+	return false
+}
+
+// Bar notice of a waiting prompt shown over the stage rather than in the session's card, whose sheets the window manager names itself
+func (s *dialogState) notice() (string, wm.Signal, bool) {
+	for _, d := range s.open {
+		if !d.settled && !d.app.wm.Attached(d) {
+			return d.title, wm.Blocked, true
+		}
+	}
+	return "", wm.Idle, false
 }
 
 // Follows a locked answer of a question set: the question in view stays while it lacks an answer, else the first one still open comes into view
 func (s *dialogState) clarifyLocked(req *clarifyReq) {
-	d := s.current
-	if d == nil || d.batch == nil || d.batch.req != req {
-		return
-	}
-	if _, answered := req.Answers[req.Questions[d.batch.active].QID]; !answered {
-		return
-	}
-	for i, q := range req.Questions {
-		if _, answered := req.Answers[q.QID]; !answered {
-			d.showQuestion(i)
+	for _, d := range s.open {
+		if d.batch == nil || d.batch.req != req {
+			continue
+		}
+		if _, answered := req.Answers[req.Questions[d.batch.active].QID]; !answered {
 			return
+		}
+		for i, q := range req.Questions {
+			if _, answered := req.Answers[q.QID]; !answered {
+				d.showQuestion(i)
+				return
+			}
 		}
 	}
 }
 
-// Interrupt key while an overlay is up: the connection card stops the turn that owns its operation, a waiting prompt is declined and any other
-// overlay closes, the session behind left alone
+// Interrupt key on a prompt of this session: the connection card stops the turn that owns its operation, a waiting prompt is declined; with no prompt
+// of the session in front, the overlay closes, the session behind left alone
 func (a *app) interruptOverlay() tea.Cmd {
-	cur := a.dialogs.current
-	if !a.dialogs.waiting() || a.wm.Overlay() != wm.Card(cur) {
+	var cur *dialogCard
+	for _, d := range a.dialogs.open {
+		if top := a.wm.Overlay(); top == wm.Card(d) || (top == nil && a.wm.Sheet(a.card) == wm.Card(d)) {
+			cur = d
+		}
+	}
+	if cur == nil || cur.settled {
 		return a.wm.Dismiss()
 	}
 	if cur.kind != "connection" {
@@ -971,30 +891,68 @@ func (a *app) interruptOverlay() tea.Cmd {
 	return a.interruptTurn()
 }
 
-// Opens the dialog of the prompt the store holds and closes one whose prompt settled elsewhere
+// Opens a dialog in the session's card for every prompt the store holds, keeping what was typed into a dialog its newer copy replaces, and closes
+// those whose prompt settled elsewhere
 func (a *app) syncDialogs() tea.Cmd {
-	kind, id, ref := a.wantedDialog()
-	cur := a.dialogs.current
-	if cur != nil && (cur.settled || a.wm.Overlay() != wm.Card(cur)) {
-		a.dialogs.current, cur = nil, nil
-	}
-	if cur != nil && (cur.kind != kind || cur.requestID != id || cur.ref != ref) {
-		cur.settled = true
-		a.dialogs.current = nil
-		if kind == "" {
-			return a.wm.Dismiss()
+	wanted := a.wantedDialogs()
+	var cmds []tea.Cmd
+	var open []*dialogCard
+	byKind := map[string]*dialogCard{}
+	for _, d := range a.dialogs.open {
+		shown := a.wm.Attached(d) || a.wm.ShowsOverlay(d)
+		if !d.settled && shown {
+			byKind[d.kind] = d
+			continue
+		}
+		if shown {
+			cmds = append(cmds, a.wm.DismissCard(d))
 		}
 	}
-	if kind == "" || a.dialogs.current != nil {
-		return nil
+	for _, w := range wanted {
+		cur := byKind[w.kind]
+		if cur != nil && cur.requestID == w.id && cur.ref == w.ref {
+			open = append(open, cur)
+			delete(byKind, w.kind)
+			continue
+		}
+		d := a.buildDialog(w.kind, w.id, cur)
+		keepTyping(d, cur)
+		if cur != nil {
+			cur.settled = true
+			cmds = append(cmds, a.wm.DismissCard(cur))
+			delete(byKind, w.kind)
+		}
+		if d == nil {
+			continue
+		}
+		d.ref, d.held = w.ref, true
+		open = append(open, d)
+		cmds = append(cmds, a.wm.Attach(a.card, d))
 	}
-	d := a.buildDialog(kind, id, cur)
-	if d == nil {
-		return nil
+	for _, gone := range byKind {
+		gone.settled = true
+		cmds = append(cmds, a.wm.DismissCard(gone))
 	}
-	d.ref, d.held = ref, true
-	a.dialogs.current = d
-	return a.wm.ShowOverlay(d)
+	a.dialogs.open, a.dialogs.current = open, nil
+	if len(open) > 0 {
+		a.dialogs.current = open[0]
+	}
+	return tea.Batch(cmds...)
+}
+
+// Carries what was typed into a dialog over to the newer copy that replaces it, field by field where the labels match, with the highlight
+func keepTyping(d, prev *dialogCard) {
+	if d == nil || prev == nil || prev.kind != d.kind || prev.batch != nil || len(prev.fields) != len(d.fields) {
+		return
+	}
+	for i := range d.fields {
+		if kept := prev.fields[i]; kept.label == d.fields[i].label && kept.in != nil && kept.in.Value() != "" {
+			d.fields[i].in = kept.in
+		}
+	}
+	if len(prev.choices) == len(d.choices) {
+		d.sel, d.focus, d.page = prev.sel, prev.focus, prev.page
+	}
 }
 
 // Answers a one value server request, the status back to running while a turn runs and to ready otherwise
@@ -1046,7 +1004,9 @@ func (a *app) buildDialog(kind, id string, prev *dialogCard) *dialogCard {
 			}
 			d.choices = append(d.choices, dialogChoice{label: approvalLabel(c), value: c})
 		}
-		if slices.ContainsFunc(d.choices, func(c dialogChoice) bool { return c.value == "deny" }) {
+		// Enter on an untouched approval denies
+		if deny := slices.IndexFunc(d.choices, func(c dialogChoice) bool { return c.value == "deny" }); deny >= 0 {
+			d.sel = deny
 			d.fields = []dialogField{{label: fmt.Sprintf("%d   %s ›", len(d.choices)+1, tr(txt.PromptApprovalTell)), hint: tr(txt.PromptApprovalTellHint), multiline: true}}
 		}
 		d.onAnswer = func(choice *dialogChoice, _ []string, fields []string) tea.Cmd {
@@ -1339,7 +1299,7 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 	default:
 		for _, field := range target.RequiredEnv {
 			label := firstText(trimmed(field.Prompt), field.Name)
-			d.fields = append(d.fields, dialogField{label: label, masked: field.Secret, value: []rune(field.Default), cursor: len([]rune(field.Default))})
+			d.fields = append(d.fields, dialogField{label: label, masked: field.Secret, in: uifield.New(field.Default)})
 		}
 		d.choices = []dialogChoice{{label: connectionVerb(target.Action) + " " + connectionTargetName(*target), value: "approved"}, skip}
 		d.hint = hint(txt.ConnectionHintForm)
@@ -1347,7 +1307,7 @@ func (a *app) connectionDialog(d, prev *dialogCard) *dialogCard {
 	if prev != nil && prev.kind == "connection" && prev.subject == d.subject && len(prev.fields) == len(d.fields) {
 		for i := range d.fields {
 			if kept := prev.fields[i]; kept.label == d.fields[i].label {
-				d.fields[i].value, d.fields[i].cursor = kept.value, kept.cursor
+				d.fields[i].in = kept.in
 			}
 		}
 		if len(prev.choices) == len(d.choices) {
@@ -1427,11 +1387,6 @@ func (a *app) answerApprovalTell(req *approvalReq, text string) tea.Cmd {
 		req.Tell = tellTold
 		return a.answerApproval(req, "deny")
 	}
-	if !a.gw.canonical() {
-		return call(a.gw, tuigateway.SessionSteer, tuigateway.SessionCorrectionParams{SessionID: sid, Text: text}, func(res *tuigateway.SessionCorrectionResult, err error) tea.Cmd {
-			return told(val(res).Status, err == nil && res != nil)
-		})
-	}
 	generation := infoOf(a.store.ui.Info).ExecutionGeneration
 	if generation == nil {
 		return told("", false)
@@ -1500,7 +1455,7 @@ func (a *app) settleClarify(req *clarifyReq, answers map[string]string) {
 	a.dropClarifyTrail()
 	a.turn.persistedToolLabels[toolTrailLabel("clarify")] = true
 	trail, text := clarifySettledRows(req.Questions, answers)
-	a.appendMessage(msg{Kind: "trail", Role: "system", Tools: []string{trail}})
+	a.appendMessage(msg{Kind: "trail", Role: "system", Tools: []toolRow{trail}})
 	a.appendMessage(msg{Role: "user", Text: text})
 	a.store.ui.Status = "running…"
 	if a.store.overlay.Clarify == req {
@@ -1582,7 +1537,7 @@ func (a *app) answerClarifyQuestion(req *clarifyReq, q clarifyQuestion, answer s
 	})
 }
 
-// Scrollable text over the session, for logs, history and long command output
+// Scrollable text over the session, for logs, history and long command output, read with the keys of reading mode
 type pagerCard struct {
 	app    *app
 	title  string
@@ -1591,19 +1546,24 @@ type pagerCard struct {
 	height int
 	width  int
 	text   string
+	reader *cards.Reader
 }
 
-// Pager over text, opened at its start
+// Pager over text, opened at its start in reading mode
 func (a *app) page(text, title string) tea.Cmd {
-	return a.wm.ShowOverlay(&pagerCard{app: a, title: title, text: strings.TrimRight(stripAnsi(text), "\n")})
+	p := &pagerCard{app: a, title: title, text: strings.TrimRight(stripAnsi(text), "\n")}
+	p.reader = cards.NewReader(p, a.keys)
+	p.reader.Start(false)
+	return a.wm.ShowOverlay(p)
 }
 
 func (p *pagerCard) Title() string       { return p.title }
 func (p *pagerCard) Key() string         { return "pager" }
 func (p *pagerCard) Init() tea.Cmd       { return nil }
 func (p *pagerCard) Selectable() bool    { return true }
-func (p *pagerCard) Contexts() []string  { return []string{keys.Transcript} }
+func (p *pagerCard) Contexts() []string  { return p.reader.Contexts() }
 func (p *pagerCard) MinSize() (int, int) { w, h := p.app.wm.Size(); return w * 8 / 10, h * 6 / 10 }
+func (p *pagerCard) Hints() []wm.Hint    { return p.reader.Hints() }
 
 func (p *pagerCard) Status() string {
 	if len(p.lines) <= p.height {
@@ -1612,8 +1572,36 @@ func (p *pagerCard) Status() string {
 	return tr(txt.PagerRange, p.offset+1, min(p.offset+p.height, len(p.lines)), len(p.lines))
 }
 
-func (p *pagerCard) Hints() []wm.Hint {
-	return []wm.Hint{{Action: "transcript.down", Pair: "transcript.up"}, {Action: "transcript.page.down"}, {Action: "transcript.top"}, {Action: "transcript.bottom"}, {Action: "palette.close", Label: tr(txt.HintsLabelClose)}}
+// Rows of the wrapped text
+func (p *pagerCard) ReadRows() int { return len(p.lines) }
+
+// Text of a row
+func (p *pagerCard) ReadRow(i int) string {
+	if i < 0 || i >= len(p.lines) {
+		return ""
+	}
+	return p.lines[i]
+}
+
+// First row in view and the rows of the window
+func (p *pagerCard) ReadWindow() (int, int) { return p.offset, max(p.height-1, 1) }
+
+// Scrolls so that the row is the first in view
+func (p *pagerCard) ReadScroll(top int) { p.offset = min(max(top, 0), max(len(p.lines)-p.height+1, 0)) }
+
+// A pager has no prompts to jump between
+func (p *pagerCard) ReadPrompt(int, int) (int, bool) { return 0, false }
+
+// Rows of the paragraph holding a row, between the blank rows around it
+func (p *pagerCard) ReadBlock(row int) (int, int) {
+	from, to := row, row+1
+	for from > 0 && strings.TrimSpace(p.lines[from-1]) != "" {
+		from--
+	}
+	for to < len(p.lines) && strings.TrimSpace(p.lines[to]) != "" {
+		to++
+	}
+	return from, to
 }
 
 func (p *pagerCard) View(w, h int) string {
@@ -1622,41 +1610,39 @@ func (p *pagerCard) View(w, h int) string {
 		p.lines = strings.Split(ansi.Wrap(p.text, max(w-2, 8), ""), "\n")
 	}
 	p.height = h
-	p.offset = min(max(p.offset, 0), max(len(p.lines)-h, 0))
-	tone := toneStyle(p.app.store.ui.Theme.Color.Text)
+	body := max(h-1, 1)
+	p.offset = min(max(p.offset, 0), max(len(p.lines)-body, 0))
+	t := p.app.store.ui.Theme
+	tone := toneStyle(t.Color.Text)
 	rows := make([]string, 0, h)
-	for i := p.offset; i < min(p.offset+h, len(p.lines)); i++ {
-		rows = append(rows, " "+tone.Render(p.lines[i]))
+	for i := p.offset; i < min(p.offset+body, len(p.lines)); i++ {
+		rows = append(rows, p.reader.Mark(i, " "+tone.Render(p.lines[i]), p.app.uiTheme()))
 	}
-	return strings.Join(rows, "\n")
+	for len(rows) < body {
+		rows = append(rows, "")
+	}
+	line, _ := p.reader.Line(w, p.app.uiTheme())
+	return strings.Join(append(rows, line), "\n")
+}
+
+// Cursor of a search being typed on the reading line
+func (p *pagerCard) Cursor() *tea.Cursor {
+	if _, caret := p.reader.Line(p.width, p.app.uiTheme()); caret >= 0 {
+		return tea.NewCursor(caret, max(p.height-1, 0))
+	}
+	return nil
 }
 
 func (p *pagerCard) Update(m tea.Msg) (wm.Card, tea.Cmd) {
 	switch m := m.(type) {
 	case wm.ActionMsg:
-		switch m.ID {
-		case "transcript.down", "palette.down":
-			p.offset++
-		case "transcript.up", "palette.up":
-			p.offset--
-		case "transcript.page.down", "palette.page.down":
-			p.offset += max(p.height-1, 1)
-		case "transcript.page.up", "palette.page.up":
-			p.offset -= max(p.height-1, 1)
-		case "transcript.top":
-			p.offset = 0
-		case "transcript.bottom":
-			p.offset = len(p.lines)
-		case "palette.pick":
-			return p, wm.RequestDismissOf(p)
+		cmd, _ := p.reader.Action(m.ID)
+		if !p.reader.Active() {
+			return p, tea.Batch(cmd, wm.RequestDismissOf(p))
 		}
-	case tea.KeyPressMsg:
-		switch m.Text {
-		case "q":
-			return p, wm.RequestDismissOf(p)
-		case "b":
-			p.offset -= max(p.height-1, 1)
-		}
+		return p, cmd
+	case tea.KeyPressMsg, tea.PasteMsg, tea.ClipboardMsg:
+		p.reader.Take(m)
 	case tea.MouseWheelMsg:
 		if m.Button == tea.MouseWheelUp {
 			p.offset -= 3

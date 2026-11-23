@@ -214,7 +214,6 @@ func (r *slashRun) applyQueuePlan(plan queuePlan) tea.Cmd {
 			r.sys(errorLine(err.Error()))
 			return nil
 		}
-		a.queueEdit = &index
 		a.cancelPendingRewind(false)
 		return a.card.composer.SetValue(draft)
 	case "edit":

@@ -1,6 +1,9 @@
 package dingtalk
 
-import "github.com/nickheyer/icebath/pkg/gateway"
+import (
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
+)
 
 var envEnableCredentials = []string{"DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"}
 
@@ -12,7 +15,8 @@ var envOverrides = []gateway.EnvStep{
 
 var authz = map[string]any{"allowed_users_env": "DINGTALK_ALLOWED_USERS", "allow_all_env": "DINGTALK_ALLOW_ALL_USERS", "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled dingtalk directory with the gateway config bridge
+// Registers the env declarations of the bundled dingtalk directory and the setting its allowlist name moved to
 func init() {
 	gateway.RegisterBundledEnv("dingtalk", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
+	gateway.RegisterEnvSettings(map[string]settings.Entry{"DINGTALK_ALLOWED_USERS": settings.DingtalkAllowedUsers})
 }

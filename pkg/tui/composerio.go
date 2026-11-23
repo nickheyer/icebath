@@ -30,10 +30,10 @@ var interpolationRe = regexp.MustCompile(`\{!(.+?)\}`)
 const clipboardImageLimit = 15 * time.Second
 
 const (
-	// Window in which a second escape discards the draft or stops the turn
-	doubleEscapeWindow = 500 * time.Millisecond
-	// Window in which a second enter on an empty prompt stops the turn or sends the first queued input
-	doubleEnterWindow = 450 * time.Millisecond
+	// Quiet time after an escape closed something, in which escape leaves the turn running
+	escapeAfterClose = 300 * time.Millisecond
+	// Time a first escape on an idle empty prompt keeps the rewind armed for the second
+	rewindArmWindow = time.Second
 	// Longest the clipboard write of a cut may take before the selection is left in place
 	cutWriteLimit = 2 * time.Second
 )
@@ -63,34 +63,23 @@ type clipboardImageMsg struct {
 }
 
 // Number that changes whenever the draft is replaced, so late attachments of an older draft are dropped
-func (a *app) composerRevision() int { return a.draftRevision }
+func (a *app) composerRevision() int { return a.card.composer.Revision() }
 
-// Follows what the draft holds, tokens whose labels were deleted detached on a legacy gateway
-func (a *app) syncTokens() tea.Cmd {
-	value := a.card.composer.Value()
+// Follows what the draft holds, dropping tokens whose labels were deleted; the draft and edited entries the history ring keeps out of view hold on
+// to their tokens
+func (a *app) syncTokens() {
+	value := strings.Join(append([]string{a.card.composer.Value()}, a.card.composer.Kept()...), "\n")
 	dropped := droppedTokens(a.tokens, value)
 	if len(dropped) == 0 {
-		return nil
+		return
 	}
-	var cmds []tea.Cmd
 	kept := a.tokens[:0]
 	for _, t := range a.tokens {
-		gone := false
-		for _, d := range dropped {
-			if d == t {
-				gone = true
-			}
-		}
-		if !gone {
+		if !slices.Contains(dropped, t) {
 			kept = append(kept, t)
-			continue
-		}
-		if t.Kind == "image" && t.Path != "" && !a.gw.canonical() && a.store.ui.Sid != "" {
-			cmds = append(cmds, fire(a.gw, tuigateway.ImageDetach, tuigateway.ImageDetachParams{Path: t.Path, SessionID: a.store.ui.Sid}))
 		}
 	}
 	a.tokens = kept
-	return tea.Batch(cmds...)
 }
 
 // Takes an attached image into the tokens of the draft and returns the text that stands for it, its label and what followed its path
@@ -124,31 +113,13 @@ func (a *app) stageImage(path string, then func(image *stagedImage, err error) t
 	return a.stageImageWhile(path, destination, current, func() tea.Cmd { return nil }, then)
 }
 
-// Stages an image path with a session, staged by this client on the canonical wire and by the gateway on a legacy one, stale running in place of then
-// when current no longer holds as the answer arrives
+// Stages an image path with a session, stale running in place of then when current no longer holds as the answer arrives
 func (a *app) stageImageWhile(path string, destination submissionDestination, current func() bool, stale func() tea.Cmd, then func(image *stagedImage, err error) tea.Cmd) tea.Cmd {
-	if a.gw.canonical() {
-		return a.store.stageImagePath(path, a.gw, destination, func(image *stagedImage, err error) tea.Cmd {
-			if !current() {
-				return stale()
-			}
-			return then(image, err)
-		})
-	}
-	return call(a.gw, tuigateway.ImageAttach, tuigateway.ImageAttachParams{Path: path, SessionID: destination.Sid}, func(r *tuigateway.AttachedImageResult, err error) tea.Cmd {
+	return a.store.stageImagePath(path, a.gw, destination, func(image *stagedImage, err error) tea.Cmd {
 		if !current() {
-			if r != nil && r.Path != "" {
-				return tea.Batch(fire(a.gw, tuigateway.ImageDetach, tuigateway.ImageDetachParams{Path: r.Path, SessionID: destination.Sid}), stale())
-			}
 			return stale()
 		}
-		if err != nil {
-			return then(nil, err)
-		}
-		if r.Name == "" {
-			return then(nil, nil)
-		}
-		return then(&stagedImage{Name: r.Name, Path: r.Path, Remainder: val(r.Remainder)}, nil)
+		return then(image, err)
 	})
 }
 
@@ -219,30 +190,6 @@ func (a *app) pasteClipboardImage(quiet bool) tea.Cmd {
 		return nil
 	}
 	revision := a.composerRevision()
-	if !a.gw.canonical() {
-		return call(a.gw, tuigateway.ClipboardPaste, tuigateway.SessionIDParams{SessionID: destination.Sid}, func(r *tuigateway.AttachedImageResult, err error) tea.Cmd {
-			if !a.store.isCurrentDestination(destination) || revision != a.composerRevision() {
-				return nil
-			}
-			if err != nil {
-				if !quiet {
-					a.sys(tr(txt.CanonicalQueueClipboardImageFailed, rpcErrorMessage(err)))
-				}
-				return nil
-			}
-			if !r.Attached {
-				if !quiet {
-					message := r.Message
-					if message == "" {
-						message = tr(txt.ComposerNoClipboardImage)
-					}
-					a.sys(message)
-				}
-				return nil
-			}
-			return a.attachImageToken(&stagedImage{Path: r.Path, Name: r.Name})
-		})
-	}
 	return func() tea.Msg {
 		out := clipboardImageMsg{quiet: quiet, destination: destination, revision: revision}
 		if ClipboardImage == nil {
@@ -485,7 +432,8 @@ func (a *app) clearAttachments() tea.Cmd {
 		value = strings.ReplaceAll(value, t.Label, "")
 	}
 	set := a.card.composer.SetValue(strings.TrimSpace(value))
-	return tea.Batch(set, a.syncTokens(), wm.Notify(tr(txt.ComposerAttachmentsCleared), wm.Info))
+	a.syncTokens()
+	return tea.Batch(set, wm.Notify(tr(txt.ComposerAttachmentsCleared), wm.Info))
 }
 
 // Opens the draft in the external editor, the screen handed over until it exits
@@ -543,7 +491,8 @@ func (a *app) interpolate(typed []typedInterpolation, destination submissionDest
 				item.settle(false)
 				if a.store.isCurrentDestination(destination) {
 					a.sys(tr(txt.SessionCommonInterpolationFailed, describeShellExecError(err)))
-					a.store.ui.Busy, a.store.ui.Status = false, tr(txt.StatusReady)
+					a.store.setBusy(false)
+					a.store.ui.Status = tr(txt.StatusReady)
 				}
 				return nil
 			}
@@ -598,8 +547,10 @@ func (a *app) toggleYolo() tea.Cmd {
 		case err != nil:
 			a.sys(errorLine(rpcErrorMessage(err)))
 		case setWord(res) == "1":
+			a.store.ui.Yolo = true
 			a.sys(tr(txt.SessionInputYoloOn))
 		case setWord(res) == "0":
+			a.store.ui.Yolo = false
 			a.sys(tr(txt.SessionInputYoloOff))
 		default:
 			a.sys(tr(txt.SessionInputYoloToggleFailed))
@@ -676,41 +627,13 @@ func (a *app) collapsePaste() tea.Cmd {
 	return composer.SetValueAt(collapsed.value, collapsed.cursor)
 }
 
-// Second escape within the window, a draft discarded into the history with an armed rewind dropped, else a running turn stopped, false when neither applies
-func (a *app) doubleEscape() (tea.Cmd, bool) {
-	ui := a.store.ui
-	switch draft := a.card.composer.Value(); {
-	case draft != "":
-		a.card.composer.Remember(draft)
-		cleared := a.clearIn()
-		a.cancelPendingRewind(true)
-		return cleared, true
-	case ui.Busy && ui.Sid != "" && !a.dialogs.waiting():
-		return a.interruptTurn(), true
-	}
-	return nil, false
-}
-
-// Enter on an empty prompt, an armed rewind dropped and a second press within the window stopping the turn or sending the first queued input, false when
-// the prompt holds something to send
+// Enter on an empty prompt, which only drops an armed rewind; false when the prompt holds something to send
 func (a *app) emptyEnter() (tea.Cmd, bool) {
 	composer := a.card.composer
 	if trimJS(composer.Value()) != "" || !composer.Empty() {
-		a.lastEmptyEnter = time.Time{}
 		return nil, false
 	}
 	a.cancelPendingRewind(true)
-	now := a.store.now()
-	double := !a.lastEmptyEnter.IsZero() && now.Sub(a.lastEmptyEnter) < doubleEnterWindow
-	a.lastEmptyEnter = now
-	ui := a.store.ui
-	switch queued := a.queue.size(); {
-	case !double || ui.Sid == "":
-	case ui.Busy:
-		return a.stopTurn(queued > 0), true
-	case queued > 0:
-		return a.sendQueueHead(), true
-	}
 	return nil, true
 }
 
@@ -738,13 +661,16 @@ func (a *app) saveSetting(key, word string) tea.Cmd {
 	return fire(a.gw, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: key, Value: tuigateway.TextValue(word)})
 }
 
-// Keys of the terminal UI context the session window does not answer itself
+// Keys of the terminal UI context the session window does not answer itself, the reading keys first while the transcript is read
 func (a *app) tuiAction(id string) (tea.Cmd, bool) {
+	if cmd, taken := a.readAction(id); taken {
+		return cmd, true
+	}
 	switch id {
 	case "tui.model":
 		return a.openModelPicker(), true
 	case "tui.sessions":
-		return a.openSessionSwitcher(), true
+		return a.openSessions(""), true
 	case "tui.cut":
 		return a.cutSelection(), true
 	case "tui.queue.delete":
@@ -774,10 +700,10 @@ func (a *app) tuiAction(id string) (tea.Cmd, bool) {
 		return a.pasteClipboardImage(false), true
 	case "tui.voice":
 		return a.toggleVoiceRecording(), true
-	case "tui.newline":
-		return a.card.composer.Insert("\n"), true
-	case "composer.paste":
+	case "text.paste":
 		return a.pasteFromClipboard(), true
+	case "complete.start":
+		return a.tabComplete(a.card.composer), true
 	}
 	return a.stashAction(id)
 }
@@ -809,7 +735,9 @@ func (a *app) updateExtras(m tea.Msg) (bool, tea.Cmd) {
 		if !m.written {
 			return true, nil
 		}
-		return true, tea.Batch(a.card.composer.Cut(m.span), a.syncTokens())
+		cut := a.card.composer.Cut(m.span)
+		a.syncTokens()
+		return true, cut
 	case tea.ClipboardMsg:
 		if cmd, taken := a.terminalClipboardAnswer(m); taken {
 			return true, cmd

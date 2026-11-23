@@ -191,7 +191,7 @@ func TestModelSetupFlowCatalogGoesToThePoolEntryGateway(t *testing.T) {
 	h, ctx, out := pickerCaseHome(t)
 	t.Setenv("ICEBATH_CODEX_BASE_URL", "")
 	writePickerConfig(t, h, "model:\n  base_url: "+gw+"\n  default: gpt-5.5\n  provider: openai-codex\n")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{"openai-codex": []any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{"openai-codex": []any{
 		map[string]any{"id": "gw", "label": "gateway", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": opaque, "base_url": chatgpt}}}})
 	recorder := &pickerHTTPRecorder{}
 	prevTransport := metadataTransport

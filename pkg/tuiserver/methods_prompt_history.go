@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -215,8 +216,7 @@ func pendingReactionNotes(ctx context.Context, session *tuihost.Session) string 
 	if sessionKey == "" {
 		return ""
 	}
-	display, ok := loadCfg(ctx)["display"].(map[string]any)
-	if !ok || !truthy(display["message_reactions"]) {
+	if !settings.MessageReactions.Get(ctx) {
 		return ""
 	}
 	var pending []map[string]any

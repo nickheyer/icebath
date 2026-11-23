@@ -7,23 +7,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
-
-// True when gateway.message_timestamps.enabled is opted in, a bare boolean shorthand accepted
-func messageTimestampsEnabled(userConfig map[string]any) bool {
-	if userConfig == nil {
-		return false
-	}
-	gw, ok := userConfig["gateway"].(map[string]any)
-	if !ok {
-		return false
-	}
-	if mt, isDict := gw["message_timestamps"].(map[string]any); isDict {
-		enabled, present := mt["enabled"]
-		return present && pyTruthy(enabled)
-	}
-	return pyTruthy(gw["message_timestamps"])
-}
 
 // Python truthiness of a decoded config value
 func pyTruthy(v any) bool {
@@ -75,7 +60,7 @@ func (r *GatewayRunner) hmwaApplyMessageTimestamp(ctx context.Context, event *ga
 		case embedded != nil:
 			persistUserTimestamp = *embedded
 		}
-		if messageTimestampsEnabled(gateway.LoadGatewayConfigMap(ctx, "")) {
+		if settings.GatewayMessageTimestampsEnabled.Get(ctx) {
 			rendered, err := gateway.RenderUserContentWithTimestamp(clean, persistUserTimestamp, tz)
 			if err != nil {
 				return err

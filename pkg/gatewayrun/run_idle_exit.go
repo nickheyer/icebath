@@ -15,12 +15,17 @@ import (
 
 const (
 	DefaultIdleExitSeconds = 600.0
+	// Idle window of a service started by a `go run` build, whose binary may be gone soon after
+	ScratchIdleExitSeconds = 5.0
 	IdleExitReason         = "idle_exit"
 	IdleExitStopPrefix     = "auto-started gateway idle"
 )
 
-// Idle window from gateway.unmanaged_idle_exit_seconds of the launch home, zero disabling and junk keeping the default
+// Idle window from gateway.unmanaged_idle_exit_seconds of the launch home, zero disabling it, a few seconds under `go run`
 func idleExitSeconds(ctx context.Context) float64 {
+	if gateway.GoRunExecutable() != "" {
+		return ScratchIdleExitSeconds
+	}
 	section, _ := gateway.LoadGatewayConfigMap(ctx, "")["gateway"].(map[string]any)
 	value, present := section["unmanaged_idle_exit_seconds"]
 	if section == nil || !present || value == nil {

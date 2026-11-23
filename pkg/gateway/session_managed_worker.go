@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -117,7 +118,7 @@ func managedBootstrap(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	return frame, nil
 }
 
-// Frozen session config the child binds, its command allowlist read from the live profile file for ordinary sessions
+// Frozen session config the child binds, its command allowlist taken from the live profile setting for ordinary sessions
 func workerConfig(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy) (map[string]any, error) {
 	config, err := policy.config(ctx, a, true)
 	if err != nil {
@@ -126,9 +127,8 @@ func workerConfig(ctx context.Context, a *SessionAuthority, policy *LocalSession
 	if policy.IgnoreUserConfig || !filepath.IsAbs(a.ProfileID) {
 		return config, nil
 	}
-	live := loadGatewayConfig(ctx, filepath.Join(a.ProfileID, "config.yaml"))
 	delete(config, "command_allowlist")
-	if allowlist, ok := live["command_allowlist"]; ok && allowlist != nil {
+	if allowlist := settings.AllowedCommands.Get(home.WithOverride(ctx, a.ProfileID)); len(allowlist) > 0 {
 		config["command_allowlist"] = allowlist
 	}
 	return config, nil

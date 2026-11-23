@@ -272,7 +272,7 @@ func (m *Model) RestoreWorkspace(ws *Workspace, l WorkspaceLayout, resolve func(
 		}
 		e := m.newEntry(c, ws)
 		have[key] = e
-		cmds = append(cmds, c.Init())
+		cmds = append(cmds, m.routed(e, c.Init()))
 		return e
 	}
 	var tiles, floats []*entry

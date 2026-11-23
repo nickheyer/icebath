@@ -185,7 +185,7 @@ func TestInteractivePlatformStillUsesTheWorkerThread(t *testing.T) {
 }
 
 func TestInlineStreamStaleDetectorStillFiresFromMonitorThread(t *testing.T) {
-	t.Setenv(provider.StreamStaleTimeoutEnv, "1.0")
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 1.0})
 	t.Setenv("ICEBATH_STREAM_RETRIES", "0")
 	wire := newInlineWire(t, true)
 	a, ctx := inlineWireAgent(t, wire.base, "subagent")
@@ -202,7 +202,7 @@ func TestInlineStreamStaleDetectorStillFiresFromMonitorThread(t *testing.T) {
 }
 
 func TestInlineStreamCrossThreadInterruptAbortsPromptly(t *testing.T) {
-	t.Setenv(provider.StreamStaleTimeoutEnv, "60")
+	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 60})
 	t.Setenv("ICEBATH_STREAM_RETRIES", "0")
 	wire := newInlineWire(t, true)
 	a, ctx := inlineWireAgent(t, wire.base, "cron")

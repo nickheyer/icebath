@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -587,8 +586,7 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 // The exported completion push keeps the opt out copy in process while the durable row stays forced
 func TestPushCompletionEventExportHonoursOptOutOnlyInProcess(t *testing.T) {
 	env := asyncTestEnv(t)
-	env.Secrets = config.NewSecrets(env.Home)
-	if err := env.Secrets.Set("ICEBATH_REDACT_SECRETS", "false"); err != nil {
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("security:\n  redact_secrets: false\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	record := redactionTestRecord(t, env)

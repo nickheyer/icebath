@@ -11,7 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -284,9 +284,7 @@ func (a *MatrixAdapter) isAuthorizedUser(userID, roomID string) bool {
 		authorized := a.IsSenderAuthorized(userID, nil, &roomID, gateway.AuthorizationOpts{})
 		return authorized != nil && *authorized
 	}
-	allowAll, _ := gateway.GetScopedSecret(a.ctx, "GATEWAY_ALLOW_ALL_USERS", "", false)
-	switch pystr.Lower(pystr.Strip(allowAll)) {
-	case "true", "1", "yes":
+	if settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(a.ctx)) {
 		return true
 	}
 	return len(a.allowedUserIDs) > 0 && a.allowedUserIDs[userID]

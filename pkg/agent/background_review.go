@@ -307,7 +307,7 @@ var resolveReviewRuntime = func(ctx context.Context, a *AIAgent, taskCfg map[str
 				rt, err = nil, fmt.Errorf("%v", r)
 			}
 		}()
-		return reviewResolveRuntimeProvider(ctx, home.Dir(ctx), taskProvider, taskModel, taskBaseURL, taskAPIKey)
+		return reviewResolveRuntimeProvider(a.loginContext(ctx), home.Dir(ctx), taskProvider, taskModel, taskBaseURL, taskAPIKey)
 	}()
 	if err != nil {
 		warnReviewRoutingFallback(ctx, a, taskProvider, taskModel, err)

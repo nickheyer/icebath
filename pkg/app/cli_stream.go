@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -58,15 +59,6 @@ func (c *CLI) agentMutesNotificationReply() bool {
 	return a != nil && a.MuteNotificationReply()
 }
 
-// Notification config of the running agent, nil without an agent
-func (c *CLI) agentNotificationConfig() map[string]any {
-	a := c.agentRef()
-	if a == nil {
-		return nil
-	}
-	return a.NotificationConfig()
-}
-
 // Sets the spinner text the status line shows
 func (c *CLI) setSpinnerText(text string) {
 	c.uiMu.Lock()
@@ -95,7 +87,7 @@ func (c *CLI) onThinking(text any) {
 		c.uiMu.Unlock()
 		return nil
 	}
-	if _, err := config.RenderNotification(c.ctx, show, "cli", diagnostic, c.agentNotificationConfig()); err != nil {
+	if _, err := config.RenderNotification(c.ctx, show, "cli", diagnostic); err != nil {
 		pkgLog().Debug("thinking callback failed", "error", err)
 	}
 }
@@ -117,7 +109,7 @@ func (c *CLI) onNotice(notice provider.AgentNotice) {
 		c.streamMu.Unlock()
 		return nil
 	}
-	_, _ = config.RenderNotification(c.ctx, queue, "cli", config.IsDiagnosticNotice(notice.Level, notice.Key), c.agentNotificationConfig())
+	_, _ = config.RenderNotification(c.ctx, queue, "cli", config.IsDiagnosticNotice(notice.Level, notice.Key))
 }
 
 // Prints the queued credit notices as level colored lines at turn end
@@ -671,7 +663,7 @@ func (c *CLI) preprocessImagesWithVision(text string, images []string, announce 
 		_, _ = config.RenderNotification(c.ctx, func() error {
 			cprint("  " + dimANSI + c.t(key, nil) + resetANSI)
 			return nil
-		}, "cli", false, c.agentNotificationConfig())
+		}, "cli", false)
 	}
 	enrichedParts := []string{}
 	for _, imgPath := range images {
@@ -942,24 +934,12 @@ func (c *CLI) maybeShowLongToolHint(duration float64) {
 	if c.longToolHintFired || c.toolProgressMode != "all" || duration < 30.0 {
 		return
 	}
-	cfg := CLIConfig(c.ctx)
-	if tools.IsSeen(cfg, tools.OnboardingToolProgressFlag) {
+	if config.Truthy(settings.OnboardingSeen.Get(c.ctx)[tools.OnboardingToolProgressFlag]) {
 		return
 	}
 	c.longToolHintFired = true
 	cprint("  " + dimANSI + tools.ToolProgressHintCLI() + resetANSI)
 	tools.MarkSeen(c.ctx, filepath.Join(home.Dir(c.ctx), "config.yaml"), tools.OnboardingToolProgressFlag)
-	onboarding, ok := cfg["onboarding"].(map[string]any)
-	if !ok {
-		onboarding = map[string]any{}
-		cfg["onboarding"] = onboarding
-	}
-	seen, ok := onboarding["seen"].(map[string]any)
-	if !ok {
-		seen = map[string]any{}
-		onboarding["seen"] = seen
-	}
-	seen[tools.OnboardingToolProgressFlag] = true
 }
 
 // Drops the oldest running label of a tool once one of its calls completes

@@ -225,16 +225,6 @@ func dumpTerminalLine(t *testing.T, out string) string {
 	return ""
 }
 
-func TestDumpSurfacesTerminalEnvOverride(t *testing.T) {
-	ctx, h := dumpHome(t)
-	t.Setenv("TERMINAL_ENV", "docker")
-	dumpSeed(t, h, "display:\n  streaming: true\n", "")
-	line := dumpTerminalLine(t, dumpOutput(t, ctx, h))
-	if !strings.Contains(line, "docker") || !strings.Contains(line, "overrides config.yaml") || !strings.Contains(line, "terminal.backend=local") {
-		t.Fatalf("%q", line)
-	}
-}
-
 func TestDumpReportsConfigBackendWinningOverStaleEnv(t *testing.T) {
 	ctx, h := dumpHome(t)
 	dumpSeed(t, h, "terminal:\n  backend: local\n", "TERMINAL_ENV=docker\n")

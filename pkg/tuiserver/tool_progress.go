@@ -344,7 +344,7 @@ func onToolStart(ctx context.Context, sid, toolCallID, name string, args map[str
 		delete(toolSlot[map[string]any](session, "tool_result_metadata"), toolCallID)
 		toolSlotsMu.Unlock()
 	}
-	if toolProgressEnabled(sid) || toolLifecycleRequiredForUI(name) || connectorToolLifecycle(name, args) {
+	if toolProgressEnabled(ctx, sid) || toolLifecycleRequiredForUI(name) || connectorToolLifecycle(name, args) {
 		payload := map[string]any{"tool_id": toolCallID, "name": name, "context": tuihost.ToolCtx(name, args)}
 		if labels := toolLabels(ctx, name, args); labels != nil {
 			payload["labels"] = labels
@@ -352,7 +352,7 @@ func onToolStart(ctx context.Context, sid, toolCallID, name string, args map[str
 		if len(args) > 0 {
 			payload["args"] = args
 		}
-		if sessionVerbose(sid) {
+		if sessionVerbose(ctx, sid) {
 			if text := toolArgsText(args); text != "" {
 				payload["args_text"] = text
 			}
@@ -392,7 +392,7 @@ func prepareToolResultMetadata(ctx context.Context, sid, toolCallID, name string
 
 // Emits live MCP progress on a running tool row when the session shows tool progress
 func progressToolProgress(ctx context.Context, sid string, name, preview any, kw map[string]any) {
-	if toolProgressEnabled(sid) {
+	if toolProgressEnabled(ctx, sid) {
 		emitEvent(ctx, "tool.progress", sid, tools.ToolProgressPayload(strOr(name), strOr(preview), kw))
 	}
 }
@@ -400,7 +400,7 @@ func progressToolProgress(ctx context.Context, sid string, name, preview any, kw
 // Emits the risk badge of a tool row when the session shows tool progress
 func progressOutputRisk(ctx context.Context, sid string, name, preview any, kw map[string]any) {
 	payload := tuihost.OutputRiskPayload(pyrepr.Str(name), kw)
-	if payload == nil || !toolProgressEnabled(sid) {
+	if payload == nil || !toolProgressEnabled(ctx, sid) {
 		return
 	}
 	emitEvent(ctx, "tool.output_risk", sid, payload)
@@ -412,7 +412,7 @@ func progressReasoning(ctx context.Context, sid string, name, preview any, kw ma
 		return
 	}
 	payload := map[string]any{"text": pyrepr.Str(preview)}
-	if sessionVerbose(sid) {
+	if sessionVerbose(ctx, sid) {
 		payload["verbose"] = true
 	}
 	emitEvent(ctx, "reasoning.available", sid, payload)

@@ -398,7 +398,7 @@ func themeToneHex(tone string) string {
 	return ""
 }
 
-var defaultBrand = themeBrand{Name: "Icebath Agent", Prompt: "$", Welcome: "Type your message or /help for commands.", Goodbye: "Goodbye! 󰆧", Tool: "┊", HelpHeader: "❆ Commands"}
+var defaultBrand = themeBrand{Name: "Icebath Agent", Prompt: "$", Goodbye: "Goodbye! 󰆧", Tool: "┊", HelpHeader: "❆ Commands"}
 
 var jsWhitespaceRun = regexp.MustCompile(`[` + jsWS + `]+`)
 

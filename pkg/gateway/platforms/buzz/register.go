@@ -23,8 +23,14 @@ type authTagError struct{ msg string }
 
 func (e *authTagError) Error() string { return e.msg }
 
-// Raw non secret setting, the profile's own secret scope then the extra inside a secondary profile, the process env otherwise
+// Raw non secret setting: the setting a folded name moved to, else the profile's own secret scope then the extra inside a secondary profile, the process env otherwise
 func scopedPlatformSetting(ctx context.Context, envName string, extra map[string]any, key string) (any, error) {
+	if value, folded := gateway.FoldedEnvValue(ctx, envName); folded {
+		if value == "" {
+			return nil, nil
+		}
+		return value, nil
+	}
 	if gateway.ProfileScoped(ctx) {
 		val, found, err := gateway.LookupScopedSecret(ctx, envName, true)
 		if err != nil {
@@ -64,7 +70,9 @@ func settingText(v any) string {
 // Reply mode first, all or off, env over config and reply_in_thread false meaning off
 func replyToMode(ctx context.Context, cfg *gateway.PlatformConfig, extra map[string]any) (string, error) {
 	var modeEnv string
-	if gateway.ProfileScoped(ctx) {
+	if value, folded := gateway.FoldedEnvValue(ctx, "BUZZ_REPLY_TO_MODE"); folded {
+		modeEnv = value
+	} else if gateway.ProfileScoped(ctx) {
 		v, err := getScopedSecret(ctx, "BUZZ_REPLY_TO_MODE", "")
 		if err != nil {
 			return "", err
@@ -248,33 +256,6 @@ func validateConfig(ctx context.Context, cfg *gateway.PlatformConfig) (bool, err
 	}
 	key, err := resolvePrivateKey(ctx, extra)
 	return key != "", err
-}
-
-// Extra key, env var and kind of every setting the config.yaml bridge carries into the env
-var yamlBridge = []gateway.YAMLBridgeRow{
-	{Key: "relay_url", Env: "BUZZ_RELAY_URL", Kind: "str"}, {Key: "cli_path", Env: "BUZZ_CLI_PATH", Kind: "str"},
-	{Key: "home_channel", Env: "BUZZ_HOME_CHANNEL", Kind: "str"}, {Key: "transport", Env: "BUZZ_TRANSPORT", Kind: "str"},
-	{Key: "poll_interval", Env: "BUZZ_POLL_INTERVAL", Kind: "str"},
-	{Key: "channels", Env: "BUZZ_CHANNELS", Kind: "csv"}, {Key: "allowed_users", Env: "BUZZ_ALLOWED_USERS", Kind: "csv"},
-	{Key: "reaction_only_users", Env: "BUZZ_REACTION_ONLY_USERS", Kind: "csv"}, {Key: "allow_all_users", Env: "BUZZ_ALLOW_ALL_USERS", Kind: "lower"},
-	{Key: "require_mention", Env: "BUZZ_REQUIRE_MENTION", Kind: "lower"}, {Key: "reply_in_thread", Env: "BUZZ_REPLY_IN_THREAD", Kind: "lower"},
-	{Key: "reply_to_mode", Env: "BUZZ_REPLY_TO_MODE", Kind: "lower"},
-}
-
-// Bridges buzz.extra into the BUZZ env and the returned extra, the private key never read from config.yaml
-func applyYAMLConfig(ctx context.Context, yamlCfg, buzzCfg map[string]any) (map[string]any, error) {
-	var extra any = buzzCfg
-	if v, ok := buzzCfg["extra"]; ok {
-		extra = v
-	}
-	if !pyrepr.Truthy(extra) {
-		extra = map[string]any{}
-	}
-	m, ok := extra.(map[string]any)
-	if !ok {
-		return nil, nil
-	}
-	return gateway.ApplyYAMLBridge(ctx, m, yamlBridge)
 }
 
 // Extra seeded from the profile env so env only setups show in gateway status, nil when unconfigured
@@ -477,8 +458,7 @@ func (buzzPlatformPlugin) Register(ctx *plugins.Context) error {
 			"is_connected":           validateConfig,
 			"setup_fn":               InteractiveSetup,
 			"env_enablement_fn":      envEnablement,
-			"apply_yaml_config_fn":   applyYAMLConfig,
-			"cron_deliver_env_var":   "BUZZ_HOME_CHANNEL",
+				"cron_deliver_env_var":   "BUZZ_HOME_CHANNEL",
 			"standalone_sender_fn":   standaloneSend,
 			"allowed_users_env":      "BUZZ_ALLOWED_USERS",
 			"allow_all_env":          "BUZZ_ALLOW_ALL_USERS",

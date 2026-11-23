@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -159,21 +158,10 @@ func scrubConfigYAMLMirrors(ctx context.Context, h, oldValue string, newValue *s
 			}
 		}
 	}
-	// The legacy api alias is a credential under model and auxiliary, but a base_url under keyed providers
-	fix(user["model"], "model", "api_key", "api")
+	fix(user["model"], "model", "api_key")
 	if aux, ok := user["auxiliary"].(map[string]any); ok {
 		for _, task := range sortedAnyKeys(aux) {
-			fix(aux[task], "auxiliary."+task, "api_key", "api")
-		}
-	}
-	switch custom := user["custom_providers"].(type) {
-	case map[string]any:
-		for _, name := range sortedAnyKeys(custom) {
-			fix(custom[name], "custom_providers."+name, "api_key", "api")
-		}
-	case []any:
-		for i, entry := range custom {
-			fix(entry, "custom_providers."+strconv.Itoa(i), "api_key", "api")
+			fix(aux[task], "auxiliary."+task, "api_key")
 		}
 	}
 	if providers, ok := user["providers"].(map[string]any); ok {

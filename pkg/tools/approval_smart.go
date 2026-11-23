@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -26,7 +26,6 @@ const smartSystemPrompt = "You are a security reviewer for an AI coding agent. Y
 
 var smartVerdicts = map[string]string{"APPROVE": "approve", "DENY": "deny"}
 
-const defaultAuxTimeout = 30 * time.Second
 
 // Removes a trailing unquoted hash comment from one shell line
 func stripLineComment(line string) string {
@@ -62,23 +61,9 @@ func stripShellComments(command string) string {
 	return strings.TrimRight(strings.Join(cleaned, "\n"), " \t\r\n\f\v")
 }
 
-// Operator rules from approvals.smart_policy appended to the guardian system prompt
+// Operator rules of the smart approval setting appended to the guardian system prompt
 func getSmartPolicy(env *Env) string {
-	if policy, ok := getApprovalConfig(env)["smart_policy"].(string); ok {
-		return strings.TrimSpace(policy)
-	}
-	return ""
-}
-
-// auxiliary.<task>.timeout from config, else the default
-func getTaskTimeout(env *Env, task string) time.Duration {
-	if env == nil || task == "" {
-		return defaultAuxTimeout
-	}
-	if raw, ok := config.AsFloat(env.Config.Get("auxiliary." + task + ".timeout")); ok {
-		return time.Duration(raw * float64(time.Second))
-	}
-	return defaultAuxTimeout
+	return strings.TrimSpace(settings.ApprovalsSmartPolicy.Get(approvalCtx(env)))
 }
 
 // Asks the auxiliary model and returns approve, deny, or escalate when uncertain or failed
@@ -89,7 +74,7 @@ func smartApprove(ctx context.Context, env *Env, command, description string) st
 		log.Warn("Smart approvals: LLM call failed, escalating", "elapsed", time.Since(started), "error", "no auxiliary model is configured")
 		return "escalate"
 	}
-	timeout := getTaskTimeout(env, "approval")
+	timeout := settings.AuxiliaryApprovalTimeout.Get(approvalCtx(env))
 	log.Debug("Smart approvals: assessing risk for command", "timeout", timeout)
 	systemPrompt := smartSystemPrompt
 	if policy := getSmartPolicy(env); policy != "" {

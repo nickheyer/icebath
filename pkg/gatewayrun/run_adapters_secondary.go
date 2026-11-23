@@ -163,7 +163,6 @@ func (r *GatewayRunner) loadSecondaryProfileConfig(ctx context.Context, profileN
 	provider.HydrateProfileSecretSources(profileHome)
 	recoverLeftCoreIn(ctx, profileHome, false)
 	scoped := gateway.ProfileRuntimeScope(ctx, profileHome, false)
-	profileRuntimeCfg := gateway.LoadGatewayConfigMap(scoped, "")
 	plugins.DiscoverPlugins(scoped, false)
 	if err := r.subscribePluginRewire(plugins.GetPluginManager(scoped), profileName, profileHome); err != nil {
 		return nil, err
@@ -174,7 +173,7 @@ func (r *GatewayRunner) loadSecondaryProfileConfig(ctx context.Context, profileN
 		return nil, err
 	}
 	violation := ownPolicyOpenStartupViolation(scoped, profileCfg)
-	r.snapshotProfileBusyModes(profileName, profileRuntimeCfg)
+	r.snapshotProfileBusyModes(scoped, profileName)
 	if violation != "" {
 		return nil, newMultiplexConfigError(fmt.Sprintf("Profile '%s' enables %s. "+
 			"Enable GATEWAY_ALLOW_ALL_USERS or the platform allow-all flag "+

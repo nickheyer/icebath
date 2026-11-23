@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -322,21 +323,9 @@ func GatewayToolsets(ctx context.Context, platform string) (enabled, disabled []
 	return loadEnabledToolsets(ctx, platform), loadDisabledToolsetsConfig(ctx)
 }
 
-// Configured agent disabled toolsets, nil when none or unreadable
-func loadDisabledToolsetsConfig(ctx context.Context) (disabled []string) {
-	defer func() {
-		if recover() != nil {
-			disabled = nil
-		}
-	}()
-	cfg, err := loadConfig(ctx)
-	if err != nil {
-		return nil
-	}
-	agentCfg, _ := cfg["agent"].(map[string]any)
-	for _, name := range tools.ParseConfigStringList(agentCfg["disabled_toolsets"]) {
-		disabled = append(disabled, name)
-	}
+// Configured agent disabled toolsets, nil when none
+func loadDisabledToolsetsConfig(ctx context.Context) []string {
+	disabled := settings.AgentDisabledToolsets.Strings(ctx)
 	if len(disabled) == 0 {
 		return nil
 	}
@@ -347,7 +336,6 @@ func loadDisabledToolsetsConfig(ctx context.Context) (disabled []string) {
 var statusbarModes = map[string]bool{"off": true, "top": true, "bottom": true}
 
 // Tool progress modes a session may run
-var toolProgressModes = map[string]bool{"off": true, "new": true, "all": true, "verbose": true}
 
 // Tools whose lifecycle is the UI card or diff the user reviews, never optional chrome
 var toolLifecycleUITools = map[string]bool{
@@ -617,6 +605,7 @@ func persistLiveSessionRuntime(ctx context.Context, session *tuihost.Session) {
 		panic(err)
 	}
 	modelConfig := runtimeModelConfig(ctx, a, existing)
+	storeSessionOwnedConfig(ctx, session, modelConfig)
 	if composer, isDict := session.Get("composer_override_profile").(map[string]any); isDict {
 		modelConfig["composer_override_profile"] = composer
 	} else if _, present := session.Lookup("composer_override_profile"); present {
@@ -655,24 +644,14 @@ func coerceStatusbar(raw any) string {
 	return "top"
 }
 
-// Mouse tracking mode of the display config, legacy tui_mouse only when mouse_tracking is absent
-func displayMouseTracking(display any) string {
-	return tuihost.DisplayMouseTracking(display)
-}
-
 // Reasoning config of a model through the shared resolver, per model override over the global effort
 func loadReasoningConfig(ctx context.Context, model string) map[string]any {
 	return config.ResolveReasoningConfig(loadCfg(ctx), model)
 }
 
-// Configured agent service tier, empty for the normal tier
+// Fast mode tier in effect for ctx, empty for the normal tier
 func loadServiceTier(ctx context.Context) string {
-	agentCfg, _ := loadCfg(ctx)["agent"].(map[string]any)
-	raw, present := agentCfg["service_tier"]
-	if !present {
-		raw = ""
-	}
-	return provider.ParseServiceTier(strOr(raw))
+	return provider.ParseServiceTier(settings.FastMode.Get(ctx))
 }
 
 // OpenRouter provider routing preferences of the config, empty when unset
@@ -687,15 +666,6 @@ func loadProviderRouting(ctx context.Context) (routing any) {
 		return map[string]any{}
 	}
 	return raw
-}
-
-// Whether reasoning shows by default, true unless display show_reasoning says otherwise
-func loadShowReasoning(ctx context.Context) bool {
-	raw, present := displayCfg(ctx)["show_reasoning"]
-	if !present {
-		return true
-	}
-	return truthy(raw)
 }
 
 // Memory notification level, on by default with booleans normalized
@@ -713,56 +683,48 @@ func loadMemoryNotifications(ctx context.Context) string {
 	return "on"
 }
 
-// Tool progress mode, the env pin first then display tool_progress, all by default
-func loadToolProgressMode(ctx context.Context) string {
-	if env := strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_TUI_TOOL_PROGRESS"))); toolProgressModes[env] {
-		return env
+// Stored session a live session id runs, the id itself when no live session has it
+func settingsSessionID(sid string) string {
+	if key := strOr(tuihost.SessionRecord(sid).Get("session_key")); key != "" {
+		return key
 	}
-	raw, present := displayCfg(ctx)["tool_progress"]
-	if !present {
-		raw = "all"
-	}
-	if b, isBool := raw.(bool); isBool {
-		if b {
-			return "all"
-		}
-		return "off"
-	}
-	mode := "all"
-	if truthy(raw) {
-		mode = strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
-	}
-	if toolProgressModes[mode] {
-		return mode
-	}
-	return "all"
+	return sid
 }
 
-// Tool progress mode a live session runs, all by default
-func sessionToolProgressMode(sid string) string {
-	raw, present := tuihost.SessionRecord(sid).Lookup("tool_progress_mode")
-	if !present {
-		raw = "all"
-	}
-	if mode := strOr(raw); mode != "" {
-		return mode
-	}
-	return "all"
+// Context whose settings reads resolve for one local session
+func sessionSettings(ctx context.Context, sid string) context.Context {
+	return settings.WithPlatform(settings.WithSession(ctx, settingsSessionID(sid)), settings.LocalPlatform)
+}
+
+// Tool progress mode a session runs
+func sessionToolProgressMode(ctx context.Context, sid string) string {
+	return settings.ToolProgress.Get(sessionSettings(ctx, sid))
 }
 
 // Whether a session reports verbose tool progress
-func sessionVerbose(sid string) bool { return sessionToolProgressMode(sid) == "verbose" }
+func sessionVerbose(ctx context.Context, sid string) bool {
+	return sessionToolProgressMode(ctx, sid) == "verbose"
+}
 
-// Session reasoning display flag, the config default when the session sets none
+// Whether a session shows the model's thinking
 func sessionShowReasoning(ctx context.Context, sid string) bool {
-	if raw, present := tuihost.SessionRecord(sid).Lookup("show_reasoning"); present {
-		return truthy(raw)
-	}
-	return loadShowReasoning(ctx)
+	return settings.ShowThinking.Get(sessionSettings(ctx, sid))
 }
 
 // Whether a session shows tool progress at all
-func toolProgressEnabled(sid string) bool { return sessionToolProgressMode(sid) != "off" }
+func toolProgressEnabled(ctx context.Context, sid string) bool {
+	return sessionToolProgressMode(ctx, sid) != "off"
+}
+
+// Pins the tool progress mode the TUI was launched with as the new session's own value
+func applyLaunchToolProgress(ctx context.Context, sid string) error {
+	mode := strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_TUI_TOOL_PROGRESS")))
+	if mode == "" || sid == "" {
+		return nil
+	}
+	_, err := settings.Set(settings.WithSession(ctx, settingsSessionID(sid)), settings.ToolProgress.Key, mode, settings.Session)
+	return err
+}
 
 // Whether a tool's lifecycle is an interactive card or diff the client must always receive
 func toolLifecycleRequiredForUI(name string) bool { return toolLifecycleUITools[name] }
@@ -867,6 +829,11 @@ func resolveAgentModelRuntime(ctx context.Context, modelOverride any, providerOv
 	}
 	if rt.Source == "local-runtime" {
 		delete(overrides, "base_url")
+	}
+	if rt.CredentialPool != nil {
+		if choice, chosen := rt.CredentialPool.LoginChoice(); chosen && !choice.Legacy() {
+			delete(overrides, "api_key")
+		}
 	}
 	anySet := false
 	for key, value := range overrides {

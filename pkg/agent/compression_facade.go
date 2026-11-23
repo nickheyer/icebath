@@ -240,7 +240,7 @@ func (a *AIAgent) compressContext(ctx context.Context, messages []map[string]any
 	directPath := o.CommitFence != nil
 	var idleTimeout, totalCeiling float64
 	if !directPath {
-		idleTimeout, totalCeiling = ResolveContextCompressionTimeouts(ctx, nil)
+		idleTimeout, totalCeiling = ResolveContextCompressionTimeouts(ctx)
 		directPath = idleTimeout <= 0
 	}
 	var out []map[string]any

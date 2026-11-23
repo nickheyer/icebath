@@ -524,17 +524,6 @@ func normalizeMoAPreset(raw any) map[string]any {
 	return out
 }
 
-// IsPresetFieldPath reports whether split config path parts name a preset field or an aggregator slot field
-func IsPresetFieldPath(parts []string) bool {
-	if (len(parts) != 4 && len(parts) != 5) || parts[0] != "moa" || parts[1] != "presets" || !containsString(moaFlatPresetKeys, parts[3]) {
-		return false
-	}
-	if parts[2] == "" || parts[2] != pyStripSpace(parts[2]) {
-		return false
-	}
-	return len(parts) == 4 || (parts[3] == "aggregator" && moaAggregatorSlotFields[parts[4]])
-}
-
 // Validated MoA config with named presets, a default and active name and the flattened default preset view
 func normalizeMoAConfig(raw any) map[string]any {
 	m, ok := raw.(map[string]any)

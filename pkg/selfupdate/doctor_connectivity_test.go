@@ -41,7 +41,7 @@ func doctorTestDoctor(t *testing.T, configBody string) (*Doctor, *bytes.Buffer) 
 		t.Fatal(err)
 	}
 	if configBody != "" {
-		seed := fmt.Sprintf("_config_version: %d\n%s", config.LatestConfigVersion(), configBody)
+		seed := configBody
 		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(seed), 0o644); err != nil {
 			t.Fatal(err)
 		}

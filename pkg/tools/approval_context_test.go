@@ -3,10 +3,13 @@ package tools
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 func TestNormalizeApprovalMode(t *testing.T) {
@@ -16,26 +19,35 @@ func TestNormalizeApprovalMode(t *testing.T) {
 			t.Errorf("normalize(%v) = %q want %q", in, got, want)
 		}
 	}
-	env := &Env{Home: t.TempDir(), Config: config.Tree{"approvals": map[string]any{"mode": false}}}
-	if getApprovalMode(env) != "off" {
+	if getApprovalMode(approvalYAMLEnv(t, "approvals:\n  mode: false\n")) != "off" {
 		t.Fatal("config false maps to off")
 	}
-	if getApprovalMode(&Env{Home: t.TempDir(), Config: config.Tree{}}) != "manual" {
-		t.Fatal("default mode is manual")
+	if getApprovalMode(approvalYAMLEnv(t, "")) != settings.ApprovalMode.Default {
+		t.Fatal("default mode is the registry default")
 	}
 }
 
+// Env of a fresh home whose config.yaml holds text
+func approvalYAMLEnv(t *testing.T, text string) *Env {
+	t.Helper()
+	h := t.TempDir()
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return &Env{Home: h}
+}
+
 func TestApprovalTimeoutAndWindow(t *testing.T) {
-	if getApprovalTimeout(&Env{Config: config.Tree{}}) != 300 {
+	if getApprovalTimeout(approvalYAMLEnv(t, "")) != 300 {
 		t.Fatal("default timeout")
 	}
-	if getApprovalTimeout(&Env{Config: config.Tree{"approvals": map[string]any{"timeout": "abc"}}}) != 300 {
+	if getApprovalTimeout(approvalYAMLEnv(t, "approvals:\n  timeout: abc\n")) != 300 {
 		t.Fatal("bad timeout falls back")
 	}
-	if getApprovalTimeout(&Env{Config: config.Tree{"approvals": map[string]any{"timeout": 90}}}) != 90 {
+	if getApprovalTimeout(approvalYAMLEnv(t, "approvals:\n  timeout: 90\n")) != 90 {
 		t.Fatal("configured timeout")
 	}
-	if got := getApprovalTimeout(&Env{Config: config.Tree{"approvals": map[string]any{"timeout": 1 << 40}}}); got != int(MaxSafeTimeoutSeconds) {
+	if got := getApprovalTimeout(approvalYAMLEnv(t, "approvals:\n  timeout: 1073741824\n")); got != int(MaxSafeTimeoutSeconds) {
 		t.Fatalf("clamped timeout %d", got)
 	}
 	for seconds, want := range map[int]string{300: "5 minutes", 90: "90 seconds", 7200: "2 hours", 60: "1 minute", 3600: "1 hour", 1: "1 second", 0: "0 seconds"} {
@@ -43,27 +55,26 @@ func TestApprovalTimeoutAndWindow(t *testing.T) {
 			t.Errorf("window(%d) = %q want %q", seconds, got, want)
 		}
 	}
-	kw := approvalTimeoutNoticeKwargs(&Env{Config: config.Tree{"approvals": map[string]any{"timeout": 90}}})
+	kw := approvalTimeoutNoticeKwargs(approvalYAMLEnv(t, "approvals:\n  timeout: 90\n"))
 	if kw["waited"] != "90 seconds" || kw["suggested"] != 270 {
 		t.Fatalf("notice kwargs %v", kw)
 	}
 }
 
 func TestBinaryModesAndTransport(t *testing.T) {
-	for raw, want := range map[any]string{"approve": "approve", "off": "approve", "ALLOW ": "approve", "yes": "approve", "deny": "deny", nil: "deny", true: "deny", "nonsense": "deny"} {
-		env := &Env{Config: config.Tree{"approvals": map[string]any{"cron_mode": raw}}}
-		if got := getCronApprovalMode(env); got != want {
+	for raw, want := range map[string]string{`"approve"`: "approve", `"off"`: "approve", `"ALLOW "`: "approve", `"yes"`: "approve", `"deny"`: "deny", "null": "deny", "true": "deny", `"nonsense"`: "deny"} {
+		if got := getCronApprovalMode(approvalYAMLEnv(t, "approvals:\n  cron_mode: "+raw+"\n")); got != want {
 			t.Errorf("cron_mode %v = %q want %q", raw, got, want)
 		}
 	}
-	if getSingleQueryApprovalMode(&Env{Config: config.Tree{}}) != "deny" || getUnattendedApprovalMode(&Env{Config: config.Tree{}}) != "deny" {
+	if getSingleQueryApprovalMode(approvalYAMLEnv(t, "")) != "deny" || getUnattendedApprovalMode(approvalYAMLEnv(t, "")) != "deny" {
 		t.Fatal("default binary modes are deny")
 	}
-	sel, fb := getApprovalTransportConfig(&Env{Config: config.Tree{}})
+	sel, fb := getApprovalTransportConfig(approvalYAMLEnv(t, ""))
 	if sel != "builtin" || fb != "" {
 		t.Fatalf("transport default %q %q", sel, fb)
 	}
-	sel, fb = getApprovalTransportConfig(&Env{Config: config.Tree{"security": map[string]any{"approval": map[string]any{"transport": " Slack ", "transport_fallback": "BUILTIN"}}}})
+	sel, fb = getApprovalTransportConfig(approvalYAMLEnv(t, "security:\n  approval:\n    transport: ' Slack '\n    transport_fallback: BUILTIN\n"))
 	if sel != "slack" || fb != "builtin" {
 		t.Fatalf("transport %q %q", sel, fb)
 	}
@@ -234,7 +245,7 @@ func TestApprovalTimeoutExportsMatchUnexported(t *testing.T) {
 }
 
 func TestGetApprovalModeExportedMatchesThePrivateReader(t *testing.T) {
-	env := &Env{Home: t.TempDir(), Config: config.Tree{"approvals": map[string]any{"mode": "smart"}}}
+	env := approvalYAMLEnv(t, "approvals:\n  mode: smart\n")
 	if GetApprovalMode(env) != getApprovalMode(env) || GetApprovalMode(env) != "smart" {
 		t.Fatalf("GetApprovalMode %q", GetApprovalMode(env))
 	}

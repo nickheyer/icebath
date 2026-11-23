@@ -323,7 +323,7 @@ func resolveContainerTaskID(env *Env, taskID string) (string, error) {
 	sessionKey := currentSessionKey(env)
 	shared := ""
 	if scope.dockerProfileScoped() {
-		shared = strings.TrimSpace(policy.Get("TERMINAL_DOCKER_SHARED_CONTAINER_KEY", ""))
+		shared = strings.TrimSpace(policy.Setting("docker_shared_container_key"))
 	}
 	if shared != "" {
 		return "shared:" + shared, nil
@@ -357,7 +357,7 @@ func workspaceContainerKey(env *Env, policy TerminalPolicy, base, taskID string)
 	if strings.HasPrefix(taskID, base+":ws:") {
 		return taskID
 	}
-	if !policy.GetBool("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false") {
+	if !policy.SettingBool("docker_mount_cwd_to_workspace") {
 		return base
 	}
 	keys := []string{taskID}
@@ -496,17 +496,20 @@ func backendDefaultCwd(env *Env, policy TerminalPolicy, envType string) string {
 	return "/root"
 }
 
-// Cwd and host cwd from TERMINAL_CWD for a backend with the container sanity checks applied
+// Cwd and host cwd from the working folder setting for a backend with the container sanity checks applied
 func resolveConfigCwd(env *Env, policy TerminalPolicy, envType string, mountDockerCwd bool) (string, string) {
 	defaultCwd := backendDefaultCwd(env, policy, envType)
-	cwd := policy.Get("TERMINAL_CWD", defaultCwd)
+	cwd := policy.Setting("cwd")
+	if cwd == "" {
+		cwd = defaultCwd
+	}
 	if cwd != "" && cwd != defaultCwd && !isSSHRemoteTildeCwd(envType, cwd) {
 		cwd = expandUser(cwd)
 	}
 	hostCwd := ""
 	switch {
 	case envType == "docker" && mountDockerCwd:
-		raw := policy.Get("TERMINAL_CWD", "")
+		raw := policy.Setting("cwd")
 		if raw == "" {
 			raw = safeGetcwd(env, policy)
 		}
@@ -531,11 +534,11 @@ func resolveConfigCwd(env *Env, policy TerminalPolicy, envType string, mountDock
 			hostCwd = candidate
 			cwd = candidate
 		} else {
-			envLog(env).Info("Ignoring TERMINAL_CWD for backend (host/relative path won't work in sandbox)", "cwd", cwd, "backend", envType, "using", defaultCwd)
+			envLog(env).Info("Ignoring the working folder for this backend (a host or relative path does not work in the sandbox)", "cwd", cwd, "backend", envType, "using", defaultCwd)
 			cwd = defaultCwd
 		}
 	case isContainerBackend(envType) && cwd != "" && isUnusableContainerCwd(cwd, "") && cwd != defaultCwd:
-		envLog(env).Info("Ignoring TERMINAL_CWD for backend (host/relative path won't work in sandbox)", "cwd", cwd, "backend", envType, "using", defaultCwd)
+		envLog(env).Info("Ignoring the working folder for this backend (a host or relative path does not work in the sandbox)", "cwd", cwd, "backend", envType, "using", defaultCwd)
 		cwd = defaultCwd
 	}
 	return cwd, hostCwd
@@ -556,18 +559,18 @@ func resolveEnvConfig(env *Env) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	envType := policy.Get("TERMINAL_ENV", "local")
-	mountDockerCwd := policy.GetBool("TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE", "false")
+	envType := policy.Setting("backend")
+	mountDockerCwd := policy.SettingBool("docker_mount_cwd_to_workspace")
 	var containerCPU float64 = 1
 	containerMemory, containerDisk := 5120, 51200
 	if isContainerBackend(envType) {
-		if containerCPU, err = parseTerminalFloat(policy, "TERMINAL_CONTAINER_CPU", "1"); err != nil {
+		if containerCPU, err = parseTerminalFloat(policy, "container_cpu"); err != nil {
 			return nil, err
 		}
-		if containerMemory, err = parseTerminalInt(policy, "TERMINAL_CONTAINER_MEMORY", "5120"); err != nil {
+		if containerMemory, err = parseTerminalInt(policy, "container_memory"); err != nil {
 			return nil, err
 		}
-		if containerDisk, err = parseTerminalInt(policy, "TERMINAL_CONTAINER_DISK", "51200"); err != nil {
+		if containerDisk, err = parseTerminalInt(policy, "container_disk"); err != nil {
 			return nil, err
 		}
 	}
@@ -575,19 +578,19 @@ func resolveEnvConfig(env *Env) (map[string]any, error) {
 	dockerEnv := map[string]any{}
 	dockerShmSize := "1g"
 	if envType == "docker" {
-		if err := parseTerminalJSON(policy, "TERMINAL_DOCKER_FORWARD_ENV", "[]", &dockerForwardEnv); err != nil {
+		if err := parseTerminalJSON(policy, "docker_forward_env", &dockerForwardEnv); err != nil {
 			return nil, err
 		}
-		if err := parseTerminalJSON(policy, "TERMINAL_DOCKER_VOLUMES", "[]", &dockerVolumes); err != nil {
+		if err := parseTerminalJSON(policy, "docker_volumes", &dockerVolumes); err != nil {
 			return nil, err
 		}
-		if err := parseTerminalJSON(policy, "TERMINAL_DOCKER_ENV", "{}", &dockerEnv); err != nil {
+		if err := parseTerminalJSON(policy, "docker_env", &dockerEnv); err != nil {
 			return nil, err
 		}
-		if err := parseTerminalJSON(policy, "TERMINAL_DOCKER_EXTRA_ARGS", "[]", &dockerExtraArgs); err != nil {
+		if err := parseTerminalJSON(policy, "docker_extra_args", &dockerExtraArgs); err != nil {
 			return nil, err
 		}
-		dockerShmSize = policy.Get("TERMINAL_DOCKER_SHM_SIZE", "1g")
+		dockerShmSize = policy.Setting("docker_shm_size")
 	}
 	if dockerForwardEnv == nil {
 		dockerForwardEnv = []any{}
@@ -606,52 +609,52 @@ func resolveEnvConfig(env *Env) (map[string]any, error) {
 	if hostPath != "" {
 		hostCwd = hostPath
 	}
-	timeout, err := parseTerminalInt(policy, "TERMINAL_TIMEOUT", "180")
+	timeout, err := parseTerminalInt(policy, "timeout")
 	if err != nil {
 		return nil, err
 	}
-	lifetime, err := parseTerminalInt(policy, "TERMINAL_LIFETIME_SECONDS", "300")
+	lifetime, err := parseTerminalInt(policy, "lifetime_seconds")
 	if err != nil {
 		return nil, err
 	}
-	sshPort, err := parseTerminalInt(policy, "TERMINAL_SSH_PORT", "22")
+	sshPort, err := parseTerminalInt(policy, "ssh_port")
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{
 		"env_type":                        envType,
-		"docker_image":                    policy.Get("TERMINAL_DOCKER_IMAGE", defaultSandboxImage),
+		"docker_image":                    policy.Setting("docker_image"),
 		"docker_image_pinned":             policy.Get("TERMINAL_DOCKER_IMAGE_PINNED", "0") == "1",
 		"docker_forward_env":              dockerForwardEnv,
-		"modal_image":                     policy.Get("TERMINAL_MODAL_IMAGE", defaultSandboxImage),
-		"daytona_image":                   policy.Get("TERMINAL_DAYTONA_IMAGE", defaultSandboxImage),
-		"vercel_runtime":                  strings.TrimSpace(policy.Get("TERMINAL_VERCEL_RUNTIME", "")),
-		"vercel_image":                    strings.TrimSpace(policy.Get("TERMINAL_VERCEL_IMAGE", "")),
+		"modal_image":                     policy.Setting("modal_image"),
+		"daytona_image":                   policy.Setting("daytona_image"),
+		"vercel_runtime":                  strings.TrimSpace(policy.Setting("vercel_runtime")),
+		"vercel_image":                    strings.TrimSpace(policy.Setting("vercel_image")),
 		"cwd":                             cwd,
 		"host_cwd":                        hostCwd,
 		"docker_mount_cwd_to_workspace":   mountDockerCwd,
 		"timeout":                         timeout,
 		"lifetime_seconds":                lifetime,
-		"ssh_host":                        policy.Get("TERMINAL_SSH_HOST", ""),
-		"ssh_user":                        policy.Get("TERMINAL_SSH_USER", ""),
+		"ssh_host":                        policy.Setting("ssh_host"),
+		"ssh_user":                        policy.Setting("ssh_user"),
 		"ssh_port":                        sshPort,
-		"ssh_key":                         policy.Get("TERMINAL_SSH_KEY", ""),
-		"ssh_persistent":                  policy.GetBool("TERMINAL_SSH_PERSISTENT", policy.Get("TERMINAL_PERSISTENT_SHELL", "true")),
-		"local_persistent":                policy.GetBool("TERMINAL_LOCAL_PERSISTENT", "true"),
+		"ssh_key":                         policy.Setting("ssh_key"),
+		"ssh_persistent":                  policy.SettingBool("persistent_shell"),
+		"local_persistent":                policy.SettingBool("local_persistent"),
 		"container_cpu":                   containerCPU,
 		"container_memory":                containerMemory,
 		"container_disk":                  containerDisk,
-		"container_persistent":            policy.GetBool("TERMINAL_CONTAINER_PERSISTENT", "true"),
+		"container_persistent":            policy.SettingBool("container_persistent"),
 		"docker_volumes":                  dockerVolumes,
 		"docker_env":                      dockerEnv,
-		"docker_run_as_host_user":         policy.GetBool("TERMINAL_DOCKER_RUN_AS_HOST_USER", "false"),
-		"docker_snap_compat":              policy.GetBool("TERMINAL_DOCKER_SNAP_COMPAT", "false"),
-		"docker_network":                  policy.GetBool("TERMINAL_DOCKER_NETWORK", "true"),
+		"docker_run_as_host_user":         policy.SettingBool("docker_run_as_host_user"),
+		"docker_snap_compat":              policy.SettingBool("docker_snap_compat"),
+		"docker_network":                  policy.SettingBool("docker_network"),
 		"docker_extra_args":               dockerExtraArgs,
 		"docker_shm_size":                 dockerShmSize,
-		"docker_persist_across_processes": policy.GetBool("TERMINAL_DOCKER_PERSIST_ACROSS_PROCESSES", "true"),
-		"docker_shared_container_key":     strings.TrimSpace(policy.Get("TERMINAL_DOCKER_SHARED_CONTAINER_KEY", "")),
-		"docker_orphan_reaper":            policy.GetBool("TERMINAL_DOCKER_ORPHAN_REAPER", "true"),
+		"docker_persist_across_processes": policy.SettingBool("docker_persist_across_processes"),
+		"docker_shared_container_key":     strings.TrimSpace(policy.Setting("docker_shared_container_key")),
+		"docker_orphan_reaper":            policy.SettingBool("docker_orphan_reaper"),
 	}, nil
 }
 

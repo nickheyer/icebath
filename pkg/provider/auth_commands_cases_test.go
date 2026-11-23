@@ -73,7 +73,7 @@ func authCodexPoolOnlyStore(exhausted bool) map[string]any {
 		entry["last_error_message"] = "The usage limit has been reached"
 		entry["last_error_reset_at"] = now + 3600
 	}
-	return map[string]any{"version": 1, "active_provider": "openai-codex", "providers": map[string]any{},
+	return map[string]any{"version": 2, "active_provider": "openai-codex", "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai-codex": []any{entry}}}
 }
 
@@ -121,7 +121,7 @@ func authTokenSet(entries []map[string]any) map[string]bool {
 
 func TestAuthAddApiKeyPersistsManualEntry(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	authMust(t, env, map[string]any{"auth_action": "add", "provider": "openrouter", "auth_type": "api-key", "api_key": "sk-or-manual", "label": "personal"})
 	var entry map[string]any
 	for _, item := range authPoolEntries(t, h, "openrouter") {
@@ -136,7 +136,7 @@ func TestAuthAddApiKeyPersistsManualEntry(t *testing.T) {
 
 func TestAuthAddMigratesLegacyPrefixedKeyForConfiguredProvider(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{
 		"custom:groq": []any{map[string]any{"id": "legacy-key", "label": "legacy", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "gsk-legacy"}}}})
 	authTestGroqConfig(t, h, "groq", "Groq", "")
 	authMust(t, env, map[string]any{"auth_action": "add", "provider": "groq", "auth_type": "api-key", "api_key": "gsk-new", "label": "new"})
@@ -150,7 +150,7 @@ func TestAuthAddMigratesLegacyPrefixedKeyForConfiguredProvider(t *testing.T) {
 
 func TestAuthAddMigratesDisplayNameDerivedLegacyPoolKey(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{
 		"custom:groq": []any{map[string]any{"id": "legacy-key", "label": "legacy", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "gsk-legacy"}}}})
 	authTestGroqConfig(t, h, "groq-cloud", "Groq", "")
 	authMust(t, env, map[string]any{"auth_action": "add", "provider": "groq-cloud", "auth_type": "api-key", "api_key": "gsk-new", "label": "new"})
@@ -164,7 +164,7 @@ func TestAuthAddMigratesDisplayNameDerivedLegacyPoolKey(t *testing.T) {
 
 func TestAuthAddNonRegistryConfiguredProviderPreservesEndpoint(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	authTestGroqConfig(t, h, "private-groq", "Groq", "https://private.example/v1")
 	authMust(t, env, map[string]any{"auth_action": "add", "provider": "private-groq", "auth_type": "api-key", "api_key": "private-key", "label": "private"})
 	entries := authPoolEntries(t, h, "private-groq")
@@ -176,7 +176,7 @@ func TestAuthAddNonRegistryConfiguredProviderPreservesEndpoint(t *testing.T) {
 func TestAuthListIncludesNonRegistryConfiguredProvider(t *testing.T) {
 	h, env := authTestHome(t)
 	authTestGroqConfig(t, h, "private-groq", "Groq", "")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "credential_pool": map[string]any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{
 		"private-groq": []any{map[string]any{"id": "private-key", "label": "private", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "secret"}}}})
 	out, _ := authMust(t, env, map[string]any{"auth_action": "list", "provider": nil})
 	if !strings.Contains(out, "private-groq") {
@@ -186,7 +186,7 @@ func TestAuthListIncludesNonRegistryConfiguredProvider(t *testing.T) {
 
 func TestInteractiveAuthAddNormalizesDisplayNameToProviderKey(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	authTestGroqConfig(t, h, "groq-cloud", "Groq Enterprise", "")
 	answers := []string{"Groq Enterprise", "primary"}
 	prevLine, prevSecret := authCmdLineInputFn, authCmdMaskedSecretPromptFn
@@ -213,7 +213,7 @@ func TestInteractiveAuthAddNormalizesDisplayNameToProviderKey(t *testing.T) {
 
 func TestAuthAddExplicitCustomProviderKeepsPrefixedPoolKey(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	authTestGroqConfig(t, h, "groq", "Groq Proxy", "https://proxy.example/v1")
 	authMust(t, env, map[string]any{"auth_action": "add", "provider": "custom:groq", "auth_type": "api-key", "api_key": "proxy-key", "label": "proxy"})
 	if !authPoolHas(t, h, "custom:groq") || authPoolHas(t, h, "groq") {
@@ -250,7 +250,7 @@ func authEntryField(entries []PooledCredential, pick func(PooledCredential) stri
 
 func TestAuthAddCodexOauthKeepsDistinctPoolAccounts(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	firstToken, secondToken := authJWTWithEmail("first-codex@example.com"), authJWTWithEmail("second-codex@example.com")
 	authScriptCodexLogins(t, []map[string]any{
 		{"tokens": map[string]any{"access_token": firstToken, "refresh_token": "first-refresh-token"}, "base_url": "https://chatgpt.com/backend-api/codex", "last_refresh": "2026-03-23T10:00:00Z"},
@@ -282,7 +282,7 @@ func TestAuthAddCodexOauthKeepsDistinctPoolAccounts(t *testing.T) {
 
 func authAddCodexTwice(t *testing.T, env PoolEnv, h, secondToken string) string {
 	t.Helper()
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	authScriptCodexLogins(t, []map[string]any{
 		{"tokens": map[string]any{"access_token": authCodexJWT("me@example.com", "acct-A", "user-1"), "refresh_token": "rt-1"}, "base_url": "https://chatgpt.com/backend-api/codex", "last_refresh": "2026-09-01T00:00:00Z"},
 		{"tokens": map[string]any{"access_token": secondToken, "refresh_token": "rt-2"}, "base_url": "https://chatgpt.com/backend-api/codex", "last_refresh": "2026-09-01T00:00:00Z"},
@@ -327,7 +327,7 @@ func TestCodexRuntimePoolOnlyRateLimitIsNotMissingAuth(t *testing.T) {
 
 func TestAuthAddXaiOauthKeepsDistinctPoolAccounts(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	firstToken, secondToken := "xai-access-token-account-a", "xai-access-token-account-b"
 	logins := []map[string]any{
 		{"tokens": map[string]any{"access_token": firstToken, "refresh_token": "first-xai-refresh", "id_token": "", "token_type": "Bearer"},
@@ -376,7 +376,7 @@ func TestAuthAddXaiOauthKeepsDistinctPoolAccounts(t *testing.T) {
 
 func TestAuthRemoveReindexesPriorities(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"anthropic": []any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"anthropic": []any{
 		map[string]any{"id": "cred-1", "label": "primary", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-ant-api-primary"},
 		map[string]any{"id": "cred-2", "label": "secondary", "auth_type": "api_key", "priority": 1, "source": "manual", "access_token": "sk-ant-api-secondary"},
 	}}})
@@ -400,7 +400,7 @@ func TestAuthRemoveCodexMigratesLegacyDictSuppression(t *testing.T) {
 		t.Fatalf("pool entries left %v", entries)
 	}
 	suppressed, _ := payload["suppressed_sources"].(map[string]any)
-	if !reflect.DeepEqual(suppressed["openai-codex"], []any{"legacy", "device_code", "manual:device_code"}) {
+	if !reflect.DeepEqual(suppressed["openai-codex"], map[string]any{"legacy": true}) && !reflect.DeepEqual(suppressed["openai-codex"], []any{"legacy"}) {
 		t.Fatalf("suppressed_sources %v", suppressed)
 	}
 	if _, ok := LoadPool(env, "openai-codex").Peek(); ok {
@@ -410,7 +410,7 @@ func TestAuthRemoveCodexMigratesLegacyDictSuppression(t *testing.T) {
 
 func TestClearProviderAuthRemovesProviderPoolEntries(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "active_provider": "anthropic",
+	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic",
 		"providers": map[string]any{"anthropic": map[string]any{"access_token": "legacy-token"}},
 		"credential_pool": map[string]any{
 			"anthropic":  []any{map[string]any{"id": "cred-1", "label": "primary", "auth_type": "oauth", "priority": 0, "source": "manual:icebath_pkce", "access_token": "pool-token"}},
@@ -428,7 +428,7 @@ func TestClearProviderAuthRemovesProviderPoolEntries(t *testing.T) {
 
 func TestUnsuppressCredentialSourceClearsMarker(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1})
+	writeAuthStore(t, h, map[string]any{"version": 2})
 	if err := env.Store.SuppressCredentialSource("openai-codex", "device_code"); err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestUnsuppressCredentialSourceClearsMarker(t *testing.T) {
 
 func TestUnsuppressCredentialSourcePreservesOtherMarkers(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1})
+	writeAuthStore(t, h, map[string]any{"version": 2})
 	for _, pair := range [][2]string{{"openai-codex", "device_code"}, {"anthropic", "claude_code"}} {
 		if err := env.Store.SuppressCredentialSource(pair[0], pair[1]); err != nil {
 			t.Fatal(err)
@@ -463,7 +463,7 @@ func TestUnsuppressCredentialSourcePreservesOtherMarkers(t *testing.T) {
 func TestSeedFromSingletonsRespectsIcebathPkceSuppression(t *testing.T) {
 	h, env := authTestHome(t)
 	writeConfigYAML(t, h, "model:\n  provider: anthropic\n  model: claude\n")
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}, "suppressed_sources": map[string]any{"anthropic": []any{"icebath_pkce"}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "suppressed_sources": map[string]any{"anthropic": []any{"icebath_pkce"}}})
 	raw, _ := json.Marshal(map[string]any{"accessToken": "tok", "refreshToken": "r", "expiresAt": 9999999999000})
 	if err := os.WriteFile(filepath.Join(h, ".anthropic_oauth.json"), raw, 0o600); err != nil {
 		t.Fatal(err)
@@ -484,7 +484,7 @@ func TestAuthRemoveEnvSeededDotenvWithBomNoShellHint(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("DEEPSEEK_API_KEY", "sk-ds-only")
-	writeAuthStore(t, h, map[string]any{"version": 1, "credential_pool": map[string]any{"deepseek": []any{
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"deepseek": []any{
 		map[string]any{"id": "env-1", "label": "DEEPSEEK_API_KEY", "auth_type": "api_key", "priority": 0, "source": "env:DEEPSEEK_API_KEY", "access_token": "sk-ds-only"}}}})
 	out, _ := authMust(t, env, map[string]any{"auth_action": "remove", "provider": "deepseek", "target": "1"})
 	dotenv, err := os.ReadFile(filepath.Join(h, ".env"))
@@ -501,7 +501,7 @@ func TestAuthRemoveEnvSeededDotenvWithBomNoShellHint(t *testing.T) {
 
 func TestAuthAddOpenrouterOauthPersistsPkceKeyWithoutTouchingApiKeyDefault(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 1, "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	prev := authCmdOpenrouterPKCELoginFn
 	authCmdOpenrouterPKCELoginFn = func(PoolEnv, io.Writer, bool, time.Duration) (map[string]any, error) {
 		return map[string]any{"api_key": "sk-or-v1-from-pkce"}, nil

@@ -302,7 +302,7 @@ func (c *CLI) resolveFallbackRuntime(primaryErr error) *provider.Runtime {
 		_, _ = config.RenderNotification(c.ctx, func() error {
 			cprint(i18n.T(c.ctx, "cli.startup.switching_to_fallback", "", map[string]any{"reason": why, "provider": fbProvider, "model": fbModel}))
 			return nil
-		}, "cli", true, nil)
+		}, "cli", true)
 		c.requestedProvider = fbProvider
 		c.model = fbModel
 		return runtime

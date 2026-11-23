@@ -6,10 +6,8 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"math/big"
-	"os"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -18,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Room protocol version this gateway speaks
@@ -362,11 +361,7 @@ func CatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, erro
 func localRoomLinkEndpoint(ctx context.Context, value any) (*pyjson.Object, error) {
 	configured := value
 	if value == nil {
-		url, set, err := configuredRoomLinkURL(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if set {
+		if url, set := configuredRoomLinkURL(ctx); set {
 			configured = url
 		}
 	}
@@ -387,83 +382,26 @@ func localRoomLinkEndpoint(ctx context.Context, value any) (*pyjson.Object, erro
 	return pyjson.ObjectOf("available", true, "url", url, "transport_security", security), nil
 }
 
-// Least recently used memo of room_link_url per home, sixteen entries like the lru_cache it mirrors
-type roomLinkURLMemo struct {
-	mu      sync.Mutex
-	order   []string
-	entries map[string]*string
+// Room link address a home's settings give, nil when none is set
+func roomLinkURLFromConfig(ctx context.Context, homeDir string) *string {
+	if value := pystr.Strip(settings.GatewayRoomLinkURL.Get(home.WithOverride(ctx, homeDir))); value != "" {
+		return &value
+	}
+	return nil
 }
 
-var roomLinkURLCache = &roomLinkURLMemo{entries: map[string]*string{}}
-
-// Restart scoped room_link_url of the config under homeDir, read once per home
-func roomLinkURLFromConfig(ctx context.Context, homeDir string) (*string, error) {
-	memo := roomLinkURLCache
-	memo.mu.Lock()
-	if value, hit := memo.entries[homeDir]; hit {
-		memo.touch(homeDir)
-		memo.mu.Unlock()
-		return value, nil
-	}
-	memo.mu.Unlock()
-	scoped := ctx
-	if home.Dir(ctx) != homeDir {
-		scoped = home.WithOverride(ctx, homeDir)
-	}
-	cfg, err := LoadGatewayConfig(scoped)
-	if err != nil {
-		return nil, err
-	}
-	var value *string
-	if cfg.RoomLinkURL != nil {
-		if stripped := pystr.Strip(*cfg.RoomLinkURL); stripped != "" {
-			value = &stripped
-		}
-	}
-	memo.mu.Lock()
-	defer memo.mu.Unlock()
-	if _, hit := memo.entries[homeDir]; !hit {
-		memo.entries[homeDir] = value
-		memo.order = append(memo.order, homeDir)
-		if len(memo.order) > 16 {
-			delete(memo.entries, memo.order[0])
-			memo.order = memo.order[1:]
-		}
-	}
-	return value, nil
-}
-
-// Moves key to the most recently used end
-func (m *roomLinkURLMemo) touch(key string) {
-	for i, existing := range m.order {
-		if existing == key {
-			m.order = append(append(m.order[:i:i], m.order[i+1:]...), key)
-			return
-		}
-	}
-}
-
-// Explicit endpoint from the env override, the profile config, then the root config
-func configuredRoomLinkURL(ctx context.Context) (string, bool, error) {
-	if override, set := os.LookupEnv("ICEBATH_ROOM_LINK_URL"); set {
-		return override, true, nil
-	}
+// Explicit endpoint from the profile's settings, then the root profile's
+func configuredRoomLinkURL(ctx context.Context) (string, bool) {
 	homeDir := home.Dir(ctx)
-	configured, err := roomLinkURLFromConfig(ctx, homeDir)
-	if err != nil {
-		return "", false, err
+	if configured := roomLinkURLFromConfig(ctx, homeDir); configured != nil {
+		return *configured, true
 	}
-	if configured != nil {
-		return *configured, true, nil
+	if root := home.Root(); root != homeDir {
+		if configured := roomLinkURLFromConfig(ctx, root); configured != nil {
+			return *configured, true
+		}
 	}
-	root := home.Root()
-	if root == homeDir {
-		return "", false, nil
-	}
-	if configured, err = roomLinkURLFromConfig(ctx, root); err != nil || configured == nil {
-		return "", false, err
-	}
-	return *configured, true, nil
+	return "", false
 }
 
 // RoomLink endpoint and its transport, plaintext HTTP accepted only toward loopback

@@ -672,9 +672,8 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 	kwargs := req.Kwargs
 	baseURL, token := kreaBaseURL, secret(env, "KREA_API_KEY")
 	if token == "" {
-		return errorFactory("krea", aspect, "", "")("KREA_API_KEY not set. Run `icebath tools` → Image "+
-			"Generation → Krea to configure, or get a key at "+
-			"https://www.krea.ai/settings/api-tokens.", "auth_required"), nil
+		return errorFactory("krea", aspect, "", "")("KREA_API_KEY not set. Get a key at https://www.krea.ai/settings/api-tokens "+
+			"and add it with /setup tools.", "auth_required"), nil
 	}
 	explicit, _ := kwargs["model"].(string)
 	modelID, meta := kreaResolveModel(env, explicit)

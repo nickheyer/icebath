@@ -18,7 +18,6 @@ func init() {
 		m, _ := LoadLegacyGatewayJSON(h).(map[string]any)
 		return m
 	}
-	provider.GatewayHooks.BridgedAllowAllUsers = BridgedAllowAllUsers
 	provider.GatewayHooks.MergePlatformSections = providerMergePlatformSections
 	provider.GatewayHooks.PlatformEnabled = providerPlatformEnabled
 	provider.GatewayHooks.ServesHome = providerServesHome

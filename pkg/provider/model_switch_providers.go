@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Rows never capped by max models, aggregators with full catalogs and rows already curated
@@ -81,36 +81,19 @@ type pickerPool interface {
 	HasAvailable(model string) bool
 }
 
-// Writes a successful live probe into every matching custom_providers entry whose catalog is stale
+// Writes a successful live probe into every matching providers entry whose catalog is stale, through the settings writer
 func saveDiscoveredModelsToConfig(ctx context.Context, apiURL string, modelIDs []string, apiMode string, headers map[string]string, credentialIdentity *string) {
 	if apiURL == "" || len(modelIDs) == 0 {
 		return
 	}
-	h := home.Dir(ctx)
-	tree, err := config.Load(h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return
-	}
-	cfg, _ := deepCopyAny(map[string]any(tree)).(map[string]any)
-	providers, ok := cfg["custom_providers"].([]any)
-	if !ok {
-		return
-	}
+	providers := settings.Providers.Get(ctx)
 	normURL := strings.ToLower(strings.TrimRight(strings.TrimSpace(apiURL), "/"))
-	changed := false
-	for _, item := range providers {
-		entry, ok := item.(map[string]any)
+	for _, key := range sortedKeys(providers) {
+		entry, ok := providers[key].(map[string]any)
 		if !ok {
 			continue
 		}
-		rawURL := entry["base_url"]
-		if !pyTruthy(rawURL) {
-			rawURL = entry["url"]
-		}
-		entryURL := ""
-		if pyTruthy(rawURL) {
-			entryURL = strings.TrimSpace(pyStr(rawURL))
-		}
+		entryURL := strings.TrimSpace(pyOrStr(entry["base_url"]))
 		if strings.ToLower(strings.TrimRight(entryURL, "/")) != normURL || entryAPIMode(entry) != apiMode {
 			continue
 		}
@@ -118,7 +101,7 @@ func saveDiscoveredModelsToConfig(ctx context.Context, apiURL string, modelIDs [
 			continue
 		}
 		if credentialIdentity != nil {
-			if _, _, identity := entryCredentials(ctx, entry, "key_env", "api_key_env"); identity != *credentialIdentity {
+			if _, _, identity := entryCredentials(ctx, entry, "key_env"); identity != *credentialIdentity {
 				continue
 			}
 		}
@@ -131,11 +114,9 @@ func saveDiscoveredModelsToConfig(ctx context.Context, apiURL string, modelIDs [
 		}
 		entry["models"] = models
 		entry["models_discovered"] = true
-		changed = true
-	}
-	if changed {
-		cfg["custom_providers"] = providers
-		_ = config.SaveConfig(ctx, h, cfg, config.SaveOptions{})
+		if _, err := settings.Set(ctx, settings.Providers.EntryKey(key), entry, settings.Global); err != nil {
+			pkgLog().Debug(fmt.Sprintf("saving discovered models for %s failed: %v", key, err))
+		}
 	}
 }
 
@@ -691,7 +672,7 @@ func normURL(url any) string {
 	return strings.ToLower(strings.TrimRight(strings.TrimSpace(pyStr(url)), "/"))
 }
 
-var defaultEntryURLKeys = []string{"base_url", "url", "api"}
+var defaultEntryURLKeys = []string{"base_url"}
 
 // First non empty URL field of an entry
 func entryBaseURL(entry map[string]any, keys []string) string {
@@ -703,13 +684,9 @@ func entryBaseURL(entry map[string]any, keys []string) string {
 	return ""
 }
 
-// Lowercased api_mode or transport, empty when neither is set
+// Lowercased api_mode, empty when unset
 func entryAPIMode(entry map[string]any) string {
-	v := entry["api_mode"]
-	if !pyTruthy(v) {
-		v = entry["transport"]
-	}
-	return strings.ToLower(strings.TrimSpace(pyOrStr(v)))
+	return strings.ToLower(strings.TrimSpace(pyOrStr(entry["api_mode"])))
 }
 
 // Unminted credential, env fallback name and the stable grouping identity
@@ -887,7 +864,7 @@ func invertStringMap(m map[string]string) map[string]string {
 	return out
 }
 
-// State threaded through the picker sections, from built ins to custom_providers entries
+// State threaded through the picker sections, from built ins to the normalized providers entries
 type pickerBuild struct {
 	ctx                        context.Context
 	currentProvider            string
@@ -1083,12 +1060,8 @@ func overlayHasCreds(b *pickerBuild, pid, icebathSlug string, overlay IcebathOve
 	if !hasCreds && credentialPoolIsUsable(b.ctx, icebathSlug, false, b.forPicker) {
 		hasCreds = true
 	}
-	if !hasCreds && icebathSlug == "anthropic" {
-		own := ReadIcebathOAuthCredentials(env)
-		cc := ReadClaudeCodeCredentials(env)
-		if pyTruthy(own["accessToken"]) || pyTruthy(cc["accessToken"]) {
-			hasCreds = true
-		}
+	if !hasCreds && icebathSlug == "anthropic" && pyTruthy(ReadClaudeCodeCredentials(env)["accessToken"]) {
+		hasCreds = true
 	}
 	return hasCreds, nil
 }
@@ -1224,8 +1197,8 @@ func lapUserProviderRows(b *pickerBuild, userProviders map[string]any) error {
 		if displayName == "" {
 			displayName = epName
 		}
-		apiURL := entryBaseURL(epCfg, []string{"base_url", "api", "url"})
-		inlineKey, keyEnv, credIdentity := entryCredentials(b.ctx, epCfg, "key_env", "api_key_env")
+		apiURL := entryBaseURL(epCfg, defaultEntryURLKeys)
+		inlineKey, keyEnv, credIdentity := entryCredentials(b.ctx, epCfg, "key_env")
 		headers := extraHeadersFromConfig(epCfg)
 		key := endpointGroupKey([]string{normURL(apiURL), credIdentity, entryAPIMode(epCfg)}, headers)
 		grp, exists := groups[key]
@@ -1244,11 +1217,7 @@ func lapUserProviderRows(b *pickerBuild, userProviders map[string]any) error {
 			groups[key] = grp
 			order = append(order, key)
 		}
-		active := epCfg["default_model"]
-		if !pyTruthy(active) {
-			active = epCfg["model"]
-		}
-		absorbEntryModels(grp, epCfg, pyOrStr(active))
+		absorbEntryModels(grp, epCfg, pyOrStr(epCfg["default_model"]))
 		grp.rawNames = append(grp.rawNames, displayName)
 		for alias := range CustomProviderAliases(displayName, epName) {
 			grp.aliases[alias] = true
@@ -1338,7 +1307,7 @@ func lapBareCustomRow(b *pickerBuild, customProviders []any) {
 	b.addEndpointRow("custom", "Custom endpoint", apiURL, models, isCurrent, nativeEmpty, "model-config", nonNilStrings(capModels(models, b.maxModels, "")))
 }
 
-// Section four, custom_providers entries grouped per endpoint, credential, wire, headers and display prefix
+// Section four, normalized providers entries grouped per endpoint, credential, wire, headers and display prefix
 func lapCustomProviderRows(b *pickerBuild, customProviders []any) error {
 	var order []string
 	groups := map[string]*pickerGroup{}

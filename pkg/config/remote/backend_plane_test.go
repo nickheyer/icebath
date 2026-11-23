@@ -3,66 +3,13 @@ package remote
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )
-
-func TestMigrationOfAReplacedDocDoesNotTouchTheReplacement(t *testing.T) {
-	p := setupPlane(t)
-	latest := config.LatestConfigVersion()
-	prof := p.Profile("default")
-	prof.Values, prof.Writer = map[string]any{"compression": map[string]any{"threshold_tokens": 256000}}, 46
-	b := testBackend()
-	st, err := b.state(context.Background(), p.Home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	entered, resume := make(chan struct{}), make(chan struct{})
-	saved := runMigrations
-	first := true
-	runMigrations = func(ctx context.Context, h string, current int) {
-		if first {
-			first = false
-			close(entered)
-			<-resume
-		}
-		saved(ctx, h, current)
-	}
-	t.Cleanup(func() { runMigrations = saved })
-	readErr := make(chan error, 1)
-	go func() {
-		_, err := config.ReadRawConfig(context.Background(), p.Home)
-		readErr <- err
-	}()
-	waitOrFail(t, entered)
-	p.Mu.Lock()
-	prof.Writer, prof.Version = latest, 1
-	p.Mu.Unlock()
-	if !b.pollOne(st) {
-		t.Fatal("poll did not install")
-	}
-	st.mu.Lock()
-	mustEqualJSON(t, "replacement", st.doc["compression"], map[string]any{"threshold_tokens": 256000})
-	st.mu.Unlock()
-	close(resume)
-	select {
-	case err := <-readErr:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("reader stuck")
-	}
-	doc, err := config.ReadRawConfig(context.Background(), p.Home)
-	if err != nil || doc["_config_version"] != latest || len(p.Patches()) != 0 {
-		t.Fatalf("doc %v %v", doc, err)
-	}
-	mustEqualJSON(t, "kept", doc["compression"], map[string]any{"threshold_tokens": 256000})
-}
 
 func TestPlaneRefusalsKeepThePlaneCode(t *testing.T) {
 	cases := []struct {

@@ -1310,7 +1310,7 @@ func olderReleaseDelete(path, sid string) error {
 }
 
 func TestAnOlderReleaseDeleteOfALedgeredSessionIsRefusedWithTheWayBack(t *testing.T) {
-	t.Setenv("ICEBATH_CJK_FTS", "off")
+	useTestProfile(t, "sessions:\n  cjk_fts: false\n")
 	installRetirementHooks(t)
 	ctx := context.Background()
 	path := t.TempDir() + "/state.db"
@@ -1349,7 +1349,7 @@ func TestAnOlderReleaseDeleteOfALedgeredSessionIsRefusedWithTheWayBack(t *testin
 }
 
 func TestAnUpgradedStoreGainsTheGuardOnItsNextOpen(t *testing.T) {
-	t.Setenv("ICEBATH_CJK_FTS", "off")
+	useTestProfile(t, "sessions:\n  cjk_fts: false\n")
 	ctx := context.Background()
 	path := t.TempDir() + "/state.db"
 	db := mustSessionDB(t, path, false)

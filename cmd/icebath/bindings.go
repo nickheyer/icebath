@@ -1,9 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/commands"
@@ -66,8 +69,12 @@ func bindLogout(cli *commands.CLI) {
 	})
 	cli.Bind("logout", func(cmd *cobra.Command, args []string) error {
 		ctx := cmdCtx(cmd)
-		providerID, _ := cmd.Flags().GetString("provider")
-		err := provider.LogoutCommand(provider.HomePoolEnv(home.Dir(ctx)), providerID, cmd.OutOrStdout())
+		providerID := cli.Positional(cmd, args, "logout_provider")
+		if providerID == "" {
+			providerID, _ = cmd.Flags().GetString("provider")
+		}
+		all, _ := cmd.Flags().GetBool("all")
+		err := provider.LogoutLogin(provider.HomePoolEnv(home.Dir(ctx)), providerID, all, cmd.OutOrStdout())
 		var unknown *provider.UnknownAuthProviderError
 		if errorsAs(err, &unknown) {
 			fmt.Fprintln(cmd.OutOrStdout(), err.Error())
@@ -85,22 +92,25 @@ func registerPluginCLICommands(cli *commands.CLI, argv []string) {
 	ctx := context.Background()
 	first, _ := cli.FirstPositional(argv)
 	provider.RecoverLeftCoreForCommand(ctx, first)
-	seen := map[string]bool{}
-	for _, info := range memory.DiscoverPluginCLICommands(ctx, processToolsEnv(ctx)) {
-		attachPluginCLICommand(cli, info.Name, info.Help, info.Description, info.Setup, info.Handler)
-		seen[info.Name] = true
-	}
+	memoryCommands := memory.DiscoverPluginCLICommands(ctx, processToolsEnv(ctx))
 	plugins.DiscoverPlugins(ctx, false)
 	resolveDeferredPlatformCLICommand(ctx, first)
-	for _, info := range plugins.GetPluginManager(ctx).CLICommands() {
-		if seen[info.Name] {
-			continue
-		}
-		if failure := attachManagerCLICommand(cli, info); failure != nil {
-			pkgLog().Debug(fmt.Sprintf("Plugin CLI discovery failed: %v", failure))
-			return
+	if failure := attachPluginCommands(cli, memoryCommands, plugins.GetPluginManager(ctx).CLICommands()); failure != nil {
+		pkgLog().Debug(fmt.Sprintf("Plugin CLI discovery failed: %v", failure))
+	}
+}
+
+// Attaches the memory provider's commands, then the plugin manager's in name order, returning what the first failing manager setup raised
+func attachPluginCommands(cli *commands.CLI, memoryCommands []memory.PluginCLICommand, managerCommands map[string]*plugins.CLICommand) any {
+	for _, info := range memoryCommands {
+		attachPluginCLICommand(cli, info.Plugin, info.Name, info.Help, info.Description, info.Setup, info.Handler)
+	}
+	for _, name := range slices.Sorted(maps.Keys(managerCommands)) {
+		if failure := attachManagerCLICommand(cli, managerCommands[name]); failure != nil {
+			return failure
 		}
 	}
+	return nil
 }
 
 // Attaches one plugin manager command, returning what its setup raised so discovery stops there
@@ -126,7 +136,7 @@ func attachManagerCLICommand(cli *commands.CLI, info *plugins.CLICommand) (failu
 			return info.Handler(cli.Namespace(cmd, args))
 		}
 	}
-	attachPluginCLICommand(cli, info.Name, info.Help, info.Description, setup, handler)
+	attachPluginCLICommand(cli, cmp.Or(info.Plugin, info.PluginKey), info.Name, info.Help, info.Description, setup, handler)
 	return failure
 }
 
@@ -149,9 +159,13 @@ func runHostedPluginCommand(cli *commands.CLI, cmd *cobra.Command, args []string
 	return nil
 }
 
-// Registers one plugin provided top level command from its descriptor
-func attachPluginCLICommand(cli *commands.CLI, name, help, description string, setup func(*cobra.Command), handler func(*cobra.Command, []string) error) {
-	cmd := &cobra.Command{Use: name, Short: help, Long: description, SilenceUsage: true, SilenceErrors: true}
+// Registers one plugin provided top level command from its descriptor, left out when a command or alias of the root takes its name
+func attachPluginCLICommand(cli *commands.CLI, plugin, name, help, description string, setup func(*cobra.Command), handler func(*cobra.Command, []string) error) {
+	if slices.ContainsFunc(cli.Root.Commands(), func(c *cobra.Command) bool { return c.Name() == name || c.HasAlias(name) }) {
+		return
+	}
+	cmd := &cobra.Command{Use: name, Short: help, Long: description, SilenceUsage: true, SilenceErrors: true,
+		Annotations: map[string]string{commands.PluginCommandAnnotation: plugin}}
 	if setup != nil {
 		setup(cmd)
 	}

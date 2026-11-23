@@ -28,7 +28,7 @@ func storedPickerIDs(t *testing.T, ctx context.Context, a *SessionAuthority) []a
 	a.mu.Lock()
 	a.nativeLegacyTransports = map[string]Principal{actor.TransportID: actor}
 	a.mu.Unlock()
-	listed, err := storedPickerSessions(ctx, a, actor, 200, false)
+	listed, err := storedPickerSessions(ctx, a, actor, 200, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

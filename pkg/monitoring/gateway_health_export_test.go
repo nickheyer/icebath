@@ -103,13 +103,7 @@ func TestGatewayHealthMetricsReachLoopbackCollector(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	runtime := StartGatewayHealthExport(map[string]any{"monitoring": map[string]any{
-		"install_id": "test-install",
-		"export":     map[string]any{"otlp": map[string]any{"enabled": true, "endpoint": server.URL + "/v1/traces"}},
-		"gateway_health_export": map[string]any{
-			"enabled": true, "metrics_enabled": true, "diagnostic_events_enabled": false,
-		},
-	}})
+	runtime := StartGatewayHealthExport(monitoringContext(t, "monitoring:\n  install_id: test-install\n  export:\n    otlp:\n      enabled: true\n      endpoint: "+server.URL+"/v1/traces\n  gateway_health_export:\n    enabled: true\n    metrics_enabled: true\n    diagnostic_events_enabled: false\n"))
 	defer runtime.Shutdown()
 	if !runtime.Enabled {
 		t.Fatalf("runtime disabled: %s", runtime.Reason)
@@ -148,7 +142,7 @@ func TestRegisteredObservableMetricNamesCoverSnapshotMetrics(t *testing.T) {
 		return pyjson.ObjectOf("gateway_state", "running", "active_agents", 1,
 			"platforms", pyjson.ObjectOf("slack", pyjson.ObjectOf("state", "fatal")))
 	}
-	snap, err := readRuntimeSnapshot(map[string]any{})
+	snap, err := readRuntimeSnapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

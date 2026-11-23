@@ -11,23 +11,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Matching approvals.deny glob, empty when none, run over the deobfuscated variants
+// Matching always-deny glob, empty when none, run over the deobfuscated variants
 func matchUserDenyRule(env *Env, command string) string {
-	raw := getApprovalConfig(env)["deny"]
 	var globs []string
-	if list, ok := raw.([]any); ok {
-		for _, p := range list {
-			if s, ok := p.(string); ok && strings.TrimSpace(s) != "" {
-				globs = append(globs, strings.TrimSpace(s))
-			}
-		}
-	} else if list, ok := raw.([]string); ok {
-		for _, s := range list {
-			if strings.TrimSpace(s) != "" {
-				globs = append(globs, strings.TrimSpace(s))
-			}
+	for _, s := range settings.ApprovalsDeny.Strings(approvalCtx(env)) {
+		if strings.TrimSpace(s) != "" {
+			globs = append(globs, strings.TrimSpace(s))
 		}
 	}
 	if len(globs) == 0 {

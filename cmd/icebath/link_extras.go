@@ -452,8 +452,9 @@ func updateRunSteps(argv []string) {
 	if first != "update" {
 		maybeRunBootBootstrap(pm.InstallRoot())
 	}
-	if problem := checkRuntime(pm.InstallRoot()); problem != "" {
-		fmt.Fprintln(os.Stderr, "⚠ "+problem)
+	ctx := context.Background()
+	if err := selfupdate.NoteRuntimeOnce(ctx, home.Dir(ctx), pm.InstallRoot(), os.Stderr); err != nil {
+		pkgLog().Debug("pm startup check failed", "error", err)
 	}
 }
 
@@ -498,16 +499,6 @@ func recoverUpdateDebtsOnStartup() {
 // Runs the boot bootstrap when the install identity changed since the last recorded run
 func maybeRunBootBootstrap(projectRoot string) {
 	selfupdate.MaybeRunBootBootstrap(context.Background(), projectRoot)
-}
-
-// One passive PM verdict on every dispatch, the problem text or empty
-func checkRuntime(installRoot string) string {
-	problem, err := selfupdate.CheckRuntime(context.Background(), installRoot)
-	if err != nil {
-		pkgLog().Debug("pm startup check failed", "error", err)
-		return ""
-	}
-	return problem
 }
 
 func securityGroup(ctx context.Context, cli *commands.CLI, cmd *cobra.Command, path string, args []string) (int, error) {

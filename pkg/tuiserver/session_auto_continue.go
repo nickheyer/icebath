@@ -8,30 +8,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
-const autoContinueFreshnessMinutesDefault = 15
-
-// Enabled flag, freshness window in seconds and max attempts of sessions.auto_continue
+// Enabled flag, freshness window in seconds and max attempts of the session auto continue settings
 func autoContinueConfig(ctx context.Context) (bool, float64, int) {
-	cfg := map[string]any{}
-	if sessions, ok := loadCfg(ctx)["sessions"].(map[string]any); ok {
-		if ac, isMap := sessions["auto_continue"].(map[string]any); isMap {
-			cfg = ac
-		}
-	}
-	minutes := float64(autoContinueFreshnessMinutesDefault)
-	if raw, present := cfg["freshness_minutes"]; present {
-		if f, err := pyint.Float(raw); err == nil {
-			minutes = f
-		}
-	}
-	enabled := true
-	if raw, present := cfg["enabled"]; present && raw != nil {
-		enabled = isTruthyValue(raw)
-	}
-	return enabled, max(0.0, minutes) * 60.0, coerceIntConfigValue(cfg["max_attempts"], 2, 0)
+	freshness := max(0, settings.SessionsAutoContinueFreshnessMinutes.Get(ctx).Seconds())
+	return settings.SessionsAutoContinueEnabled.Get(ctx), freshness, settings.SessionsAutoContinueMaxAttempts.Get(ctx)
 }
 
 // Home the session's durable state lives in, its profile home else the launch home

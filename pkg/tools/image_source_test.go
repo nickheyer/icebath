@@ -65,7 +65,9 @@ func isrcEnv(t *testing.T, backend string) *Env {
 	if err := os.MkdirAll(h, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TERMINAL_ENV", backend)
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("terminal:\n  backend: "+backend+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ResetTerminalScopeCache()
 	return &Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}, Cwd: root}
 }

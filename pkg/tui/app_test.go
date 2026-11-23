@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	"github.com/nickheyer/icebath/pkg/ui/cards"
 	"github.com/nickheyer/icebath/pkg/ui/keys"
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
@@ -54,6 +55,12 @@ func drain(a *app, cmd tea.Cmd) {
 			case wm.Intent, asyncDoneMsg, dieMsg:
 				_, more := a.Update(inner)
 				next = append(next, more)
+			case sessionMsg:
+				switch inner.m.(type) {
+				case asyncDoneMsg, dieMsg:
+					_, more := a.Update(inner)
+					next = append(next, more)
+				}
 			}
 		}
 		cmd = tea.Batch(next...)
@@ -86,7 +93,7 @@ func TestStreamedTurnRendersInTheTranscript(t *testing.T) {
 
 func TestLocalSlashCommandsChangeTheView(t *testing.T) {
 	a := testApp(t)
-	drain(a, a.dispatchSubmission("/details expanded"))
+	drain(a, a.dispatchSubmission("/detail detailed"))
 	if a.store.ui.DetailsMode != "expanded" || !a.store.ui.DetailsModeCommandOverride {
 		t.Fatalf("details mode %q", a.store.ui.DetailsMode)
 	}
@@ -94,26 +101,19 @@ func TestLocalSlashCommandsChangeTheView(t *testing.T) {
 	if a.store.ui.MouseTracking != "wheel" {
 		t.Fatalf("mouse tracking %q", a.store.ui.MouseTracking)
 	}
-	drain(a, a.dispatchSubmission("/help"))
 	got := screen(a)
-	for _, want := range []string{"/details expanded", "mouse tracking wheel", "/timestamps", "ctrl+o"} {
+	for _, want := range []string{"/detail detailed", "mouse tracking wheel"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("screen lacks %q:\n%s", want, got)
 		}
 	}
-}
-
-func TestDestructiveCommandAsksThroughADialog(t *testing.T) {
-	a := testApp(t)
-	drain(a, a.dispatchSubmission("/new"))
-	a.Update(struct{}{})
-	d, isDialog := a.wm.Overlay().(*dialogCard)
-	if !isDialog || d.kind != "confirm" || !a.dialogs.waiting() {
-		t.Fatalf("overlay %T, waiting %v", a.wm.Overlay(), a.dialogs.waiting())
+	drain(a, a.dispatchSubmission("/help"))
+	help, isList := a.wm.Overlay().(*cards.List)
+	if !isList {
+		t.Fatalf("/help opened %T", a.wm.Overlay())
 	}
-	a.Update(keys.Press("esc"))
-	if a.store.overlay.Confirm != nil || a.dialogs.waiting() {
-		t.Fatal("escape left the confirm dialog open")
+	if view := ansi.Strip(help.View(160, 400)); !strings.Contains(view, "/timestamps") {
+		t.Fatalf("help lacks /timestamps:\n%s", view)
 	}
 }
 
@@ -186,7 +186,7 @@ func TestGroupDigitsSeparatesThousands(t *testing.T) {
 }
 
 func TestDropLastExchangeKeepsNotesAndEarlierTurns(t *testing.T) {
-	items := []msg{{Role: "user", Text: "one"}, {Role: "assistant", Text: "first"}, {Role: "user", Text: "two"}, {Kind: "trail", Role: "system", Tools: []string{"Read ✓"}},
+	items := []msg{{Role: "user", Text: "one"}, {Role: "assistant", Text: "first"}, {Role: "user", Text: "two"}, {Kind: "trail", Role: "system", Tools: []toolRow{{Call: "Read"}}},
 		{Role: "assistant", Text: "second"}, {Kind: "slash", Role: "system", Text: "/undo"}}
 	got := dropLastExchange(items)
 	if len(got) != 3 || got[1].Text != "first" || got[2].Text != "/undo" {

@@ -55,8 +55,42 @@ func (d *SessionDB) UpdateSessionMeta(ctx context.Context, sessionID, modelConfi
 	if model != nil {
 		modelArg = *model
 	}
-	return d.writeSQL(ctx, "UPDATE sessions SET model_config = ?, model = COALESCE(?, model) WHERE id = ?",
-		[]any{modelConfigJSON, modelArg, sessionID}, false, nil)
+	return d.executeWrite(ctx, func(conn SQLiteConn) error {
+		row, err := connRow(ctx, conn, "SELECT model_config FROM sessions WHERE id = ?", sessionID)
+		if err != nil {
+			return err
+		}
+		text := modelConfigJSON
+		if row != nil {
+			if text, err = keepSessionOwnedConfig(modelConfigJSON, row["model_config"]); err != nil {
+				return err
+			}
+		}
+		_, err = conn.ExecContext(ctx, "UPDATE sessions SET model_config = ?, model = COALESCE(?, model) WHERE id = ?", text, modelArg, sessionID)
+		return err
+	}, nil)
+}
+
+// model_config keys their own writers change in place, a whole config rewrite keeping what the row holds and only filling what it lacks
+var sessionOwnedConfigKeys = []string{"logins", "login_on_exhausted", "login_wait", SessionSettingsKey}
+
+// Config text with the session owned keys the stored config holds laid over it
+func keepSessionOwnedConfig(next string, stored any) (string, error) {
+	current := parseModelConfigValue(stored)
+	incoming := parseModelConfigValue(next)
+	changed := false
+	for _, key := range sessionOwnedConfigKeys {
+		was, held := current.Get(key)
+		now, has := incoming.Get(key)
+		if held && (!has || !pyjson.Equal(was, now)) {
+			incoming.Set(key, was)
+			changed = true
+		}
+	}
+	if !changed {
+		return next, nil
+	}
+	return pyjson.Dumps(incoming)
 }
 
 // Browser or API client runtime lock fields, nil strings meaning unset

@@ -52,7 +52,6 @@ type ctxOverflowWarnKey struct {
 type statusOutputState struct {
 	outputCtx             atomic.Pointer[context.Context]
 	notificationPlatform  *string
-	notificationConfig    map[string]any
 	pendingStartupPrints  []string
 	pendingStartupNotices []provider.AgentNotice
 	lastCtxOverflowWarn   *ctxOverflowWarnKey
@@ -83,9 +82,9 @@ func deliverKeptStartupNotices(ctx context.Context, a *AIAgent) {
 	}
 }
 
-// Pins the per turn presentation platform and user config the gateway resolves for warnings
-func (a *AIAgent) SetNotificationPresentation(platform string, userConfig map[string]any) {
-	a.notificationPlatform, a.notificationConfig = &platform, userConfig
+// Pins the per turn presentation platform the gateway resolves warnings for
+func (a *AIAgent) SetNotificationPresentation(platform string) {
+	a.notificationPlatform = &platform
 }
 
 // Queues the one shot fallback switch lines surfaced on recovery or folded into the flushed trace
@@ -228,7 +227,7 @@ func (a *AIAgent) warningPresentationEnabled() (enabled bool) {
 			enabled = true
 		}
 	}()
-	return warningNotificationsEnabled(a.homeContext(), platform, a.notificationConfig)
+	return warningNotificationsEnabled(a.homeContext(), platform)
 }
 
 var warningNotificationsEnabled = config.WarningNotificationsEnabled

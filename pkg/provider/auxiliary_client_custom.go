@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -293,14 +294,12 @@ func auxTryAzureFoundry(ctx context.Context, model string, explicitAPIKey any, e
 	}
 	requested := model
 	if requested == "" {
-		if v := modelCfg["default"]; pyrepr.Truthy(v) {
-			requested = pyrepr.Str(v)
-		}
+		requested = settings.Model.Get(ctx)
 	}
 	finalModel := auxNormalizeResolvedModel(ctx, requested, "azure-foundry")
 	if finalModel == "" {
 		pkgLog().Debug(fmt.Sprintf("Auxiliary azure-foundry: no model resolved (model=%s, default=%s)",
-			pyrepr.Repr(auxNoneIfEmpty(model)), pyrepr.Repr(modelCfg["default"])))
+			pyrepr.Repr(auxNoneIfEmpty(model)), pyrepr.Repr(settings.Model.Get(ctx))))
 		return nil, "", nil
 	}
 	cleanBase, query, err := auxExtractURLQueryParams(baseURL)
@@ -372,14 +371,10 @@ func auxTryAnthropic(ctx context.Context, explicitAPIKey any, explicitBaseURL st
 	if poolPresent {
 		baseURL = auxPoolRuntimeBaseURL(ctx, entry, auxAnthropicDefaultBaseURL)
 	}
-	if cfg, err := auxLoadConfigReadonlyFn(ctx); err == nil {
-		if modelCfg, ok := cfg["model"].(map[string]any); ok && pystr.Lower(pystr.Strip(auxOrEmptyStr(modelCfg["provider"]))) == "anthropic" {
-			if raw, ok := modelCfg["base_url"].(string); ok || !pyrepr.Truthy(modelCfg["base_url"]) {
-				cfgBaseURL := strings.TrimRight(pystr.Strip(raw), "/")
-				if cfgBaseURL != "" && auxIsAnthropicCompatibleHost(cfgBaseURL) {
-					baseURL = cfgBaseURL
-				}
-			}
+	if pystr.Lower(pystr.Strip(settings.ModelProvider.Get(ctx))) == "anthropic" {
+		cfgBaseURL := strings.TrimRight(pystr.Strip(settings.ModelBaseURL.Get(ctx)), "/")
+		if cfgBaseURL != "" && auxIsAnthropicCompatibleHost(cfgBaseURL) {
+			baseURL = cfgBaseURL
 		}
 	}
 	if overrideURL := strings.TrimRight(pystr.Strip(explicitBaseURL), "/"); overrideURL != "" {

@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Proxy env vars that delegate DNS to the proxy when set
@@ -218,23 +219,9 @@ func inAny(ip netip.Addr, nets []netip.Prefix) bool {
 	return false
 }
 
-// Resolves the private url toggle from the env override then config
+// Whether the web tools may open local and private network addresses
 func allowPrivateURLs(env *Env) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_ALLOW_PRIVATE_URLS"))) {
-	case "true", "1", "yes":
-		return true
-	case "false", "0", "no":
-		return false
-	}
-	if env == nil || env.Config == nil {
-		return false
-	}
-	for _, section := range []string{"security", "browser"} {
-		if truthyValue(env.Config.Sub(section).Get("allow_private_urls"), false) {
-			return true
-		}
-	}
-	return false
+	return settings.SecurityAllowPrivateUrls.Get(envHomeCtx(context.Background(), env))
 }
 
 // CIDR blocks the local proxy answers DNS with, undeclarable ranges dropped with a warning

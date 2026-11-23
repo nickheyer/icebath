@@ -3,8 +3,13 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -89,7 +94,84 @@ func shellExec(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	if err != nil {
 		return nil, err
 	}
+	if err := keepShellLine(a.ProfileID, ref.SessionID, shellLine{At: float64(time.Now().UnixMicro()) / 1e6, Command: command, Result: result}); err != nil {
+		pkgLog().Warn(fmt.Sprintf("shell line of session %s not kept for its transcript: %v", ref.SessionID, err))
+	}
 	return tuigateway.Plain(result), nil
+}
+
+// Shell line a person ran in a session, kept beside its stored rows for the transcript and never part of what the model reads
+type shellLine struct {
+	At      float64                    `json:"at"`
+	Command string                     `json:"command"`
+	Result  tuigateway.ShellExecResult `json:"result"`
+}
+
+// File of the shell lines of a session in the profile's sessions folder
+func shellLinesPath(profileHome, sessionID string) string {
+	return filepath.Join(home.SessionsDir(profileHome), sessionID+".shell.jsonl")
+}
+
+// Appends a shell line to the session's file
+func keepShellLine(profileHome, sessionID string, line shellLine) error {
+	data, err := json.Marshal(line)
+	if err != nil {
+		return err
+	}
+	path := shellLinesPath(profileHome, sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+// Display rows with the session's shell lines placed among them by time, each a shell row carrying the command and what it printed
+func withShellLines(rows []any, profileHome, sessionID string) ([]any, error) {
+	data, err := os.ReadFile(shellLinesPath(profileHome, sessionID))
+	if errors.Is(err, os.ErrNotExist) {
+		return rows, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var lines []shellLine
+	for _, raw := range bytes.Split(data, []byte("\n")) {
+		if len(bytes.TrimSpace(raw)) == 0 {
+			continue
+		}
+		var line shellLine
+		if err := json.Unmarshal(raw, &line); err != nil {
+			return nil, err
+		}
+		lines = append(lines, line)
+	}
+	out := make([]any, 0, len(rows)+len(lines))
+	next := 0
+	place := func(before float64) {
+		for ; next < len(lines) && lines[next].At < before; next++ {
+			line := lines[next]
+			out = append(out, map[string]any{"role": "user", "text": line.Command, "display_kind": "shell", "timestamp": line.At,
+				"shell": tuigateway.Plain(line.Result)})
+		}
+	}
+	for _, row := range rows {
+		if m, isRow := row.(map[string]any); isRow {
+			if ts, isNumber := m["timestamp"].(float64); isNumber {
+				place(ts)
+			}
+		}
+		out = append(out, row)
+	}
+	place(math.Inf(1))
+	return out, nil
 }
 
 // Python text mode newline translation of captured output

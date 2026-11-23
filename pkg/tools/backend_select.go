@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,22 +9,25 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const defaultBrowserProvider = "local"
 
-var extraSelectionKeys = map[string][]string{"web": {"search_backend", "extract_backend"}}
-var defaultNameKeys = []string{"provider", "backend", "cloud_provider"}
-var selectionNameKeys = map[string][]string{
-	"browser": {"cloud_provider"}, "web": {"backend"},
-	"image_gen": defaultNameKeys, "video_gen": defaultNameKeys, "tts": defaultNameKeys, "stt": defaultNameKeys,
+// Setting holding the provider choice of each section the tools picker writes
+var selectionKeys = map[string]string{
+	"browser": settings.BrowserCloudProvider.Key, "web": settings.WebSearch.Key, "image_gen": settings.ImageGenProvider.Key,
+	"video_gen": settings.VideoGenProvider.Key, "tts": settings.SpeechVoice.Key, "stt": settings.RecognitionService.Key,
 }
+
+// Settings pinning one web capability to its own backend
+var webCapabilityKeys = map[string]string{"search": settings.WebSearchBackend.Key, "extract": settings.WebExtractBackend.Key}
 
 // PoolKeySource answers the credential pool reads of the provider key resolver, installed by the provider wiring
 type PoolKeySource interface {
 	// Whether auth remove recorded the source as suppressed for the provider
 	SourceSuppressed(env *Env, providerID, source string) bool
-	// Runtime key else access token of the first pooled credential of the pool key, empty when none
+	// Runtime key else access token of the profile default login of the pool key, empty when none
 	PoolAPIKey(env *Env, providerID string) string
 }
 
@@ -113,7 +117,7 @@ func envSourceSuppressed(env *Env, providerID, envVar string) bool {
 	return PoolKeys.SourceSuppressed(env, providerID, "env:"+envVar)
 }
 
-// ResolveProviderSecret resolves a voice provider key through config, scope, .env, then the credential pool
+// ResolveProviderSecret resolves a voice provider key through config, scope, .env, then the profile default login of the credential pool
 func ResolveProviderSecret(env *Env, envVar, providerID, configValue string, envGetter func(string) string) string {
 	if key := pystr.Strip(configValue); key != "" {
 		return key
@@ -156,18 +160,6 @@ func ResolveOpenAIAudioAPIKey(env *Env) string {
 	return ResolveProviderSecret(env, "OPENAI_API_KEY", "openai-api", "", nil)
 }
 
-// SelectionConfigKeys lists the dotted config keys the selection readers honour
-func SelectionConfigKeys() map[string]bool {
-	out := map[string]bool{}
-	for section, nameKeys := range selectionNameKeys {
-		keys := append(append([]string(nil), nameKeys...), extraSelectionKeys[section]...)
-		for _, k := range keys {
-			out[section+"."+k] = true
-		}
-	}
-	return out
-}
-
 // Reads the raw unmerged user config document as a tree
 func readRawConfig(env *Env) (config.Tree, error) {
 	if env == nil || env.Home == "" {
@@ -180,44 +172,28 @@ func readRawConfig(env *Env) (config.Tree, error) {
 	return config.Tree(doc), nil
 }
 
-func rawSection(env *Env, section string) map[string]any {
-	raw, err := readRawConfig(env)
-	if err != nil {
-		return nil
-	}
-	m, ok := raw[section].(map[string]any)
-	if !ok {
-		return nil
-	}
-	return m
-}
-
-// ReadSelection returns the persisted tools selection for a section, a vendor, or empty
-func ReadSelection(env *Env, section string) string {
-	raw := rawSection(env, section)
-	if raw == nil {
+// Lowercased value of a setting the user stored, empty when it holds only its default
+func storedChoice(env *Env, key string) string {
+	v, err := settings.Resolve(envHomeCtx(context.Background(), env), key)
+	if err != nil || v.Source == settings.SourceDefault {
 		return ""
 	}
-	keys, ok := selectionNameKeys[section]
+	return pystr.Lower(pystr.Strip(pyOrStr(v.Value)))
+}
+
+// ReadSelection returns the provider choice stored for a section, empty when none was chosen
+func ReadSelection(env *Env, section string) string {
+	key, ok := selectionKeys[section]
 	if !ok {
-		keys = defaultNameKeys
+		return ""
 	}
-	for _, key := range keys {
-		if raw[key] == nil {
-			continue
-		}
-		if text := pystr.Lower(pystr.Strip(pyrepr.Str(raw[key]))); text != "" {
-			return text
-		}
-	}
-	return ""
+	return storedChoice(env, key)
 }
 
 // ReadWebCapabilitySelection returns the selection deciding one web capability
 func ReadWebCapabilitySelection(env *Env, capability string) string {
-	if capability != "" {
-		raw := rawSection(env, "web")
-		if pin := pystr.Lower(pystr.Strip(pyOrStr(raw[capability+"_backend"]))); pin != "" {
+	if key, ok := webCapabilityKeys[capability]; ok {
+		if pin := storedChoice(env, key); pin != "" {
 			return pin
 		}
 	}
@@ -229,16 +205,11 @@ func SelectionExists(env *Env, section string) bool {
 	if ReadSelection(env, section) != "" {
 		return true
 	}
-	extra := extraSelectionKeys[section]
-	if len(extra) == 0 {
+	if section != "web" {
 		return false
 	}
-	raw := rawSection(env, section)
-	if raw == nil {
-		return false
-	}
-	for _, key := range extra {
-		if pystr.Strip(pyOrStr(raw[key])) != "" {
+	for _, key := range webCapabilityKeys {
+		if storedChoice(env, key) != "" {
 			return true
 		}
 	}

@@ -15,14 +15,10 @@ import (
 
 // Collaborators the config facade runs from packages that import config
 type FacadeHooks struct {
-	ApplyUserMoAPresets func(merged map[string]any, raw any)
-	SkipDeepMerge       func(prefix, key string) bool
-	IsPresetFieldPath   func(parts []string) bool
-	Stamp               func() StampHooks
-	DotenvUnreadable    func(path string) bool
-	ExtraEnvKeys        func() []string
-	// Ladder collaborators owned by provider and tools, the facade fills its own readers and writers
-	Migration                   func(h string) MigrationSources
+	ApplyUserMoAPresets         func(merged map[string]any, raw any)
+	SkipDeepMerge               func(prefix, key string) bool
+	DotenvUnreadable            func(path string) bool
+	ExtraEnvKeys                func() []string
 	MaskedSecretPrompt          func(prompt string) (string, error)
 	ScopedSecret                func(ctx context.Context, key string) (string, bool, error)
 	SecretScopeBound            func(ctx context.Context) bool
@@ -56,14 +52,6 @@ func hooks() FacadeHooks {
 	facadeMu.RLock()
 	defer facadeMu.RUnlock()
 	return facadeHooks
-}
-
-// Runtime key owners with the moa preset field rule the facade registration supplies
-func FacadeRuntimeKeyOwners(owners RuntimeKeyOwners) RuntimeKeyOwners {
-	if owners.IsPresetFieldPath == nil {
-		owners.IsPresetFieldPath = hooks().IsPresetFieldPath
-	}
-	return owners
 }
 
 // Records the loaded profile redaction policy when a policy recorder is installed
@@ -290,12 +278,7 @@ func mergeManagedOverlay(expanded map[string]any) (map[string]any, map[string]an
 	if len(managed) == 0 {
 		return expanded, nil
 	}
-	normalized := normalizeModelKeys(managed)
-	if model, ok := normalized["model"].(string); ok {
-		normalized = Clone(normalized).(map[string]any)
-		normalized["model"] = map[string]any{"default": model}
-	}
-	return DeepMerge(expanded, Expand(normalized, processLookup).(map[string]any)), managed
+	return DeepMerge(expanded, Expand(managed, processLookup).(map[string]any)), managed
 }
 
 // Last good config served after a parse failure, nil when there is none and defaults apply

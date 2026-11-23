@@ -212,7 +212,7 @@ func warnInvalidConfigInt(ctx context.Context, what string, value any, requireme
 			enabled = a.warningPresentationEnabled()
 			return
 		}
-		enabled = warningNotificationsEnabled(ctx, "cli", nil)
+		enabled = warningNotificationsEnabled(ctx, "cli")
 	}()
 	if !enabled {
 		return

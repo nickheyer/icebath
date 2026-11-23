@@ -360,25 +360,6 @@ func TestEmitSessionDeletedPayloadAndProfileRebind(t *testing.T) {
 	}
 }
 
-func TestRoutedSessionsSetting(t *testing.T) {
-	t.Setenv("ICEBATH_TEST_ROUTED", "env-value")
-	if got := RoutedSessionsSetting(context.Background(), "auto_prune", "ICEBATH_TEST_ROUTED"); got != "env-value" {
-		t.Fatalf("unscoped %v", got)
-	}
-	if got := RoutedSessionsSetting(context.Background(), "auto_prune", "ICEBATH_TEST_ROUTED_UNSET"); got != nil {
-		t.Fatalf("unset %v", got)
-	}
-	served := t.TempDir()
-	os.WriteFile(home.ConfigPath(served), []byte("sessions:\n  zz_routed_key: 7\n"), 0o644)
-	ctx := home.WithOverride(context.Background(), served)
-	if got := RoutedSessionsSetting(ctx, "zz_routed_key", "ICEBATH_TEST_ROUTED"); got != 7 {
-		t.Fatalf("served profile %#v", got)
-	}
-	if got := RoutedSessionsSetting(ctx, "zz_absent_key", "ICEBATH_TEST_ROUTED"); got != nil {
-		t.Fatalf("absent %#v", got)
-	}
-}
-
 func TestScaffoldLikePatternsCarryNoWildcards(t *testing.T) {
 	for _, pattern := range []string{SkillScaffoldSQLLike, AutoLoadScaffoldSQLLike} {
 		literal, found := strings.CutSuffix(pattern, "%")

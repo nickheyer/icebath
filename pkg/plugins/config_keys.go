@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Names the plugins.disabled list of a home parks
@@ -17,12 +17,8 @@ func DisabledPlugins(h string) map[string]bool {
 	return disabledPlugins(loadConfigOrEmpty(h))
 }
 
-// Manifests the loader would activate plus the selected memory provider, as config key owners
-func ActiveConfigKeyManifests(h string) []config.PluginConfigKeys {
-	cfg := loadConfigOrEmpty(h)
-	disabled := disabledPlugins(cfg)
-	enabled, enabledPresent := enabledPlugins(cfg)
-	var out []config.PluginConfigKeys
+// Registers the settings blocks every discovered plugin and the selected memory provider declare
+func RegisterActiveSettings(h string) {
 	manifests := CollectDirectoryManifests(h)
 	directoryKeys := map[string]bool{}
 	for _, m := range manifests {
@@ -33,18 +29,10 @@ func ActiveConfigKeyManifests(h string) []config.PluginConfigKeys {
 			manifests = append(manifests, m)
 		}
 	}
-	winners := ResolveManifestWinners(manifests)
-	for _, key := range sortedKeys(winners) {
-		m := winners[key]
-		gate := GateManifest(h, m, disabled, enabled, enabledPresent)
-		if (gate.Action != "placeholder" || gate.Enabled) && RequiresVersionError(m.RequiresIcebath) == "" {
-			out = append(out, config.PluginConfigKeys{Name: m.Name, ConfigKeys: m.ConfigKeys})
-		}
+	ResolveManifestWinners(manifests)
+	if m := selectedMemoryProviderManifest(h, loadConfigOrEmpty(h)); m != nil {
+		settings.RegisterPluginKeys(m.Name, m.ConfigKeys)
 	}
-	if m := selectedMemoryProviderManifest(h, cfg); m != nil {
-		out = append(out, config.PluginConfigKeys{Name: m.Name, ConfigKeys: m.ConfigKeys})
-	}
-	return out
 }
 
 // Manifest of the memory provider memory.provider selects unless missing or parked in plugins.disabled

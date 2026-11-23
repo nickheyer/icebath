@@ -311,7 +311,7 @@ var (
 // Starts the gateway and runs until interrupted, false when it failed to start so supervisors restart it
 func StartGateway(ctx context.Context, o StartGatewayOptions) (bool, error) {
 	os.Setenv("ICEBATH_EXEC_ASK", "1")
-	if err := startGatewayResolveTerminalCwd(); err != nil {
+	if err := startGatewayResolveTerminalCwd(ctx); err != nil {
 		return false, err
 	}
 	gateway.ApplyNofileSoftLimit(nil)

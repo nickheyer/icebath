@@ -7,12 +7,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -32,19 +31,8 @@ var (
 		".adoc": true, ".asciidoc": true, ".org": true, ".log": true, ".csv": true, ".tsv": true}
 	nonCodeVerifyFilenames = map[string]bool{"license": true, "licence": true, "notice": true, "authors": true,
 		"contributors": true, "changelog": true, "codeowners": true}
-	verifyFalsyTokens  = map[string]bool{"0": true, "false": true, "no": true, "off": true}
 	verifyTruthyTokens = map[string]bool{"1": true, "true": true, "yes": true, "on": true}
 )
-
-// Readonly profile config the verify on stop switch reads, swapped by tests
-var verifyOnStopConfig = func(ctx context.Context) map[string]any {
-	h := home.Dir(ctx)
-	tree, err := config.LoadReadonly(ctx, h, config.NewSecrets(h).Lookup())
-	if err != nil {
-		return map[string]any{}
-	}
-	return tree
-}
 
 // True when a changed path is documentation or prose with nothing to verify
 func isNonCodeVerifyPath(raw string) bool {
@@ -52,27 +40,23 @@ func isNonCodeVerifyPath(raw string) bool {
 	return nonCodeVerifyExtensions[suffix] || (suffix == "" && nonCodeVerifyFilenames[pystr.Lower(pypath.PathName(raw))])
 }
 
-// Edit then verify before finish switch from the env var, then agent.verify_on_stop, default off
-func verifyOnStopEnabled(ctx context.Context, env *tools.Env, cfg map[string]any) bool {
-	if v, ok := os.LookupEnv("ICEBATH_VERIFY_ON_STOP"); ok {
-		return !verifyFalsyTokens[pystr.Lower(pystr.Strip(v))]
+// Edit then verify before finish switch from agent.verify_on_stop, auto meaning on outside chat apps
+func verifyOnStopEnabled(ctx context.Context, env *tools.Env) bool {
+	v, err := settings.Resolve(ctx, settings.AgentVerifyOnStop.Key)
+	if err != nil {
+		return false
 	}
-	if cfg == nil {
-		cfg = verifyOnStopConfig(ctx)
+	switch t := v.Value.(type) {
+	case bool:
+		return t
+	case string:
+		token := pystr.Lower(pystr.Strip(t))
+		if token == "auto" {
+			return !tools.SessionIsMessagingSurface(env)
+		}
+		return verifyTruthyTokens[token]
 	}
-	agentCfg, _ := cfg["agent"].(map[string]any)
-	cfgVal := agentCfg["verify_on_stop"]
-	if b, ok := cfgVal.(bool); ok {
-		return b
-	}
-	token := ""
-	if s, ok := cfgVal.(string); ok {
-		token = pystr.Lower(pystr.Strip(s))
-	}
-	if token == "auto" {
-		return !tools.SessionIsMessagingSurface(env)
-	}
-	return verifyTruthyTokens[token]
+	return false
 }
 
 // Distinct resolved directories of the edited paths in order, a file's parent for files

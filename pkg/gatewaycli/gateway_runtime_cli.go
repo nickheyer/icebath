@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -34,24 +33,13 @@ func noneIfEmpty(s string) any {
 	return s
 }
 
-// asdict of an ensure verdict with the endpoint capabilities as a sorted list
+// asdict of an ensure verdict and its endpoint
 func ensurePayload(result gateway.ObservedEndpoint) *pyjson.Object {
 	payload := pyjson.NewObject()
 	payload.Set("state", result.State)
 	payload.Set("reason_code", noneIfEmpty(result.ReasonCode))
 	payload.Set("detail", noneIfEmpty(result.Detail))
 	if ep := result.Endpoint; ep != nil {
-		caps := make([]any, 0, len(ep.Capabilities))
-		names := make([]string, 0, len(ep.Capabilities))
-		for name, on := range ep.Capabilities {
-			if on {
-				names = append(names, name)
-			}
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			caps = append(caps, name)
-		}
 		endpoint := pyjson.NewObject()
 		endpoint.Set("profile_id", ep.ProfileID)
 		endpoint.Set("instance_id", ep.InstanceID)
@@ -59,7 +47,6 @@ func ensurePayload(result gateway.ObservedEndpoint) *pyjson.Object {
 		endpoint.Set("runtime_protocol", int64(ep.RuntimeProtocol))
 		endpoint.Set("api_origin", ep.APIOrigin)
 		endpoint.Set("supervisor", ep.Supervisor)
-		endpoint.Set("capabilities", caps)
 		endpoint.Set("control_home", noneIfEmpty(ep.ControlHome))
 		endpoint.Set("code_sha", noneIfEmpty(ep.CodeSHA))
 		payload.Set("endpoint", endpoint)

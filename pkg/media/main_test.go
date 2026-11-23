@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -22,8 +21,5 @@ func TestMain(m *testing.M) {
 	tools.BundledPlatformSecretEnvs = func() []string { return nil }
 	tools.ConfigEnvTableKeys = func() []string { return nil }
 	tools.RegisteredAdapterSecretEnv = func(*tools.Env) map[string]bool { return map[string]bool{} }
-	if provider.GatewayHooks.BridgedAllowAllUsers == nil {
-		provider.GatewayHooks.BridgedAllowAllUsers = func() (string, bool) { return "", false }
-	}
 	os.Exit(m.Run())
 }

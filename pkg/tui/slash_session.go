@@ -39,7 +39,7 @@ func (r *slashRun) maybeWarn(res *tuigateway.ConfigSetResult) {
 // Session commands, background prompts, the model, session switching and the per session switches
 func (a *app) sessionCommands() []slashCommand {
 	return []slashCommand{
-		{name: "bg", aliases: []string{"background"}, help: "launch a background prompt", usage: "<prompt>", run: func(r *slashRun) tea.Cmd {
+		{name: "bg", help: "launch a background prompt", usage: "<prompt>", run: func(r *slashRun) tea.Cmd {
 			if r.arg == "" {
 				r.sys(tr(txt.SlashCmdSessionBgUsage))
 				return nil
@@ -77,70 +77,14 @@ func (a *app) sessionCommands() []slashCommand {
 				return a.loadModelPicker(false)
 			case arg == "--refresh":
 				return a.loadModelPicker(true)
-			case a.gw.canonical():
-				if r.sid == "" {
-					r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
-					return nil
-				}
-				return r.canonicalModel(arg, "")
+			case r.sid == "":
+				r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
+				return nil
 			}
-			value := arg
-			if strings.Contains(arg, tuiSessionModelFlag) {
-				value = sessionScopedModelArg(arg)
-			}
-			var switchModel func(confirmed bool) tea.Cmd
-			switchModel = func(confirmed bool) tea.Cmd {
-				params := tuigateway.ConfigSetParams{ConfirmExpensiveModel: confirmed, Key: "model", SessionID: r.sid, Value: tuigateway.TextValue(value)}
-				return ask(r.rpc, r.sys, tuigateway.ConfigSet, params, func(res *tuigateway.ConfigSetResult) tea.Cmd {
-					if res == nil {
-						return nil
-					}
-					if res.ConfirmRequired {
-						detail := tr(txt.SlashCmdSessionModelExpensiveDetail)
-						for _, s := range []string{res.Warning, res.ConfirmMessage} {
-							if s != "" {
-								detail = s
-							}
-						}
-						a.store.overlay.Confirm = &confirmReq{CancelLabel: tr(txt.SlashCmdSessionModelCancel), ConfirmLabel: tr(txt.SlashCmdSessionModelSwitchAnyway),
-							Danger: true, Detail: detail, OnConfirm: func() tea.Cmd { return switchModel(true) }, Title: tr(txt.SlashCmdSessionModelExpensiveTitle)}
-						return nil
-					}
-					model := setWord(res)
-					if model == "" {
-						r.sys(misfitText(tr(txt.SlashCmdSessionModelInvalidResponse)))
-						return nil
-					}
-					if res.Deferred {
-						r.sys(tr(txt.SlashCmdSessionModelSwitchedDeferred, model))
-					} else {
-						r.sys(tr(txt.SlashCmdSessionModelSwitched, model))
-					}
-					r.maybeWarn(res)
-					a.store.ui.Info = patchedInfo(a.store.ui.Info, tuigateway.SessionInfo{Model: &model})
-					return nil
-				})
-			}
-			return switchModel(false)
-		}},
-		{name: "sessions", aliases: []string{"switch", "session", "resume"}, help: "browse, switch, or resume sessions", usage: "[new|session id]", run: func(r *slashRun) tea.Cmd {
-			arg := trimJS(r.arg)
-			switch {
-			case strings.EqualFold(arg, "new"):
-				return a.life.newLiveSession("", "", nil)
-			case arg != "":
-				if a.life.guardBusySessionSwitch(tr(txt.SlashCmdSessionSessionsBusyGuardAction)) {
-					return nil
-				}
-				return a.resumeByID(arg, nil)
-			}
-			return a.openSessionSwitcher()
+			return r.canonicalModel(arg, "")
 		}},
 		{name: "personality", help: "switch personality for this session", usage: "[name]", run: func(r *slashRun) tea.Cmd {
 			if r.arg == "" {
-				if !a.gw.canonical() {
-					return nil
-				}
 				return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: "personality", SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
 					if res != nil && res.Output != "" {
 						r.sys(res.Output)
@@ -169,7 +113,7 @@ func (a *app) sessionCommands() []slashCommand {
 				return nil
 			})
 		}},
-		{name: "theme", help: "terminal UI color mode", usage: "[auto|light|dark]", suggest: func(string) []string { return []string{"auto", "light", "dark"} }, run: func(r *slashRun) tea.Cmd {
+		{name: "theme", help: "light, dark, or match the terminal", usage: "[auto|light|dark]", suggest: func(string) []string { return []string{"auto", "light", "dark"} }, run: func(r *slashRun) tea.Cmd {
 			value := strings.ToLower(trimJS(r.arg))
 			if value == "" {
 				return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "theme"}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
@@ -193,7 +137,7 @@ func (a *app) sessionCommands() []slashCommand {
 				return a.store.applyConfiguredTuiTheme(tuigateway.ThemeMode(value))
 			})
 		}},
-		{name: "skin", help: "switch the theme skin", usage: "[name]", run: func(r *slashRun) tea.Cmd {
+		{name: "skin", help: "the color palette and symbols drawn on top of the theme", usage: "[name]", run: func(r *slashRun) tea.Cmd {
 			if r.arg == "" {
 				return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "skin"}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
 					current := configWord(res)
@@ -235,12 +179,21 @@ func (a *app) sessionCommands() []slashCommand {
 				return nil
 			})
 		}},
-		{name: "yolo", help: "toggle yolo mode, approvals off for this session", run: func(r *slashRun) tea.Cmd {
+		{name: "approvals", help: "whether the agent asks before risky commands, for good or --session", usage: "[manual|smart|off] [--session]",
+			suggest: func(string) []string { return []string{"manual", "smart", "off", "--session"} }, run: func(r *slashRun) tea.Cmd { return a.approvalsSlash(r) }},
+		{name: "pause", help: "emergency stop: no new work starts until /resume", usage: "[reason]", run: func(r *slashRun) tea.Cmd {
+			return r.forward(strings.TrimSpace("pause "+trimJS(r.arg)), tr(txt.SlashCmdSessionPauseTitle))
+		}},
+		{name: "resume", help: "lift the emergency stop /pause set", run: func(r *slashRun) tea.Cmd {
+			return r.forward("pause off", tr(txt.SlashCmdSessionPauseTitle))
+		}},
+		{name: "yolo", help: "approvals off for this session, or on again; /approvals sets the lasting mode", run: func(r *slashRun) tea.Cmd {
 			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "yolo", SessionID: r.sid}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
 				if res == nil {
 					return nil
 				}
-				if setWord(res) == "1" {
+				a.store.ui.Yolo = setWord(res) == "1"
+				if a.store.ui.Yolo {
 					r.sys(tr(txt.SlashCmdSessionYoloOn))
 				} else {
 					r.sys(tr(txt.SlashCmdSessionYoloOff))
@@ -248,75 +201,57 @@ func (a *app) sessionCommands() []slashCommand {
 				return nil
 			})
 		}},
-		{name: "reasoning", help: "inspect or set reasoning effort", usage: "[effort|show|hide] [--global]", run: func(r *slashRun) tea.Cmd {
-			if r.arg == "" {
-				return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "reasoning", SessionID: r.sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
-					if res == nil {
+		{name: "reasoning", help: "how long the model thinks before answering", usage: "[none|minimal|low|medium|high|xhigh|max|ultra] [--global]",
+			suggest: func(string) []string { return append(append([]string{"none"}, reasoningLadder...), "--global") }, run: func(r *slashRun) tea.Cmd {
+				if r.arg == "" {
+					return tea.Batch(r.ran(), ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "reasoning", SessionID: r.sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
+						if value := configWord(res); value != "" {
+							r.sys(tr(txt.SlashCmdSessionReasoningCurrent, value))
+						}
 						return nil
-					}
-					value, display := configWord(res), res.Display
-					if display == "" {
-						display = "hide"
-					}
-					if value != "" {
-						r.sys(tr(txt.SlashCmdSessionReasoningCurrentWithDisplay, value, display))
-					}
-					return nil
-				}))
-			}
-			scope := ""
-			var values []string
-			for _, part := range strings.Fields(r.arg) {
-				switch strings.ToLower(part) {
-				case "--global":
-					scope = "global"
-				case "--session":
-					if scope == "" {
-						scope = "session"
-					}
-				default:
-					values = append(values, part)
+					}))
 				}
-			}
-			value := strings.Join(values, " ")
-			if effort := strings.ToLower(trimJS(value)); a.gw.canonical() && r.sid != "" && scope != "global" && canonicalReasoningEfforts[effort] {
-				return a.store.mutateCanonical(a.gw, r.sid, "reasoning", map[string]any{"effort": effort}, r.stale, func(m *mutationOutcome, err error) tea.Cmd {
-					if r.stale() {
+				scope := ""
+				var values []string
+				for _, part := range strings.Fields(r.arg) {
+					switch strings.ToLower(part) {
+					case "--global":
+						scope = "global"
+					case "--session":
+						if scope == "" {
+							scope = "session"
+						}
+					default:
+						values = append(values, part)
+					}
+				}
+				value := strings.Join(values, " ")
+				if effort := strings.ToLower(trimJS(value)); r.sid != "" && scope != "global" && canonicalReasoningEfforts[effort] {
+					return a.store.mutateCanonical(a.gw, r.sid, "reasoning", map[string]any{"effort": effort}, r.stale, func(m *mutationOutcome, err error) tea.Cmd {
+						if r.stale() {
+							return nil
+						}
+						if err != nil {
+							r.fail(err)
+							return nil
+						}
+						if m == nil {
+							return nil
+						}
+						r.sys(tr(txt.SlashCmdSessionReasoningCurrent, effort))
+						return r.ran()
+					})
+				}
+				params := tuigateway.ConfigSetParams{Key: "reasoning", SessionID: r.sid, Value: tuigateway.TextValue(value), Scope: tuigateway.ConfigWriteScope(scope)}
+				return ask(r.rpc, r.sys, tuigateway.ConfigSet, params, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+					set := setWord(res)
+					if set == "" {
 						return nil
 					}
-					if err != nil {
-						r.fail(err)
-						return nil
-					}
-					if m == nil {
-						return nil
-					}
-					r.sys(tr(txt.SlashCmdSessionReasoningCurrent, effort))
-					return r.ran()
+					r.sys(tr(txt.SlashCmdSessionReasoningCurrent, set))
+					return nil
 				})
-			}
-			params := tuigateway.ConfigSetParams{Key: "reasoning", SessionID: r.sid, Value: tuigateway.TextValue(value), Scope: tuigateway.ConfigWriteScope(scope)}
-			return ask(r.rpc, r.sys, tuigateway.ConfigSet, params, func(res *tuigateway.ConfigSetResult) tea.Cmd {
-				set := setWord(res)
-				if set == "" {
-					return nil
-				}
-				if set == "hide" || set == "show" {
-					sections := map[string]string{}
-					for k, v := range a.store.ui.Sections {
-						sections[k] = v
-					}
-					sections["thinking"] = "hidden"
-					if set == "show" {
-						sections["thinking"] = "expanded"
-					}
-					a.store.ui.Sections, a.store.ui.ShowReasoning = sections, set == "show"
-					a.card.view.invalidate()
-				}
-				r.sys(tr(txt.SlashCmdSessionReasoningCurrent, set))
-				return nil
-			})
-		}},
+			}},
 		{name: "fast", help: "toggle fast mode", usage: "[normal|fast|ultrafast|status|on|off|toggle]",
 			suggest: func(string) []string { return []string{"normal", "fast", "ultrafast", "status", "on", "off", "toggle"} },
 			run: func(r *slashRun) tea.Cmd {
@@ -351,10 +286,7 @@ func (a *app) sessionCommands() []slashCommand {
 			suggest: func(string) []string { return []string{"queue", "steer", "interrupt", "status"} },
 			run: func(r *slashRun) tea.Cmd {
 				mode := strings.ToLower(trimJS(r.arg))
-				sid := ""
-				if a.gw.canonical() {
-					sid = r.sid
-				}
+				sid := r.sid
 				switch mode {
 				case "", "status":
 					return ask(r.rpc, r.sys, tuigateway.ConfigGet, tuigateway.ConfigGetParams{Key: "busy", SessionID: sid}, func(res *tuigateway.ConfigGetResult) tea.Cmd {
@@ -388,17 +320,149 @@ func (a *app) sessionCommands() []slashCommand {
 					return nil
 				})
 			}},
-		{name: "verbose", help: "cycle verbose tool output", usage: "[mode]", run: func(r *slashRun) tea.Cmd {
-			value := r.arg
-			if value == "" {
-				value = "cycle"
-			}
-			return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "verbose", SessionID: r.sid, Value: tuigateway.TextValue(value)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
-				if set := setWord(res); set != "" {
-					r.sys(tr(txt.SlashCmdSessionVerboseCurrent, set))
-				}
-				return nil
-			})
-		}},
 	}
+}
+
+// Detail levels the /detail command takes, the least shown first
+var detailLevels = []string{"minimal", "normal", "detailed", "everything"}
+
+// Fold state every part of the transcript opens to at each detail level
+var detailFolds = map[string]string{"minimal": "hidden", "normal": "collapsed", "detailed": "expanded", "everything": "expanded"}
+
+// Words of a setting's value as its row names them, the value itself when no choice holds it
+func detailLabel(row tuigateway.SettingsRow) string {
+	value, _ := row.Value.(string)
+	for _, c := range row.Choices {
+		if c.Value == value {
+			return c.Label
+		}
+	}
+	return value
+}
+
+// /detail: says the detail level, or sets it for every session or with --session for this one, the transcript following at once
+func (a *app) detailSlash(r *slashRun) tea.Cmd {
+	level, scope := "", "global"
+	for _, word := range strings.Fields(strings.ToLower(r.arg)) {
+		switch {
+		case word == "--session":
+			scope = "session"
+		case level == "" && slices.Contains(detailLevels, word):
+			level = word
+		default:
+			r.sys(tr(txt.SlashCmdCoreDetailUsage))
+			return nil
+		}
+	}
+	if scope == "session" && r.sid == "" {
+		r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
+		return nil
+	}
+	sid := optionalText(r.sid)
+	if level == "" {
+		params := tuigateway.SettingsListParams{SessionID: sid, Keys: []string{"display.detail_level"}}
+		return ask(r.rpc, r.sys, tuigateway.SettingsList, params, func(res *tuigateway.SettingsListResult) tea.Cmd {
+			if res != nil && len(res.Rows) > 0 {
+				r.sys(tr(txt.SlashCmdCoreDetailCurrent, detailLabel(res.Rows[0])))
+			}
+			return r.ran()
+		})
+	}
+	// The transcript follows at once, the saved level coming back with the next read of the config should the write fail
+	fold := detailFolds[level]
+	sections := map[string]string{}
+	for _, s := range sectionNames {
+		sections[s] = fold
+	}
+	ui := &a.store.ui
+	ui.DetailsMode, ui.DetailsModeCommandOverride, ui.Sections, ui.FocusView = fold, true, sections, false
+	a.card.view.invalidate()
+	params := tuigateway.SettingsSetParams{SessionID: sid, Key: "display.detail_level", Value: level, Scope: &scope}
+	return ask(r.rpc, r.sys, tuigateway.SettingsSet, params, func(res *tuigateway.SettingsWriteResult) tea.Cmd {
+		if res == nil {
+			return nil
+		}
+		key := txt.SlashCmdCoreDetailSet
+		if scope == "session" {
+			key = txt.SlashCmdCoreDetailSetSession
+		}
+		r.sys(tr(key, detailLabel(res.Row)))
+		return r.ran()
+	})
+}
+
+// Runs a command line at the background service, as the owner of this window, and shows what it printed
+func (r *slashRun) forward(command, title string) tea.Cmd {
+	return ask(r.rpc, r.sys, tuigateway.SlashExec, tuigateway.SlashExecParams{Command: command, SessionID: r.sid}, func(res *tuigateway.SlashExecResult) tea.Cmd {
+		if res == nil {
+			return nil
+		}
+		body := res.Output
+		if body == "" {
+			body = tr(txt.SlashCmdCoreNoOutputFor, command)
+		}
+		return tea.Batch(r.ran(), r.a.showOutput(body, title))
+	})
+}
+
+// /approvals: says the approval mode and whether this session skips it, sets the mode for good, or with --session asks or skips for this
+// session alone, the same switch /yolo flips
+func (a *app) approvalsSlash(r *slashRun) tea.Cmd {
+	mode, session := "", false
+	for _, word := range strings.Fields(strings.ToLower(r.arg)) {
+		switch word {
+		case "--session":
+			session = true
+		case "manual", "smart", "off":
+			mode = word
+		default:
+			r.sys(tr(txt.SlashCmdSessionApprovalsUsage))
+			return nil
+		}
+	}
+	sid := optionalText(r.sid)
+	switch {
+	case mode == "":
+		params := tuigateway.SettingsListParams{SessionID: sid, Keys: []string{"approvals.mode"}}
+		return ask(r.rpc, r.sys, tuigateway.SettingsList, params, func(res *tuigateway.SettingsListResult) tea.Cmd {
+			if res == nil || len(res.Rows) == 0 {
+				return nil
+			}
+			key := txt.SlashCmdSessionApprovalsCurrent
+			if a.store.ui.Yolo {
+				key = txt.SlashCmdSessionApprovalsCurrentYolo
+			}
+			r.sys(tr(key, detailLabel(res.Rows[0])))
+			return r.ran()
+		})
+	case session && r.sid == "":
+		r.sys(tr(txt.SlashCmdCoreStatusNoActiveSession))
+		return nil
+	case session:
+		skip := "off"
+		if mode == "off" {
+			skip = "on"
+		}
+		return ask(r.rpc, r.sys, tuigateway.ConfigSet, tuigateway.ConfigSetParams{Key: "yolo", SessionID: r.sid, Value: tuigateway.TextValue(skip)}, func(res *tuigateway.ConfigSetResult) tea.Cmd {
+			if res == nil {
+				return nil
+			}
+			a.store.ui.Yolo = setWord(res) == "1"
+			if a.store.ui.Yolo {
+				r.sys(tr(txt.SlashCmdSessionYoloOn))
+			} else {
+				r.sys(tr(txt.SlashCmdSessionYoloOff))
+			}
+			return r.ran()
+		})
+	}
+	scope := "global"
+	params := tuigateway.SettingsSetParams{SessionID: sid, Key: "approvals.mode", Value: mode, Scope: &scope}
+	return ask(r.rpc, r.sys, tuigateway.SettingsSet, params, func(res *tuigateway.SettingsWriteResult) tea.Cmd {
+		if res == nil {
+			return nil
+		}
+		r.sys(tr(txt.SlashCmdSessionApprovalsSet, detailLabel(res.Row)))
+		return r.ran()
+	})
 }

@@ -28,7 +28,6 @@ type GatewayEndpoint struct {
 	RuntimeProtocol int
 	APIOrigin       string
 	Supervisor      string
-	Capabilities    map[string]bool
 	ControlHome     string
 	CodeSHA         string
 	// Go build ID and wire contract version the owner runs, empty and zero for an owner older than both
@@ -125,19 +124,6 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 	if state != "ready" && !restartWait {
 		return ObservedEndpoint{State: "inaccessible", ReasonCode: "invalid_runtime_state"}, nil
 	}
-	capList, ok := recGet(payload, "capabilities").([]any)
-	capabilities := map[string]bool{}
-	for _, c := range capList {
-		s, isStr := c.(string)
-		if !isStr {
-			ok = false
-			break
-		}
-		capabilities[s] = true
-	}
-	if !ok || !capabilities["session-authority-v1"] {
-		return ObservedEndpoint{State: "incompatible", ReasonCode: "session_authority_unavailable"}, nil
-	}
 	epoch := recGet(payload, "authority_epoch")
 	instance, instanceOK := recGet(payload, "instance_id").(string)
 	epochInt, epochOK := pyrepr.Int(epoch)
@@ -161,7 +147,7 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 	contractVersion, _ := recGet(payload, "contract_version").(int64)
 	endpoint := &GatewayEndpoint{
 		ProfileID: profileID, InstanceID: instance, AuthorityEpoch: epochInt, RuntimeProtocol: 1,
-		APIOrigin: origin, Supervisor: sup, Capabilities: capabilities, ControlHome: controlHome, CodeSHA: codeSHA,
+		APIOrigin: origin, Supervisor: sup, ControlHome: controlHome, CodeSHA: codeSHA,
 		BuildID: buildID, ContractVersion: contractVersion,
 	}
 	if restartWait {

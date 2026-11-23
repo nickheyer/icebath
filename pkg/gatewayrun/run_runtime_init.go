@@ -26,9 +26,9 @@ func (r *GatewayRunner) initRuntimeSettings(ctx context.Context) {
 	r.busyTextMode = loadBusyTextMode(ctx)
 	r.busyInputModesByProfile = map[string]string{}
 	r.busyTextModesByProfile = map[string]string{}
-	r.busyTextTiming = busyTextTimingFromConfig(gateway.LoadGatewayConfigMap(ctx, ""))
+	r.busyTextTiming = busyTextTiming(ctx)
 	r.busyTextTimingByProfile = map[string][2]float64{}
-	r.humanDelay = humanDelayFromConfig(gateway.LoadGatewayConfigMap(ctx, ""))
+	r.humanDelay = humanDelay(ctx)
 	r.humanDelayByProfile = map[string]*[2]int{}
 	r.restartDrainTimeout = loadRestartDrainTimeout(ctx)
 	r.stopRequestedBySignal = false
@@ -122,11 +122,6 @@ func (r *GatewayRunner) initRegistriesAndClocks(ctx context.Context) error {
 	r.pairingStore = store
 	r.pairingStores = map[string]*gateway.PairingStore{}
 	r.hooks = NewProfileHookRegistries()
-	modes, err := r.loadVoiceModes()
-	if err != nil {
-		return err
-	}
-	r.voiceMode = modes
 	r.recentVoiceTranscripts = map[[4]any][]voiceTranscriptSeen{}
 	r.backgroundTasks = map[*gatewayTask]struct{}{}
 	r.gatewayStartedAt = wallClock()

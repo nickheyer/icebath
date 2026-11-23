@@ -91,8 +91,8 @@ func (p *metaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 	}
 	apiKey := resolveMetaAPIKey(ctx)
 	if apiKey == "" {
-		return errorFactory("meta-ai", aspect, "", "")(metaAPIKeyEnv+" not set. Run `icebath tools` -> Image "+
-			"Generation -> Meta Model API to configure.", "auth_required"), nil
+		return errorFactory("meta-ai", aspect, "", "")(metaAPIKeyEnv+" not set. Add it with /setup tools, "+
+			"or pick another image service in /settings → Images & media.", "auth_required"), nil
 	}
 	newClient := newOpenAIClientHook
 	callerModel, _ := req.Kwargs["model"].(string)

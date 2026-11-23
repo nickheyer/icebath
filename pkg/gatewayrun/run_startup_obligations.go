@@ -40,7 +40,7 @@ func (r *GatewayRunner) clearResumePendingForClaimedObligations(ctx context.Cont
 
 // Claims recoverable ledger rows whose exact adapter is connected and clears their resume flags before any send
 func (r *GatewayRunner) claimPendingObligations(ctx context.Context) []gateway.ClaimedObligation {
-	if !gateway.LedgerEnabled(ctx, nil) {
+	if !gateway.LedgerEnabled(ctx) {
 		return nil
 	}
 	targets := map[gateway.LedgerTarget]bool{}
@@ -231,7 +231,7 @@ func (r *GatewayRunner) obligationAdapter(ctx context.Context, row gateway.Claim
 
 // Replays one adapter identity's transient delivery failures after it reconnected
 func (r *GatewayRunner) redeliverFailedObligationsForPlatform(ctx context.Context, platform gateway.Platform, profile *string) int {
-	if !gateway.LedgerEnabled(ctx, nil) {
+	if !gateway.LedgerEnabled(ctx) {
 		return 0
 	}
 	claimed, err := gateway.SweepFailedForRuntime(ctx, string(platform), nil, profile)

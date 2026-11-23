@@ -1,10 +1,11 @@
 package tools
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -177,8 +178,8 @@ func TestStructuredScalarSummaryStaysValidJSON(t *testing.T) {
 
 // test_delegated_output_redaction.py test_parent_copy_honours_opt_out_while_persisted_copies_stay_forced projection half
 func TestParentCopyHonoursOptOutWhilePersistedCopiesStayForced(t *testing.T) {
-	env := &Env{Secrets: config.NewSecrets(t.TempDir())}
-	if err := env.Secrets.Set("ICEBATH_REDACT_SECRETS", "false"); err != nil {
+	env := &Env{Home: t.TempDir()}
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("security:\n  redact_secrets: false\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if got := RedactChildText(env, delegationSecret, false); got != delegationSecret {

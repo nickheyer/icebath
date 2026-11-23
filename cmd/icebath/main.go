@@ -10,6 +10,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/spf13/cobra"
 )
 
@@ -56,12 +57,11 @@ func main() {
 	}
 	runStartupPhase(phaseBeforeDotenv, os.Args)
 	loadDotenv()
-	forceIPv4 := applyEarlyConfig()
 	if serverProcess(argv) {
 		applyMallocArenaMax()
 	}
 	setupLogging()
-	if forceIPv4 {
+	if settings.NetworkForceIpv4.Get(context.Background()) {
 		home.ApplyIPv4Preference(true)
 	}
 	exit(run(argv))

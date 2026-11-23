@@ -6,13 +6,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
-	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -72,19 +71,9 @@ func parseISOValue(value any) *pyDatetime {
 	return &d
 }
 
-const autoContinueFreshnessSecsDefault = 60 * 60
-
-// Resume freshness window in seconds from the environment, one hour when unset or unparsable
-func AutoContinueFreshnessWindow() float64 {
-	raw := os.Getenv("ICEBATH_AUTO_CONTINUE_FRESHNESS")
-	if raw == "" {
-		return autoContinueFreshnessSecsDefault
-	}
-	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
-	if err != nil {
-		return autoContinueFreshnessSecsDefault
-	}
-	return v
+// Resume freshness window in seconds of the profile in ctx
+func AutoContinueFreshnessWindow(ctx context.Context) float64 {
+	return settings.AgentGatewayAutoContinueFreshness.Get(ctx).Seconds()
 }
 
 // True only when the owning store proves the row ended or gone, the eviction checks acting on proof alone

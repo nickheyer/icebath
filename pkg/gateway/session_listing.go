@@ -24,11 +24,19 @@ func pickerRow(row, tip *pyjson.Object, sid string) *pyjson.Object {
 	}
 	return pyjson.ObjectOf("id", row.GetOr("id", nil), "session_id", sid, "resolved_id", sid, "title", title,
 		"source", tip.GetOr("source", nil), "started_at", row.GetOr("started_at", nil),
-		"message_count", row.GetOr("message_count", int64(0)), "model", tip.GetOr("model", nil), "running", false)
+		"message_count", row.GetOr("message_count", int64(0)), "model", tip.GetOr("model", nil), "running", false,
+		"preview", listingPreview(row), "pinned", pyTruthy(row.GetOr("pinned", nil)), "archived", pyTruthy(row.GetOr("archived", nil)),
+		"last_active", row.GetOr("last_active", nil))
+}
+
+// Opening words of a stored session's listing row, empty when it has none
+func listingPreview(row *pyjson.Object) string {
+	text, _ := row.GetOr("preview", "").(string)
+	return text
 }
 
 // Legacy local and mountable messaging rows offered only to the native transport that may resume them
-func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Principal, limit int, includeHidden bool) (*pyjson.Object, error) {
+func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Principal, limit int, includeHidden, includeArchived bool) (*pyjson.Object, error) {
 	if actor.ProfileID != a.ProfileID {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
@@ -48,7 +56,7 @@ func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Princi
 	pageSize := 200
 	for len(sessions) < limit {
 		rows, err := db.ListSessionsRich(ctx, state.ListSessionsRichOptions{ExcludeSources: pickerExcludedSources(), Limit: &pageSize,
-			Offset: offset, OrderByLastActive: true, CompactRows: true, IncludeHidden: includeHidden})
+			Offset: offset, OrderByLastActive: true, CompactRows: true, IncludeHidden: includeHidden, IncludeArchived: includeArchived})
 		if err != nil {
 			return nil, err
 		}
@@ -195,7 +203,9 @@ func closedLocalSession(ctx context.Context, a *SessionAuthority, actor Principa
 	}
 	return pyjson.ObjectOf("id", owner, "session_id", owner, "resolved_id", owner, "title", title,
 		"source", tip.GetOr("source", nil), "started_at", row.GetOr("started_at", nil),
-		"message_count", row.GetOr("message_count", int64(0)), "model", tip.GetOr("model", nil), "running", false), nil
+		"message_count", row.GetOr("message_count", int64(0)), "model", tip.GetOr("model", nil), "running", false,
+		"preview", listingPreview(row), "pinned", pyTruthy(row.GetOr("pinned", nil)), "archived", pyTruthy(row.GetOr("archived", nil)),
+		"last_active", row.GetOr("last_active", nil)), nil
 }
 
 // Whether an unrestored ended session's stored receipt reads as closed for the actor with no admission left

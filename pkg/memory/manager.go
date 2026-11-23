@@ -16,6 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -485,7 +486,7 @@ func (m *MemoryManager) AddProvider(ctx context.Context, p Provider) error {
 			return err
 		}
 		cfg := tools.SpillConfigFromEnv(&tools.Env{Config: tree})
-		if enabled, _ := tree.Get("memory.prefetch_spill_enabled").(bool); !enabled {
+		if !settings.MemoryPrefetchSpillEnabled.Get(registrySettings(ctx, m.env)) {
 			cfg.MaxChars = max(cfg.MaxChars*10, 100000)
 		}
 		spill = &cfg

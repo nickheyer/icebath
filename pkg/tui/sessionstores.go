@@ -53,24 +53,18 @@ func (s *tuiStore) flashPet(state string, d time.Duration) {
 	s.petFlash = &petFlash{State: state, Until: s.now().Add(d)}
 }
 
-// Bumps the affection heart tick of the status bar
-func (s *tuiStore) flashGoodVibes() { s.goodVibesTick++ }
-
-// Lights the affection heart in a tone drawn anew for each reaction and repaints when it goes out
-func (a *app) followGoodVibes() tea.Cmd {
-	if a.store.goodVibesTick == a.heartSeen {
-		return nil
-	}
-	a.heartSeen, a.heartUntil, a.heartTone = a.store.goodVibesTick, a.store.now().Add(goodVibesFlash), rand.IntN(3)
+// Lights the affection heart of the status row in a tone drawn anew for each reaction, the returned tick repainting when it goes out
+func (s *tuiStore) flashGoodVibes() tea.Cmd {
+	s.heartUntil, s.heartTone = s.now().Add(goodVibesFlash), rand.IntN(3)
 	return tea.Tick(goodVibesFlash, func(time.Time) tea.Msg { return asyncDoneMsg{} })
 }
 
 // Affection heart of the status row in its tone, empty once the flash is over
-func (a *app) goodVibesHeart(t theme) string {
-	if !a.store.now().Before(a.heartUntil) {
+func (s *tuiStore) goodVibesHeart(t theme) string {
+	if !s.now().Before(s.heartUntil) {
 		return ""
 	}
-	return toneStyle([]string{t.Color.Error, t.Color.Warn, t.Color.Accent}[a.heartTone%3]).Render("♥")
+	return toneStyle([]string{t.Color.Error, t.Color.Warn, t.Color.Accent}[s.heartTone%3]).Render("♥")
 }
 
 // Inputs whose transcript bubble this client painted at submit time

@@ -24,6 +24,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const processedEventsMax = 1000
@@ -164,7 +165,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	}
 	a := &MatrixAdapter{ctx: ctx}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(cfg, gateway.PlatformMatrix, a)
-	a.maxMessageLength = resolveMaxMessageLength(ctx, cfg)
+	a.maxMessageLength = resolveMaxMessageLength(ctx)
 	a.Traits.MaxMessageLength = a.maxMessageLength
 	a.Traits.SerialReceiveLoop = true
 	a.Traits.SupportsCodeBlocks = true
@@ -176,16 +177,17 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 		v, _ := gateway.GetScopedSecret(ctx, name, "", false)
 		return pystr.Strip(v)
 	}
-	a.homeserver = strings.TrimRight(extraStr(cfg.Extra, "homeserver", scoped("MATRIX_HOMESERVER")), "/")
+	sctx := gateway.SettingsContext(ctx)
+	a.homeserver = strings.TrimRight(pystr.Strip(settings.MatrixHomeserver.Get(sctx)), "/")
 	a.accessToken = tokenOf(cfg.Token)
 	if a.accessToken == "" {
 		a.accessToken = scoped("MATRIX_ACCESS_TOKEN")
 	}
-	a.userID = extraStr(cfg.Extra, "user_id", scoped("MATRIX_USER_ID"))
+	a.userID = pystr.Strip(settings.MatrixUserID.Get(sctx))
 	a.password = extraStr(cfg.Extra, "password", scoped("MATRIX_PASSWORD"))
 	a.e2eeMode = resolveE2EEMode(ctx, cfg.Extra)
 	a.encryption = a.e2eeMode != "off"
-	a.deviceID = extraStr(cfg.Extra, "device_id", scoped("MATRIX_DEVICE_ID"))
+	a.deviceID = pystr.Strip(settings.MatrixDeviceID.Get(sctx))
 	a.inviteJoinTasks = map[string]*bgTask{}
 	a.resetClockSkewDetector()
 	a.dmRooms = map[string]bool{}
@@ -198,20 +200,16 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	a.warnedEncryptedDropRooms = map[string]bool{}
 	a.threads = gateway.NewThreadParticipationTracker(ctx, "matrix", 500)
 	a.parkedVoices = NewParkedVoices()
-	a.requireMention = parseRequireMention(ctx, cfg)
+	a.requireMention = settings.MatrixRequireMention.Get(sctx)
 	a.threadRequireMention = parseThreadRequireMention(ctx, cfg)
-	a.freeRooms = extraCSVSet(ctx, cfg, "free_response_rooms", "MATRIX_FREE_RESPONSE_ROOMS")
-	a.allowedRooms = extraCSVSet(ctx, cfg, "allowed_rooms", "MATRIX_ALLOWED_ROOMS")
+	a.freeRooms = gateway.SettingSet(ctx, settings.MatrixFreeResponseRooms)
+	a.allowedRooms = gateway.SettingSet(ctx, settings.MatrixAllowedRooms)
 	a.allowRoomMentions = envTruthy(ctx, "MATRIX_ALLOW_ROOM_MENTIONS", "false")
-	a.autoThread = extraTruthy(ctx, cfg, "auto_thread", "MATRIX_AUTO_THREAD", "true")
+	a.autoThread = settings.MatrixAutoThread.Get(sctx)
 	a.dmAutoThread = envTruthy(ctx, "MATRIX_DM_AUTO_THREAD", "false")
-	a.dmMentionThreads = extraTruthy(ctx, cfg, "dm_mention_threads", "MATRIX_DM_MENTION_THREADS", "false")
-	rawScope, _ := gateway.ExtraOrSecret(ctx, cfg.Extra, "session_scope", "MATRIX_SESSION_SCOPE", "auto", true)
-	a.matrixSessionScope = pystr.Lower(pystr.Strip(pyrepr.Str(rawScope)))
-	if a.matrixSessionScope != "auto" && a.matrixSessionScope != "room" && a.matrixSessionScope != "thread" {
-		a.matrixSessionScope = "auto"
-	}
-	a.processNotices = extraTruthy(ctx, cfg, "process_notices", "MATRIX_PROCESS_NOTICES", "false")
+	a.dmMentionThreads = settings.MatrixDmMentionThreads.Get(sctx)
+	a.matrixSessionScope = settings.MatrixSessionScope.Get(sctx)
+	a.processNotices = settings.MatrixProcessNotices.Get(sctx)
 	rawReactions, _ := gateway.ExtraOrSecret(ctx, cfg.Extra, "reactions", "MATRIX_REACTIONS", "true", true)
 	switch pystr.Lower(pyrepr.Str(rawReactions)) {
 	case "false", "0", "no":
@@ -248,16 +246,15 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	a.approvalTimeoutSeconds = envInt(ctx, "MATRIX_APPROVAL_TIMEOUT_SECONDS", 300)
 	a.modelPickerPromptsByEvent = map[string]*matrixPickerPrompt{}
 	a.choicePickerPromptsByEvent = map[string]*matrixPickerPrompt{}
-	a.allowedUserIDs = extraCSVSet(ctx, cfg, "allowed_users", "MATRIX_ALLOWED_USERS")
+	a.allowedUserIDs = gateway.SettingSet(ctx, settings.MatrixAllowedUsers)
 	a.allowedRoomIDs = map[string]bool{}
 	for r := range a.allowedRooms {
 		a.allowedRoomIDs[r] = true
 	}
-	rawPatterns, _ := gateway.ExtraOrSecret(ctx, cfg.Extra, "ignore_user_patterns", "MATRIX_IGNORE_USER_PATTERNS", "", true)
-	for _, pattern := range sortedKeys(csvSet(rawPatterns)) {
+	for _, pattern := range sortedKeys(gateway.SettingSet(ctx, settings.MatrixIgnoreUserPatterns)) {
 		re, err := pyre.Compile(pattern)
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Matrix: ignoring invalid MATRIX_IGNORE_USER_PATTERNS entry %s: %v", pyrepr.Repr(pattern), err))
+			pkgLog().Warn(fmt.Sprintf("Matrix: ignoring invalid ignored sender pattern %s: %v", pyrepr.Repr(pattern), err))
 			continue
 		}
 		a.ignoredUserPatterns = append(a.ignoredUserPatterns, re)
@@ -308,19 +305,6 @@ func (a *MatrixAdapter) isDuplicateEvent(eventID string) bool {
 	return false
 }
 
-// Scoped env then config extra then the default, with true, 1 or yes semantics
-func extraTruthy(ctx context.Context, cfg *gateway.PlatformConfig, key, envName, def string) bool {
-	configured, _ := gateway.ExtraOrSecret(ctx, cfg.Extra, key, envName, def, true)
-	if b, ok := configured.(bool); ok {
-		return b
-	}
-	switch pystr.Lower(pyrepr.Str(configured)) {
-	case "true", "1", "yes":
-		return true
-	}
-	return false
-}
-
 // Whether a configured value is anything other than a false or off spelling
 func notFalseSpelling(configured any) bool {
 	if b, ok := configured.(bool); ok {
@@ -331,12 +315,6 @@ func notFalseSpelling(configured any) bool {
 		return false
 	}
 	return true
-}
-
-// Require mention from the scoped env, then config extra, then true
-func parseRequireMention(ctx context.Context, cfg *gateway.PlatformConfig) bool {
-	configured, _ := gateway.ExtraOrSecret(ctx, cfg.Extra, "require_mention", "MATRIX_REQUIRE_MENTION", true, true)
-	return notFalseSpelling(configured)
 }
 
 // Thread require mention from the scoped env, then config extra, then false

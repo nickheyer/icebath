@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -697,7 +696,6 @@ const (
 	CodexTTFBStrictEnv        = "ICEBATH_CODEX_TTFB_STRICT"
 	CodexTTFBMaxEnv           = "ICEBATH_CODEX_TTFB_MAX_SECONDS"
 	CodexHardTimeoutEnv       = "ICEBATH_CODEX_HARD_TIMEOUT_SECONDS"
-	APICallStaleTimeoutEnv    = "ICEBATH_API_CALL_STALE_TIMEOUT"
 )
 
 // Silence floor for high effort reasoning and the first progress grace of large Codex requests
@@ -779,13 +777,13 @@ func (c *codexResponsesClient) computeStaleTimeout(ctx context.Context, req *Req
 	return computeNonStreamStaleTimeout(ctx, settings, c.cc.provider, req, c.cc.local, true, estTokens, kwargs)
 }
 
-// Base non streaming stale timeout, per model or provider config then the env then the reasoning floor then 90s
+// Base non streaming stale timeout, per model or provider config then agent.api_call_stale_timeout then the reasoning floor then 90s
 func nonStreamStaleTimeoutBase(settings wireSettings, provider, model string) (float64, bool) {
 	if d, ok := configuredProviderTimeout(settings.providers, provider, model, "stale_timeout_seconds", "stale_timeout_seconds"); ok {
 		return d.Seconds(), false
 	}
-	if _, explicit := os.LookupEnv(APICallStaleTimeoutEnv); explicit {
-		return envFloat(APICallStaleTimeoutEnv, 90), false
+	if settings.apiCallStaleSet {
+		return settings.apiCallStale, false
 	}
 	if floor, ok := ReasoningStaleTimeoutFloor(model); ok {
 		return floor.Seconds(), false
@@ -806,9 +804,8 @@ func computeNonStreamStaleTimeout(ctx context.Context, settings wireSettings, pr
 	case estTokens > 50000:
 		timeout = math.Max(base, 150)
 	}
-	_, envSet := os.LookupEnv(APICallStaleTimeoutEnv)
 	_, configured := configuredProviderTimeout(settings.providers, provider, req.Model, "stale_timeout_seconds", "stale_timeout_seconds")
-	if explicit := envSet || configured; !explicit {
+	if explicit := settings.apiCallStaleSet || configured; !explicit {
 		if codex {
 			timeout = math.Max(timeout, highEffortSilenceFloor(reasoningFromRequest(req.Reasoning)))
 		}
@@ -869,7 +866,6 @@ func (c *codexResponsesClient) resolveWatchdogs(ctx context.Context, req *Reques
 		if localCeiling <= 0 {
 			localCeiling = 900
 		}
-		localCeiling = envFloat(LocalStreamStaleTimeoutEnv, localCeiling)
 		if localCeiling > ttfb {
 			pkgLog().Info(fmt.Sprintf("Local provider detected (%s) — no-event TTFB watchdog raised from %.0fs to %.0fs (agent.local_stream_stale_timeout); set %s for an explicit cutoff.", c.route.BaseURL, ttfb, localCeiling, CodexTTFBTimeoutEnv))
 			ttfb = localCeiling

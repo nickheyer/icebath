@@ -95,7 +95,7 @@ func codexHomeEnv(t *testing.T) *tools.Env {
 // auth.json with the Codex OAuth singleton token and no credential pool
 func writeCodexSingleton(t *testing.T, h, token string) {
 	t.Helper()
-	data := `{"version": 1, "active_provider": "openai-codex", "providers": {"openai-codex": {"tokens": {"access_token": "` + token +
+	data := `{"version": 2, "active_provider": "openai-codex", "providers": {"openai-codex": {"tokens": {"access_token": "` + token +
 		`", "refresh_token": "rt"}, "last_refresh": "2026-09-24T00:00:00Z", "auth_mode": "chatgpt"}}}`
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte(data), 0o600); err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func writeCodexSingleton(t *testing.T, h, token string) {
 // auth.json holding only a manual api key pool row for openai-codex
 func writeCodexPool(t *testing.T, h, key, rowBase string) {
 	t.Helper()
-	data := `{"version": 1, "providers": {}, "credential_pool": {"openai-codex": [{"id": "gw", "label": "gateway", "auth_type": "api_key", ` +
+	data := `{"version": 2, "providers": {}, "credential_pool": {"openai-codex": [{"id": "gw", "label": "gateway", "auth_type": "api_key", ` +
 		`"priority": 0, "source": "manual", "access_token": "` + key + `", "base_url": "` + rowBase + `"}]}}`
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte(data), 0o600); err != nil {
 		t.Fatal(err)

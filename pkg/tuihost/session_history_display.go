@@ -400,6 +400,14 @@ func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCal
 	if editCardTools[name] || name == "clarify" {
 		row["content"] = m["content"]
 	}
+	if text := ToolResultText(m["content"]); text != "" {
+		row["result_text"] = text
+	}
+	for _, k := range []string{"duration_s", "inline_diff", "image_path"} {
+		if v := displayMetadataField(m["display_metadata"], k); pyrepr.Truthy(v) {
+			row[k] = v
+		}
+	}
 	for _, k := range []string{"tool_call_id", "timestamp", "display_metadata"} {
 		if m[k] != nil {
 			row[k] = m[k]
@@ -420,4 +428,17 @@ func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCal
 		row["labels"] = payload
 	}
 	return row
+}
+
+// Field of a stored row's display metadata, nil when the row has none
+func displayMetadataField(metadata any, key string) any {
+	switch typed := metadata.(type) {
+	case map[string]any:
+		return typed[key]
+	case *pyjson.Object:
+		if typed != nil {
+			return typed.GetOr(key, nil)
+		}
+	}
+	return nil
 }

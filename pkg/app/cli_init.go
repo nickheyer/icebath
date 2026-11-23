@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -38,39 +38,21 @@ type CLIOptions struct {
 func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 	c.console = console()
 	c.config = CLIConfig(c.ctx)
-	display := config.LocalDisplayConfig(c.config["display"])
-	rawTP, ok := display["tool_progress"]
-	if !ok {
-		rawTP = "all"
-	}
-	if rawTP == false {
-		c.toolProgressMode = "off"
-	} else {
-		c.toolProgressMode = cliStr(rawTP, "")
-	}
-	c.focusViewEnabled = cliTruthy(display["focus_view"])
+	c.toolProgressMode = settings.ToolProgress.Get(c.ctx)
+	c.focusViewEnabled = false
 	c.focusSavedToolProgress, c.focusLastCountedTool = "", ""
 	c.focusHiddenLines = 0
-	if c.focusViewEnabled {
-		c.focusSavedToolProgress = normalizeToolProgressMode(c.toolProgressMode, "all")
-		c.toolProgressMode = FocusToolProgressMode
-	}
-	c.bellOnComplete = cliTruthy(display["bell_on_complete"])
-	c.showReasoning = displayFlag(display, "show_reasoning", true)
-	c.reasoningFull = cliTruthy(display["reasoning_full"])
-	c.modernLayout = layoutFromConfig(display)
+	c.bellOnComplete = settings.BellOnComplete.Get(c.ctx)
+	c.showReasoning = settings.ShowThinking.Get(settings.WithPlatform(c.ctx, settings.LocalPlatform))
+	c.reasoningFull = settings.FullThinking.Get(c.ctx)
+	c.modernLayout = layoutFromConfig(c.ctx)
 	setLayoutActive(c.modernLayout)
 	c.verbose = verbose
-	c.streamingEnabled = cliTruthy(display["streaming"])
-	c.showTimestamps = cliTruthy(display["timestamps"])
-	c.timestampFormat = cliStr(display["timestamp_format"], "%H:%M")
-	frm := strings.ToLower(strings.TrimSpace(cliStr(display["final_response_markdown"], "strip")))
-	if frm == "render" || frm == "strip" || frm == "raw" {
-		c.finalResponseMarkdown = frm
-	} else {
-		c.finalResponseMarkdown = "strip"
-	}
-	c.inlineDiffsEnabled = displayFlag(display, "inline_diffs", true)
+	c.streamingEnabled = settings.DisplayStreaming.Get(c.ctx)
+	c.showTimestamps = settings.Timestamps.Get(c.ctx)
+	c.timestampFormat = settings.DisplayTimestampFormat.Get(c.ctx)
+	c.finalResponseMarkdown = settings.DisplayFinalResponseMarkdown.Get(c.ctx)
+	c.inlineDiffsEnabled = settings.DisplayInlineDiffs.Get(c.ctx)
 	c.streamBuf, c.reasoningPreviewBuf = "", ""
 	c.streamStarted, c.streamBoxOpened, c.streamBoxLive = false, false, false
 	c.streamedTextThisTurn = ""
@@ -78,14 +60,6 @@ func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 	c.streamTableBuf = []string{}
 	c.inStreamTable = false
 	c.pendingEditSnapshots = map[string]*tools.LocalEditSnapshot{}
-}
-
-// Returns a display flag's truthiness, the default when the key is absent
-func displayFlag(display map[string]any, key string, def bool) bool {
-	if v, ok := display[key]; ok {
-		return cliTruthy(v)
-	}
-	return def
 }
 
 // Resolves model, provider, base URL, turn limits, toolsets, checkpoints, prompt and reasoning
@@ -102,28 +76,20 @@ func (c *CLI) initModelRouting(o CLIOptions) error {
 
 // Picks the model route with CLI args over env vars over the config file
 func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) error {
-	modelConfig := cliMap(c.config, "model")
-	rawDefault := modelConfig["default"]
-	if !cliTruthy(rawDefault) {
-		rawDefault = modelConfig["model"]
-	}
-	if !cliTruthy(rawDefault) {
-		rawDefault = ""
-	}
-	configModel, nestedProvider := config.SplitModelDefault(rawDefault)
+	configModel, nestedProvider := config.SplitModelDefault(settings.Model.Get(c.ctx))
 	c.explicitModelOverride = model != ""
 	c.model = model
 	if c.model == "" {
 		c.model = configModel
 	}
-	cfgProvider := cliStr(modelConfig["provider"], "")
+	cfgProvider := settings.ModelProvider.Get(c.ctx)
 	if cfgProvider == "" {
 		cfgProvider = os.Getenv("ICEBATH_INFERENCE_PROVIDER")
 	}
 	startupProviderOverride, startupBaseURLOverride, startupAPIKeyOverride := "", "", ""
 	if c.model != "" {
 		current := firstNonEmpty(providerArg, nestedProvider, cfgProvider)
-		userProviders, _ := c.config["providers"].(map[string]any)
+		userProviders := settings.Providers.Get(c.ctx)
 		customProviders, _ := c.config["custom_providers"].([]any)
 		route, err := provider.ResolveStartupModelRoute(c.ctx, c.model, provider.StartupRouteOptions{
 			ExplicitProvider: providerArg, CurrentProvider: current, UserProviders: userProviders, CustomProviders: customProviders})
@@ -140,7 +106,7 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 	moaProviderOverride, normalized := normalizeMoaModel(c.model)
 	c.model = normalized
 	if c.model == "" {
-		localBase := cliStr(modelConfig["base_url"], "")
+		localBase := settings.ModelBaseURL.Get(c.ctx)
 		if host, err := pyurl.BaseURLHostname(localBase); err == nil && (host == "localhost" || host == "127.0.0.1") {
 			if detected := provider.AutoDetectLocalModel(c.ctx, localBase); detected != "" {
 				c.model = detected
@@ -164,7 +130,7 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 	c.apiMode = "chat_completions"
 	c.acpCommand = ""
 	c.acpArgs = []string{}
-	c.baseURL = firstNonEmpty(baseURL, startupBaseURLOverride, cliStr(modelConfig["base_url"], ""), os.Getenv("OPENROUTER_BASE_URL"))
+	c.baseURL = firstNonEmpty(baseURL, startupBaseURLOverride, settings.ModelBaseURL.Get(c.ctx), os.Getenv("OPENROUTER_BASE_URL"))
 	keys := []string{os.Getenv("OPENROUTER_API_KEY"), os.Getenv("OPENAI_API_KEY")}
 	matches := false
 	if c.baseURL != "" {
@@ -189,59 +155,24 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// Resolves max turns as CLI arg over config over env var and the run budget as flag over config
+// Resolves max turns and the run budget, each flag over its setting
 func (c *CLI) initTurnLimits(maxTurns *int, runBudget *float64) {
-	agentCfg := cliMap(c.config, "agent")
 	var raw any
-	switch {
-	case maxTurns != nil:
+	if maxTurns != nil {
 		raw = *maxTurns
-	case agentCfg["max_turns"] != nil:
-		raw = agentCfg["max_turns"]
-	case c.config["max_turns"] != nil:
-		raw = c.config["max_turns"]
-	default:
-		raw = envOrNil("ICEBATH_MAX_ITERATIONS")
+	} else if limit, set := settings.MaxTurns.Lookup(c.ctx); set {
+		raw = limit
 	}
 	c.maxTurns = config.ResolveTurnLimit(raw, config.TurnLimitUnlimited)
 	if runBudget != nil {
 		v := *runBudget
 		c.runBudgetSeconds = &v
-	} else {
-		c.runBudgetSeconds = floatPtrOf(agentCfg["run_budget_seconds"])
+	} else if budget := settings.AgentRunBudgetSeconds.Get(c.ctx); budget > 0 {
+		seconds := budget.Seconds()
+		c.runBudgetSeconds = &seconds
 	}
 	c.explicitRunBudget = runBudget
 	c.explicitMaxTurns = maxTurns
-}
-
-// Returns an environment value, nil when the variable is unset
-func envOrNil(name string) any {
-	if v, ok := os.LookupEnv(name); ok {
-		return v
-	}
-	return nil
-}
-
-// Converts a numeric config value to a float pointer, nil for anything else
-func floatPtrOf(v any) *float64 {
-	var f float64
-	switch t := v.(type) {
-	case int:
-		f = float64(t)
-	case int64:
-		f = float64(t)
-	case float64:
-		f = t
-	case string:
-		parsed, err := strconv.ParseFloat(strings.TrimSpace(t), 64)
-		if err != nil {
-			return nil
-		}
-		f = parsed
-	default:
-		return nil
-	}
-	return &f
 }
 
 // Records the typed toolsets and the configured disabled toolsets
@@ -278,8 +209,7 @@ func (c *CLI) initPromptAndReasoning(reasoning string) {
 			c.explicitReasoning = strings.TrimSpace(reasoning)
 		}
 	}
-	agentCfg := cliMap(c.config, "agent")
-	c.serviceTier = parseServiceTierConfig(cliStr(agentCfg["service_tier"], ""))
+	c.serviceTier = parseServiceTierConfig(settings.FastMode.Get(c.ctx))
 	c.fallbackModel = provider.GetFallbackChain(c.config)
 }
 

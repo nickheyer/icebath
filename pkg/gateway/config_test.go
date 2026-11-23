@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,29 +24,6 @@ func TestBoolTokenAndCoerceBool(t *testing.T) {
 	}
 	if coerceBool(0, true) != false || coerceBool([]any{1}, false) != true {
 		t.Fatal("python bool of non strings")
-	}
-}
-
-func TestEnvOverrides(t *testing.T) {
-	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "  ")
-	if envMultiplexProfilesOverride() != nil {
-		t.Fatal("blank keeps config")
-	}
-	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "sometimes")
-	if envMultiplexProfilesOverride() != nil {
-		t.Fatal("unrecognized keeps config")
-	}
-	t.Setenv("GATEWAY_MULTIPLEX_PROFILES", "No")
-	if v := envMultiplexProfilesOverride(); v == nil || *v {
-		t.Fatal("no disables")
-	}
-	t.Setenv("GATEWAY_ON_ALL_ADAPTERS_DOWN", " Stay_Alive ")
-	if envOnAllAdaptersDownOverride() != "stay_alive" {
-		t.Fatal("stay_alive")
-	}
-	t.Setenv("GATEWAY_ON_ALL_ADAPTERS_DOWN", "restart")
-	if envOnAllAdaptersDownOverride() != "" {
-		t.Fatal("unrecognized policy")
 	}
 }
 
@@ -132,54 +108,8 @@ func TestBridgeToplevelKeysModes(t *testing.T) {
 	}
 }
 
-func TestBridgeCoreEnvSettings(t *testing.T) {
-	for _, k := range []string{"GATEWAY_ALLOW_ALL_USERS", "TELEGRAM_REQUIRE_MENTION", "SIGNAL_REQUIRE_MENTION"} {
-		t.Setenv(k, "")
-		os.Unsetenv(k)
-	}
-	t.Cleanup(func() { bridgedAllowAll.set = false })
-	platforms := map[string]any{}
-	BridgeCoreEnvSettings(context.Background(), map[string]any{
-		"gateway": map[string]any{"allow_all_users": true}, "require_mention": false,
-		"signal": map[string]any{"require_mention": true},
-	}, platforms)
-	if v, ok := BridgedAllowAllUsers(); !ok || v != "true" {
-		t.Fatalf("bridged grant %q %v", v, ok)
-	}
-	if os.Getenv("TELEGRAM_REQUIRE_MENTION") != "false" || os.Getenv("SIGNAL_REQUIRE_MENTION") != "true" {
-		t.Fatal("mention env bridges")
-	}
-	want := map[string]any{
-		"telegram": map[string]any{"extra": map[string]any{"require_mention": false}},
-		"signal":   map[string]any{"extra": map[string]any{"require_mention": true}},
-	}
-	if !reflect.DeepEqual(platforms, want) {
-		t.Fatalf("extra seeding %v", platforms)
-	}
-	if env := DropBridgedEnv(map[string]string{"GATEWAY_ALLOW_ALL_USERS": "true", "A": "b"}); !reflect.DeepEqual(env, map[string]string{"A": "b"}) {
-		t.Fatal("child env drops the bridged grant")
-	}
-	BridgeCoreEnvSettings(context.Background(), map[string]any{"allow_all_users": "no"}, map[string]any{})
-	if _, ok := os.LookupEnv("GATEWAY_ALLOW_ALL_USERS"); ok {
-		t.Fatal("reload clears the bridge's own write")
-	}
-	os.Setenv("GATEWAY_ALLOW_ALL_USERS", "operator")
-	BridgeCoreEnvSettings(context.Background(), map[string]any{"allow_all_users": true}, map[string]any{})
-	if v, ok := BridgedAllowAllUsers(); ok || os.Getenv("GATEWAY_ALLOW_ALL_USERS") != "operator" {
-		t.Fatalf("operator env wins %q %v", v, ok)
-	}
-	os.Unsetenv("GATEWAY_ALLOW_ALL_USERS")
-	provider.SetMultiplexActive(true)
-	t.Cleanup(func() { provider.SetMultiplexActive(false) })
-	ctx := provider.WithSecretScope(context.Background(), map[string]string{"X": "y"}, "")
-	BridgeCoreEnvSettings(ctx, map[string]any{"allow_all_users": true, "require_mention": true}, map[string]any{})
-	if _, ok := os.LookupEnv("GATEWAY_ALLOW_ALL_USERS"); ok || os.Getenv("TELEGRAM_REQUIRE_MENTION") != "false" {
-		t.Fatal("secondary profile scope never writes the process env")
-	}
-}
-
 func TestProviderHooksInstalled(t *testing.T) {
-	if provider.GatewayHooks.LegacyJSON == nil || provider.GatewayHooks.BridgedAllowAllUsers == nil {
+	if provider.GatewayHooks.LegacyJSON == nil {
 		t.Fatal("init installs the provider hooks")
 	}
 	h := t.TempDir()

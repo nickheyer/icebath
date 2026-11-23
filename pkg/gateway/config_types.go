@@ -131,8 +131,11 @@ func CoerceSystemdWatchdogSeconds(value any, key string) int {
 	return int(parsed.Int64())
 }
 
-// Env value through the active profile secret scope when one is installed, else the process env
+// Env value through the active profile secret scope when one is installed, else the process env; a name folded into a setting reads the setting
 func getenv(ctx context.Context, name string) (string, bool) {
+	if v, folded := FoldedEnvValue(ctx, name); folded {
+		return v, v != ""
+	}
 	if provider.CurrentSecretScope(ctx) != nil {
 		return provider.SecretScopeFrom(ctx).GetSecret(name)
 	}
@@ -868,18 +871,12 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 	if multiplexRaw == nil {
 		multiplexRaw = nested["multiplex_profiles"]
 	}
-	if env := envMultiplexProfilesOverride(); env != nil {
-		multiplexRaw = *env
-	}
 	var multiplex *bool
 	if multiplexRaw != nil {
 		b := coerceBool(multiplexRaw, true)
 		multiplex = &b
 	}
-	onDown := envOnAllAdaptersDownOverride()
-	if onDown == "" {
-		onDown = normalizeChoice(pick("on_all_adapters_down"), map[string]bool{"exit": true, "stay_alive": true}, "exit")
-	}
+	onDown := normalizeChoice(pick("on_all_adapters_down"), map[string]bool{"exit": true, "stay_alive": true}, "exit")
 	maxConcurrent := coerceOptionalPositiveInt(pick("max_concurrent_sessions"), keyLabel("max_concurrent_sessions"))
 	maxAge := big.NewInt(90)
 	ageRaw, ok := data["session_store_max_age_days"]

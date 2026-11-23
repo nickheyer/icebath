@@ -170,7 +170,7 @@ func (r *GatewayRunner) notifyActiveSessionsOfShutdown(ctx context.Context) {
 				notified[dedupKey] = true
 			}
 			return nil
-		}, string(platform), diagnostic, nil)
+		}, string(platform), diagnostic)
 		if err == nil && !presented {
 			notified[dedupKey] = true
 		}
@@ -268,7 +268,7 @@ func (r *GatewayRunner) sendHomeShutdownNotice(ctx context.Context, served serve
 			notified[dedupKey] = true
 		}
 		return nil
-	}, string(served.platform), false, nil); err != nil {
+	}, string(served.platform), false); err != nil {
 		logSuppressed(slog.LevelDebug, err, "Failed to send shutdown notification to home channel %s:%s: %v", served.platform, homeChannel.ChatID)
 	}
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -102,7 +104,7 @@ func explicitLaunchSkills(c *CLI) []string {
 	}
 	auto := map[string]bool{}
 	if !c.ignoreRules {
-		for _, name := range resolveAutoLoadSkills(CLIConfig(c.ctx)) {
+		for _, name := range resolveAutoLoadSkills(c.ctx) {
 			auto[name] = true
 		}
 	}
@@ -115,19 +117,13 @@ func explicitLaunchSkills(c *CLI) []string {
 	return out
 }
 
-// Deduplicated skills.auto_load names of a config, empty when unset or malformed
-func resolveAutoLoadSkills(userConfig map[string]any) []string {
-	block, _ := userConfig["skills"].(map[string]any)
-	autoLoad, isList := block["auto_load"].([]any)
-	if !isList {
-		return nil
-	}
+// Deduplicated names of the skills every session loads
+func resolveAutoLoadSkills(ctx context.Context) []string {
 	seen := map[string]bool{}
 	var names []string
-	for _, entry := range autoLoad {
-		name, isStr := entry.(string)
+	for _, name := range settings.SkillsAutoLoad.Strings(ctx) {
 		name = strings.TrimSpace(name)
-		if !isStr || name == "" || seen[name] {
+		if name == "" || seen[name] {
 			continue
 		}
 		seen[name] = true

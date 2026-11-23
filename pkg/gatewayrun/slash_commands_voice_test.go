@@ -2,15 +2,14 @@ package gatewayrun
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Voice channel of a fixed name
@@ -82,7 +81,6 @@ func voiceCommandRunner(t *testing.T) *GatewayRunner {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	r := allocGatewayRunner()
 	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
-	r.voiceMode = pydict.New[string, string]()
 	return r
 }
 
@@ -96,13 +94,13 @@ func voiceCommandEvent(text string, platform gateway.Platform, chatID string) *g
 
 // Voice mode stored under a key, empty when absent
 func storedVoiceMode(r *GatewayRunner, key string) string {
-	mode, _ := r.voiceMode.Get(key)
+	mode, _ := chatVoiceMode(key)
 	return mode
 }
 
 func TestHandleVoiceCommandVoiceOff(t *testing.T) {
 	r := voiceCommandRunner(t)
-	r.voiceMode.Set("telegram:123", "voice_only")
+	storeChatVoiceMode("telegram:123", "voice_only")
 	if _, err := r.handleVoiceCommand(context.Background(), voiceCommandEvent("/voice off", gateway.PlatformTelegram, "123")); err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +111,7 @@ func TestHandleVoiceCommandVoiceOff(t *testing.T) {
 
 func TestHandleVoiceCommandToggleOnToOff(t *testing.T) {
 	r := voiceCommandRunner(t)
-	r.voiceMode.Set("telegram:123", "voice_only")
+	storeChatVoiceMode("telegram:123", "voice_only")
 	if _, err := r.handleVoiceCommand(context.Background(), voiceCommandEvent("/voice", gateway.PlatformTelegram, "123")); err != nil {
 		t.Fatal(err)
 	}
@@ -127,14 +125,7 @@ func TestHandleVoiceCommandPersistenceSaved(t *testing.T) {
 	if _, err := r.handleVoiceCommand(context.Background(), voiceCommandEvent("/voice on", gateway.PlatformTelegram, "123")); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := os.ReadFile(r.voiceModePath())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var data map[string]string
-	if err := json.Unmarshal(raw, &data); err != nil {
-		t.Fatal(err)
-	}
+	data := settings.ChatVoiceModes.Get(voiceModeCtx())
 	if data["telegram:123"] != "voice_only" {
 		t.Fatalf("saved %v", data)
 	}
@@ -215,7 +206,7 @@ func TestVoiceChannelCommandsLeaveSuccess(t *testing.T) {
 	adapter := newFakeVoiceAdapter(gateway.PlatformDiscord)
 	adapter.inVoice = true
 	r.adapters.Set(gateway.PlatformDiscord, adapter)
-	r.voiceMode.Set("discord:123", "all")
+	storeChatVoiceMode("discord:123", "all")
 	if _, err := r.handleVoiceChannelLeave(context.Background(), discordVoiceEvent("/voice leave")); err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +245,7 @@ func TestLeaveExceptionHandlingLeaveExceptionStillCleansState(t *testing.T) {
 	event := voiceCommandEvent("/voice leave", gateway.PlatformTelegram, "123")
 	event.RawMessage = voiceInputRawMessage{guildID: 111}
 	r.adapters.Set(gateway.PlatformTelegram, adapter)
-	r.voiceMode.Set("telegram:123", "all")
+	storeChatVoiceMode("telegram:123", "all")
 	if _, err := r.handleVoiceChannelLeave(context.Background(), event); err != nil {
 		t.Fatal(err)
 	}

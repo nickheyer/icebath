@@ -3,13 +3,13 @@ package provider
 import (
 	"context"
 	"math"
-	"os"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Positive Python float of a timeout value, false for anything float rejects or that is not above zero
@@ -51,10 +51,10 @@ func GetProviderStaleTimeout(ctx context.Context, providerID, model string) (flo
 	return configuredProviderSeconds(loadWireSettings(ctx).providers, providerID, model, "stale_timeout_seconds", "stale_timeout_seconds")
 }
 
-// Stream stale base from the environment or 180s, and whether the environment set it
-func streamEnvStaleBase() (float64, bool) {
-	_, explicit := os.LookupEnv(StreamStaleTimeoutEnv)
-	return envFloat(StreamStaleTimeoutEnv, defaultStreamStaleTimeout), explicit
+// Stream stale base from agent.stream_stale_timeout, and whether the profile set it itself
+func streamStaleBase(ctx context.Context) (float64, bool) {
+	v, err := settings.Resolve(ctx, settings.AgentStreamStaleTimeout.Key)
+	return settings.AgentStreamStaleTimeout.Get(ctx).Seconds(), err == nil && v.Source != settings.SourceDefault
 }
 
 // Cloud stale patience scaled for context size and floored for known reasoning models
@@ -101,14 +101,14 @@ func cloudStaleTimeoutFor(ctx context.Context, provider, model string, kwargs ma
 	return cloudStaleTimeoutForAgent(ctx, nil, provider, model, kwargs)
 }
 
-// Explicit provider stale timeout, else the scaled and floored default capped by the agent run budget unless the env set it
+// Explicit provider stale timeout, else the scaled and floored default capped by the agent run budget unless the profile set it
 func cloudStaleTimeoutForAgent(ctx context.Context, agent any, provider, model string, kwargs map[string]any) float64 {
 	if explicit, ok := GetProviderStaleTimeout(ctx, provider, model); ok {
 		return explicit
 	}
-	base, explicitEnv := streamEnvStaleBase()
+	base, explicit := streamStaleBase(ctx)
 	timeout := cloudStaleTimeout(ctx, base, kwargs)
-	if explicitEnv {
+	if explicit {
 		return timeout
 	}
 	return CapToRunBudget(agent, timeout)

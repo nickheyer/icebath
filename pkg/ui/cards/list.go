@@ -1,9 +1,15 @@
 package cards
 
 import (
-	tea "charm.land/bubbletea/v2"
+	"slices"
+	"strings"
 
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"github.com/nickheyer/icebath/pkg/ui/render"
+	"github.com/nickheyer/icebath/pkg/ui/txt"
 	"github.com/nickheyer/icebath/pkg/ui/wm"
 )
 
@@ -38,6 +44,12 @@ type ListSpec struct {
 	Quick func(l *List, i int) tea.Cmd
 	// Row typed into in place while the cursor sits on it, nil for a table without one
 	Input *ListInput
+	// Columns that give way, first to last, when the width cannot hold every column at a readable width
+	Yield []int
+	// Lines the help of a hub shows for row i, the detail of the row when nil
+	Help func(i int) []string
+	// A list to pick from: the filter bar takes typing from the start and enter on it runs Primary on the highlighted row
+	Pick bool
 }
 
 // Row of a list that takes typing in place of the table keys while the cursor sits on it
@@ -55,7 +67,18 @@ type ListInput struct {
 }
 
 // Table card with a filter bar, detail pane and keymap actions an extension drives through its spec
-type List struct{ *lister }
+type List struct {
+	*lister
+	// Every column of the spec and the rows of every column, the table showing those that fit
+	all     []render.Column
+	allRows func() [][]string
+	yield   []int
+	// Columns of the spec in view at the last paint, and the column of the row typed into among them
+	keep     []int
+	inputCol int
+	help     func(i int) []string
+	pick     bool
+}
 
 // Window manager interfaces the list answers through the table it wraps
 var _ interface {
@@ -72,7 +95,11 @@ var _ interface {
 
 // Builds the table from the spec, each action handed the list and the row under the cursor
 func NewList(env *Env, spec ListSpec) *List {
-	l := &List{lister: &lister{env: env, title: spec.Title, glyph: spec.Glyph, id: spec.Key, ctx: spec.Context, primary: spec.Primary, cols: spec.Columns, rows: spec.Rows, detail: spec.Detail, free: spec.Free, empty: spec.Empty, follow: spec.Follow}}
+	l := &List{lister: &lister{env: env, title: spec.Title, glyph: spec.Glyph, id: spec.Key, ctx: spec.Context, primary: spec.Primary, cols: spec.Columns, rows: spec.Rows, detail: spec.Detail, free: spec.Free, empty: spec.Empty, follow: spec.Follow},
+		all: spec.Columns, allRows: spec.Rows, yield: spec.Yield, help: spec.Help, pick: spec.Pick}
+	if len(spec.Yield) > 0 && spec.Rows != nil {
+		l.lister.rows = l.shownRows
+	}
 	l.actions = make(map[string]func(*lister, int) tea.Cmd, len(spec.Actions))
 	for id, fn := range spec.Actions {
 		l.actions[id] = func(_ *lister, i int) tea.Cmd { return fn(l, i) }
@@ -91,6 +118,7 @@ func NewList(env *Env, spec ListSpec) *List {
 		l.quick = func(_ *lister, i int) tea.Cmd { return spec.Quick(l, i) }
 	}
 	if in := spec.Input; in != nil {
+		l.inputCol = in.Col
 		l.input = &rowInput{row: in.Row, col: in.Col, ctxs: in.Contexts}
 		if in.Done != nil {
 			l.input.done = func(_ *lister, text string) tea.Cmd { return in.Done(l, text) }
@@ -102,11 +130,196 @@ func NewList(env *Env, spec ListSpec) *List {
 	return l
 }
 
-// Hands the message to the table and keeps the list as the card the window manager holds
+// Hands the message to the table and keeps the list as the card the window manager holds, a pick list picking from its filter bar and
+// moving the cursor to the row whose first cell best matches what was typed
 func (l *List) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
+	if l.pick {
+		before := l.bar.Query()
+		defer func() {
+			if q := l.bar.Query(); q != before && q != "" {
+				l.refresh()
+				l.selectBest(strings.ToLower(q))
+			}
+		}()
+		switch m := msg.(type) {
+		case wm.ActionMsg:
+			if m.ID == "search.accept" {
+				l.bar.Accept()
+				return l, l.act(l.primary)
+			}
+		case wm.FocusMsg:
+			_, cmd := l.lister.Update(msg)
+			if m.Focused {
+				l.bar.Open()
+			}
+			return l, cmd
+		}
+	}
 	_, cmd := l.lister.Update(msg)
 	return l, cmd
 }
+
+// Reports whether the list has an action for the keymap action
+func (l *List) answers(id string) bool {
+	_, ok := l.actions[id]
+	return ok
+}
+
+// Legend of the table, a pick list naming its filter bar keys for what they do there: enter picks and esc goes back
+func (l *List) Hints() []wm.Hint {
+	out := l.lister.Hints()
+	if !l.pick {
+		return out
+	}
+	for i, h := range out {
+		switch h.Action {
+		case "search.accept":
+			out[i].Label = lang.T(txt.KitHintPick)
+		case "search.close":
+			out[i].Label = lang.T(txt.KitHintBack)
+		}
+	}
+	return out
+}
+
+// Puts the cursor on the shown row whose first cell is the query, else starts with it, else has a word starting with it
+func (l *List) selectBest(q string) {
+	best, rank := -1, 4
+	for at, i := range l.shown {
+		if i >= len(l.data) || len(l.data[i]) == 0 {
+			continue
+		}
+		first := ""
+		for _, cell := range l.data[i] {
+			if c := strings.ToLower(strings.TrimSpace(ansi.Strip(cell))); c != "" {
+				first = c
+				break
+			}
+		}
+		r := 3
+		switch {
+		case first == q:
+			r = 0
+		case strings.HasPrefix(first, q):
+			r = 1
+		case strings.Contains(" "+first, " "+q):
+			r = 2
+		}
+		if r < rank {
+			best, rank = at, r
+		}
+	}
+	if best >= 0 && rank < 3 {
+		l.sel = best
+	}
+}
+
+// Reports whether the list is one to pick from
+func (l *List) Picks() bool { return l.pick }
+
+// Least width a flex column keeps before columns that yield give way
+const yieldFloor = 16
+
+// Paints the columns that fit the width, those that yield giving way first to last
+func (l *List) View(w, h int) string {
+	if len(l.yield) == 0 {
+		return l.lister.View(w, h)
+	}
+	keep := l.fit(w)
+	if !slices.Equal(keep, l.keep) {
+		l.keep = keep
+		l.cols = make([]render.Column, len(keep))
+		for i, c := range keep {
+			l.cols[i] = l.all[c]
+		}
+		if l.input != nil {
+			l.input.col = slices.Index(keep, l.inputCol)
+		}
+		l.refresh()
+	}
+	return l.lister.View(w, h)
+}
+
+// Columns of the spec to show at width w: all of them while each keeps a readable width, else fewer by the order they yield
+func (l *List) fit(w int) []int {
+	rows := l.allRows()
+	natural := make([]int, len(l.all))
+	for i, c := range l.all {
+		natural[i] = ansi.StringWidth(c.Title)
+		for _, r := range rows {
+			if i < len(r) {
+				natural[i] = max(natural[i], ansi.StringWidth(r[i]))
+			}
+		}
+		if c.Max > 0 {
+			natural[i] = min(natural[i], c.Max)
+		}
+		if c.Flex > 0 {
+			natural[i] = min(natural[i], yieldFloor)
+		}
+	}
+	keep := make([]int, len(l.all))
+	for i := range keep {
+		keep[i] = i
+	}
+	room := func() int {
+		n := 0
+		for _, c := range keep {
+			n += natural[c]
+		}
+		return n + 3*(len(keep)-1) + 3
+	}
+	for _, c := range l.yield {
+		if room() <= w || len(keep) <= 1 {
+			break
+		}
+		keep = slices.DeleteFunc(keep, func(k int) bool { return k == c })
+	}
+	return keep
+}
+
+// Cells of the columns in view for every row of the spec
+func (l *List) shownRows() [][]string {
+	rows := l.allRows()
+	if len(l.keep) == 0 || len(l.keep) == len(l.all) {
+		return rows
+	}
+	out := make([][]string, len(rows))
+	for i, r := range rows {
+		cells := make([]string, len(l.keep))
+		for j, c := range l.keep {
+			if c < len(r) {
+				cells[j] = r[c]
+			}
+		}
+		out[i] = cells
+	}
+	return out
+}
+
+// Lines the help of a hub shows for the row under the cursor
+func (l *List) HelpLines() []string {
+	i := l.index()
+	switch {
+	case i < 0:
+		return nil
+	case l.help != nil:
+		return l.help(i)
+	case l.detail != nil:
+		return l.detail(i)
+	}
+	return nil
+}
+
+// Opens the filter bar holding the text, the rows narrowed to those holding it
+func (l *List) Filter(text string) {
+	l.bar.Open()
+	l.bar.input().Insert(text)
+	l.refresh()
+}
+
+// Reports whether the filter narrows the rows
+func (l *List) Filtered() bool { return l.bar.Query() != "" }
 
 // Recomputes the rows now
 func (l *List) Refresh() { l.refresh() }

@@ -59,7 +59,8 @@ func resolveGitBranch(cwd string) string {
 
 // Starts tracking a folder, a fresh generation with its first tick and refresh interval
 func (g *gitBranchTracker) track(cwd string) tea.Cmd {
-	if cwd == g.cwd && g.gen > 0 {
+	// The folder already tracked, or no folder yet
+	if cwd == g.cwd && (g.gen > 0 || cwd == "") {
 		return nil
 	}
 	if g.gen == 0 {

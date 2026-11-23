@@ -429,8 +429,12 @@ func TestRunAnthropicOauthFlowManualTokenStillPersists(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
-	if v := config.LoadEnv(h)["ANTHROPIC_TOKEN"]; v != "sk-ant-oat01-manual-token" {
-		t.Fatalf("ANTHROPIC_TOKEN %q", v)
+	held := false
+	for _, e := range LoadPool(modelsPoolEnv(ctx), "anthropic").Entries() {
+		held = held || e.AccessToken == "sk-ant-oat01-manual-token"
+	}
+	if !held || config.LoadEnv(h)["ANTHROPIC_TOKEN"] != "" {
+		t.Fatalf("the setup token must become an Icebath login and stay out of .env: %v", config.LoadEnv(h))
 	}
 	if !strings.Contains(out.String(), "Setup-token saved") {
 		t.Fatalf("out %q", out.String())

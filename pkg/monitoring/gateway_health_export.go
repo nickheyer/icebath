@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/logging"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Every gauge the runtime snapshot can emit, a metric missing here is never exported
@@ -131,30 +132,17 @@ func (r *GatewayHealthExportRuntime) Shutdown() {
 	r.Streamer, r.LogStreamer, r.MetricProvider, r.stop, r.done = nil, nil, nil, nil, nil
 }
 
-func gatewayHealthConfig(cfg map[string]any) map[string]any {
-	return monitoringSection(cfg, "gateway_health_export")
-}
-
-// Config value of the export section, def when the key is absent
-func gatewayHealthOption(cfg map[string]any, key string, def any) any {
-	if v, ok := gatewayHealthConfig(cfg)[key]; ok {
-		return v
-	}
-	return def
-}
-
-func gatewayHealthEnabled(cfg map[string]any) bool {
-	return pyrepr.Truthy(gatewayHealthConfig(cfg)["enabled"]) && IsOTLPEnabled(cfg)
+func gatewayHealthEnabled(ctx context.Context) bool {
+	return settings.MonitoringGatewayHealthExportEnabled.Get(ctx) && IsOTLPEnabled(ctx)
 }
 
 // Signal endpoint and resolved headers of the OTLP export, nil headers when none resolve
-func exporterArgs(cfg map[string]any, signal string) (string, map[string]string) {
-	otlp := otlpConfig(cfg)
-	headers := ResolveHeaders(otlp["headers_env"])
+func exporterArgs(ctx context.Context, signal string) (string, map[string]string) {
+	headers := ResolveHeaders(settings.MonitoringExportOtlpHeadersEnv.Get(ctx))
 	if len(headers) == 0 {
 		headers = nil
 	}
-	return SignalEndpoint(pyrepr.Str(otlp["endpoint"]), signal), headers
+	return SignalEndpoint(settings.MonitoringExportOtlpEndpoint.Get(ctx), signal), headers
 }
 
 // Supervisor running this process, systemd then s6 then container then launchd, manual otherwise
@@ -178,7 +166,7 @@ func supervisionMode() string {
 }
 
 // Gateway snapshot of the runtime status file, an empty status when it cannot be read
-func readGatewaySnapshot(cfg map[string]any) (GatewayHealthSnapshot, error) {
+func readGatewaySnapshot(ctx context.Context) (GatewayHealthSnapshot, error) {
 	runtime := pyjson.NewObject()
 	if read := GatewayReadRuntimeStatus; read != nil {
 		func() {
@@ -188,7 +176,7 @@ func readGatewaySnapshot(cfg map[string]any) (GatewayHealthSnapshot, error) {
 			}
 		}()
 	}
-	return BuildGatewayHealthSnapshot(runtime, true, safeProfile(), otlpInstallID(cfg), safeVersion(), supervisionMode())
+	return BuildGatewayHealthSnapshot(runtime, true, safeProfile(), otlpInstallID(ctx), safeVersion(), supervisionMode())
 }
 
 // Non negative count from a live counter, zero with a debug line when the counter is absent or panics
@@ -216,8 +204,8 @@ func readBackgroundDelegationsCount() int {
 }
 
 // Gateway snapshot with background work gauges on the gateway attributes and the cron gauges appended
-func readRuntimeSnapshot(cfg map[string]any) (GatewayHealthSnapshot, error) {
-	snap, err := readGatewaySnapshot(cfg)
+func readRuntimeSnapshot(ctx context.Context) (GatewayHealthSnapshot, error) {
+	snap, err := readGatewaySnapshot(ctx)
 	if err != nil {
 		return snap, err
 	}
@@ -230,16 +218,16 @@ func readRuntimeSnapshot(cfg map[string]any) (GatewayHealthSnapshot, error) {
 	snap.Metrics = append(snap.Metrics,
 		GatewayMetric{Name: "icebath.gateway.background_work", Value: readBackgroundWorkCount(), Attributes: base},
 		GatewayMetric{Name: "icebath.gateway.background_delegations", Value: readBackgroundDelegationsCount(), Attributes: base})
-	snap.Metrics = append(snap.Metrics, BuildCronHealthSnapshot(context.Background()).Metrics...)
+	snap.Metrics = append(snap.Metrics, BuildCronHealthSnapshot(ctx).Metrics...)
 	return snap, nil
 }
 
 // Emits the snapshot events unless diagnostic events are disabled
-func emitSnapshotEvents(cfg map[string]any) {
-	if !pyrepr.Truthy(gatewayHealthOption(cfg, "diagnostic_events_enabled", true)) {
+func emitSnapshotEvents(ctx context.Context) {
+	if !settings.MonitoringGatewayHealthExportDiagnosticEventsEnabled.Get(ctx) {
 		return
 	}
-	snap, err := readRuntimeSnapshot(cfg)
+	snap, err := readRuntimeSnapshot(ctx)
 	if err != nil {
 		pkgLog().Debug("gateway health snapshot emit failed: " + err.Error())
 		return
@@ -247,18 +235,6 @@ func emitSnapshotEvents(cfg map[string]any) {
 	for _, ev := range snap.Events {
 		Emit(ev)
 	}
-}
-
-// Python int of a config value, the conversion error for a value int rejects
-func configInt(v any) (int64, error) {
-	n, err := pyint.Of(v)
-	if err != nil {
-		return 0, err
-	}
-	if !n.IsInt64() {
-		return 0, fmt.Errorf("OverflowError: int too large")
-	}
-	return n.Int64(), nil
 }
 
 // Numeric value of a gauge observation as a float
@@ -300,34 +276,31 @@ func metricAttributes(attrs map[string]string) otelmetric.MeasurementOption {
 }
 
 // SDK resource of the merged default and runtime resource attributes for a telemetry scope
-func runtimeResource(cfg map[string]any, scope string) (*resource.Resource, error) {
+func runtimeResource(ctx context.Context, scope string) (*resource.Resource, error) {
 	var kvs []attribute.KeyValue
-	for k, v := range RuntimeResourceAttributes(cfg, scope) {
+	for k, v := range RuntimeResourceAttributes(ctx, scope) {
 		kvs = append(kvs, attribute.String(k, v))
 	}
 	return resource.Merge(resource.Default(), resource.NewSchemaless(kvs...))
 }
 
 // Meter provider exporting every observable gauge periodically to the metrics endpoint
-func startMetricProvider(cfg map[string]any, sdk *gatewayHealthSDK) (*sdkmetric.MeterProvider, error) {
-	endpoint, headers := exporterArgs(cfg, "metrics")
-	exporter, err := sdk.newMetricExporter(context.Background(), endpoint, headers)
+func startMetricProvider(ctx context.Context, sdk *gatewayHealthSDK) (*sdkmetric.MeterProvider, error) {
+	endpoint, headers := exporterArgs(ctx, "metrics")
+	exporter, err := sdk.newMetricExporter(ctx, endpoint, headers)
 	if err != nil {
 		return nil, err
 	}
-	seconds, err := configInt(gatewayHealthOption(cfg, "export_interval_seconds", 60))
-	if err != nil {
-		return nil, err
-	}
-	reader := sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(time.Duration(max(5, seconds))*time.Second))
-	res, err := runtimeResource(cfg, "gateway_health")
+	interval := max(5*time.Second, settings.MonitoringGatewayHealthExportExportIntervalSeconds.Get(ctx))
+	reader := sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(interval))
+	res, err := runtimeResource(ctx, "gateway_health")
 	if err != nil {
 		return nil, err
 	}
 	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader), sdkmetric.WithResource(res))
 	meter := provider.Meter("icebath.gateway.health")
 	matching := func(name string) []GatewayMetric {
-		snap, err := readRuntimeSnapshot(cfg)
+		snap, err := readRuntimeSnapshot(ctx)
 		if err != nil {
 			pkgLog().Debug("gateway metric callback failed: " + err.Error())
 			return nil
@@ -400,12 +373,12 @@ type GatewayDiagnosticLogStreamer struct {
 }
 
 // Streamer batching logs to the logs endpoint under the gateway diagnostics resource
-func newGatewayDiagnosticLogStreamer(cfg map[string]any, sdk *gatewayHealthSDK) (*GatewayDiagnosticLogStreamer, error) {
-	res, err := runtimeResource(cfg, "gateway_diagnostics")
+func newGatewayDiagnosticLogStreamer(ctx context.Context, sdk *gatewayHealthSDK) (*GatewayDiagnosticLogStreamer, error) {
+	res, err := runtimeResource(ctx, "gateway_diagnostics")
 	if err != nil {
 		return nil, err
 	}
-	endpoint, headers := exporterArgs(cfg, "logs")
+	endpoint, headers := exporterArgs(ctx, "logs")
 	s := &GatewayDiagnosticLogStreamer{processor: newBatchLogProcessor(sdk.newLogExporter(endpoint, headers, res))}
 	s.sub = NewSubscriber(s.Call)
 	return s, nil
@@ -481,50 +454,45 @@ func failGatewayHealthExport(runtime *GatewayHealthExportRuntime, level slog.Lev
 	return &GatewayHealthExportRuntime{Enabled: false, Reason: reason}
 }
 
-// Starts the gateway health export the config enables, a disabled runtime with its reason otherwise
-func StartGatewayHealthExport(cfg map[string]any) *GatewayHealthExportRuntime {
-	if !gatewayHealthEnabled(cfg) {
+// Starts the gateway health export the profile enables, a disabled runtime with its reason otherwise
+func StartGatewayHealthExport(ctx context.Context) *GatewayHealthExportRuntime {
+	if !gatewayHealthEnabled(ctx) {
 		return &GatewayHealthExportRuntime{Enabled: false, Reason: "disabled"}
 	}
-	metricsOn := pyrepr.Truthy(gatewayHealthOption(cfg, "metrics_enabled", true))
-	diagnosticsOn := pyrepr.Truthy(gatewayHealthOption(cfg, "diagnostic_events_enabled", true))
+	metricsOn := settings.MonitoringGatewayHealthExportMetricsEnabled.Get(ctx)
+	diagnosticsOn := settings.MonitoringGatewayHealthExportDiagnosticEventsEnabled.Get(ctx)
 	runtime := &GatewayHealthExportRuntime{Enabled: true, Reason: "enabled"}
 	var sdk *gatewayHealthSDK
 	if metricsOn || diagnosticsOn {
 		sdk = builtinGatewayHealthSDK
 	}
 	if metricsOn && sdk != nil {
-		provider, err := startMetricProvider(cfg, sdk)
+		provider, err := startMetricProvider(ctx, sdk)
 		if err != nil {
 			return failGatewayHealthExport(runtime, slog.LevelWarn, "gateway health OTLP metrics failed to start", err, "metrics_start_failed")
 		}
 		runtime.MetricProvider = provider
 	}
 	if diagnosticsOn && sdk != nil {
-		runtime.Streamer = StartStreaming(cfg, gatewayHealthEvent)
+		runtime.Streamer = StartStreaming(ctx, gatewayHealthEvent)
 		if runtime.Streamer == nil {
 			return failGatewayHealthExport(runtime, slog.LevelDebug, "gateway diagnostic OTLP export failed to start", fmt.Errorf("gateway health span streamer did not start"), "diagnostics_start_failed")
 		}
-		logStreamer, err := newGatewayDiagnosticLogStreamer(cfg, sdk)
+		logStreamer, err := newGatewayDiagnosticLogStreamer(ctx, sdk)
 		if err != nil {
 			return failGatewayHealthExport(runtime, slog.LevelDebug, "gateway diagnostic OTLP export failed to start", err, "diagnostics_start_failed")
 		}
 		GetEmitter().Subscribe(logStreamer.sub)
 		runtime.LogStreamer = logStreamer
 	}
-	if diagnosticsOn && pyrepr.Truthy(gatewayHealthOption(cfg, "warning_error_events_enabled", true)) {
+	if diagnosticsOn && settings.MonitoringGatewayHealthExportWarningErrorEventsEnabled.Get(ctx) {
 		handler := NewGatewayDiagnosticLogHandler(safeProfile(), safeVersion())
 		logging.GetLogger("").AddHandler(handler)
 		runtime.LogHandler = handler
 	}
 	if diagnosticsOn {
-		emitSnapshotEvents(cfg)
-		seconds, err := configInt(gatewayHealthOption(cfg, "logs_export_interval_seconds", 5))
-		if err != nil {
-			pkgLog().Debug("gateway health snapshot thread failed to start: " + err.Error())
-			return runtime
-		}
-		interval := time.Duration(max(5, seconds)) * time.Second
+		emitSnapshotEvents(ctx)
+		interval := max(5*time.Second, settings.MonitoringGatewayHealthExportLogsExportIntervalSeconds.Get(ctx))
 		stop, done := make(chan struct{}), make(chan struct{})
 		runtime.stop, runtime.done = stop, done
 		go func() {
@@ -534,7 +502,7 @@ func StartGatewayHealthExport(cfg map[string]any) *GatewayHealthExportRuntime {
 				case <-stop:
 					return
 				case <-time.After(interval):
-					emitSnapshotEvents(cfg)
+					emitSnapshotEvents(ctx)
 				}
 			}
 		}()

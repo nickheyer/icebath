@@ -3,23 +3,14 @@ package provider
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/i18n"
 )
 
-// Routes the language env read through the profile secret scope and password prompts through the masked reader
+// Routes password prompts through the masked reader
 func init() {
-	i18n.SetSecretReader(func(ctx context.Context, name string) (string, bool, error) {
-		v, ok, err := GetSecret(ctx, name)
-		var unscoped *UnscopedSecretError
-		if errors.As(err, &unscoped) {
-			return "", false, fmt.Errorf("%w: %v", i18n.ErrUnscopedSecret, err)
-		}
-		return v, ok, err
-	})
 	cliui.SetMaskedSecretPrompt(func(prompt string) (string, error) {
 		v, err := maskedSecretPrompt(prompt)
 		switch {

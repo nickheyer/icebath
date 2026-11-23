@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -438,58 +437,28 @@ func xaiOAuthInferenceBaseURL(env PoolEnv) string {
 	return xaiValidateInferenceBaseURL(env, value, DefaultXAIOAuthBaseURL)
 }
 
-// Runtime xAI OAuth credentials, refreshing under the store lock when forced or near expiry
+// Runtime xAI OAuth credentials of the selected xAI login, refreshed through the pool when forced or close to expiry
 func resolveXAIOAuthRuntimeCredentials(env PoolEnv, forceRefresh, refreshIfExpiring bool, refreshSkew time.Duration) (map[string]any, error) {
-	shouldRefresh := func(data map[string]any) bool {
-		accessToken := xaiClean(anyMap(data["tokens"])["access_token"])
-		skew := refreshSkew
-		if skew == 0 {
-			skew = xaiProactiveRefreshSkew(accessToken)
-		}
-		return forceRefresh || (refreshIfExpiring && xaiAccessTokenIsExpiring(accessToken, skew))
+	pool := LoadSelectedPool(env, "xai-oauth")
+	entry, ok := pool.Peek()
+	if !ok {
+		return nil, xaiErr("No xAI login. Sign in with `icebath auth add xai-oauth`.", "xai_auth_missing", true)
 	}
-	data, err := readXAIOAuthTokens(env, true)
-	if err != nil {
-		return nil, err
+	token := entry.RuntimeAPIKey()
+	skew := refreshSkew
+	if skew == 0 {
+		skew = xaiProactiveRefreshSkew(token)
 	}
-	tokens := cloneMap(anyMap(data["tokens"]))
-	refreshTimeout := time.Duration(envFloat("ICEBATH_XAI_REFRESH_TIMEOUT_SECONDS", 20) * float64(time.Second))
-	if shouldRefresh(data) {
-		lockTimeout := AuthLockTimeout
-		if refreshTimeout+5*time.Second > lockTimeout {
-			lockTimeout = refreshTimeout + 5*time.Second
+	if forceRefresh || (refreshIfExpiring && xaiAccessTokenIsExpiring(token, skew)) {
+		refreshed, ok := pool.TryRefreshMatching(token, entry.ID)
+		if !ok {
+			return nil, xaiErr("The xAI login could not be refreshed. "+xaiRelogin, "xai_refresh_failed", true)
 		}
-		unlock, err := env.Store.Lock(lockTimeout)
-		if err != nil {
-			return nil, err
-		}
-		defer unlock()
-		if data, err = readXAIOAuthTokens(env, false); err != nil {
-			return nil, err
-		}
-		tokens = cloneMap(anyMap(data["tokens"]))
-		if shouldRefresh(data) {
-			tokenEndpoint := xaiClean(anyMap(data["discovery"])["token_endpoint"])
-			if tokenEndpoint == "" {
-				discovery, err := xaiOAuthDiscovery(env.ctx(), refreshTimeout)
-				if err != nil {
-					return nil, err
-				}
-				tokenEndpoint = discovery["token_endpoint"]
-			}
-			tokens, err = refreshXAIOAuthTokens(env, tokens, tokenEndpoint, xaiClean(data["redirect_uri"]), refreshTimeout)
-			if err != nil {
-				var authErr *AuthError
-				if errors.As(err, &authErr) && isTerminalXAIOAuthRefreshError(err) {
-					quarantineXAIOAuthTokens(env, authErr)
-				}
-				return nil, err
-			}
-		}
+		entry, token = refreshed, refreshed.RuntimeAPIKey()
 	}
 	return map[string]any{
-		"provider": "xai-oauth", "base_url": xaiOAuthInferenceBaseURL(env), "api_key": xaiClean(tokens["access_token"]),
-		"source": "icebath-auth-store", "last_refresh": data["last_refresh"], "auth_mode": "oauth_device_code",
+		"provider": "xai-oauth", "base_url": xaiOAuthInferenceBaseURL(env), "api_key": token,
+		"source": "credential_pool", "last_refresh": entry.LastRefresh, "auth_mode": "oauth_device_code",
 	}, nil
 }
 
@@ -504,7 +473,7 @@ type XAILoginArgs struct {
 	NoBrowser bool
 }
 
-// LoginXAIOAuth signs in to xAI Grok OAuth through the device code flow and makes it the provider
+// LoginXAIOAuth signs in to xAI Grok OAuth through the device code flow, stored as an owned login made the default, and makes it the provider
 func LoginXAIOAuth(env PoolEnv, out io.Writer, args XAILoginArgs, forceNewLogin bool) error {
 	if !forceNewLogin {
 		accepted, err := offerExistingOAuthCredentials(env, out, "xai-oauth",
@@ -521,36 +490,15 @@ func LoginXAIOAuth(env PoolEnv, out io.Writer, args XAILoginArgs, forceNewLogin 
 	fmt.Fprintln(out, "Signing in to xAI Grok OAuth (SuperGrok / Premium+)...")
 	fmt.Fprintln(out, "(Icebath creates its own local OAuth session)")
 	fmt.Fprintln(out)
-	timeout := args.Timeout
-	if timeout <= 0 {
-		timeout = 20 * time.Second
-	}
-	openBrowser := !args.NoBrowser
-	if isRemoteSession() {
-		openBrowser = false
-	}
-	creds, err := xaiOAuthDeviceCodeLoginFn(env, out, timeout, openBrowser)
+	login, err := SignInOAuthLogin(env, out, "xai-oauth", OAuthSignIn{NoBrowser: args.NoBrowser, Timeout: args.Timeout, MakeDefault: true})
 	if err != nil {
 		return err
 	}
-	err = saveXAIOAuthTokens(env, anyMap(creds["tokens"]), xaiSaveOptions{
-		Discovery: anyMap(creds["discovery"]), RedirectURI: anyString(creds["redirect_uri"]),
-		LastRefresh: anyString(creds["last_refresh"]), AuthMode: "oauth_device_code", SetActive: true,
-	})
+	configPath, err := updateConfigForProvider(env, "xai-oauth", DefaultXAIOAuthBaseURL, "", false)
 	if err != nil {
 		return err
 	}
-	if _, err := env.Store.UnsuppressCredentialSource("xai-oauth", "device_code"); err != nil {
-		return err
-	}
-	baseURL := DefaultXAIOAuthBaseURL
-	if v, has := creds["base_url"]; has {
-		baseURL = anyString(v)
-	}
-	configPath, err := updateConfigForProvider(env, "xai-oauth", baseURL, "", false)
-	if err != nil {
-		return err
-	}
+	fmt.Fprintf(out, "Signed in as the login %s.\n", login.Name)
 	printLoginSuccess(out, envHome(env), "xai-oauth", configPath, true)
 	return nil
 }

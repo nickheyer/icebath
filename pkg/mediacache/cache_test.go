@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var (
@@ -250,7 +252,7 @@ func TestCacheImageFromBytesValidatesImageAndSize(t *testing.T) {
 		t.Fatal("zero cap must disable the check")
 	}
 	os.WriteFile(filepath.Join(h, "config.yaml"), []byte("gateway:\n  max_inbound_media_bytes: lots\n"), 0o600)
-	if got := InboundMediaMaxBytes(ctx, h); got != DefaultInboundMediaMaxBytes {
+	if got := InboundMediaMaxBytes(ctx, h); got != int64(settings.GatewayMaxInboundMediaBytes.Default) {
 		t.Fatalf("unparseable cap %d", got)
 	}
 }

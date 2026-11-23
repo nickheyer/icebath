@@ -47,11 +47,16 @@ func registerRoomKeys(km *keys.Map) {
 		{ID: "tui.rooms.peers", Context: roomsContext, Label: "peers", Doc: "share the room with peer gateways or stop sharing it", Default: []string{"p"}},
 		{ID: "tui.rooms.promote", Context: roomsContext, Label: "continue here", Doc: "continue a room shared by a gateway that is gone on this gateway", Default: []string{"c"}},
 		{ID: "tui.rooms.history", Context: roomsContext, Label: "disbanded", Doc: "show or hide disbanded rooms", Default: []string{"h"}},
-		{ID: "tui.room.attach", Context: roomContext, Label: "attach", Doc: "attach a file to the next message", Default: []string{"alt+u"}},
-		{ID: "tui.room.files", Context: roomContext, Label: "files", Doc: "save a file of the room log to the project folder", Default: []string{"alt+b"}},
-		{ID: "tui.room.pending", Context: roomContext, Label: "waiting", Doc: "approve, retry or discard what waits in the room", Default: []string{"alt+p"}},
-		{ID: "tui.room.menu", Context: roomContext, Label: "room", Doc: "rename, stop, share or disband the room", Default: []string{"alt+x"}},
-		{ID: "tui.room.stop", Context: roomContext, Label: "stop", Doc: "stop the work running in the room", Default: []string{"esc"}},
+		{ID: "tui.room.attach", Context: roomContext, Label: "attach", Doc: "attach a file to the next message"},
+		{ID: "tui.room.files", Context: roomContext, Label: "files", Doc: "save a file of the room log to the project folder"},
+		{ID: "tui.room.pending", Context: roomContext, Label: "waiting", Doc: "approve, retry or discard what waits in the room"},
+		{ID: "tui.room.menu", Context: roomContext, Label: "room", Doc: "rename, stop, share or disband the room"},
+		{ID: "tui.room.stop", Context: roomContext, Label: "stop", Doc: "stop the work running in the room"},
+		{ID: "leader.tui.room.attach", Context: keys.Leader, Group: "room", Label: "attach", Doc: "attach a file to the next message of the room", Default: []string{"u"}},
+		{ID: "leader.tui.room.files", Context: keys.Leader, Group: "room", Label: "files", Doc: "save a file of the room log to the project folder", Default: []string{"F"}},
+		{ID: "leader.tui.room.pending", Context: keys.Leader, Group: "room", Label: "waiting", Doc: "approve, retry or discard what waits in the room", Default: []string{"P"}},
+		{ID: "leader.tui.room.menu", Context: keys.Leader, Group: "room", Label: "room", Doc: "rename, stop, share or disband the room", Default: []string{"M"}},
+		{ID: "leader.tui.room.stop", Context: keys.Leader, Group: "room", Label: "stop", Doc: "stop the work running in the room", Default: []string{"X"}},
 	} {
 		km.Register(a)
 	}
