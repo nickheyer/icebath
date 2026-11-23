@@ -7,8 +7,6 @@ import (
 	"syscall"
 
 	"golang.org/x/sys/windows"
-
-	"github.com/nickheyer/icebath/pkg/internal/pysignal"
 )
 
 // Signal number Windows gives a console Ctrl Break, the SIGBREAK of the C runtime
@@ -16,28 +14,6 @@ const sigBreak = syscall.Signal(21)
 
 // Names the termination signals of the entry are logged under
 var entrySignalNames = map[os.Signal]string{syscall.SIGTERM: "SIGTERM", syscall.SIGINT: "SIGINT", sigBreak: "SIGBREAK"}
-
-var procSetConsoleCtrlHandler = windows.NewLazySystemDLL("kernel32.dll").NewProc("SetConsoleCtrlHandler")
-
-// Routes SIGTERM and Ctrl Break to the logged exit and swallows Ctrl C ahead of the runtime handler
-func installEntrySignals(e *stdioEntry) {
-	pysignal.Signal(syscall.SIGTERM, pysignal.Func(e.logSignal))
-	pysignal.Signal(os.Interrupt, pysignal.Ignore)
-	if procSetConsoleCtrlHandler.Find() != nil {
-		return
-	}
-	handler := windows.NewCallback(func(ctrlType uint32) uintptr {
-		switch ctrlType {
-		case windows.CTRL_C_EVENT:
-			return 1
-		case windows.CTRL_BREAK_EVENT:
-			go e.logSignal(sigBreak)
-			return 1
-		}
-		return 0
-	})
-	_, _, _ = procSetConsoleCtrlHandler.Call(handler, 1)
-}
 
 // Moves RPC reads to a private uninheritable handle and gives the process a NUL standard input
 func closeRPCStdinOnExec() {

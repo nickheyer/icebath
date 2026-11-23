@@ -259,7 +259,7 @@ func loadConfigTree(h string) map[string]any {
 	return map[string]any(tree)
 }
 
-// catalog_provider declared on a custom provider row or legacy custom_providers entry
+// catalog_provider declared on a providers entry
 func configuredCatalogProvider(provider string, cfg map[string]any) string {
 	name := strings.TrimSpace(provider)
 	if strings.HasPrefix(strings.ToLower(name), "custom:") {
@@ -272,21 +272,7 @@ func configuredCatalogProvider(provider string, cfg map[string]any) string {
 		return ""
 	}
 	providerCfg, _ := cfgGet(cfg, "providers", name)
-	alias := stringOf(dictOrEmpty(providerCfg)["catalog_provider"])
-	if alias == "" {
-		legacy, _ := cfgGet(cfg, "custom_providers")
-		if entries, ok := asList(legacy); ok {
-			for _, e := range entries {
-				entry, ok := asMap(e)
-				if !ok || strings.TrimSpace(stringOf(entry["name"])) != name {
-					continue
-				}
-				alias = stringOf(entry["catalog_provider"])
-				break
-			}
-		}
-	}
-	return strings.TrimSpace(alias)
+	return strings.TrimSpace(stringOf(dictOrEmpty(providerCfg)["catalog_provider"]))
 }
 
 // models.dev provider id for a provider, custom providers only through catalog_provider

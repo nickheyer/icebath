@@ -93,9 +93,6 @@ func auxFallbackDestinationFromEntry(ctx context.Context, entry map[string]any, 
 		baseURL = fbClient.BaseURL()
 	}
 	apiMode := auxStrOr(entry["api_mode"])
-	if apiMode == "" {
-		apiMode = auxStrOr(entry["transport"])
-	}
 	model := fbModel
 	if model == "" {
 		model = strings.TrimSpace(auxStrOr(entry["model"]))
@@ -582,9 +579,6 @@ func auxResolveFallbackEntry(ctx context.Context, entry map[string]any) (AuxClie
 		return nil, "", nil
 	}
 	apiMode := auxStrOr(entry["api_mode"])
-	if apiMode == "" {
-		apiMode = auxStrOr(entry["transport"])
-	}
 	var key any
 	if k := auxFallbackEntryAPIKey(ctx, entry); k != "" {
 		key = k

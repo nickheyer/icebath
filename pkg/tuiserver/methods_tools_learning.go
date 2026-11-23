@@ -2,13 +2,9 @@ package tuiserver
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
-	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -45,63 +41,4 @@ func learningMutation(name string, argKeys []string, fn func(ctx context.Context
 			}
 			return ok(rid, out), nil
 		})
-}
-
-// Rescans skills in the calling session's profile and workspace and reports what was added and removed
-func skillsReload(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
-	cwd, err := completionCwd(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	scoped, err := sessionHomeScope(tuihost.SessionRecord(strOr(params["session_id"])), cwd, strOr(params["profile"]))(ctx)
-	if err != nil {
-		return nil, err
-	}
-	scope, err := boundSkillScope(scoped)
-	if err != nil {
-		return nil, err
-	}
-	result, err := scope.ReloadSkills(scoped)
-	if err != nil {
-		return nil, err
-	}
-	rows := func(key string) []map[string]any {
-		items, _ := result[key].([]map[string]any)
-		return items
-	}
-	added, removed := rows("added"), rows("removed")
-	lines := []string{"Reloading skills..."}
-	if len(added) == 0 && len(removed) == 0 {
-		lines = append(lines, "No new skills detected.")
-	}
-	for _, group := range []struct {
-		label string
-		items []map[string]any
-	}{{"Added skills:", added}, {"Removed skills:", removed}} {
-		if len(group.items) == 0 {
-			continue
-		}
-		lines = append(lines, group.label)
-		for _, item := range group.items {
-			name, present := item["name"]
-			if !present {
-				name = ""
-			}
-			lines = append(lines, "  - "+pyrepr.Str(name))
-		}
-	}
-	total := int64(0)
-	if truthy(result["total"]) {
-		n, err := pyint.Int64(result["total"])
-		if err != nil {
-			return nil, err
-		}
-		total = n
-	}
-	lines = append(lines, fmt.Sprintf("%d skill(s) available", total))
-	var diff tuigateway.SkillsReloadDiff
-	if err := tuigateway.Loose(result, &diff); err != nil {
-		return nil, err
-	}
-	return ok(rid, tuigateway.Plain(tuigateway.SkillsReloadResult{Output: strings.Join(lines, "\n"), Result: diff})), nil
 }

@@ -1,11 +1,9 @@
 package tuiserver
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/fakellm"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -32,64 +30,4 @@ func submitAndSettle(t *testing.T, hz *turnHarness, text string) bool {
 		}
 	}
 	return started
-}
-
-func TestARegisteredStaleCloseIsClearedBeforeTheTurnAndRotationPublishes(t *testing.T) {
-	hz := newTurnHarness(t, []any{fakellm.Text{Text: "ok"}}, "")
-	db, err := getDB(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	stampEnded(t, db, hz.key, "tui_close")
-	if !submitAndSettle(t, hz, "go") {
-		t.Fatal("turn refused on a registered session")
-	}
-	requests := hz.srv.MainRequests()
-	if len(requests) != 1 {
-		t.Fatalf("turns %d", len(requests))
-	}
-	row, err := db.GetSession(context.Background(), hz.key)
-	if err != nil || row.GetOr("end_reason", nil) != nil {
-		t.Fatalf("stamp kept %v %v", row, err)
-	}
-	if !db.TryAcquireCompressionLock(hz.key, "holder", 300) {
-		t.Fatal("compression lock refused")
-	}
-	publish := state.NewCompressionChildPublish(hz.key, hz.key+"-child", "tui", []map[string]any{{"role": "user", "content": "go"}})
-	model, holder := "m", "holder"
-	publish.Model, publish.CompressionLockHolder = &model, &holder
-	if err := db.PublishCompressionChild(context.Background(), publish); err != nil {
-		t.Fatal(err)
-	}
-	if row, _ := db.GetSession(context.Background(), hz.key); row.GetOr("end_reason", nil) != "compression" {
-		t.Fatalf("rotation end reason %v", row.GetOr("end_reason", nil))
-	}
-}
-
-func TestOnlyAnExplicitCloseOnAStillRegisteredSessionIsCleared(t *testing.T) {
-	for _, tc := range []struct {
-		reason  string
-		claimed bool
-	}{{"session_reset", false}, {"new_session", false}, {"compression", false}, {"ws_disconnect", false}, {"tui_close", true}} {
-		t.Run(tc.reason, func(t *testing.T) {
-			hz := newTurnHarness(t, []any{fakellm.Text{Text: "ok"}}, "")
-			db, err := getDB(context.Background())
-			if err != nil {
-				t.Fatal(err)
-			}
-			stampEnded(t, db, hz.key, tc.reason)
-			if !db.TryAcquireCompressionLock(hz.key, "elsewhere", 300) {
-				t.Fatal("compression lease refused")
-			}
-			if tc.claimed && popSessionByID(hz.sid) != hz.session {
-				t.Fatal("close did not claim the session")
-			}
-			if started := submitAndSettle(t, hz, "go"); started == tc.claimed {
-				t.Fatalf("started %v", started)
-			}
-			if row, _ := db.GetSession(context.Background(), hz.key); row.GetOr("end_reason", nil) != tc.reason {
-				t.Fatalf("end reason %v", row.GetOr("end_reason", nil))
-			}
-		})
-	}
 }

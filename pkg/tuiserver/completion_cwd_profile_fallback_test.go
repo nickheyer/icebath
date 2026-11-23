@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 // Writes a profile home whose config.yaml sets terminal cwd, or an empty config for none
@@ -117,21 +115,5 @@ func TestNamedProfileConfiguredCwdStillWins(t *testing.T) {
 	fakeProfileHome(t, h)
 	if got := completionCwdOf(t, map[string]any{"profile": "dev"}); got != profileWS {
 		t.Fatalf("cwd = %q want %q", got, profileWS)
-	}
-}
-
-func TestTerminalTaskCwdNamedProfilePlaceholderUsesOwnHome(t *testing.T) {
-	tmp := t.TempDir()
-	h := writeProfileCfg(t, filepath.Join(tmp, "home-beta"), strp("."))
-	launchWS := mustMkdir(t, filepath.Join(tmp, "launch-repo"))
-	t.Setenv("TERMINAL_CWD", launchWS)
-	fakeProfileHome(t, h)
-	cwd := completionCwdOf(t, map[string]any{"profile": "beta"})
-	if cwd != h {
-		t.Fatalf("cwd = %q want %q", cwd, h)
-	}
-	session := tuihost.NewSession(map[string]any{"cwd": cwd, "profile_home": h, "explicit_cwd": false})
-	if got := terminalTaskCwd(t.Context(), session); got != h {
-		t.Fatalf("task cwd = %q want %q", got, h)
 	}
 }

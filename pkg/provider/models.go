@@ -162,13 +162,6 @@ func configuredCustomProviderIDs(ctx context.Context) map[string]bool {
 			ids[CustomProviderSlug(name, key)] = true
 		}
 	}
-	if legacy, ok := asList(cfg["custom_providers"]); ok {
-		for _, raw := range legacy {
-			if entry, ok := asMap(raw); ok {
-				ids[CustomProviderSlug(stringOf(entry["name"]), "")] = true
-			}
-		}
-	}
 	return ids
 }
 
@@ -1267,9 +1260,6 @@ func credentialFingerprint(ctx context.Context, provider string) string {
 	if provider == "ollama" {
 		providerCfg := getProviderConfigDict(ctx, "ollama")
 		keyEnv := stringOf(providerCfg["key_env"])
-		if keyEnv == "" {
-			keyEnv = stringOf(providerCfg["api_key_env"])
-		}
 		modelCfg := modelConfigDictFn(ctx)
 		baseURL := stringOf(providerCfg["base_url"])
 		if baseURL == "" {

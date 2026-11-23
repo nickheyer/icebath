@@ -33,27 +33,18 @@ func TestCarriesFlagOnTheLaunchingSessionPolicy(t *testing.T) {
 			if falsy, _ := localCreationOptions(envOf(flag, "0")); wireParams(falsy)[field] != nil {
 				t.Fatal("falsy flag carried")
 			}
-			contract := &tuigateway.SessionCreateDescriptor{Sources: []string{"tui"}, Parameters: []string{"source", "request_id", field}}
-			_, params, err := canonicalRequest("session.create", withKeys(options, "request_id", "owned"), contract)
-			if err != nil || params[field] != true {
-				t.Fatalf("params %v err %v", params, err)
+			if params := createRequest(withKeys(options, "request_id", "owned")); params[field] != true {
+				t.Fatalf("params %v", params)
 			}
 		})
 	}
 }
 
-func TestRetainsPreparedIdentityAndRejectsUnsupportedTUILaunchPolicy(t *testing.T) {
-	contract := &tuigateway.SessionCreateDescriptor{Sources: []string{"tui"}, Parameters: []string{"request_id", "source", "model", "cwd", "toolsets"}}
-	method, params, err := canonicalRequest("session.create", map[string]any{"request_id": "fresh", "model": "local-model", "cwd": "/tmp/project"}, contract)
+func TestRetainsPreparedIdentity(t *testing.T) {
+	params := createRequest(map[string]any{"request_id": "fresh", "model": "local-model", "cwd": "/tmp/project"})
 	want := map[string]any{"request_id": "fresh", "model": "local-model", "cwd": "/tmp/project", "source": "tui"}
-	if err != nil || method != "session.create" || !reflect.DeepEqual(params, want) {
-		t.Fatalf("%s %v %v", method, params, err)
-	}
-	if _, _, err := canonicalRequest("session.create", map[string]any{}, &tuigateway.SessionCreateDescriptor{Sources: []string{"cli"}}); err == nil || !strings.Contains(err.Error(), "tui") {
-		t.Fatalf("cli only err %v", err)
-	}
-	if _, _, err := canonicalRequest("session.create", map[string]any{"yolo": true}, contract); err == nil || !strings.Contains(err.Error(), "yolo") {
-		t.Fatalf("yolo err %v", err)
+	if !reflect.DeepEqual(params, want) {
+		t.Fatalf("%v", params)
 	}
 	submit := wireParams(tuigateway.CanonicalSubmitParams{SessionID: "sid", InputID: ptr("prepared-id"), Text: "hello", Queued: true})
 	if !reflect.DeepEqual(submit, map[string]any{"session_id": "sid", "input_id": "prepared-id", "text": "hello", "queued": true}) {
@@ -78,14 +69,10 @@ func TestCarriesSkillsCheckpointsPassSessionIDAcceptHooksOntoSessionCreate(t *te
 	if got, _ := localCreationOptions(envOf("ICEBATH_ACCEPT_HOOKS", "0", "ICEBATH_TUI_SKILLS", " , ")); len(wireParams(got)) != 0 {
 		t.Fatalf("got %v", got)
 	}
-	params := []string{"request_id", "source"}
-	for k := range options {
-		params = append(params, k)
-	}
-	_, sent, err := canonicalRequest("session.create", withKeys(options, "request_id", "owned"), &tuigateway.SessionCreateDescriptor{Sources: []string{"tui"}, Parameters: params})
+	sent := createRequest(withKeys(options, "request_id", "owned"))
 	for k, v := range options {
-		if err != nil || !reflect.DeepEqual(sent[k], v) {
-			t.Fatalf("%s sent %v err %v", k, sent[k], err)
+		if !reflect.DeepEqual(sent[k], v) {
+			t.Fatalf("%s sent %v", k, sent[k])
 		}
 	}
 }
@@ -127,19 +114,14 @@ func TestCarriesYoloAndIgnoreRulesOntoSessionCreate(t *testing.T) {
 	}
 }
 
-func TestSendsTheLaunchersClientEnvironmentOnlyToAGatewayThatTakesIt(t *testing.T) {
+func TestSendsTheLaunchersClientEnvironment(t *testing.T) {
 	typed, _ := localCreationOptions(envOf("ICEBATH_TUI_CLIENT_ENV", `{"PATH": "/client/bin"}`))
 	options := wireParams(typed)
 	if !reflect.DeepEqual(options["client_env"], map[string]any{"PATH": "/client/bin"}) {
 		t.Fatalf("client env %v", options["client_env"])
 	}
-	_, takes, _ := canonicalRequest("session.create", withKeys(options, "request_id", "r"), &tuigateway.SessionCreateDescriptor{Sources: []string{"tui"}, Parameters: []string{"request_id", "source", "client_env"}})
-	if !reflect.DeepEqual(takes["client_env"], map[string]any{"PATH": "/client/bin"}) {
-		t.Fatalf("takes %v", takes)
-	}
-	_, older, err := canonicalRequest("session.create", withKeys(options, "request_id", "r"), &tuigateway.SessionCreateDescriptor{Sources: []string{"tui"}, Parameters: []string{"request_id", "source"}})
-	if _, has := older["client_env"]; has || err != nil {
-		t.Fatalf("older %v %v", older, err)
+	if sent := createRequest(withKeys(options, "request_id", "r")); !reflect.DeepEqual(sent["client_env"], map[string]any{"PATH": "/client/bin"}) {
+		t.Fatalf("sent %v", sent)
 	}
 	for _, raw := range []string{"not json", "[]", `{"PATH": 1}`} {
 		if got, _ := localCreationOptions(envOf("ICEBATH_TUI_CLIENT_ENV", raw)); got.ClientEnv != nil {

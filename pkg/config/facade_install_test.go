@@ -247,14 +247,6 @@ func TestUpdateCommandsByMethod(t *testing.T) {
 	}
 }
 
-func TestValidCustomProviderFieldsAcceptExtraBody(t *testing.T) {
-	want := []string{"api_key", "api_mode", "base_url", "catalog_provider", "context_length", "extra_body", "key_env", "model",
-		"models", "name", "rate_limit_delay", "ssl_ca_cert", "ssl_verify"}
-	if got := slices.Sorted(maps.Keys(ValidCustomProviderFields)); !slices.Equal(got, want) {
-		t.Fatalf("got %v", got)
-	}
-}
-
 // Platform plugin manifest written under dir
 func writeManifest(t *testing.T, dir, text string) {
 	t.Helper()

@@ -287,17 +287,13 @@ func TestCustomOpencodeFamilyRuntime(t *testing.T) {
 
 func TestConfigPathsAndCodexModelProviderID(t *testing.T) {
 	cfg := map[string]any{
-		"providers":        map[string]any{"gw": map[string]any{"api": "https://gw.example/v1", "name": "Gateway"}},
-		"custom_providers": []any{map[string]any{"name": "Legacy", "base_url": "https://legacy.example/v1"}},
+		"providers": map[string]any{"gw": map[string]any{"base_url": "https://gw.example/v1", "name": "Gateway"}},
 	}
 	r := testResolver(t, cfg, &fakeCreds{}, "")
 	if p := r.NamedCustomProviderConfigPath("custom:gw", cfg); p == nil || p.Section != "providers" || p.Key != "gw" {
 		t.Fatalf("providers path: %+v", p)
 	}
-	if p := r.NamedCustomProviderConfigPath("legacy", cfg); p == nil || p.Section != "custom_providers" || p.Index != 0 {
-		t.Fatalf("legacy path: %+v", p)
-	}
-	if p := CustomProviderConfigPathForURL("https://legacy.example/v1/", cfg); p == nil || p.Section != "custom_providers" {
+	if p := CustomProviderConfigPathForURL("https://gw.example/v1/", cfg); p == nil || p.Section != "providers" || p.Key != "gw" {
 		t.Fatalf("url path: %+v", p)
 	}
 	if got := r.CodexModelProviderID("custom:gw"); got != "gw" {

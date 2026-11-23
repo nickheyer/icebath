@@ -58,36 +58,6 @@ func isNilAgent(a routedAgent) bool {
 	return ok && p == nil
 }
 
-// Seed rows a client may author, user assistant and system text with only the hidden display kind kept
-func coerceSeedHistory(value any) []any {
-	history := []any{}
-	items, _ := value.([]any)
-	for _, raw := range items {
-		item, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		role, _ := item["role"].(string)
-		if role != "user" && role != "assistant" && role != "system" {
-			continue
-		}
-		content := item["content"]
-		if content == nil {
-			content = item["text"]
-		}
-		text, isStr := content.(string)
-		if !isStr || pystr.Strip(text) == "" {
-			continue
-		}
-		row := map[string]any{"role": role, "content": text}
-		if item["display_kind"] == "hidden" {
-			row["display_kind"] = "hidden"
-		}
-		history = append(history, row)
-	}
-	return history
-}
-
 // Stripped display text of a prompt or correction
 func inflightText(value any) string {
 	return pystr.Strip(tuihost.ContentDisplayText(value))

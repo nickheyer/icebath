@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -13,22 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-
-// Handler that parses a login method's typed params, runs its body and answers its result or refusal
-func loginHandler[P any](parse func(any) (P, error), body func(ctx context.Context, p P) (any, error)) func(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	return func(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-		p, err := parse(params)
-		if err != nil {
-			return rpcErr(rid, tuihost.LoginCodeBadParams, err.Error(), nil), nil
-		}
-		result, err := body(ctx, p)
-		if err != nil {
-			return loginRefusalFrame(rid, err), nil
-		}
-		return ok(rid, tuigateway.Plain(result)), nil
-	}
-}
 
 // Error frame of a refused login request, its code and reason
 func loginRefusalFrame(rid any, err error) map[string]any {
@@ -126,28 +109,6 @@ func withSessionLogin(ctx context.Context, sid string, db *state.DB) context.Con
 		db, _ = getDB(ctx)
 	}
 	return provider.WithSessionLogins(ctx, sessionLoginChoices(ctx, session, db))
-}
-
-// Gives a session.create's new record the login choices of the session it names in logins_from
-func rememberCreateLogin(ctx context.Context, record *tuihost.Session, params map[string]any) {
-	from := strings.TrimSpace(strOr(params["logins_from"]))
-	if record == nil || from == "" {
-		return
-	}
-	parent, err := tuiLoginSessions{}.LoginSession(ctx, from)
-	if err != nil || parent == nil {
-		pkgLog().Warn(fmt.Sprintf("the logins of session %s were not copied to the new session: it is not open here", from))
-		return
-	}
-	choices, err := parent.Choices(ctx)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("the logins of session %s were not copied to the new session: %v", from, err))
-		return
-	}
-	if held, ok := tuihost.SessionRecord(from).Get(loginChoicesKey).(provider.SessionLogins); ok {
-		choices = held
-	}
-	record.Set(loginChoicesKey, choices.Clone())
 }
 
 // Writes the login choices and own settings a live session holds into the model config its row gets, a row that holds them already keeping its own

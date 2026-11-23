@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -75,7 +76,7 @@ func setupKeyEntry(name string) (config.EnvVar, bool, bool) {
 	return v, false, ok
 }
 
-// Keys of the catalog the params ask for, required ones first
+// Keys of the catalog the params ask for, required ones first, names the catalog does not know left out
 func setupKeys(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
 	p, err := tuigateway.SetupKeys.Params(params)
 	if err != nil {
@@ -91,7 +92,7 @@ func setupKeys(ctx context.Context, rid any, params map[string]any, _ *tuihost.S
 	for _, name := range names {
 		v, required, known := setupKeyEntry(name)
 		if !known {
-			return rpcErr(rid, 4001, fmt.Sprintf("unknown key %s", name), nil), nil
+			continue
 		}
 		if (p.Category != "" && v.Category != p.Category) || (v.Advanced && !p.Advanced && len(p.Names) == 0) {
 			continue
@@ -105,7 +106,7 @@ func setupKeys(ctx context.Context, rid any, params map[string]any, _ *tuihost.S
 		}
 		out.Keys = append(out.Keys, row)
 	}
-	return ok(rid, out), nil
+	return ok(rid, tuigateway.Plain(out)), nil
 }
 
 // Keeps a key of the catalog in the home's .env, or takes it out for an empty value
@@ -134,7 +135,7 @@ func setupSaveKey(ctx context.Context, rid any, params map[string]any, _ *tuihos
 	if err != nil {
 		return nil, err
 	}
-	return ok(rid, tuigateway.SetupSaveKeyResult{Key: row}), nil
+	return ok(rid, tuigateway.Plain(tuigateway.SetupSaveKeyResult{Key: row})), nil
 }
 
 // Facts of this computer and home by name
@@ -156,7 +157,7 @@ func setupFacts(ctx context.Context, rid any, params map[string]any, _ *tuihost.
 		}
 		out.Facts[name] = holds
 	}
-	return ok(rid, out), nil
+	return ok(rid, tuigateway.Plain(out)), nil
 }
 
 // Tool groups of a platform with which are on and whether the keys of each are there
@@ -184,7 +185,9 @@ func setupToolsets(ctx context.Context, rid any, params map[string]any, _ *tuiho
 		if err != nil {
 			return nil, err
 		}
-		row := tuigateway.SetupToolset{Name: ts.Key, Label: ts.Label, Detail: ts.Description, On: enabled[ts.Key], Ready: ready}
+		// The catalog's labels open with an emoji; the screen shows the words
+		label := strings.TrimSpace(strings.TrimLeftFunc(ts.Label, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }))
+		row := tuigateway.SetupToolset{Name: ts.Key, Label: label, Detail: ts.Description, On: enabled[ts.Key], Ready: ready}
 		for _, tool := range tools.Default.ResolveToolset(ctx, "", ts.Key) {
 			for _, name := range keyed[tool] {
 				if !slices.Contains(row.Keys, name) {
@@ -194,5 +197,5 @@ func setupToolsets(ctx context.Context, rid any, params map[string]any, _ *tuiho
 		}
 		out.Toolsets = append(out.Toolsets, row)
 	}
-	return ok(rid, out), nil
+	return ok(rid, tuigateway.Plain(out)), nil
 }

@@ -654,7 +654,7 @@ func entryURL(entry map[string]any) string {
 	return cfgString(entry["base_url"])
 }
 
-// Exported entry URL read, api before url before base_url
+// Exported entry URL read, the base_url of a providers entry
 func EntryURL(entry map[string]any) string { return entryURL(entry) }
 
 // Copies explicit boolean per model capabilities onto the runtime
@@ -792,7 +792,6 @@ func (r *resolver) matchNewStyleProvider(requestedNorm string, providers map[str
 type ConfigPath struct {
 	Section string
 	Key     string
-	Index   int
 }
 
 // Resolved entry and config path of the providers entry a name selects
@@ -1283,7 +1282,7 @@ func ExpandDirectAPIAlias(ctx context.Context, provider, existingBase string) (s
 	return modelsResolver(ctx).expandDirectAPIAlias(provider, existingBase)
 }
 
-// Bare custom plus an explicit base URL, such as a model_aliases direct alias
+// Bare custom plus an explicit base URL, such as a model.aliases direct alias
 func (r *resolver) resolveDirectAliasRuntime(requestedProvider, explicitAPIKey, explicitBaseURL string) *Runtime {
 	baseURL := strings.TrimRight(strings.TrimSpace(explicitBaseURL), "/")
 	explicitKey := strings.TrimSpace(explicitAPIKey)

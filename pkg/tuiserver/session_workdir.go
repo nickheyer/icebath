@@ -12,7 +12,6 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -210,24 +209,6 @@ func profileDefaultCwd(ctx context.Context, profileHome string) string {
 	return ""
 }
 
-// Picked workspace of a profile session, raw for ssh else an existing host dir, an error for a missing one
-func workspaceCwd(ctx context.Context, profileHome, raw string) (string, error) {
-	if cwdIsRemote(ctx, profileHome) {
-		if isRemoteCwdShape(raw) {
-			return raw, nil
-		}
-		return "", &pypath.ValueError{Msg: fmt.Sprintf("remote working directory must be absolute or ~-relative: %s", raw)}
-	}
-	resolved, err := pypath.Abspath(pypath.Expanduser(raw))
-	if err != nil {
-		return "", err
-	}
-	if !isDir(resolved) {
-		return "", &pypath.ValueError{Msg: fmt.Sprintf("working directory does not exist: %s", raw)}
-	}
-	return resolved, nil
-}
-
 // Session cwd, else the completion cwd
 func sessionCwd(ctx context.Context, session *tuihost.Session) string {
 	if cwd := strOr(session.Get("cwd")); cwd != "" {
@@ -395,12 +376,6 @@ func persistSessionCwdAndScheduleGitMeta(ctx context.Context, session *tuihost.S
 	return generation
 }
 
-// Cwd the terminal tool uses for a session, not host validated, empty when the backend default applies
-func terminalTaskCwd(ctx context.Context, session *tuihost.Session) string {
-	cwd, _ := terminalTaskCwdWithSource(ctx, session)
-	return cwd
-}
-
 // Terminal cwd and its source, session for this session's workspace or process for the global fallback
 func terminalTaskCwdWithSource(ctx context.Context, session *tuihost.Session) (string, string) {
 	profileHome := strOr(session.Get("profile_home"))
@@ -446,29 +421,6 @@ func terminalTaskCwdWithSource(ctx context.Context, session *tuihost.Session) (s
 	return cwd, "process"
 }
 
-// Explicit flag, session cwd and remote flag of a freshly created session
-func resolveCreateCwd(ctx context.Context, params map[string]any, profileHome string) (bool, string, bool, error) {
-	rawCwd := strings.TrimSpace(strOr(params["cwd"]))
-	remoteCwd := rawCwd != "" && isRemoteCwdShape(rawCwd) && cwdIsRemote(ctx, profileHome)
-	explicitCwd := false
-	suppress(func() {
-		if rawCwd == "" {
-			return
-		}
-		if remoteCwd {
-			explicitCwd = true
-			return
-		}
-		resolved, err := pypath.Abspath(pypath.Expanduser(rawCwd))
-		explicitCwd = err == nil && isDir(resolved)
-	})
-	sessionCwd, err := completionCwd(ctx, params)
-	if err != nil {
-		return false, "", false, err
-	}
-	return explicitCwd, sessionCwd, remoteCwd, nil
-}
-
 // Cwd to stamp on the session db row, empty to leave it unset under the launch dir rule
 func persistedSessionCwd(ctx context.Context, session *tuihost.Session) string {
 	if truthy(session.Get("explicit_cwd")) {
@@ -505,120 +457,4 @@ func hostCwdIsTerminalCwd(ctx context.Context, profileHome string) bool {
 	remote, _ := tools.TerminalProviderFlag(ctx, backend, "is_remote", true, profileHome).(bool)
 	container, _ := tools.TerminalProviderFlag(ctx, backend, "is_container", true, profileHome).(bool)
 	return !(remote || container)
-}
-
-// Whether an absolute cwd sits in the root home tree or the install tree, never a tilde remote path
-func isIcebathOwnedCwd(ctx context.Context, cwd, profileHome string) bool {
-	if !filepath.IsAbs(cwd) {
-		return false
-	}
-	path, err := pypath.Resolve(cwd)
-	if err != nil {
-		return false
-	}
-	h := profileHome
-	if h == "" {
-		h = home.Dir(ctx)
-	}
-	h = pypath.Expanduser(h)
-	ownHome, err := pypath.Resolve(h)
-	if err != nil {
-		return false
-	}
-	root, err := pypath.Resolve(home.RootOf(h))
-	if err != nil {
-		return false
-	}
-	for _, r := range []string{ownHome, root} {
-		if path == r || isUnder(path, r) {
-			return true
-		}
-	}
-	return tools.IsInstallTree(path)
-}
-
-// Whether a cwd is a launch directory, a home, root home, install tree, user home or filesystem root
-func isLaunchDir(ctx context.Context, cwd, profileHome string) bool {
-	if !filepath.IsAbs(cwd) {
-		return false
-	}
-	path, err := pypath.Resolve(cwd)
-	if err != nil {
-		return false
-	}
-	h := profileHome
-	if h == "" {
-		h = home.Dir(ctx)
-	}
-	ownHome, err := pypath.Resolve(pypath.Expanduser(h))
-	if err != nil {
-		return false
-	}
-	root, err := pypath.Resolve(home.RootOf(ownHome))
-	if err != nil {
-		return false
-	}
-	realHome, err := pypath.Resolve(home.RealHome(ctx, nil))
-	if err != nil {
-		return false
-	}
-	userHome, err := os.UserHomeDir()
-	if err != nil {
-		return false
-	}
-	userHome, err = pypath.Resolve(userHome)
-	if err != nil {
-		return false
-	}
-	anchor := filepath.VolumeName(path) + string(filepath.Separator)
-	for _, candidate := range []string{ownHome, filepath.Join(ownHome, "home"), root, filepath.Join(root, "home"), anchor, realHome, userHome} {
-		if path == candidate {
-			return true
-		}
-	}
-	return tools.IsInstallTree(path)
-}
-
-// Whether a named local profile's stored cwd belongs to another profile or to the root home itself
-func isOtherProfilesCwd(ctx context.Context, cwd, profileHome string) bool {
-	if profileHome == "" || cwdIsRemote(ctx, profileHome) || !filepath.IsAbs(cwd) {
-		return false
-	}
-	path, err := pypath.Resolve(cwd)
-	if err != nil {
-		return false
-	}
-	own, err := pypath.Resolve(pypath.Expanduser(profileHome))
-	if err != nil {
-		return false
-	}
-	root, err := pypath.Resolve(home.RootOf(own))
-	if err != nil {
-		return false
-	}
-	if path == own || isUnder(path, own) {
-		return false
-	}
-	return path == root || path == filepath.Join(root, "home") || isUnder(path, filepath.Join(root, "profiles")) || tools.IsInstallTree(path)
-}
-
-// Stored cwd a resume may adopt, empty for an ssh host launch dir, a sandbox dir or another profile dir
-func resumableStoredCwd(ctx context.Context, cwd any, profileHome string) string {
-	text := strOr(cwd)
-	if text != "" && cwdIsRemote(ctx, profileHome) && isIcebathOwnedCwd(ctx, text, profileHome) {
-		return ""
-	}
-	if text != "" && !cwdIsRemote(ctx, profileHome) && !hostCwdIsTerminalCwd(ctx, profileHome) && isLaunchDir(ctx, text, profileHome) {
-		return ""
-	}
-	if text != "" && isOtherProfilesCwd(ctx, text, profileHome) {
-		return ""
-	}
-	return text
-}
-
-// Whether a resolved path sits strictly below a resolved directory
-func isUnder(path, dir string) bool {
-	rel, err := filepath.Rel(dir, path)
-	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }

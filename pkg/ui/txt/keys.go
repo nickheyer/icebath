@@ -33,8 +33,6 @@ var (
 	CanonicalImagesUnsupported                             = Key{"canonical.images.unsupported"}
 	CanonicalLaunchInvalidMaxTurns                         = Key{"canonical.launch.invalidMaxTurns"}
 	CanonicalLaunchInvalidToolProgress                     = Key{"canonical.launch.invalidToolProgress"}
-	CanonicalLaunchNoTuiPolicy                             = Key{"canonical.launch.noTuiPolicy"}
-	CanonicalLaunchUnsupportedOptions                      = Key{"canonical.launch.unsupportedOptions"}
 	CanonicalQueueClipboardImageFailed                     = Key{"canonical.queue.clipboardImageFailed"}
 	CanonicalQueueDiscardFailed                            = Key{"canonical.queue.discardFailed"}
 	CanonicalQueueDroppedNewest                            = Key{"canonical.queue.droppedNewest"}
@@ -94,7 +92,6 @@ var (
 	ChatBitsThinkingActivity                               = Key{"chatBits.thinking.activity"}
 	ChatBitsThinkingAgentsHint                             = Key{"chatBits.thinking.agentsHint"}
 	ChatBitsThinkingAgentsToMonitor                        = Key{"chatBits.thinking.agentsToMonitor"}
-	ChatBitsThinkingApproxTotal                            = Key{"chatBits.thinking.approxTotal"}
 	ChatBitsThinkingReference                              = Key{"chatBits.thinking.reference"}
 	ChatBitsThinkingSpawnTree                              = Key{"chatBits.thinking.spawnTree"}
 	ChatBitsThinkingThinking                               = Key{"chatBits.thinking.thinking"}
@@ -3617,8 +3614,6 @@ var all = []Key{
 	CanonicalImagesUnsupported,
 	CanonicalLaunchInvalidMaxTurns,
 	CanonicalLaunchInvalidToolProgress,
-	CanonicalLaunchNoTuiPolicy,
-	CanonicalLaunchUnsupportedOptions,
 	CanonicalQueueClipboardImageFailed,
 	CanonicalQueueDiscardFailed,
 	CanonicalQueueDroppedNewest,
@@ -3678,7 +3673,6 @@ var all = []Key{
 	ChatBitsThinkingActivity,
 	ChatBitsThinkingAgentsHint,
 	ChatBitsThinkingAgentsToMonitor,
-	ChatBitsThinkingApproxTotal,
 	ChatBitsThinkingReference,
 	ChatBitsThinkingSpawnTree,
 	ChatBitsThinkingThinking,

@@ -4,7 +4,6 @@ package tuiserver
 
 import (
 	"context"
-	"strings"
 
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -40,21 +39,6 @@ func petSig(ctx context.Context) (sig any) {
 		return off
 	}
 	return []any{selected.Slug, petSheetRevision(selected.Spritesheet), scale}
-}
-
-// is_truthy_value with an explicit default for an absent value
-func isTruthyValueDefault(v any, def bool) bool {
-	if v == nil {
-		return def
-	}
-	if s, ok := v.(string); ok {
-		switch strings.ToLower(strings.TrimSpace(s)) {
-		case "1", "true", "yes", "on":
-			return true
-		}
-		return false
-	}
-	return truthy(v)
 }
 
 // pet.info.meta shaped payload so the renderer decides whether to refetch sprites

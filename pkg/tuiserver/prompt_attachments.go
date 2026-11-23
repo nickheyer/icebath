@@ -2,21 +2,15 @@ package tuiserver
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/filedrop"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/settings"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const (
@@ -85,21 +79,6 @@ func decodeAttachBase64(raw, mimePrefix string, maxBytes int, label string) ([]b
 	return payload, nil
 }
 
-// Decoded attachment bytes or the 4017 or 4018 error response
-func decodeAttachPayload(rid any, rawB64, mimePrefix string, maxBytes int, label, emptyMsg string) ([]byte, map[string]any) {
-	data, err := decodeAttachBase64(rawB64, mimePrefix, maxBytes, label)
-	if err != nil {
-		return nil, rpcErr(rid, 4018, err.Error(), nil)
-	}
-	if data == nil {
-		return nil, rpcErr(rid, 4017, "data is not valid base64", nil)
-	}
-	if len(data) == 0 {
-		return nil, rpcErr(rid, 4017, emptyMsg, nil)
-	}
-	return data, nil
-}
-
 // Image extension from the filename hint, else the magic bytes, else png
 func sniffImageExt(imgBytes []byte, filename string) string {
 	if filename != "" {
@@ -117,51 +96,6 @@ func sniffImageExt(imgBytes []byte, filename string) string {
 		}
 	}
 	return ".png"
-}
-
-// Suffixes accepted as image attachments
-func allowedImageExtensions() map[string]bool { return filedrop.ImageExtensions }
-
-// Directory under the session's own home, attachments following the workspace when the profile opts in
-func sessionHomeDir(ctx context.Context, session *tuihost.Session, name string) string {
-	profileHome := strOr(session.Get("profile_home"))
-	if name == "attachments" && profileAttachmentsStorage(ctx, profileHome) == "workspace" {
-		if workspace := sessionAttachmentsWorkspace(ctx, session); workspace != "" {
-			return filepath.Join(workspace, ".icebath", "attachments")
-		}
-	}
-	if profileHome == "" {
-		profileHome = launchHome()
-	}
-	return filepath.Join(profileHome, name)
-}
-
-// Attachment storage of the session profile, its own home's setting else the launch home's
-func profileAttachmentsStorage(ctx context.Context, profileHome string) string {
-	h := profileHome
-	if h == "" {
-		h = launchHome()
-	}
-	return settings.AttachmentsStorage.Get(home.WithOverride(ctx, h))
-}
-
-// Session workspace when workspace storage can write to it, empty for a remote or missing cwd
-func sessionAttachmentsWorkspace(ctx context.Context, session *tuihost.Session) (workspace string) {
-	if cwdIsRemote(ctx, strOr(session.Get("profile_home"))) {
-		return ""
-	}
-	_ = catchPanic(func() {
-		resolved, err := pypath.Resolve(sessionCwd(ctx, session))
-		if err == nil && isDir(resolved) {
-			workspace = resolved
-		}
-	})
-	return workspace
-}
-
-// Images directory of the session home
-func sessionImagesDir(ctx context.Context, session *tuihost.Session) string {
-	return sessionHomeDir(ctx, session, "images")
 }
 
 // Writes image bytes into a private collision free file of the directory and returns its path
@@ -184,18 +118,5 @@ func stageImageBytes(directory string, imgBytes []byte, ext, prefix string) (str
 		_ = os.Remove(path)
 		return "", err
 	}
-	return path, nil
-}
-
-// Stages image bytes in the session images dir and queues them for the next submit
-func queueAttachedImage(ctx context.Context, session *tuihost.Session, imgBytes []byte, ext, prefix string) (string, error) {
-	session.Set("image_counter", intOr(session.Get("image_counter"))+1)
-	path, err := stageImageBytes(sessionImagesDir(ctx, session), imgBytes, ext, prefix)
-	if err != nil {
-		session.Set("image_counter", max(0, intOr(session.Get("image_counter"))-1))
-		return "", err
-	}
-	images := stringList(session.Get("attached_images"))
-	session.Set("attached_images", append(images, path))
 	return path, nil
 }

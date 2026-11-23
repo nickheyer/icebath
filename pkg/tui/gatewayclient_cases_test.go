@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -17,7 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
-const describeResult = `{"session_create":{"sources":["tui"],"parameters":["source","request_id"]}}`
+const readyPayload = `{"heartbeat":true,"change_events":true,"replay_epoch":"e1","build":"b1"}`
 
 // Local grant client started and subscribed, its first socket open
 func startLocal(t *testing.T, boot *fakeBootstrap) (*gatewayClient, *fakeDialer, *fakeClock, *recorder, *fakeSocket) {
@@ -33,30 +32,21 @@ func startLocal(t *testing.T, boot *fakeBootstrap) (*gatewayClient, *fakeDialer,
 	return c, d, k, rec, s
 }
 
-// Answers the socket's runtime.describe with the JSON result
-func describe(t *testing.T, s *fakeSocket, result string) {
+// Announces readiness on the socket the way the service does once it accepted the connection
+func ready(t *testing.T, s *fakeSocket, payload string) {
 	t.Helper()
-	eventually(t, "runtime.describe", func() bool { return s.last("runtime.describe") != nil })
-	var body any
-	_ = json.Unmarshal([]byte(result), &body)
-	s.answer("runtime.describe", map[string]any{"result": body})
+	s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":` + payload + `}}`)
+	eventually(t, "the capability advertisement", func() bool { return s.last("client.capabilities") != nil })
 }
 
 func TestGatewayClientWebsocketAttachMode(t *testing.T) {
-	t.Run("publishes canonical readiness once after discovery and arms the negotiated heartbeat", func(t *testing.T) {
+	t.Run("publishes the service's readiness once, says it answers server requests and arms the heartbeat", func(t *testing.T) {
 		c, _, k, rec, s := startLocal(t, nil)
-		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"heartbeat":true}}}`)
-		eventually(t, "the capability advertisement", func() bool { return s.last("client.capabilities") != nil && s.last("runtime.describe") != nil })
-		if len(rec.events("gateway.ready")) != 0 {
-			t.Fatal("ready before discovery")
-		}
-		methods := s.methods()
-		slices.Sort(methods)
-		if !reflect.DeepEqual(methods, []string{"client.capabilities", "runtime.describe"}) {
+		ready(t, s, readyPayload)
+		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
+		if methods := s.methods(); !reflect.DeepEqual(methods, []string{"client.capabilities"}) {
 			t.Fatalf("sent %v", methods)
 		}
-		describe(t, s, describeResult)
-		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
 		k.advance(heartbeatInterval)
 		if frames := s.sentFrames(); frames[len(frames)-1]["method"] != "gateway.ping" {
 			t.Fatalf("last frame %v", frames[len(frames)-1])
@@ -86,9 +76,9 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 			t.Fatalf("crash log %q %v", crash, err)
 		}
 	})
-	t.Run("boots the owner's profile skin: runtime.describe.skin rides the client-local ready (row 3)", func(t *testing.T) {
+	t.Run("boots the profile's skin from the service's ready", func(t *testing.T) {
 		_, _, _, rec, s := startLocal(t, nil)
-		describe(t, s, `{"session_create":{"sources":["tui"],"parameters":["source","request_id"]},"skin":{"name":"taro","colors":{"banner_title":"#C7A96B"},"branding":{"prompt_symbol":"⚔"}}}`)
+		ready(t, s, `{"skin":{"name":"taro","colors":{"banner_title":"#C7A96B"},"branding":{"prompt_symbol":"⚔"}}}`)
 		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
 		skin := rec.events("gateway.ready")[0].Payload["skin"]
 		want := map[string]any{"name": "taro", "colors": map[string]any{"banner_title": "#C7A96B"}, "branding": map[string]any{"prompt_symbol": "⚔"}}
@@ -96,66 +86,10 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 			t.Fatalf("skin %#v", skin)
 		}
 	})
-	t.Run("remembers clarify-batch-v1 from runtime.describe and forgets it on reconnect to an owner without it", func(t *testing.T) {
-		c, d, k, rec, first := startLocal(t, nil)
-		describe(t, first, `{"session_create":{"sources":["tui"],"parameters":["source","request_id"]},"capabilities":["clarify-batch-v1"]}`)
-		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
-		if !c.clarifyBatch() {
-			t.Fatal("capability not remembered")
-		}
-		first.closeWith(1000)
-		eventually(t, "the reconnect timer", func() bool { return k.dueIn(reconnectBase) })
-		k.advance(reconnectMax)
-		eventually(t, "the second socket", func() bool { return d.count() == 2 })
-		second := d.at(1)
-		second.open()
-		eventually(t, "the second describe", func() bool { return second.last("runtime.describe") != nil })
-		if c.clarifyBatch() {
-			t.Fatal("previous owner's capabilities outlived it")
-		}
-		describe(t, second, describeResult)
-		eventually(t, "second readiness", func() bool { return len(rec.events("gateway.ready")) == 2 })
-		if c.clarifyBatch() {
-			t.Fatal("capability without advertisement")
-		}
-	})
-	t.Run("treats a failed runtime.describe as a transport failure: redial, re-describe, then ready (B2-21)", func(t *testing.T) {
-		c, d, k, rec, s := startLocal(t, nil)
-		eventually(t, "runtime.describe", func() bool { return s.last("runtime.describe") != nil })
-		s.answer("runtime.describe", map[string]any{"error": map[string]any{"code": -32000, "message": "owner busy"}})
-		eventually(t, "the closed socket", func() bool { return s.isClosed() && len(rec.events("gateway.reconnecting")) == 1 })
-		created := goRequest(c, "session.create", map[string]any{"model": "m"})
-		eventually(t, "the redial", func() bool { return d.count() == 2 })
-		next := d.at(1)
-		next.open()
-		eventually(t, "the next describe", func() bool { return next.last("runtime.describe") != nil })
-		for _, frame := range next.sentFrames() {
-			if frame["method"] == "runtime.describe" {
-				raw, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": frame["id"], "result": map[string]any{
-					"session_create": map[string]any{"sources": []string{"tui"}, "parameters": []string{"source", "request_id", "model"}}}})
-				next.message(string(raw))
-			}
-		}
-		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
-		eventually(t, "the create", func() bool { return next.last("session.create") != nil })
-		params := next.last("session.create")["params"].(map[string]any)
-		if params["source"] != "tui" || params["model"] != "m" {
-			t.Fatalf("create params %v", params)
-		}
-		next.answer("session.create", map[string]any{"result": map[string]any{"session_id": "fresh", "info": map[string]any{}}})
-		value, err := created.wait(t)
-		if err != nil || value.(map[string]any)["session_id"] != "fresh" {
-			t.Fatalf("created %v %v", value, err)
-		}
-		if ev := rec.events("gateway.start_timeout"); len(ev) != 1 || ev[0].Local != (gatewayStartTimeout{StderrTail: "JsonRpcGatewayError: owner busy"}) {
-			t.Fatalf("start timeout %#v", ev)
-		}
-		_ = k
-	})
 	t.Run("keeps discovery-only retries alive and delivers readiness to the mounted subscriber", func(t *testing.T) {
 		boot := &fakeBootstrap{outcomes: []error{nil, errors.New("owner stopped"), errors.New("owner stopped"), nil}}
 		_, d, k, rec, s := startLocal(t, boot)
-		eventually(t, "runtime.describe", func() bool { return s.last("runtime.describe") != nil })
+		eventually(t, "the reader", s.drained)
 		s.closeWith(1006)
 		for _, delay := range []time.Duration{reconnectBase, 2 * reconnectBase, 4 * reconnectBase} {
 			eventually(t, "the reconnect timer", func() bool { return k.dueIn(delay) })
@@ -172,13 +106,13 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		}
 		last := d.at(-1)
 		last.open()
-		describe(t, last, `{"session_create":{"sources":["tui"],"parameters":[]}}`)
+		ready(t, last, readyPayload)
 		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
 	})
 	t.Run("pins the launcher tool-progress mode (icebath -v) on the created session before returning it", func(t *testing.T) {
 		t.Setenv("ICEBATH_TUI_TOOL_PROGRESS", "verbose")
 		c, _, _, _, s := startLocal(t, nil)
-		describe(t, s, describeResult)
+		ready(t, s, readyPayload)
 		created := goRequest(c, "session.create", map[string]any{})
 		eventually(t, "the create", func() bool { return s.last("session.create") != nil })
 		s.answer("session.create", map[string]any{"result": map[string]any{"session_id": "fresh", "info": map[string]any{}}})
@@ -209,7 +143,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 			}
 			s.answer("session.create", map[string]any{"result": map[string]any{"session_id": minted[requestID], "info": map[string]any{}}})
 		}
-		describe(t, s, `{"session_create":{"sources":["tui"],"parameters":["source","request_id","model"]}}`)
+		ready(t, s, readyPayload)
 		first := goRequest(c, "session.create", map[string]any{"request_id": "attempt-1", "model": "m"})
 		eventually(t, "the first create", func() bool { return s.last("session.create") != nil })
 		ack()
@@ -250,25 +184,20 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 			t.Fatalf("calls %v", got)
 		}
 	})
-	t.Run("negotiates the canonical wire on an explicit attach whose listener advertises a session authority", func(t *testing.T) {
+	t.Run("opens a session as this window's on an explicit attach", func(t *testing.T) {
 		c, _, _, s := openExplicit(t, "ws://gateway.test/api/ws?token=abc")
 		rec := &recorder{}
 		c.attach(rec.send)
-		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"skin":{"name":"contrast"},"session_authority":true}}}`)
-		eventually(t, "runtime.describe", func() bool { return s.last("runtime.describe") != nil })
-		if len(rec.events("gateway.ready")) != 0 {
-			t.Fatal("ready before discovery")
-		}
-		describe(t, s, `{"session_create":{"sources":["tui"],"parameters":["source","request_id","model"]}}`)
+		ready(t, s, `{"skin":{"name":"contrast"}}`)
 		eventually(t, "readiness", func() bool { return len(rec.events("gateway.ready")) == 1 })
 		if skin := rec.events("gateway.ready")[0].Payload["skin"]; !reflect.DeepEqual(skin, map[string]any{"name": "contrast"}) {
 			t.Fatalf("skin %v", skin)
 		}
-		created := goRequest(c, "session.create", map[string]any{"cols": 80, "model": "m"})
+		created := goRequest(c, "session.create", map[string]any{"model": "m"})
 		eventually(t, "the create", func() bool { return s.last("session.create") != nil })
 		create := s.last("session.create")
 		params := create["params"].(map[string]any)
-		if _, has := params["cols"]; has || params["source"] != "tui" || params["model"] != "m" {
+		if params["source"] != "tui" || params["model"] != "m" {
 			t.Fatalf("params %v", params)
 		}
 		s.answer("session.create", map[string]any{"result": map[string]any{"session_id": "fresh", "info": map[string]any{}}})
@@ -282,7 +211,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		c.start()
 		eventually(t, "the socket", func() bool { return d.count() == 1 })
 		s := d.at(0)
-		req := goRequest(c, "session.create", map[string]any{"cols": 80})
+		req := goRequest(c, "session.create", map[string]any{})
 		time.Sleep(10 * time.Millisecond)
 		if len(s.sentRaw()) != 0 {
 			t.Fatal("sent before open")
@@ -568,7 +497,7 @@ func TestGatewayClientKillLatch(t *testing.T) {
 				c.start()
 			}
 		}
-		eventually(t, "runtime.describe", func() bool { return s.last("runtime.describe") != nil })
+		eventually(t, "the reader", s.drained)
 		c.kill("graceful-exit-cleanup")
 		s.closeWith(1006)
 		k.advance(time.Minute)
@@ -593,7 +522,7 @@ func TestGatewayClientKillLatch(t *testing.T) {
 				c.start()
 			}
 		}
-		eventually(t, "runtime.describe", func() bool { return s.last("runtime.describe") != nil })
+		eventually(t, "the reader", s.drained)
 		s.closeWith(1011)
 		eventually(t, "the respawn", func() bool { return d.count() == 2 })
 		if !reflect.DeepEqual(rec.exits(), []int{1011}) {

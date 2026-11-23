@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -108,31 +107,6 @@ func approvalRequestPayload(ctx context.Context, data map[string]any) map[string
 	return payload
 }
 
-// Server to client requests still waiting on a session's renderer
-func openRequests(sid string) []any {
-	reqs := tuihost.OpenRequests(sid)
-	out := make([]any, len(reqs))
-	for i, req := range reqs {
-		out[i] = req
-	}
-	return out
-}
-
-// Oldest unresolved approval of a session as its client payload, nil when none
-func pendingApprovalRequestPayload(ctx context.Context, sessionKey string) (payload map[string]any) {
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLog().Debug("failed to read pending approval for "+sessionKey, "error", r)
-			payload = nil
-		}
-	}()
-	approval := tools.GetPendingGatewayApproval(sessionKey)
-	if len(approval) == 0 {
-		return nil
-	}
-	return approvalRequestPayload(ctx, approval)
-}
-
 // Sends a queue backed approval server request with the command redacted, withdrawn when no client can answer
 func emitApprovalRequest(ctx context.Context, sid string, data map[string]any) {
 	payload := approvalRequestPayload(ctx, data)
@@ -201,18 +175,6 @@ func imageMeta(path string) map[string]any {
 	return meta
 }
 
-// Integer config value at or above a floor, the default otherwise
-func coerceIntConfigValue(value any, def, minValue int) int {
-	coerced, err := pyint.Int64(value)
-	if err != nil {
-		return def
-	}
-	if int(coerced) >= minValue {
-		return int(coerced)
-	}
-	return def
-}
-
 // First live record holding the session key
 func sessionForKey(sessionKey string) *tuihost.Session {
 	for _, live := range tuihost.LiveSessions() {
@@ -276,13 +238,6 @@ func setSessionContext(ctx context.Context, sessionKey string, cwd *string, uiSe
 func clearSessionContext(env *tools.Env) {
 	if env != nil {
 		suppress(func() { tools.ClearSessionVars(env) })
-	}
-}
-
-// Routes approvals through the gateway callbacks instead of a terminal prompt
-func enableGatewayPrompts() {
-	for key, value := range map[string]string{"ICEBATH_GATEWAY_SESSION": "1", "ICEBATH_EXEC_ASK": "1", "ICEBATH_INTERACTIVE": "1"} {
-		_ = os.Setenv(key, value)
 	}
 }
 

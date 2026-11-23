@@ -99,7 +99,7 @@ func TestUnknownLeftCoreProviderMessageNamesTheInstall(t *testing.T) {
 	h := newTestHome(t)
 	saved := leftCoreTable
 	t.Cleanup(func() { leftCoreTable = saved })
-	leftCoreTable = []LeftCoreFeature{{Plugin: "acme-llm", Label: "Acme LLM", Unchanged: "your ACME_KEY is unchanged", InUse: acmeRouted,
+	leftCoreTable = []LeftCoreFeature{{Plugin: "acme-llm", Label: "Acme LLM",
 		Providers: []string{"acme", "acme-acp"}, ProfileEnv: []string{"ACME_CLI_PATH"}}}
 	writeConfigYAML(t, h, "model:\n  provider: acme\n")
 	ctx := context.Background()

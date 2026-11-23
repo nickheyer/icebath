@@ -98,12 +98,6 @@ func storeUnavailable(ctx context.Context, path string, cause error) *StoreUnava
 	return state.NewStoreUnavailableError(ctx, path, cause)
 }
 
-// Opens the launch session store before a gateway serves, the described failure stopping the start
-func OpenLaunchStore(ctx context.Context) error {
-	_, err := getDB(ctx)
-	return err
-}
-
 // Effective user config of the active profile without the defaults merge
 func loadCfg(ctx context.Context) map[string]any { return tuihost.LoadCfg(ctx) }
 
@@ -158,19 +152,6 @@ func profileHome(profile string) (string, error) {
 	return dir, nil
 }
 
-// Profile name for session payloads, the requested real non launch profile else the launch one
-func responseProfileName(ctx context.Context, profile string) string {
-	name := canonicalProfileRequest(strings.TrimSpace(profile))
-	if name == "" {
-		return currentProfileName(ctx)
-	}
-	h, err := profileHome(name)
-	if err != nil || h == "" {
-		return currentProfileName(ctx)
-	}
-	return name
-}
-
 // Working folder setting of a profile home as a host directory, empty when unset, a stand in or missing on this host
 func profileConfiguredCwd(ctx context.Context, profileHome string) string {
 	if profileHome == "" {
@@ -190,18 +171,6 @@ func profileConfiguredCwd(ctx context.Context, profileHome string) string {
 // Launch profile terminal cwd read by path, never through the active home override
 func launchConfiguredCwd(ctx context.Context) string {
 	return profileConfiguredCwd(ctx, importedHome())
-}
-
-// Fallback cwd with no explicit, stored or profile cwd, the configured terminal cwd else the process cwd
-func defaultSessionCwd(ctx context.Context) string {
-	if cwd := launchConfiguredCwd(ctx); cwd != "" {
-		return cwd
-	}
-	if cwd := os.Getenv("TERMINAL_CWD"); cwd != "" {
-		return cwd
-	}
-	cwd, _ := os.Getwd()
-	return cwd
 }
 
 // Active profile name, default when none is active or the lookup fails
@@ -576,14 +545,6 @@ func resolveLax(p string) string {
 	return abs
 }
 
-// Session storage unavailable error of the launch store with the user facing gloss, action and raw cause details
-func dbUnavailableError(ctx context.Context, rid any, code int) map[string]any {
-	dbMu.Lock()
-	cause := dbError
-	dbMu.Unlock()
-	return storeUnavailableReply(ctx, rid, code, cause)
-}
-
 // Session storage unavailable error for cause with the user facing gloss, action and raw cause details
 func storeUnavailableReply(ctx context.Context, rid any, code int, cause error) map[string]any {
 	failure := state.DescribeStorageFailure(ctx, cause)
@@ -613,46 +574,6 @@ func storeFailure(ctx context.Context, rid any, code int, err error) map[string]
 	}
 	panicIf(err)
 	return nil
-}
-
-// Model and provider a live session runs, from its pending switch, agent or composer pick, else the profile default
-func liveSessionIdentity(ctx context.Context, session *tuihost.Session) (string, string) {
-	pending, _ := session.Get("pending_model_switch").(map[string]any)
-	a := sessionAgent(session)
-	view := agent.SessionRuntimeView(a)
-	override, _ := session.Get("model_override").(map[string]any)
-	model := strings.TrimSpace(strOr(pending["display_model"]))
-	if model == "" && view != nil {
-		model = view.Model()
-	}
-	if model == "" {
-		model = strOr(override["model"])
-	}
-	agentProvider := ""
-	if view != nil {
-		agentProvider = view.Provider()
-	}
-	if agentProvider == "custom" {
-		agentProvider = scopedSessionProvider(ctx, a, session)
-	}
-	providerName := strings.TrimSpace(strOr(pending["display_provider"]))
-	if providerName == "" {
-		providerName = agentProvider
-	}
-	if providerName == "" {
-		providerName = strOr(override["provider"])
-	}
-	defaultModel, defaultProvider := "", ""
-	if model == "" {
-		defaultModel, defaultProvider = sessionDefaultRoute(ctx, session)
-	}
-	if model == "" {
-		model = defaultModel
-	}
-	if providerName == "" {
-		providerName = defaultProvider
-	}
-	return model, providerName
 }
 
 // What Enter does while the agent works, queue unless the profile sets steer or interrupt

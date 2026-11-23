@@ -2,107 +2,13 @@ package tuiserver
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"reflect"
-	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-// Schedules a continuation turn for a crash interrupted session, its resume descriptor or nil
-func maybeScheduleAutoContinue(ctx context.Context, sid string, session *tuihost.Session, sessionKey string) map[string]any {
-	if session.Get("source") == "bot_room" {
-		return nil
-	}
-	h := sessionHome(ctx, session)
-	marker := tuihost.ReadTurnMarker(h, sessionKey)
-	if marker == nil || !truthy(marker["auto_continue"]) {
-		return nil
-	}
-	writerState := tuihost.MarkerWriterState(marker)
-	if writerState == "alive" && !pyjsonEqual(marker["writer_pid"], int64(os.Getpid())) {
-		pkgLog().Info(fmt.Sprintf("auto-continue for %s held back: marker writer pid %s is still alive (reader pid %d); the marker is ownership evidence and the owner clears it",
-			sessionKey, pyrepr.Str(marker["writer_pid"]), os.Getpid()))
-		return nil
-	}
-	enabled, freshnessSecs, maxAttempts := autoContinueConfig(ctx)
-	startedAt := marker["started_at"].(float64)
-	attempts := marker["attempts"].(int64)
-	age := nowSeconds() - startedAt
-	if !enabled || age > freshnessSecs || attempts >= int64(maxAttempts) {
-		tuihost.ClearTurnMarker(h, sessionKey)
-		return nil
-	}
-	if truthy(session.Get("_auto_continue_scheduled")) {
-		return nil
-	}
-	session.Set("_auto_continue_scheduled", true)
-	attempt, text := attempts+1, autoContinueNote(pyrepr.Str(marker["prompt"]))
-	kickoff := func(ctx context.Context) {
-		rid := fmt.Sprintf("__auto_continue__%d", time.Now().UnixMilli())
-		var errResp map[string]any
-		if failure := catchPanic(func() {
-			startAgentBuild(ctx, sid, session)
-			errResp = waitAgent(ctx, session, rid, 120.0)
-		}); failure != nil {
-			pkgLog().Warn("auto-continue agent build failed for "+sid, "error", pyrepr.Str(failure))
-			errResp = map[string]any{"error": map[string]any{"message": "agent build failed"}}
-		}
-		if len(errResp) > 0 {
-			session.Set("_auto_continue_scheduled", false)
-			return
-		}
-		unlock := lockHistory(session)
-		if truthy(session.Get("running")) || truthy(session.Get("_turn_cancel_requested")) || truthy(session.Get("_finalized")) {
-			session.Set("_auto_continue_scheduled", false)
-			unlock()
-			return
-		}
-		session.Set("running", true)
-		session.Set("last_active", nowSeconds())
-		unlock()
-		if ensureActiveSessionSlot(ctx, sid, session) != nil {
-			pkgLog().Info("auto-continue for " + sessionKey + " refused: session has another live owner")
-			unlock = lockHistory(session)
-			session.Set("running", false)
-			session.Set("_auto_continue_scheduled", false)
-			unlock()
-			return
-		}
-		unlock = lockHistory(session)
-		session.Set("_auto_continue_attempt", attempt)
-		session.Set("_auto_continue_prompt", marker["prompt"])
-		unlock()
-		if failure := catchPanic(func() {
-			diagnostic := marker["notification_category"] == "diagnostic"
-			scoped := sessionProfileRuntimeScope(ctx, session, true)
-			if _, err := config.RenderNotification(scoped, func() error {
-				tuihost.Emit(scoped, "status.update", sid, map[string]any{"kind": "process", "text": "Resuming interrupted turn…"})
-				tuihost.Emit(scoped, "message.start", sid, nil)
-				return nil
-			}, "tui", diagnostic); err != nil {
-				panic(err)
-			}
-			o := promptSubmitOptions{displayKind: "auto_continue"}
-			if diagnostic {
-				o.displayMetadata = map[string]any{"notification_category": "diagnostic"}
-			}
-			runPromptSubmit(scoped, rid, sid, session, text, o)
-		}); failure != nil {
-			notifLogFailure("auto-continue dispatch failed", failure)
-			notifReleaseTurn(session)
-		}
-	}
-	startSessionWork(ctx, kickoff, "auto-continue-"+sid, nil)
-	pkgLog().Info(fmt.Sprintf("auto-continue scheduled for session %s (attempt %d, interrupted %.0fs ago, writer pid %s: %s, reader pid %d)",
-		sessionKey, attempt, age, pyrepr.Str(marker["writer_pid"]), writerState, os.Getpid()))
-	return map[string]any{"attempt": attempt, "interrupted_at": startedAt}
-}
 
 // Interrupts a busy turn on its own goroutine, never under the history lock, at most one per session
 func interruptBusySession(ctx context.Context, sid string, session *tuihost.Session, a any) {

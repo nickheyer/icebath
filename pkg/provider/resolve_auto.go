@@ -988,7 +988,7 @@ func (r *resolver) modelLevelKeyEnv(providerID string) string {
 	if strings.ToLower(strings.TrimSpace(cfgString(modelCfg["provider"]))) != providerID {
 		return ""
 	}
-	return strings.TrimSpace(firstTruthyString(modelCfg["key_env"], modelCfg["api_key_env"]))
+	return strings.TrimSpace(cfgString(modelCfg["key_env"]))
 }
 
 // APIKeySecretResolver is a provider owned credential resolution returning the runtime key and its source
@@ -1817,7 +1817,7 @@ func (r *resolver) minimaxOAuthRuntime(provider, requestedProvider string) (*Run
 
 // Azure Anthropic key from key_env hints, an inline api_key, then the historical fixed names
 func (r *resolver) azureAnthropicEnvKey(modelCfg map[string]any) string {
-	for _, hint := range []string{"key_env", "api_key_env"} {
+	for _, hint := range []string{"key_env"} {
 		if envVar := strings.TrimSpace(cfgString(modelCfg[hint])); envVar != "" {
 			if token := strings.TrimSpace(r.secret(envVar)); token != "" {
 				return token
@@ -1842,7 +1842,7 @@ func (r *resolver) anthropicEnvRuntime(requestedProvider string, modelCfg map[st
 		token = r.azureAnthropicEnvKey(modelCfg)
 		if token == "" {
 			return nil, newAuthErr("anthropic", "No Azure Anthropic API key found. Set AZURE_ANTHROPIC_KEY or ANTHROPIC_API_KEY, or point "+
-				"key_env/api_key_env in your config.yaml model section at a custom env var.", "", false)
+				"key_env in your config.yaml model section at a custom env var.", "", false)
 		}
 	} else {
 		var err error
@@ -2115,7 +2115,6 @@ func (r *resolver) ladderRungs(requestedProvider, explicitAPIKey, explicitBaseUR
 // Walks the ladder and returns the full runtime for a requested provider
 func (r *resolver) ResolveRuntime(requested, explicitAPIKey, explicitBaseURL string, explicitToken func(context.Context) (string, error), targetModel string) (*Runtime, error) {
 	requestedProvider := r.resolveRequestedProvider(requested)
-	recoverLeftCoreProvider(r.ctx, r.home, requestedProvider)
 	if err := r.raiseIfProviderDisabled(requestedProvider); err != nil {
 		return nil, err
 	}
@@ -2238,7 +2237,7 @@ func (r *resolver) resolveTaskProviderModel(task any, provider, model, baseURL, 
 		cfgBaseURL = strings.TrimSpace(cfgString(tc["base_url"]))
 		cfgAPIKey = strings.TrimSpace(cfgString(tc["api_key"]))
 		if cfgAPIKey == "" {
-			if keyEnv := strings.TrimSpace(firstTruthyString(tc["key_env"], tc["api_key_env"])); keyEnv != "" {
+			if keyEnv := strings.TrimSpace(cfgString(tc["key_env"])); keyEnv != "" {
 				cfgAPIKey = r.secret(keyEnv)
 			}
 		}

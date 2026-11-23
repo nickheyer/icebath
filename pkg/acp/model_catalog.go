@@ -44,7 +44,7 @@ func stringHeaders(v any) map[string]string {
 	return out
 }
 
-// Named endpoints of providers and custom_providers with their declared or live discovered models
+// Named endpoints of providers entries with their declared or live discovered models
 func namedCustomProviderCatalogs(ctx context.Context) []namedCatalog {
 	cfg, err := config.LoadContext(ctx, home.Dir(ctx), nil)
 	if err != nil {

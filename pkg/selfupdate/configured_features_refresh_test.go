@@ -23,7 +23,6 @@ import (
 func frNoSteps() {
 	featureRefreshSteps.featureDeps = func(context.Context, string) error { return nil }
 	featureRefreshSteps.memoryMigrate = func(context.Context, func(string)) ([]string, error) { return nil, nil }
-	featureRefreshSteps.leftCoreMigrate = func(context.Context, func(string)) ([]string, error) { return nil, nil }
 }
 
 // Sets the feature refresh steps to no ops for one test
@@ -35,7 +34,7 @@ func frQuiet(t *testing.T) {
 }
 
 // Feature refresh steps appending their names to calls, each failing with its given error and the migrations speaking once
-func frRecording(t *testing.T, calls *[]string, depsErr, memoryErr, leftCoreErr error) {
+func frRecording(t *testing.T, calls *[]string, depsErr, memoryErr error) {
 	t.Helper()
 	prev := featureRefreshSteps
 	t.Cleanup(func() { featureRefreshSteps = prev })
@@ -47,11 +46,6 @@ func frRecording(t *testing.T, calls *[]string, depsErr, memoryErr, leftCoreErr 
 		*calls = append(*calls, "memory")
 		say("  memory provider migrated")
 		return nil, memoryErr
-	}
-	featureRefreshSteps.leftCoreMigrate = func(_ context.Context, say func(string)) ([]string, error) {
-		*calls = append(*calls, "left_core")
-		say("  plugin migrated")
-		return nil, leftCoreErr
 	}
 }
 
@@ -78,31 +72,30 @@ func frStage(receipt *pyjson.Object, name string) any {
 	return nil
 }
 
-func TestFeatureRefreshRunsTheInstallThenBothMigrations(t *testing.T) {
+func TestFeatureRefreshRunsTheInstallThenTheMemoryMigration(t *testing.T) {
 	var calls []string
-	frRecording(t, &calls, nil, nil, nil)
+	frRecording(t, &calls, nil, nil)
 	var out bytes.Buffer
 	if err := refreshConfiguredFeatures(context.Background(), t.TempDir(), &out); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(calls, []string{"feature_deps", "memory", "left_core"}) {
+	if !reflect.DeepEqual(calls, []string{"feature_deps", "memory"}) {
 		t.Fatalf("calls %v", calls)
 	}
-	if out.String() != "  memory provider migrated\n  plugin migrated\n" {
+	if out.String() != "  memory provider migrated\n" {
 		t.Fatalf("out %q", out.String())
 	}
 }
 
 func TestFeatureRefreshMigrationFailuresAreSkippedNotFailed(t *testing.T) {
 	var calls []string
-	frRecording(t, &calls, nil, errors.New("catalog unreachable"), errors.New("plugin index offline"))
+	frRecording(t, &calls, nil, errors.New("catalog unreachable"))
 	var out bytes.Buffer
 	if err := refreshConfiguredFeatures(context.Background(), t.TempDir(), &out); err != nil {
 		t.Fatalf("err %v", err)
 	}
-	want := "  memory provider migrated\n  ⚠ Memory provider migration skipped: catalog unreachable\n" +
-		"  plugin migrated\n  ⚠ Plugin migration skipped: plugin index offline\n"
-	if out.String() != want || len(calls) != 3 {
+	want := "  memory provider migrated\n  ⚠ Memory provider migration skipped: catalog unreachable\n"
+	if out.String() != want || len(calls) != 2 {
 		t.Fatalf("calls %v out %q", calls, out.String())
 	}
 }
@@ -119,13 +112,13 @@ func TestFeatureRefreshInstallFailureStillRunsBothMigrations(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls []string
-			frRecording(t, &calls, tc.err, nil, nil)
+			frRecording(t, &calls, tc.err, nil)
 			var out bytes.Buffer
 			err := refreshConfiguredFeatures(context.Background(), t.TempDir(), &out)
 			if err == nil || err.Error() != "feature dependencies: "+tc.text {
 				t.Fatalf("err %v", err)
 			}
-			if !reflect.DeepEqual(calls, []string{"feature_deps", "memory", "left_core"}) {
+			if !reflect.DeepEqual(calls, []string{"feature_deps", "memory"}) {
 				t.Fatalf("calls %v", calls)
 			}
 			if !strings.HasPrefix(out.String(), "  ⚠ feature dependencies failed: "+tc.text+"\n") {
@@ -137,7 +130,7 @@ func TestFeatureRefreshInstallFailureStillRunsBothMigrations(t *testing.T) {
 
 func TestFeatureRefreshInterruptStopsAtOnce(t *testing.T) {
 	var calls []string
-	frRecording(t, &calls, context.Canceled, nil, nil)
+	frRecording(t, &calls, context.Canceled, nil)
 	err := refreshConfiguredFeatures(context.Background(), t.TempDir(), io.Discard)
 	if !errors.Is(err, context.Canceled) || !reflect.DeepEqual(calls, []string{"feature_deps"}) {
 		t.Fatalf("err %v calls %v", err, calls)
@@ -155,18 +148,18 @@ func TestSourceCompletionRunsFeatureRefreshBetweenTheHookAndMaintenance(t *testi
 		calls = append(calls, "launchers")
 		return nil
 	}
-	frRecording(t, &calls, nil, nil, nil)
+	frRecording(t, &calls, nil, nil)
 	var stdout bytes.Buffer
 	ok, err := CompleteSourceCheckout(context.Background(), root, SourceCompletion{AssumeYes: true, Announce: "announced",
 		BeforeMaintenance: func() { calls = append(calls, "before") }, Stdout: &stdout, Stderr: &bytes.Buffer{}})
 	if err != nil || !ok || !scStampExists(root) {
 		t.Fatalf("ok %v err %v stamp %v", ok, err, scStampExists(root))
 	}
-	want := []string{"launchers", "before", "feature_deps", "memory", "left_core", "maintenance"}
+	want := []string{"launchers", "before", "feature_deps", "memory", "maintenance"}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls %v", calls)
 	}
-	if stdout.String() != "  memory provider migrated\n  plugin migrated\nannounced\n" {
+	if stdout.String() != "  memory provider migrated\nannounced\n" {
 		t.Fatalf("stdout %q", stdout.String())
 	}
 }
@@ -179,7 +172,7 @@ func TestSourceCompletionOwesFailedFeatureDependenciesAndFinishesTheTail(t *test
 		return true, nil
 	})
 	var calls []string
-	frRecording(t, &calls, &pm.CalledProcessError{Argv: []string{"uv", "sync"}, Code: 2}, nil, nil)
+	frRecording(t, &calls, &pm.CalledProcessError{Argv: []string{"uv", "sync"}, Code: 2}, nil)
 	ctx := updaterecord.UpdateReceiptScope(context.Background())
 	updaterecord.BeginUpdateReceipt(ctx, nil, "fr-completion")
 	owed := [][2]string{}
@@ -242,17 +235,17 @@ func TestUpdateFinishRunsFeatureRefreshBeforeMaintenance(t *testing.T) {
 	}
 	var calls []string
 	frFinishSteps(t, &calls)
-	frRecording(t, &calls, nil, nil, nil)
+	frRecording(t, &calls, nil, nil)
 	request, result := frFinishRequest(t, root, "fr-finish-ok")
 	var stdout bytes.Buffer
 	code, err := updateFinish(updaterecord.UpdateReceiptScope(context.Background()), request, result, &stdout, &bytes.Buffer{})
 	if err != nil || code != 0 {
 		t.Fatalf("code %d err %v", code, err)
 	}
-	if want := []string{"feature_deps", "memory", "left_core", "maintenance", "stamp", "restart"}; !reflect.DeepEqual(calls, want) {
+	if want := []string{"feature_deps", "memory", "maintenance", "stamp", "restart"}; !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls %v", calls)
 	}
-	if !strings.Contains(stdout.String(), "  memory provider migrated\n  plugin migrated\n") {
+	if !strings.Contains(stdout.String(), "  memory provider migrated\n") {
 		t.Fatalf("stdout %q", stdout.String())
 	}
 	receipt := updaterecord.FinalizedReceipt("fr-finish-ok")
@@ -270,14 +263,14 @@ func TestUpdateFinishOwesFailedFeatureDependenciesAndFinishesTheTail(t *testing.
 	}
 	var calls []string
 	frFinishSteps(t, &calls)
-	frRecording(t, &calls, &pm.PyError{Class: "InstallError", Message: "extra resolution failed"}, nil, nil)
+	frRecording(t, &calls, &pm.PyError{Class: "InstallError", Message: "extra resolution failed"}, nil)
 	request, result := frFinishRequest(t, root, "fr-finish-owed")
 	var stdout bytes.Buffer
 	code, err := updateFinish(updaterecord.UpdateReceiptScope(context.Background()), request, result, &stdout, &bytes.Buffer{})
 	if err != nil || code != 0 {
 		t.Fatalf("code %d err %v", code, err)
 	}
-	if want := []string{"feature_deps", "memory", "left_core", "maintenance", "restart"}; !reflect.DeepEqual(calls, want) {
+	if want := []string{"feature_deps", "memory", "maintenance", "restart"}; !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls %v", calls)
 	}
 	if !strings.Contains(stdout.String(), "  ⚠ feature dependencies failed: InstallError: extra resolution failed\n") {

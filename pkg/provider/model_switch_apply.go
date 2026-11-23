@@ -229,7 +229,7 @@ func ModelSelectionConfigUpdates(result ModelSwitchResult, currentModelCfg any) 
 		stale = append(stale, "api_key", "api")
 	}
 	if routeChanged {
-		stale = append(stale, "key_env", "api_key_env")
+		stale = append(stale, "key_env")
 	}
 	for _, key := range stale {
 		if _, held := modelCfg[key]; held {

@@ -2,31 +2,14 @@ package tuiserver
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
-
-func TestLegacyFallbackKeepsTheTicketProfileForSessionlessScopedHandlers(t *testing.T) {
-	secondary := filepath.Join(t.TempDir(), "profiles", "l106742sec")
-	if err := os.MkdirAll(secondary, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	wsTestMethod(t, "probe.scoped", profileScoped(func(ctx context.Context, rid any, _ map[string]any) map[string]any {
-		return map[string]any{"jsonrpc": "2.0", "id": rid, "result": map[string]any{"home": home.Dir(ctx)}}
-	}))
-	reply := wsTestDriveAuthorityFallback(t, wsTestInteractive, secondary, "probe.scoped")
-	result, _ := reply["result"].(map[string]any)
-	if result["home"] != secondary {
-		t.Fatalf("the scoped handler ran in %v, want %s (reply %v)", result["home"], secondary, reply)
-	}
-}
 
 // Runner of the authority owned session case, a gateway that is running and not draining
 type wsTestAuthorityRunner struct{}

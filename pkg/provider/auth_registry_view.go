@@ -97,6 +97,3 @@ func AWSErrorClassName(err error) string {
 	}
 	return auxPyExceptionName(err)
 }
-
-// Sets whether kept notices are served on stderr and returns the previous setting, for tests that restore it
-func SwapNoticesOnStderrForTests(on bool) bool { return leftCoreTerminalFrontEnd.Swap(on) }

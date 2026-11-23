@@ -37,10 +37,10 @@ func expectClientEnv(t *testing.T, env map[string]any) {
 	}
 }
 
-// client_env of the policy for the parameters
-func clientEnvOf(t *testing.T, parameters ...any) map[string]any {
+// client_env of the policy
+func clientEnvOf(t *testing.T) map[string]any {
 	t.Helper()
-	policy, err := ClientEnvPolicy(context.Background(), parameters)
+	policy, err := ClientEnvPolicy(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,10 +56,7 @@ func TestClientEnvPolicyReadsTheProfilesExtraNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("MY_TOOLCHAIN_HOME", "/opt/tc")
-	if policy, err := ClientEnvPolicy(context.Background(), []any{"source"}); err != nil || len(policy) != 0 {
-		t.Fatalf("policy %v err %v", policy, err)
-	}
-	env := clientEnvOf(t, "client_env")
+	env := clientEnvOf(t)
 	expectClientEnv(t, env)
 	if env["MY_TOOLCHAIN_HOME"] != "/opt/tc" {
 		t.Fatalf("env %v", env)
@@ -85,7 +82,7 @@ func TestClientEnvPolicyReadsTheEffectiveConfigAndBypassReadsNone(t *testing.T) 
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
-	env := clientEnvOf(t, "client_env")
+	env := clientEnvOf(t)
 	expectClientEnv(t, env)
 	if env["GEM_HOME"] != "/gems" {
 		t.Fatalf("env %v", env)
@@ -95,7 +92,7 @@ func TestClientEnvPolicyReadsTheEffectiveConfigAndBypassReadsNone(t *testing.T) 
 	}
 	t.Setenv("MY_TOOLCHAIN_HOME", "/opt/tc")
 	t.Setenv("ICEBATH_IGNORE_USER_CONFIG", "1")
-	bypass := clientEnvOf(t, "client_env")
+	bypass := clientEnvOf(t)
 	expectClientEnv(t, bypass)
 	if _, ok := bypass["GEM_HOME"]; ok {
 		t.Fatalf("bypass read the managed config: %v", bypass)

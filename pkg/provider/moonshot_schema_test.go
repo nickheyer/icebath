@@ -1,9 +1,10 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func moonshotProps(t *testing.T, out map[string]any, names ...string) map[string]any {

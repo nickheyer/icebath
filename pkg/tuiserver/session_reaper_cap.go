@@ -58,9 +58,3 @@ func lastActiveOf(session *tuihost.Session) float64 {
 	panicIf(err)
 	return stamp
 }
-
-// Runs the LRU cap sweep off the response path, eviction may close agents
-func scheduleSessionCapEnforcement(ctx context.Context) {
-	ctx = context.WithoutCancel(ctx)
-	reaperDaemonTimer(0.1, func() { enforceSessionCap(ctx) }, "session cap enforcement failed", "debug")
-}

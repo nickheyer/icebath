@@ -418,30 +418,7 @@ func providerResolutionConfig(ctx context.Context, a *SessionAuthority, cfg map[
 		}
 		resolved["providers"] = merged
 	}
-	frozenCustom, frozenIsList := cfg["custom_providers"].([]any)
-	currentCustom, currentIsList := current["custom_providers"].([]any)
-	if frozenIsList || currentIsList {
-		names := map[string]bool{}
-		for _, entry := range currentCustom {
-			if fields, ok := entry.(map[string]any); ok {
-				names[customProviderName(fields)] = true
-			}
-		}
-		merged := append([]any{}, currentCustom...)
-		for _, entry := range frozenCustom {
-			if fields, ok := entry.(map[string]any); !ok || !names[customProviderName(fields)] {
-				merged = append(merged, entry)
-			}
-		}
-		resolved["custom_providers"] = merged
-		resolved["_profile_custom_count"] = len(currentCustom)
-	}
 	return resolved
-}
-
-// Canonical identity of a custom provider entry, display and key spellings folded together
-func customProviderName(entry map[string]any) string {
-	return provider.CustomProviderSlug(mapText(entry, "name"), mapText(entry, "provider_key"))
 }
 
 // Credential pointer a selected named provider declares, never its secret value
@@ -452,9 +429,6 @@ func selectedProviderKeyEnv(cfg map[string]any, name string) string {
 		return ""
 	}
 	pointer := mapText(entry, "key_env")
-	if pointer == "" {
-		pointer = mapText(entry, "api_key_env")
-	}
 	return strings.TrimSpace(pointer)
 }
 
@@ -463,86 +437,32 @@ func providerKeySlug(key any) string {
 	return provider.CustomProviderSlug("", pyrepr.Str(key))
 }
 
-// Copies only the picked named provider into the frozen route, returning its private values, retired paths and moved entries
+// Copies only the picked providers entry into the frozen route, returning its private values, retired paths and moved entries
 func freezeSelectedProvider(ctx context.Context, cfg, frozen map[string]any, name string) (*RecoveredSecrets, map[string]bool, map[string]secretPath, error) {
 	secrets, retired, moved := &RecoveredSecrets{}, map[string]bool{}, map[string]secretPath{}
 	path := provider.NamedCustomProviderPath(ctx, name, cfg)
 	if path == nil {
 		return secrets, retired, moved, nil
 	}
-	section := path.Section
-	var index any = path.Key
-	var copied map[string]any
-	switch entries := cfg[section].(type) {
-	case map[string]any:
-		entry, ok := entries[path.Key].(map[string]any)
-		if !ok {
-			return secrets, retired, moved, nil
-		}
-		copied = pyjson.Clone(entry).(map[string]any)
-	case []any:
-		index = path.Index
-		entry, ok := entries[path.Index].(map[string]any)
-		if !ok {
-			return secrets, retired, moved, nil
-		}
-		copied = pyjson.Clone(entry).(map[string]any)
-	default:
+	entries, _ := cfg[path.Section].(map[string]any)
+	entry, ok := entries[path.Key].(map[string]any)
+	if !ok {
 		return secrets, retired, moved, nil
 	}
-	retired[secretPathKey(secretPath{section, index})] = true
-	if section == "providers" {
-		previous, _ := frozen[section].(map[string]any)
-		next := map[string]any{}
-		for key, value := range previous {
-			if providerKeySlug(key) == providerKeySlug(path.Key) {
-				retired[secretPathKey(secretPath{section, key})] = true
-				continue
-			}
-			next[key] = value
+	copied := pyjson.Clone(entry).(map[string]any)
+	retired[secretPathKey(secretPath{path.Section, path.Key})] = true
+	previous, _ := frozen[path.Section].(map[string]any)
+	next := map[string]any{}
+	for key, value := range previous {
+		if providerKeySlug(key) == providerKeySlug(path.Key) {
+			retired[secretPathKey(secretPath{path.Section, key})] = true
+			continue
 		}
-		next[path.Key] = copied
-		frozen[section] = next
-	} else {
-		var entries []any
-		if list, ok := frozen[section].([]any); ok {
-			entries = append(entries, list...)
-		}
-		entryName := customProviderName(copied)
-		var same []int
-		for i, entry := range entries {
-			if fields, ok := entry.(map[string]any); ok && customProviderName(fields) == entryName {
-				same = append(same, i)
-			}
-		}
-		position := path.Index
-		profileCount := len(cfg[section].([]any))
-		if count, ok := cfg["_profile_custom_count"].(int); ok {
-			profileCount = count
-		}
-		if position >= profileCount {
-			if len(same) == 0 {
-				return nil, nil, nil, &PyError{Kind: "IndexError", Msg: "the selected provider position is past the configured providers"}
-			}
-			position = same[0]
-		}
-		for len(entries) < position+1 {
-			entries = append(entries, map[string]any{})
-		}
-		if displaced, ok := entries[position].(map[string]any); ok && len(displaced) > 0 && customProviderName(displaced) != entryName {
-			moved[secretPathKey(secretPath{section, position})] = secretPath{section, len(entries)}
-			entries = append(entries, displaced)
-		}
-		for _, i := range same {
-			entries[i] = map[string]any{}
-			retired[secretPathKey(secretPath{section, i})] = true
-		}
-		entries[position] = copied
-		index = position
-		retired[secretPathKey(secretPath{section, position})] = true
-		frozen[section] = entries
+		next[key] = value
 	}
-	if err := extractConfigSecrets(copied, secrets, secretPath{section, index}); err != nil {
+	next[path.Key] = copied
+	frozen[path.Section] = next
+	if err := extractConfigSecrets(copied, secrets, secretPath{path.Section, path.Key}); err != nil {
 		return nil, nil, nil, err
 	}
 	return secrets, retired, moved, nil
@@ -569,11 +489,9 @@ func aliasCredential(ctx context.Context, a *SessionAuthority, result provider.M
 	if err != nil {
 		return aliasKey{}, err
 	}
-	for _, section := range [][]string{{"model_aliases"}, {"model", "aliases"}} {
+	for _, section := range [][]string{{"model", "aliases"}} {
 		var entries map[string]any
-		if len(section) == 1 {
-			entries, _ = raw[section[0]].(map[string]any)
-		} else if model, ok := raw["model"].(map[string]any); ok {
+		if model, ok := raw["model"].(map[string]any); ok {
 			entries, _ = model["aliases"].(map[string]any)
 		}
 		written := make([]string, 0, len(entries))

@@ -94,7 +94,7 @@ func profileModelRequestOf(ctx context.Context, cfg map[string]any) (profileMode
 		return request, nil
 	}
 	userProviders, _ := cfg["providers"].(map[string]any)
-	customProviders, _ := cfg["custom_providers"].([]any)
+	customProviders := provider.ProviderEntryList(cfg)
 	startup, err := provider.ResolveStartupModelRoute(ctx, text, provider.StartupRouteOptions{
 		CurrentProvider: pystr.Lower(cfgProvider), UserProviders: userProviders, CustomProviders: customProviders,
 		AliasConfig: maps.Clone(cfg),

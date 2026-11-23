@@ -395,22 +395,6 @@ func codexPrincipalIdentity(accessToken string) (string, string, bool) {
 	return strings.TrimSpace(account), strings.TrimSpace(subject), true
 }
 
-// Whether a Codex pool row may adopt the auth.json singleton token pair
-func codexEntryTracksSingleton(entry PooledCredential, singletonTokens map[string]any) bool {
-	if entry.Source == "device_code" {
-		return true
-	}
-	if entry.Source != SourceManualDeviceCode {
-		return false
-	}
-	acc, sub, ok := codexPrincipalIdentity(entry.AccessToken)
-	if !ok {
-		return false
-	}
-	sAcc, sSub, sok := codexPrincipalIdentity(anyString(singletonTokens["access_token"]))
-	return sok && acc == sAcc && sub == sSub
-}
-
 func nextPriority(entries []PooledCredential) int {
 	max := -1
 	for _, e := range entries {
@@ -450,19 +434,6 @@ func minDuration(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
-}
-
-// True only when the auth.json singleton is provably older than the entry
-func singletonPredatesEntry(state map[string]any, entry PooledCredential) bool {
-	entryTS, ok := ParseAbsoluteTimestamp(entry.LastRefresh)
-	if !ok {
-		return false
-	}
-	stateTS, ok := ParseAbsoluteTimestamp(state["last_refresh"])
-	if !ok {
-		return false
-	}
-	return stateTS < entryTS
 }
 
 // Trims reason and message and resolves the reset epoch from timestamps or the message text

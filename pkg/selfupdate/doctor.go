@@ -216,18 +216,17 @@ func runDoctor(ctx context.Context, d *Doctor, ns map[string]any, checks []docto
 	}
 	fmt.Fprintln(w, linktier.BuildLine())
 	total := &Finding{}
-	held := provider.WithLeftCoreInstallsHeld(ctx)
 	for _, entry := range checks {
 		if entry.Title != "" {
 			doctorSection(w, entry.Title)
 		}
-		found, err := entry.Check(held, d, shouldFix)
+		found, err := entry.Check(ctx, d, shouldFix)
 		if err != nil {
 			return 1, err
 		}
 		total.Merge(found)
 	}
-	newDoctorLiveEnv(held, d).doctorMaybeRunLiveChecks(ns, &total.ManualIssues)
+	newDoctorLiveEnv(ctx, d).doctorMaybeRunLiveChecks(ns, &total.ManualIssues)
 	doctorPrintSummary(w, shouldFix, total)
 	if len(total.Issues) > 0 || len(total.ManualIssues) > 0 {
 		return 1, nil

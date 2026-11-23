@@ -2,8 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -27,22 +24,6 @@ func closingSession(extra map[string]any) *tuihost.Session {
 		fields[key] = value
 	}
 	return tuihost.NewSession(fields)
-}
-
-// Home with no settle grace before a close finalizes, every lease of the case released after
-func closingTurnEnv(t *testing.T) (string, *[]*tuihost.Session) {
-	t.Helper()
-	h := sessionCaseScope(t)
-	useSharedDB(t, reaperTestDB(t))
-	swapVar(t, &turnSettleBeforeCloseSeconds, 0.0)
-	sessions := &[]*tuihost.Session{}
-	t.Cleanup(func() {
-		for _, session := range *sessions {
-			releaseActiveSessionSlot(session)
-		}
-		tuihost.SetSessionRecord(closingSID, nil)
-	})
-	return h, sessions
 }
 
 // Real agent of the closing key on a scripted provider whose requests count the turns run
@@ -94,89 +75,5 @@ func joinTurn(t *testing.T, session *tuihost.Session) {
 		if time.Now().After(deadline) {
 			t.Fatal("turn thread still alive")
 		}
-	}
-}
-
-func TestCloseWhileFirstPromptWaitsForBuildLeavesNoLease(t *testing.T) {
-	h, sessions := closingTurnEnv(t)
-	buildDone := &pythread.Event{}
-	session := closingSession(map[string]any{"agent_ready": buildDone, "agent_build_started": true})
-	*sessions = append(*sessions, session)
-	tuihost.SetSessionRecord(closingSID, session)
-	submitted := closingRPC("prompt.submit", map[string]any{"text": "hello"})
-	if resultOf(t, submitted)["status"] != "streaming" {
-		t.Fatalf("submitted %v", submitted)
-	}
-	if ids := leaseIDs(t, h); len(ids) != 1 || ids[0] != "closing-session-key" {
-		t.Fatalf("leases %v", ids)
-	}
-	if resultOf(t, closingRPC("session.close", nil))["closed"] != true {
-		t.Fatal("close refused")
-	}
-	if ids := leaseIDs(t, h); len(ids) != 0 {
-		t.Fatalf("leases after close %v", ids)
-	}
-	built, srv := closingBuiltAgent(t)
-	session.Set("agent", built)
-	buildDone.Set()
-	joinTurn(t, session)
-	if ids := leaseIDs(t, h); len(ids) != 0 || reopenRefusal(context.Background()) != nil || truthy(session.Get("running")) || len(srv.MainRequests()) != 0 {
-		t.Fatalf("leases %v running %v turns %d", ids, session.Get("running"), len(srv.MainRequests()))
-	}
-}
-
-func TestCloseLandingWhileTurnClaimsLeaseLeavesNoLease(t *testing.T) {
-	h, sessions := closingTurnEnv(t)
-	ready := &pythread.Event{}
-	ready.Set()
-	built, srv := closingBuiltAgent(t)
-	session := closingSession(map[string]any{"agent": built, "agent_ready": ready})
-	*sessions = append(*sessions, session)
-	tuihost.SetSessionRecord(closingSID, session)
-	claim := ensureActiveSessionSlot
-	atClaim := map[string]any{}
-	var once sync.Once
-	swapVar(t, &ensureActiveSessionSlot, func(ctx context.Context, sid string, claiming *tuihost.Session) *activesessions.Refusal {
-		stack := make([]byte, 1<<16)
-		if strings.Contains(string(stack[:runtime.Stack(stack, false)]), "admitPromptTurn") && !truthy(claiming.Get("_closing")) {
-			once.Do(func() {
-				atClaim["closed"] = resultOf(t, closingRPC("session.close", nil))["closed"]
-				atClaim["leases"] = len(leaseIDs(t, h))
-			})
-		}
-		return claim(ctx, sid, claiming)
-	})
-	submitted := closingRPC("prompt.submit", map[string]any{"text": "hello"})
-	if resultOf(t, submitted)["status"] != "streaming" {
-		t.Fatalf("submitted %v", submitted)
-	}
-	joinTurn(t, session)
-	ensureActiveSessionSlot = claim
-	if atClaim["closed"] != true || atClaim["leases"] != 0 {
-		t.Fatalf("at claim %v", atClaim)
-	}
-	if ids := leaseIDs(t, h); len(ids) != 0 || reopenRefusal(context.Background()) != nil || truthy(session.Get("running")) || len(srv.MainRequests()) != 0 {
-		t.Fatalf("leases %v running %v turns %d", ids, session.Get("running"), len(srv.MainRequests()))
-	}
-}
-
-func TestClosingRefusalKeepsALeaseTheSessionAlreadyHeld(t *testing.T) {
-	h, sessions := closingTurnEnv(t)
-	ctx := context.Background()
-	session := closingSession(nil)
-	*sessions = append(*sessions, session)
-	if refusal := ensureActiveSessionSlot(ctx, closingSID, session); refusal != nil {
-		t.Fatalf("claim %v", refusal)
-	}
-	held := session.Get("active_session_lease")
-	session.Set("_closing", true)
-	if _, _, admitted := admitPromptTurn(ctx, closingSID, session, "hello", nil, nil, "", nil, true); admitted {
-		t.Fatal("closing session admitted a turn")
-	}
-	if session.Get("active_session_lease") != held {
-		t.Fatal("held lease released")
-	}
-	if ids := leaseIDs(t, h); len(ids) != 1 || ids[0] != "closing-session-key" {
-		t.Fatalf("leases %v", ids)
 	}
 }

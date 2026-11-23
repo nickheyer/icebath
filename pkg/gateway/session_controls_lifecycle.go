@@ -384,6 +384,13 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 		if rows, err = withShellLines(rows, a.ProfileID, ref.SessionID); err != nil {
 			return nil, err
 		}
+		shows, err := sessionShowsReasoning(sessionSettingsCtx(ctx, a, ref.SessionID), a, attachedLive)
+		if err != nil {
+			return nil, err
+		}
+		if !shows {
+			withoutReasoning(rows)
+		}
 		display.Set("display_messages", rows)
 	}
 	transcript, err := resumeTranscript(ctx, a, ref, snapshot, history, omit)

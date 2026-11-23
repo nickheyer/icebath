@@ -450,40 +450,6 @@ func ResolveResponse(frame *pyjson.Object, transport Transport) bool {
 // Question id a batch does not hold, the ValueError of a lock on it
 type UnknownQuestionError struct{ QuestionID string }
 
-func (e *UnknownQuestionError) Error() string {
-	return "unknown question_id " + pyrepr.Repr(e.QuestionID)
-}
-
-// Locks one batch answer and returns the ids still open, not ok when no open batch has that request id
-func LockAnswer(requestID, questionID string, answer any) (remaining []string, ok bool, err error) {
-	requestsMu.Lock()
-	req := findOpenLocked(requestID)
-	if req == nil || req.qids == nil {
-		requestsMu.Unlock()
-		return nil, false, nil
-	}
-	if !slices.Contains(req.qids, questionID) {
-		requestsMu.Unlock()
-		return nil, false, &UnknownQuestionError{questionID}
-	}
-	req.locked.Set(questionID, answer)
-	remaining = []string{}
-	for _, qid := range req.qids {
-		if _, locked := req.locked.Get(qid); !locked {
-			remaining = append(remaining, qid)
-		}
-	}
-	if len(remaining) == 0 {
-		req.result, req.answered = settleBatch(req.locked, nil, "submitted"), true
-		popOpenLocked(req)
-	}
-	requestsMu.Unlock()
-	if len(remaining) == 0 {
-		req.set()
-	}
-	return remaining, true, nil
-}
-
 // Withdraws the open requests of one session or of all when sid is nil, narrowed to one method when given
 func Cancel(sid *string, reason string, method *string) int {
 	requestsMu.Lock()
@@ -531,17 +497,6 @@ func sessionRequestsLocked(sid string) []*ServerRequest {
 	}
 	sort.SliceStable(reqs, func(i, j int) bool { return reqs[i].createdAt.Before(reqs[j].createdAt) })
 	return reqs
-}
-
-// Unanswered requests of a session as snapshots, oldest first
-func OpenRequests(sid string) []*pyjson.Object {
-	requestsMu.Lock()
-	defer requestsMu.Unlock()
-	out := []*pyjson.Object{}
-	for _, req := range sessionRequestsLocked(sid) {
-		out = append(out, req.Snapshot())
-	}
-	return out
 }
 
 // Method of the oldest open request of a session, empty when it waits on nothing

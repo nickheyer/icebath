@@ -118,7 +118,6 @@ type app struct {
 	clipboardSeq       int
 	spawnSections      map[string]bool
 	agentDockCollapsed bool
-	observeUnsupported bool
 	completion         composerCompletion
 	// Reloads the session switcher while it is open, nil when it is closed
 	switcherReload func() tea.Cmd

@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -136,32 +135,9 @@ func (r *GatewayRunner) recordServedProfiles(ctx context.Context, active string,
 	}
 }
 
-// Installs the catalog plugin of every feature that left core and that the home uses, in the home's runtime scope
-func recoverLeftCoreIn(ctx context.Context, profileHome string, hydrateSecrets bool) {
-	provider.RecoverLeftCoreAtStartup(gateway.ProfileRuntimeScope(ctx, profileHome, hydrateSecrets), nil, true)
-}
-
-// Left core migration of the launch home, then of the default root when the launch home is another one
-func recoverLeftCoreAtGatewayStart(ctx context.Context) error {
-	provider.RecoverLeftCoreAtStartup(ctx, nil, true)
-	root, err := pypath.Resolve(home.Root())
-	if err != nil {
-		return err
-	}
-	launch, err := pypath.Resolve(home.Dir(ctx))
-	if err != nil {
-		return err
-	}
-	if root != launch {
-		recoverLeftCoreIn(ctx, home.Root(), true)
-	}
-	return nil
-}
-
 // Hydrates a secondary profile, enters its scope once and returns its gateway config, refusing an open policy
 func (r *GatewayRunner) loadSecondaryProfileConfig(ctx context.Context, profileName, profileHome string) (*gateway.GatewayConfig, error) {
 	provider.HydrateProfileSecretSources(profileHome)
-	recoverLeftCoreIn(ctx, profileHome, false)
 	scoped := gateway.ProfileRuntimeScope(ctx, profileHome, false)
 	plugins.DiscoverPlugins(scoped, false)
 	if err := r.subscribePluginRewire(plugins.GetPluginManager(scoped), profileName, profileHome); err != nil {

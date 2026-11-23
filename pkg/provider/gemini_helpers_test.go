@@ -2,9 +2,10 @@ package provider
 
 import (
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // JSON text decoded with numbers kept as written, panicking on bad input

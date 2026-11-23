@@ -192,11 +192,12 @@ func (st *storedTurn) tick(at *float64) {
 	}
 }
 
-// Feeds a stored reply, its reasoning first, as the stream brought it
+// Feeds a stored reply, its reasoning first as the stream brought it, the background service having left the reasoning out of a session that
+// does not show it
 func (st *storedTurn) reply(row tuigateway.TranscriptMessage, text string) {
 	st.tick(row.Timestamp)
 	if reasoning := val(row.Reasoning); strings.TrimFunc(reasoning, isJSSpace) != "" {
-		st.turn.recordReasoningDelta(reasoning, false)
+		st.turn.recordReasoningDelta(reasoning, true)
 	}
 	if text != "" {
 		st.turn.recordMessageDelta(text)
@@ -275,6 +276,9 @@ func toTranscriptMessages(rows []tuigateway.TranscriptMessage, ui uiState) []msg
 		text := val(row.Text)
 		reasoning := strings.TrimFunc(val(row.Reasoning), isJSSpace)
 		if strings.TrimFunc(text, isJSSpace) == "" && (row.Role != "assistant" || reasoning == "") {
+			if row.Role == "assistant" && turn != nil {
+				turn.tick(row.Timestamp)
+			}
 			continue
 		}
 		event := func(text string) {

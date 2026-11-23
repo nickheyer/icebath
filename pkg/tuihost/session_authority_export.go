@@ -19,11 +19,6 @@ func SteerAuthoritySession(sid string, transport Transport, expected *Session) *
 	return session
 }
 
-// Whether a live transport is the session transport or a peer of its fanout
-func SessionTransportContains(session *Session, transport Transport) bool {
-	return sessionTransportContains(session, transport)
-}
-
 // Removes and returns the live record of sid in one registry critical section, nil when absent
 func PopSessionRecord(sid string) *Session {
 	sessionsMu.Lock()

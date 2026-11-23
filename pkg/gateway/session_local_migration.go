@@ -201,13 +201,6 @@ func configuredOwner(ctx context.Context, saved, cfg map[string]any) (string, er
 			names = append(names, key)
 		}
 	}
-	if legacy, ok := cfg["custom_providers"].([]any); ok {
-		for _, entry := range legacy {
-			if fields, isDict := entry.(map[string]any); isDict {
-				names = append(names, fields["name"])
-			}
-		}
-	}
 	for _, name := range names {
 		owner, url, err := ResolvedRoute(ctx, map[string]any{"provider": routeStr(name)}, cfg)
 		if err != nil {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"slices"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -48,24 +47,6 @@ func SessionRecord(sid string) *Session {
 	sessionsMu.RLock()
 	defer sessionsMu.RUnlock()
 	return sessions[sid]
-}
-
-// Stores the record of a live session at the end of the registry order, a nil record dropping it
-func SetSessionRecord(sid string, record *Session) {
-	sessionsMu.Lock()
-	defer sessionsMu.Unlock()
-	_, known := sessions[sid]
-	if record == nil {
-		if known {
-			delete(sessions, sid)
-			sessionOrder = slices.DeleteFunc(sessionOrder, func(id string) bool { return id == sid })
-		}
-		return
-	}
-	if !known {
-		sessionOrder = append(sessionOrder, sid)
-	}
-	sessions[sid] = record
 }
 
 // One live session with its id

@@ -277,7 +277,7 @@ func warnInvalidCustomProviderContextLength(ctx context.Context, a *AIAgent, cus
 			cpCtx = m["context_length"]
 		}
 		if cpCtx != nil && configPositiveInt(cpCtx, false) == nil {
-			warnInvalidConfigInt(ctx, fmt.Sprintf("context_length for model %s in custom_providers", errchain.Show(a.model)),
+			warnInvalidConfigInt(ctx, fmt.Sprintf("context_length for model %s in providers", errchain.Show(a.model)),
 				cpCtx, ctxLenRequirement, "auto-detection", "auto-detected context window", a)
 		}
 		return

@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -22,17 +21,6 @@ func wsTestRunDisconnect(t *testing.T, seed func(transport *tuihost.WSTransport)
 	sock.inbound <- nil
 	if err := HandleWS(context.Background(), sock, nil, nil, false); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestWsDisconnectReapsFlaggedSession(t *testing.T) {
-	t.Cleanup(func() { tuihost.SetSessionRecord("flagged", nil) })
-	wsTestRunDisconnect(t, func(transport *tuihost.WSTransport) {
-		tuihost.SetSessionRecord("flagged", tuihost.NewSession(map[string]any{
-			"transport": tuihost.Transport(transport), "close_on_disconnect": true, "session_key": "k"}))
-	})
-	if tuihost.SessionRecord("flagged") != nil {
-		t.Fatal("the flagged session outlived its transport")
 	}
 }
 
@@ -253,29 +241,6 @@ func wsTestFakeAuthority(t *testing.T, capabilities []string, profileID string) 
 	t.Cleanup(func() { wsNewAuthorityConnection = prev })
 }
 
-var wsTestInteractive = []string{"session:create", "session:read", "session:submit", "session:control", "session:approve", "session:respond"}
-
-// One call through an authority socket whose dispatch answers unknown method, returning the reply to id 1
-func wsTestDriveAuthorityFallback(t *testing.T, capabilities []string, profileID, method string) map[string]any {
-	t.Helper()
-	wsTestFakeAuthority(t, capabilities, profileID)
-	wsTestNoOrphanGrace(t)
-	sock := newWSTestSocket()
-	sock.authority = new(gateway.SessionAuthority)
-	sock.inbound <- pyjson.ObjectOf("jsonrpc", "2.0", "id", 1, "method", method, "params", pyjson.NewObject())
-	sock.inbound <- nil
-	if err := HandleWS(context.Background(), sock, map[string]any{"user_id": "u"}, nil, false); err != nil {
-		t.Fatal(err)
-	}
-	for _, frame := range sock.frames() {
-		if pyrepr.Equal(frame["id"], 1) {
-			return frame
-		}
-	}
-	t.Fatalf("no reply to id 1 in %v", sock.frames())
-	return nil
-}
-
 // Registers a method for one case and restores the registry after it
 func wsTestMethod(t *testing.T, name string, fn Handler) {
 	t.Helper()
@@ -311,29 +276,6 @@ func TestReadyFrameAdvertisesASessionAuthorityOnlyWhenOneIsBound(t *testing.T) {
 	}
 	if _, advertised := ready(nil)["session_authority"]; advertised {
 		t.Fatal("a socket without an authority advertised one")
-	}
-}
-
-func TestLegacyFallbackRequiresTheInteractiveGrant(t *testing.T) {
-	var ran []any
-	wsTestMethod(t, "probe.legacy", func(_ context.Context, rid any, _ map[string]any) map[string]any {
-		ran = append(ran, rid)
-		return map[string]any{"jsonrpc": "2.0", "id": rid, "result": map[string]any{}}
-	})
-	launch := launchHome()
-	for _, restricted := range [][]string{{"worker:adopt"}, nil} {
-		reply := wsTestDriveAuthorityFallback(t, restricted, launch, "probe.legacy")
-		failure, _ := reply["error"].(map[string]any)
-		if !pyrepr.Equal(failure["code"], -32601) || len(ran) != 0 {
-			t.Fatalf("grant %v reached the legacy handler: %v ran=%v", restricted, reply, ran)
-		}
-	}
-	reply := wsTestDriveAuthorityFallback(t, wsTestInteractive, launch, "probe.legacy")
-	if result, isDict := reply["result"].(map[string]any); !isDict || len(result) != 0 {
-		t.Fatalf("interactive reply %v", reply)
-	}
-	if len(ran) != 1 || !pyrepr.Equal(ran[0], 1) {
-		t.Fatalf("ran %v", ran)
 	}
 }
 

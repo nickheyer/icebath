@@ -412,7 +412,7 @@ func resolveStartupRuntime(ctx context.Context) (string, string) {
 			currentProvider = "auto"
 		}
 		userProviders, _ := fullCfg["providers"].(map[string]any)
-		customProviders, _ := fullCfg["custom_providers"].([]any)
+		customProviders := provider.ProviderEntryList(fullCfg)
 		route, err := provider.ResolveStartupModelRoute(ctx, explicitModel, provider.StartupRouteOptions{
 			CurrentProvider: currentProvider, UserProviders: userProviders, CustomProviders: customProviders})
 		if err != nil {
@@ -479,88 +479,6 @@ func parseModelConfig(raw any, quiet bool) (map[string]any, error) {
 		}
 	}
 	return map[string]any{}, nil
-}
-
-// Whether a stored row is a canonical Bot Chat whose runtime follows the member profile config
-func rowFollowsProfile(row *pyjson.Object) bool {
-	if row == nil || row.Len() == 0 {
-		return false
-	}
-	modelConfig, _ := parseModelConfig(row.GetOr("model_config", nil), true)
-	return truthy(modelConfig["follow_profile_config"]) || strings.TrimSpace(strOr(row.GetOr("title", nil))) == "Bot Chat"
-}
-
-// Runtime overrides persisted with a stored session so a resume restores the route that chat used
-func storedSessionRuntimeOverrides(ctx context.Context, row *pyjson.Object) map[string]any {
-	if row == nil || row.Len() == 0 {
-		return map[string]any{}
-	}
-	modelConfig, _ := parseModelConfig(row.GetOr("model_config", nil), true)
-	rowTitle := strings.TrimSpace(strOr(row.GetOr("title", nil)))
-	roomPlumbing := truthy(modelConfig["room_plumbing"]) || (truthy(row.GetOr("hidden", nil)) && strings.HasPrefix(rowTitle, "Group:"))
-	composerMatches := false
-	if composer, ok := modelConfig["composer_override_profile"].(map[string]any); ok {
-		targetModel, targetProvider := configModelTarget(ctx)
-		composerMatches = strings.TrimSpace(strOr(composer["model"])) == targetModel && strings.TrimSpace(strOr(composer["provider"])) == targetProvider
-	}
-	if roomPlumbing || (rowFollowsProfile(row) && !composerMatches) {
-		return map[string]any{}
-	}
-	overrides := map[string]any{}
-	model := strOr(row.GetOr("model", nil))
-	if model == "" {
-		model = strOr(modelConfig["model"])
-	}
-	model = strings.TrimSpace(model)
-	route := state.SessionGatewayRuntime(row)
-	routeField := func(key string) string { return strings.TrimSpace(strOr(route.GetOr(key, nil))) }
-	providerName, baseURL, apiMode := routeField("provider"), routeField("base_url"), routeField("api_mode")
-	serviceTier := strings.TrimSpace(strOr(modelConfig["service_tier"]))
-	reasoningConfig := modelConfig["reasoning_config"]
-	if provider.IsForeignProviderEndpoint(providerName, baseURL) {
-		baseURL, apiMode = "", ""
-	}
-	if providerName != "" && !isRoutableProvider(ctx, providerName) {
-		healed := ""
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					pkgLog().Debug("custom provider identity recovery failed", "error", r)
-				}
-			}()
-			healed = provider.CanonicalCustomIdentity(ctx, baseURL, "", model, "")
-		}()
-		if healed != "" {
-			pkgLog().Info(fmt.Sprintf("healed stale session provider %s to %s", pyrepr.Repr(providerName), pyrepr.Repr(healed)))
-			providerName, baseURL = healed, ""
-		} else {
-			providerName, baseURL, apiMode = "", "", ""
-		}
-	}
-	orNone := func(v string) any {
-		if v == "" {
-			return nil
-		}
-		return v
-	}
-	if model != "" {
-		overrides["model_override"] = map[string]any{
-			"model": model, "provider": orNone(providerName), "base_url": orNone(baseURL), "api_mode": orNone(apiMode)}
-	}
-	if providerName != "" {
-		overrides["provider_override"] = providerName
-	}
-	if rc, ok := reasoningConfig.(map[string]any); ok {
-		overrides["reasoning_config_override"] = rc
-	}
-	if serviceTier != "" {
-		if strings.ToLower(serviceTier) == "normal" {
-			overrides["service_tier_override"] = ""
-		} else {
-			overrides["service_tier_override"] = serviceTier
-		}
-	}
-	return overrides
 }
 
 // Live agent, session key and owning session store of a record, ok false when any is missing
@@ -714,16 +632,6 @@ func sessionShowReasoning(ctx context.Context, sid string) bool {
 // Whether a session shows tool progress at all
 func toolProgressEnabled(ctx context.Context, sid string) bool {
 	return sessionToolProgressMode(ctx, sid) != "off"
-}
-
-// Pins the tool progress mode the TUI was launched with as the new session's own value
-func applyLaunchToolProgress(ctx context.Context, sid string) error {
-	mode := strings.ToLower(strings.TrimSpace(os.Getenv("ICEBATH_TUI_TOOL_PROGRESS")))
-	if mode == "" || sid == "" {
-		return nil
-	}
-	_, err := settings.Set(settings.WithSession(ctx, settingsSessionID(sid)), settings.ToolProgress.Key, mode, settings.Session)
-	return err
 }
 
 // Whether a tool's lifecycle is an interactive card or diff the client must always receive

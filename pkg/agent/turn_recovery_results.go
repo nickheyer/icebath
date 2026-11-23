@@ -133,7 +133,7 @@ func nonretryableClientErrorResult(ctx context.Context, a *AIAgent, s *LoopState
 		vlines(a,
 			"   💡 The endpoint's firewall/CDN blocked the request before it reached the model — your key",
 			"      and model access are probably fine. Relays often reject the SDK's default User-Agent:",
-			"      set `extra_headers: {User-Agent: IcebathAgent/1.0}` on the custom_providers entry,",
+			"      set `extra_headers: {User-Agent: IcebathAgent/1.0}` on the providers entry,",
 			"      or check the proxy/WAF rules and your network.")
 	}
 	if classified.Reason == provider.ReasonContentPolicyBlocked {

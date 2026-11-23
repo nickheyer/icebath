@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"math/big"
 	"os"
 	"regexp"
@@ -430,15 +431,18 @@ func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCal
 	return row
 }
 
-// Field of a stored row's display metadata, nil when the row has none
+// Field of a stored row's display metadata, whichever object type the store decoded it to, nil when the row has none
 func displayMetadataField(metadata any, key string) any {
-	switch typed := metadata.(type) {
-	case map[string]any:
-		return typed[key]
-	case *pyjson.Object:
-		if typed != nil {
-			return typed.GetOr(key, nil)
-		}
+	if metadata == nil {
+		return nil
 	}
-	return nil
+	raw, err := json.Marshal(metadata)
+	if err != nil {
+		return nil
+	}
+	var fields map[string]any
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil
+	}
+	return fields[key]
 }

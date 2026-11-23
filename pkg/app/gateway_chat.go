@@ -8,8 +8,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"sort"
-	"strings"
 	"syscall"
 
 	"github.com/gorilla/websocket"
@@ -198,26 +196,13 @@ func gatewayResumeNamed(ctx context.Context, client gatewayChatPeer, args map[st
 		"sessions, or pass -c <name> --create-if-missing to start a new session with that title.", name)}
 }
 
-// Creates a session under the launch policy the owner create contract advertises
-func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[string]any, description map[string]any,
+// Creates a session under the launch policy of this chat's flags and shell
+func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[string]any,
 	createIfMissing bool, title string, oneshotPrompt bool) (map[string]any, error) {
-	contract, _ := gatewayGetOr(description, "session_create", map[string]any{}).(map[string]any)
-	sources, _ := gatewayGetOr(contract, "sources", []any{}).([]any)
-	has := func(list []any, name string) bool {
-		for _, item := range list {
-			if pyrepr.Equal(item, name) {
-				return true
-			}
-		}
-		return false
-	}
-	source := "cli"
+	source := "oneshot"
 	if pyrepr.Truthy(args["source"]) {
 		source = pyrepr.Str(args["source"])
-	} else if has(sources, "oneshot") {
-		source = "oneshot"
 	}
-	parameters, _ := gatewayGetOr(contract, "parameters", []any{}).([]any)
 	policy := gatewaycli.RequestedPolicy(args)
 	policy.Delete("source")
 	if createIfMissing {
@@ -227,7 +212,7 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 	for _, key := range env.Keys {
 		policy.Set(key, env.Vals[key])
 	}
-	clientEnv, err := gatewaycli.ClientEnvPolicy(ctx, parameters)
+	clientEnv, err := gatewaycli.ClientEnvPolicy(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -239,18 +224,6 @@ func gatewayCreateSession(ctx context.Context, client gatewayChatPeer, args map[
 		return nil, err
 	}
 	policy.Set("cwd", cwd)
-	var missing []string
-	for _, key := range policy.Keys {
-		if !has(parameters, key) {
-			missing = append(missing, key)
-		}
-	}
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		return nil, &gateway.GatewayClientError{Msg: fmt.Sprintf("The gateway this chat attached to is icebath build %s, which takes no %s at session "+
-			"creation. Restart it on this build with `icebath gateway restart`, or point ICEBATH_TUI_GATEWAY_URL at a gateway of this build.",
-			pyrepr.Str(gatewayGetOr(description, "build", "unknown")), strings.Join(missing, ", "))}
-	}
 	params := map[string]any{"request_id": uuidHex(), "source": source}
 	for _, key := range policy.Keys {
 		params[key] = policy.Vals[key]
@@ -289,14 +262,6 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 		return 0, err
 	}
 	defer client.Close()
-	rawDescription, err := client.RPCTimeout(ctx, "runtime.describe", map[string]any{}, 0)
-	if err != nil {
-		return 0, err
-	}
-	description, err := gatewayAnswerMap(rawDescription)
-	if err != nil {
-		return 0, err
-	}
 	var attachments []any
 	if pyrepr.Truthy(args["image"]) {
 		staged, err := gatewayStageImage(ctx, pyrepr.Str(args["image"]))
@@ -355,7 +320,7 @@ func runGatewayChat(ctx context.Context, args map[string]any, emitter *StreamJSO
 			snapshot, err = gatewayRelaunch(ctx, client, args, snapshot)
 		}
 	default:
-		snapshot, err = gatewayCreateSession(ctx, client, args, description, createIfMissing, title, oneshotPrompt)
+		snapshot, err = gatewayCreateSession(ctx, client, args, createIfMissing, title, oneshotPrompt)
 	}
 	if err != nil {
 		return 0, err

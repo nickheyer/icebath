@@ -2,9 +2,10 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/http"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestGeminiSchemaStripsUnknownTopLevelKeys(t *testing.T) {

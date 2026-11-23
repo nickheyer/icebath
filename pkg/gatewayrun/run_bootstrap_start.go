@@ -431,9 +431,6 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	if err := startGatewayConfigureLogging(ctx, o.Verbosity); err != nil {
 		return false, err
 	}
-	if err := recoverLeftCoreAtGatewayStart(ctx); err != nil {
-		return false, err
-	}
 	pin, pinErr := pinLaunchStore(ctx)
 	if pinErr != nil {
 		return false, pinErr

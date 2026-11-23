@@ -22,7 +22,7 @@ func (r *resolver) ResolveEntryAPIKey(entry map[string]any) string {
 	if inline := strings.TrimSpace(cfgString(entry["api_key"])); inline != "" {
 		return inline
 	}
-	if keyEnv := strings.TrimSpace(firstTruthyString(entry["key_env"], entry["api_key_env"])); keyEnv != "" {
+	if keyEnv := strings.TrimSpace(cfgString(entry["key_env"])); keyEnv != "" {
 		return strings.TrimSpace(r.secret(keyEnv))
 	}
 	return ""

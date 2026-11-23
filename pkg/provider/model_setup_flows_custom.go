@@ -354,7 +354,7 @@ func pickDetectedModel(r *ModelFlowRun, detected []string) (string, error) {
 	return pystr.Strip(typed), nil
 }
 
-// Custom endpoint wizard, URL, key, probe, api mode and model, saved to custom_providers for the menu
+// Custom endpoint wizard, URL, key, probe, api mode and model, saved to providers for the menu
 func modelFlowCustom(r *ModelFlowRun) error {
 	currentURL := r.envValue("OPENAI_BASE_URL")
 	currentKey := r.envValue("OPENAI_API_KEY")
@@ -488,8 +488,7 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		pyDictSet(model, "provider", "custom")
 		pyDictSet(model, "base_url", effectiveURL)
 		delete(model, "key_env")
-		delete(model, "api_key_env")
-		if customKeyEnv != "" {
+			if customKeyEnv != "" {
 			pyDictSet(model, "api_key", "${"+customKeyEnv+"}")
 		}
 		if apiMode != "" {
@@ -541,7 +540,7 @@ func modelFlowCustom(r *ModelFlowRun) error {
 	return nil
 }
 
-// Model ids from a custom_providers models mapping or list, marker keys skipped
+// Model ids from a providers entry models mapping or list, marker keys skipped
 func configuredModelIDs(cfgModels any) []string {
 	out := []string{}
 	switch models := cfgModels.(type) {
@@ -670,7 +669,7 @@ func discoverNamedCustomModels(r *ModelFlowRun, providerInfo map[string]any, api
 	if len(live) > 0 {
 		func() {
 			defer func() { _ = recover() }()
-			_, _, identity := entryCredentials(ctx, providerInfo, "key_env", "api_key_env")
+			_, _, identity := entryCredentials(ctx, providerInfo, "key_env")
 			var identityPtr *string
 			if identity != "" {
 				identityPtr = &identity
@@ -816,7 +815,6 @@ func modelFlowNamedCustom(r *ModelFlowRun, providerInfo map[string]any) error {
 		return err
 	}
 	delete(model, "key_env")
-	delete(model, "api_key_env")
 	if providerKey != "" {
 		pyDictSet(model, "provider", CustomProviderSlug(name, providerKey))
 		delete(model, "base_url")

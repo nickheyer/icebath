@@ -226,9 +226,6 @@ func TestAuxiliaryClientProviderPriorityCodexNotInAutoFallback(t *testing.T) {
 	}
 	auxFixedPoolEntry(t, false, nil)
 	ppNoRegistry(t)
-	prevTok := auxReadCodexSingletonTokenFn
-	auxReadCodexSingletonTokenFn = func(context.Context) string { return "codex-tok" }
-	t.Cleanup(func() { auxReadCodexSingletonTokenFn = prevTok })
 	client, model, err := GetTextAuxiliaryClient(ctx, "", nil)
 	if err != nil || client != nil || model != "" {
 		t.Fatalf("got %v %q %v", client, model, err)

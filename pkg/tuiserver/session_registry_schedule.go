@@ -16,9 +16,6 @@ var (
 	autoPruneNotified   = map[string]float64{}
 )
 
-// Fresh durable session key in the timestamp plus hex shape the store mints
-func newSessionKey() string { return state.NewSessionID() }
-
 // Deferred agent build scheduler, the delayed timer below
 var scheduleAgentBuild func(ctx context.Context, sid string, delay float64)
 

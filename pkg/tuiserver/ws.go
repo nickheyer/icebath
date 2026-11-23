@@ -109,26 +109,6 @@ func wsPeerLabel(ws ServedSocket) string {
 	return host
 }
 
-// Whether a response is the method not found error
-func isUnknownMethod(resp any) bool {
-	switch frame := resp.(type) {
-	case map[string]any:
-		errObj, isDict := frame["error"].(map[string]any)
-		return isDict && pyrepr.Equal(errObj["code"], -32601)
-	case *pyjson.Object:
-		if frame == nil {
-			return false
-		}
-		switch errObj := frame.GetOr("error", nil).(type) {
-		case *pyjson.Object:
-			return errObj != nil && pyrepr.Equal(errObj.GetOr("code", nil), -32601)
-		case map[string]any:
-			return pyrepr.Equal(errObj["code"], -32601)
-		}
-	}
-	return false
-}
-
 // Disables Nagle and enables TCP keepalive on the raw socket, logging when the server exposes none it can tune
 func disableNagle(ws ServedSocket) {
 	conn, isTCP := ws.RawConn().(*net.TCPConn)
@@ -175,17 +155,6 @@ func newWSAuthorityConnection(authority *gateway.SessionAuthority, transport *tu
 		return nil, err
 	}
 	return conn, nil
-}
-
-// Capability names a principal holds
-func principalCapabilities(actor gateway.Principal) []string {
-	out := make([]string, 0, len(actor.Capabilities))
-	for name, held := range actor.Capabilities {
-		if held {
-			out = append(out, name)
-		}
-	}
-	return out
 }
 
 // One request answered by the connection's session authority, a response frame settling its open server request

@@ -11,7 +11,7 @@ const SnapshotOwnerKey = "custom_entry"
 // RowOwnedByEntry is ownership by provenance, manual rows and rows seeded from the entry's own key env
 func RowOwnedByEntry(row PooledCredential, entry map[string]any) bool {
 	source := strings.TrimSpace(row.Source)
-	for _, k := range []string{"key_env", "api_key_env"} {
+	for _, k := range []string{"key_env"} {
 		if name := strings.TrimSpace(anyString(entry[k])); name != "" && source == "env:"+name {
 			return true
 		}
@@ -169,7 +169,7 @@ func RuntimeEntryOwner(ctx context.Context, provider, requestedProvider, baseURL
 		return nil
 	}
 	owner := map[string]any{"name": match.name, "declares_credential": EntryDeclaresCredential(match.entry)}
-	for _, k := range []string{"provider_key", "base_url", "key_env", "api_key_env"} {
+	for _, k := range []string{"provider_key", "base_url", "key_env"} {
 		owner[k] = match.entry[k]
 	}
 	return owner

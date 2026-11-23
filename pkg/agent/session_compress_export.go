@@ -222,9 +222,7 @@ func (SessionCompressAgent) Summarize(ctx context.Context, job gateway.SessionCo
 	options.ProtectFirstN = parseConfigInt(mapOr(job.Options, "protect_first_n", 3), 3)
 	options.ProtectLastN = parseConfigInt(mapOr(job.Options, "protect_last_n", 20), 20)
 	options.MinTailUserMessages = max(1, parseConfigInt(mapOr(job.Options, "min_tail_user_messages", 1), 1))
-	if custom, ok := job.Config["custom_providers"].([]any); ok {
-		options.CustomProviders = custom
-	}
+	options.CustomProviders = provider.ProviderEntryList(job.Config)
 	compressor := NewContextCompressor(ctx, options)
 	compressed, err := compressor.CompressContext(ctx, cloneRows(job.Head), nil, job.FocusTopic, true, memoryContext)
 	if err != nil {

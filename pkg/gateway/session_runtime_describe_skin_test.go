@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
@@ -66,17 +65,5 @@ func TestRuntimeDescribeCarriesTheProfilesResolvedSkin(t *testing.T) {
 	}
 	if invalid := tuigateway.Lookup(tuigateway.KindCanonical, "runtime.describe").CheckResult(result); invalid != nil {
 		t.Fatal(invalid)
-	}
-}
-
-func TestRuntimeDescribeAdvertisesClarifyBatch(t *testing.T) {
-	ctx, a := newDescribeAuthority(t)
-	result, _ := describeReply(t, ctx, a)["result"].(map[string]any)
-	capabilities, _ := result["capabilities"].([]any)
-	if !slices.Contains(capabilities, any("clarify-batch-v1")) {
-		t.Fatalf("capabilities %v", result["capabilities"])
-	}
-	if !tuigateway.Lookup(tuigateway.KindCanonical, "prompt.submit").TakesParam("clarify_batch") {
-		t.Fatal("prompt.submit declares no clarify_batch")
 	}
 }

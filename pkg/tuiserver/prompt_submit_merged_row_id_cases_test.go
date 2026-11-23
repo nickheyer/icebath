@@ -2,10 +2,8 @@ package tuiserver
 
 import (
 	"context"
-	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -88,69 +86,4 @@ func submitMergedCut(t *testing.T, db *state.DB, sid string, rowID int64, text s
 		t.Fatalf("submitted prompt not the last row %v", written)
 	}
 	return written[:len(written)-1]
-}
-
-func TestPromptSubmitResolvesRowIdAbsorbedIntoMarkerMerge(t *testing.T) {
-	db, _ := submitCaseDB(t, "session-key")
-	verbatim := []mergeRow{{12131, "user", "first", ""}, {12133, "assistant", "reply 1", ""},
-		{12134, "user", "[System: The active model for this chat has changed to ds4.]", "model_switch"}, {12135, "user", "the dropped prompt", ""}}
-	repaired := repairedMerge(t, verbatim, 1)
-	if len(repaired) != 3 || !pyjson.Equal(repaired[2]["_row_id"], 12135) || repaired[2]["display_kind"] != nil {
-		t.Fatalf("repaired %v", repaired)
-	}
-	seedMergeRows(t, db, "session-key", verbatim)
-	session := parkedSubmitSession(t, "merged-marker-sid", map[string]any{"history": mergeHistory(repairedMerge(t, verbatim, 1))})
-	kept := submitMergedCut(t, db, "merged-marker-sid", 12135, "new turn")
-	if !reflect.DeepEqual(kept, [][3]any{{int64(12131), "user", "first"}, {int64(12133), "assistant", "reply 1"}}) {
-		t.Fatalf("kept %v", kept)
-	}
-	if history, _ := session.Get("history").([]any); len(history) != 2 {
-		t.Fatalf("history %v", session.Get("history"))
-	}
-}
-
-func TestPromptSubmitResolvesRowIdSwallowedByMarkerMerge(t *testing.T) {
-	db, _ := submitCaseDB(t, "session-key")
-	verbatim := []mergeRow{{201, "user", "first", ""}, {202, "assistant", "reply 1", ""},
-		{203, "user", "[System: The active model for this chat has changed to ds4.]", "model_switch"},
-		{204, "user", "[System: The active model for this chat has changed to kk3.]", "model_switch"}, {205, "user", "the interrupted prompt", ""}}
-	if repaired := repairedMerge(t, verbatim, 2); len(repaired) != 3 {
-		t.Fatalf("repaired %v", repaired)
-	}
-	seedMergeRows(t, db, "session-key", verbatim)
-	session := parkedSubmitSession(t, "marker-merge-sid", map[string]any{"history": mergeHistory(mergeDicts(verbatim, false))})
-	kept := submitMergedCut(t, db, "marker-merge-sid", 205, "edited prompt")
-	var contents []any
-	for _, row := range kept {
-		contents = append(contents, row[2])
-	}
-	if !reflect.DeepEqual(contents, []any{"first", "reply 1", verbatim[2].content, verbatim[3].content}) {
-		t.Fatalf("kept %v", kept)
-	}
-	if history, _ := session.Get("history").([]any); len(history) != 4 {
-		t.Fatalf("history %v", session.Get("history"))
-	}
-}
-
-func TestPromptSubmitResolvesRowIdSwallowedByPlainUserMerge(t *testing.T) {
-	db, _ := submitCaseDB(t, "session-key")
-	verbatim := []mergeRow{{301, "user", "first", ""}, {302, "assistant", "reply 1", ""},
-		{303, "user", "prompt whose turn was cut off", ""}, {304, "user", "the resent prompt", ""}}
-	repaired := repairedMerge(t, verbatim, 1)
-	if len(repaired) != 3 || !pyjson.Equal(repaired[2]["_row_id"], 303) {
-		t.Fatalf("repaired %v", repaired)
-	}
-	seedMergeRows(t, db, "session-key", verbatim)
-	session := parkedSubmitSession(t, "plain-merge-sid", map[string]any{"history": mergeHistory(repairedMerge(t, verbatim, 1))})
-	kept := submitMergedCut(t, db, "plain-merge-sid", 304, "edited resend")
-	var contents []any
-	for _, row := range kept {
-		contents = append(contents, row[2])
-	}
-	if !reflect.DeepEqual(contents, []any{"first", "reply 1", "prompt whose turn was cut off"}) {
-		t.Fatalf("kept %v", kept)
-	}
-	if history, _ := session.Get("history").([]any); len(history) != 3 {
-		t.Fatalf("history %v", session.Get("history"))
-	}
 }

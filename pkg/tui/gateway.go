@@ -189,11 +189,6 @@ type attachHold struct {
 	frames []gatewayEventMsg
 }
 
-type describeFlight struct {
-	done chan struct{}
-	err  error
-}
-
 // Shared gateway client with bootstrap, attach, readiness, heartbeat and reconnect
 type gatewayClient struct {
 	bootstrap func(ctx context.Context, start, recover bool) (Grant, error)
@@ -228,20 +223,11 @@ type gatewayClient struct {
 	localGeneration int
 	recoveries      []time.Time
 
-	contract      *tuigateway.SessionCreateDescriptor
-	describedSkin map[string]any
-	// Go build ID and contract version the owner's runtime.describe reported
-	describedBuild    string
-	describedContract int64
-	capabilities      []string
-	describing        *describeFlight
 	// Sessions whose frames are held while their resume is in flight, each session card resuming its own
 	holds map[string]*attachHold
 	// Request ids of creates that failed with no clear answer, by what was asked for, so the next create asking for the same adopts the session
 	// the owner may have made instead of making a second one
-	unsettled       map[string][]any
-	countsDeclines  bool
-	clarifyBatchAck bool
+	unsettled map[string][]any
 
 	heartbeatToken *int
 	heartbeatStop  func() bool
@@ -267,13 +253,6 @@ func (c *gatewayClient) attached() bool {
 }
 
 var _ turnGateway = (*gatewayClient)(nil)
-
-// Whether the owner takes batched clarify prompts, advertised as clarify-batch-v1 by runtime.describe
-func (c *gatewayClient) clarifyBatch() bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return slices.Contains(c.capabilities, "clarify-batch-v1")
-}
 
 // Hands every message to send in order, the buffered ones first, never inside this call
 func (c *gatewayClient) attach(send func(tea.Msg)) {
@@ -386,13 +365,10 @@ func frameStamp(frame *int64, payload map[string]any, key string) *int64 {
 	return nil
 }
 
-// Event off the socket, stamped with the owner's execution epoch and held for a pending attach. The listener's own ready starts the
-// heartbeat; the readiness the UI hears is published once the runtime was described
+// Event off the socket, stamped with the service's execution epoch and held for a pending attach
 func (c *gatewayClient) publishWireLocked(conn *gatewayConn, ev gatewayEventMsg) {
 	if ev.Type == "gateway.ready" {
-		if val(readyOf(ev).Heartbeat) && conn.open {
-			c.startHeartbeatLocked()
-		}
+		c.publishLocked(ev)
 		return
 	}
 	ev.Epoch = frameStamp(ev.Frame.AuthorityEpoch, ev.Payload, "authority_epoch")
@@ -411,77 +387,6 @@ func jsErrorText(err error) string {
 		return "JsonRpcGatewayError: " + refusal.Message
 	}
 	return "Error: " + err.Error()
-}
-
-// Publishes readiness after runtime.describe answers on this socket, a failed describe dropping it onto the backoff path
-func (c *gatewayClient) describeThenReadyLocked(conn *gatewayConn, payload map[string]any) {
-	c.describing = nil
-	c.capabilities = nil
-	go func() {
-		err := c.describeRuntime(context.Background(), conn)
-		c.locked(func() {
-			if c.conn != conn {
-				return
-			}
-			if err == nil {
-				ready := withKeys(payload, "build", c.describedBuild, "contract", c.describedContract)
-				if _, has := payload["skin"]; !has && c.describedSkin != nil {
-					ready = withKeys(ready, "skin", c.describedSkin)
-				}
-				c.publishLocked(gatewayEventMsg{Type: "gateway.ready", Payload: ready})
-				return
-			}
-			c.publishLocked(gatewayEventMsg{Type: "gateway.start_timeout", Local: gatewayStartTimeout{StderrTail: jsErrorText(err)}})
-			c.closeGatewaySocketLocked()
-			c.handleTransportExitLocked(1, jsErrorText(err))
-		})
-	}()
-}
-
-// Reads the owner's contract, capabilities and skin once, on the given socket so a closed one never redials early
-func (c *gatewayClient) describeRuntime(ctx context.Context, conn *gatewayConn) error {
-	c.mu.Lock()
-	flight := c.describing
-	owner := flight == nil
-	if owner {
-		flight = &describeFlight{done: make(chan struct{})}
-		c.describing = flight
-	}
-	c.mu.Unlock()
-	if owner {
-		var value any
-		var err error
-		if conn != nil {
-			value, err = c.call(context.Background(), conn, tuigateway.CanonicalRuntimeDescribe.Name(), wireParams(tuigateway.RuntimeDescribeParams{}), 0)
-		} else {
-			value, err = c.requestOverWebSocket(context.Background(), tuigateway.CanonicalRuntimeDescribe.Name(), wireParams(tuigateway.RuntimeDescribeParams{}), 0)
-		}
-		var description tuigateway.RuntimeDescribeResult
-		if err == nil {
-			description, err = tuigateway.CanonicalRuntimeDescribe.Result(value)
-		}
-		c.mu.Lock()
-		if err == nil {
-			c.contract = &description.SessionCreate
-			c.capabilities = description.Capabilities
-			c.describedBuild, c.describedContract = description.Build, description.Contract
-			c.describedSkin = nil
-			if description.Skin != nil {
-				c.describedSkin = wireParams(description.Skin)
-			}
-		} else if c.describing == flight {
-			c.describing = nil
-		}
-		flight.err = err
-		c.mu.Unlock()
-		close(flight.done)
-	}
-	select {
-	case <-flight.done:
-		return flight.err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 func (c *gatewayClient) clearReadyTimerLocked() {
@@ -762,7 +667,6 @@ func (c *gatewayClient) startAttachedGatewayLocked(target string, protocols []st
 	c.conn = conn
 	c.stopHeartbeatLocked()
 	c.lastLiveness = c.clock.Now()
-	c.countsDeclines, c.clarifyBatchAck = false, false
 	go func() {
 		sock, err := c.dial(ctx, target, protocols)
 		c.locked(func() {
@@ -783,7 +687,6 @@ func (c *gatewayClient) startAttachedGatewayLocked(target string, protocols []st
 			link := newWireLink(sock, func(frame map[string]any) { c.inbound(conn, frame) }, func(raw string) { c.malformed(conn, raw) })
 			conn.sock, conn.link, conn.open = sock, link.start(), true
 			go c.pump(conn)
-			c.describeThenReadyLocked(conn, map[string]any{})
 		})
 	}()
 }
@@ -897,23 +800,16 @@ func (c *gatewayClient) route(conn *gatewayConn, frame map[string]any) {
 	})
 }
 
-// Tells the backend once per ready that this client answers server requests, recording what it counts
+// Tells the service once per ready that this window answers server requests
 func (c *gatewayClient) advertiseCapabilitiesLocked(conn *gatewayConn) {
 	go func() {
 		value, err := c.call(context.Background(), conn, tuigateway.ClientCapabilities.Name(), wireParams(tuigateway.ClientCapabilitiesParams{ServerRequests: true}), 0)
 		if err != nil {
 			return
 		}
-		result, err := tuigateway.ClientCapabilities.Result(value)
-		if err != nil {
+		if _, err := tuigateway.ClientCapabilities.Result(value); err != nil {
 			c.recordLog("[protocol] " + misfitText(tr(txt.SessionCommonInvalidResponse, tuigateway.ClientCapabilities.Name())) + " " + err.Error())
-			return
 		}
-		c.mu.Lock()
-		if c.conn == conn {
-			c.countsDeclines, c.clarifyBatchAck = result.DeclinesNotShown, result.CanonicalClarifyBatch
-		}
-		c.mu.Unlock()
 	}()
 }
 
@@ -982,8 +878,6 @@ func (c *gatewayClient) startLocked() {
 	c.resetStartupStateLocked()
 	c.closeGatewaySocketLocked()
 	if c.attachURL != "" {
-		c.contract = nil
-		c.capabilities = nil
 		c.startAttachedGatewayLocked(c.attachURL, nil)
 		return
 	}
@@ -1182,7 +1076,7 @@ func (c *gatewayClient) request(ctx context.Context, method string, params map[s
 				c.startLocked()
 			}
 		})
-		return c.requestCanonical(ctx, method, params, timeout)
+		return c.send(ctx, method, params, timeout)
 	}
 	var flight chan struct{}
 	c.locked(func() {
@@ -1204,30 +1098,15 @@ func (c *gatewayClient) request(ctx context.Context, method string, params map[s
 	if failure != nil {
 		return nil, failure
 	}
-	return c.requestCanonical(ctx, method, params, timeout)
+	return c.send(ctx, method, params, timeout)
 }
 
-// One request through the canonical wire adapter, describing the runtime before the first session.create
-func (c *gatewayClient) requestCanonical(ctx context.Context, method string, params map[string]any, timeout time.Duration) (any, error) {
-	c.mu.Lock()
-	contract := c.contract
-	c.mu.Unlock()
-	if method == "session.create" && contract == nil {
-		if err := c.describeRuntime(ctx, nil); err != nil {
-			return nil, err
-		}
-		c.mu.Lock()
-		contract = c.contract
-		c.mu.Unlock()
+// One request on the socket, a session.create stamped as this window's and retried under its request id
+func (c *gatewayClient) send(ctx context.Context, method string, params map[string]any, timeout time.Duration) (any, error) {
+	if method == tuigateway.CanonicalSessionCreate.Name() {
+		return c.createCanonical(ctx, createRequest(params), timeout)
 	}
-	wireMethod, wireParams, err := canonicalRequest(method, params, contract)
-	if err != nil {
-		return nil, err
-	}
-	if wireMethod == "session.create" {
-		return c.createCanonical(ctx, wireParams, timeout)
-	}
-	return c.requestOverWebSocket(ctx, wireMethod, wireParams, timeout)
+	return c.requestOverWebSocket(ctx, method, params, timeout)
 }
 
 // session.create plus the launch tool progress pin as one outcome, a doubtful create retried under its request id

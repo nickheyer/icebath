@@ -4,18 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
-	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/settings"
-	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -129,15 +123,6 @@ func init() {
 	toolsRPCRegistry.install()
 }
 
-// Enabled and disabled toolsets a session reads back, the built agent's else its profile's, nil for all
-func sessionToolsets(ctx context.Context, session *tuihost.Session) ([]string, []string) {
-	if a := sessionAgent(session); a != nil {
-		return a.EnabledToolsets(), a.DisabledToolsets()
-	}
-	scoped := sessionProfileRuntimeScope(ctx, session, true)
-	return loadEnabledToolsets(scoped, resolveAgentPlatform(sessionSource(session))), loadDisabledToolsets(scoped)
-}
-
 // Host battery for the status bar, unavailable on any read failure
 func systemBattery(ctx context.Context, rid any, params map[string]any) map[string]any {
 	out := tuigateway.SystemBatteryResult{Category: "dim"}
@@ -155,64 +140,6 @@ func systemBattery(ctx context.Context, rid any, params map[string]any) map[stri
 	return ok(rid, tuigateway.Plain(out))
 }
 
-// Kills every background process of the registry as a deliberate stop
-func processStop(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
-	killed := tools.DefaultProcessRegistry().KillAll(ctx, tools.ToolEnvFrom(ctx), "", nil, "process.stop", false)
-	return ok(rid, tuigateway.Plain(tuigateway.ProcessStopResult{Killed: int64(killed)})), nil
-}
-
-// Re-reads the home env file into the process environment
-func reloadEnv(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
-	updated, err := config.ReloadEnv(home.Dir(ctx))
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, tuigateway.Plain(tuigateway.ReloadEnvResult{Updated: int64(updated)})), nil
-}
-
-// Loaded plugins with their version and enabled state in discovery order
-func pluginsList(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
-	rows := []tuigateway.LegacyPluginRow{}
-	for _, p := range plugins.GetPluginManager(ctx).LoadedPluginsInOrder() {
-		rows = append(rows, tuigateway.LegacyPluginRow{Name: p.Key, Version: "?", Enabled: p.Plugin.Enabled})
-	}
-	return ok(rid, tuigateway.Plain(tuigateway.PluginsListResult{Plugins: rows})), nil
-}
-
-// Background processes the calling session owns
-func processList(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error) {
-	result := tuigateway.ProcessListResult{Processes: []tuigateway.ProcessEntry{}}
-	for _, row := range sessionProcesses(ctx, session) {
-		result.Processes = append(result.Processes, typedRow[tuigateway.ProcessEntry]("process.list", row))
-	}
-	return ok(rid, tuigateway.Plain(result)), nil
-}
-
-// Kills one background process the calling session owns
-func processKill(ctx context.Context, rid any, params map[string]any, session *tuihost.Session) (map[string]any, error) {
-	request, err := tuigateway.ProcessKill.Params(params)
-	if err != nil {
-		return rpcErr(rid, 4000, err.Error(), nil), nil
-	}
-	procID := request.ProcessID
-	if procID == "" {
-		return rpcErr(rid, 4012, "process_id required", nil), nil
-	}
-	registry := tools.DefaultProcessRegistry()
-	env := tools.ToolEnvFrom(ctx)
-	proc := registry.Get(env, procID)
-	if proc == nil || proc.SessionKey != strOr(session.Get("session_key")) {
-		return rpcErr(rid, 4044, "no such process: "+procID, nil), nil
-	}
-	killed := typedRow[tuigateway.ProcessKillResult]("process.kill", registry.KillProcess(ctx, env, procID, "process.kill", true))
-	return ok(rid, tuigateway.Plain(killed)), nil
-}
-
-// The approvals mcp_reload_confirm flag of the disk config, true on any failure
-func mcpReloadConfirmRequired(ctx context.Context) bool {
-	return settings.ApprovalsMcpReloadConfirm.Get(ctx)
-}
-
 // MCP shutdown, discovery and revision hash a reload drives, swapped by tests
 var (
 	reloadShutdownMCP = func(ctx context.Context) { mcp.ShutdownMCPServers(ctx, nil, nil, 15*time.Second) }
@@ -222,84 +149,3 @@ var (
 	}
 	reloadMCPRev = computeMCPRev
 )
-
-// Leader shutdown, rediscovery and refresh of every MCP server, re-hashed until the config is stable
-func doFullMCPReload(ctx context.Context) {
-	launch := profileRuntimeScope(ctx, "", true)
-	loaded := reloadMCPRev(launch)
-	for range mcpReloadMaxPasses {
-		reloadShutdownMCP(launch)
-		mcp.ReprobeToolAvailability()
-		panicIf(reloadDiscoverMCP(launch))
-		after := reloadMCPRev(launch)
-		if after == loaded {
-			break
-		}
-		loaded = after
-	}
-	sessionsLock.Lock()
-	homes := map[string]bool{}
-	for _, entry := range tuihost.LiveSessions() {
-		if entry.Session.Get("agent") != nil {
-			if h, isText := entry.Session.Get("profile_home").(string); isText {
-				homes[h] = true
-			}
-		}
-	}
-	sessionsLock.Unlock()
-	sorted := make([]string, 0, len(homes))
-	for h := range homes {
-		sorted = append(sorted, h)
-	}
-	sort.Strings(sorted)
-	for _, h := range sorted {
-		if failure := catchPanic(func() { panicIf(reloadDiscoverMCP(profileRuntimeScope(ctx, h, true))) }); failure != nil {
-			pkgLog().Warn(fmt.Sprintf("MCP rediscovery failed for profile %s: %s", h, panicMessage(failure)))
-		}
-	}
-	panicIf(refreshLiveSessions(ctx, nil, false, nil))
-	mcpReloadLoadedRev = loaded
-	mcpReloadGen++
-}
-
-// Reloads MCP servers behind the prompt cache confirm gate, coalescing a follower onto a completed leader reload
-func reloadMCP(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
-	if !truthy(params["confirm"]) && mcpReloadConfirmRequired(ctx) {
-		message := "⚠️  /reload-mcp invalidates the prompt cache (next message re-sends full input tokens). " +
-			"Reply `/reload-mcp now` to proceed, or `/reload-mcp always` to proceed and " +
-			"silence this prompt permanently."
-		return ok(rid, map[string]any{"status": "confirm_required", "message": message}), nil
-	}
-	reqRev := strOr(params["rev"])
-	if mcpReloadLock.TryLock() {
-		func() {
-			defer mcpReloadLock.Unlock()
-			doFullMCPReload(ctx)
-		}()
-		return finishReload(ctx, rid, params, false), nil
-	}
-	genBefore := mcpReloadGen
-	mcpReloadLock.Lock()
-	defer mcpReloadLock.Unlock()
-	coalesced := mcpReloadGen > genBefore && (reqRev == "" || reqRev == mcpReloadLoadedRev)
-	if coalesced {
-		panicIf(refreshLiveSessions(ctx, nil, false, nil))
-	} else {
-		doFullMCPReload(ctx)
-	}
-	return finishReload(ctx, rid, params, coalesced), nil
-}
-
-// Registry backed slash catalog bound to the profile and workspace of the calling session or draft
-func commandsCatalog(ctx context.Context, rid any, params map[string]any, _ *tuihost.Session) (map[string]any, error) {
-	cwd, err := completionCwd(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	scope := sessionHomeScope(tuihost.SessionRecord(strOr(params["session_id"])), cwd, strOr(params["profile"]))
-	catalog, err := CommandCatalog(ctx, scope)
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, tuigateway.Plain(catalog)), nil
-}

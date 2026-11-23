@@ -154,7 +154,7 @@ func paintedFields(m msg) string {
 			fmt.Fprintf(h, "%q%q%q%q", title, text, s.Items, s.Rows)
 		}
 	}
-	fmt.Fprint(h, m.Label, m.IsMoaReference, m.IsLiveReasoning, m.ThinkingTokens, m.ToolTokens, m.Todos, m.TodoIncomplete, m.TodoCollapsedByDefault, m.Images, m.ImageRevision, m.ImageRows)
+	fmt.Fprint(h, m.Label, m.IsMoaReference, m.IsLiveReasoning, m.Todos, m.TodoIncomplete, m.TodoCollapsedByDefault, m.Images, m.ImageRevision, m.ImageRows)
 	for _, paste := range m.Pastes {
 		fmt.Fprint(h, paste.Label, paste.Digest)
 	}
@@ -596,13 +596,9 @@ func todoRows(todos []todoItem, c renderCtx, incomplete, folded bool) blockRows 
 	return out
 }
 
-// Header of a tool calls section, how many calls it holds and the tokens they took
-func toolsHead(count, tokens int, open bool, c renderCtx) string {
-	head := chevron(open, c) + toneStyle(c.t.Color.Tool).Render(tr(txt.ChatBitsThinkingToolCalls)) + toneStyle(c.t.Color.Muted).Render(" ("+strconv.Itoa(count)+")")
-	if tokens > 0 {
-		head += toneStyle(c.t.Color.Muted).Render(" · " + tr(txt.ChatBitsThinkingTokens, render.Tokens(tokens)))
-	}
-	return head
+// Header of a tool calls section and how many calls it holds
+func toolsHead(count int, open bool, c renderCtx) string {
+	return chevron(open, c) + toneStyle(c.t.Color.Tool).Render(tr(txt.ChatBitsThinkingToolCalls)) + toneStyle(c.t.Color.Muted).Render(" ("+strconv.Itoa(count)+")")
 }
 
 // Trail of a turn, its reasoning and tool rows each under a header that opens and closes it and its task list, as the details sections allow and the user chose
@@ -613,20 +609,13 @@ func trailRows(m msg, c renderCtx, st blockState) blockRows {
 	}
 	muted := toneStyle(c.t.Color.Muted)
 	var out blockRows
-	thinkingTokens := 0
 	if thinking := cleanThinkingText(m.Thinking); thinking != "" && (m.IsMoaReference || mode(partThinking) != "hidden") {
-		if thinkingTokens = m.ThinkingTokens; thinkingTokens == 0 {
-			thinkingTokens = estimateTokensRough(thinking)
-		}
 		label := tr(txt.ChatBitsThinkingThinking)
 		if m.IsMoaReference {
 			label = tr(txt.ChatBitsThinkingReference)
 		}
 		open := st.open(partThinking, mode(partThinking) == "expanded" || m.IsLiveReasoning || m.IsMoaReference)
-		head := chevron(open, c) + toneStyle(c.t.Color.Thinking).Render(label)
-		if m.ThinkingTokens > 0 {
-			head += muted.Render(" · " + tr(txt.ChatBitsThinkingTokens, render.Tokens(m.ThinkingTokens)))
-		}
+		head := chevron(open, c) + toneStyle(c.t.Color.Thinking).Render(label) + muted.Render(" · "+tr(txt.ChatBitsThinkingTokens, render.Tokens(estimateTokensRough(thinking))))
 		if open {
 			out.head(partThinking, true, pad+head)
 			out.lines = append(out.lines, nested(wrapUnder(boundedRenderText(thinking, "", liveRenderMaxChars, liveRenderMaxLines), c.width-4, "", muted.Italic(true)))...)
@@ -637,7 +626,7 @@ func trailRows(m msg, c renderCtx, st blockState) blockRows {
 	}
 	if len(m.Tools) > 0 && mode(partTools) != "hidden" {
 		open := st.open(partTools, mode(partTools) == "expanded")
-		out.head(partTools, open, pad+toolsHead(len(m.Tools), m.ToolTokens, open, c))
+		out.head(partTools, open, pad+toolsHead(len(m.Tools), open, c))
 		if open {
 			inner := c
 			inner.width -= 2
@@ -647,9 +636,6 @@ func trailRows(m msg, c renderCtx, st blockState) blockRows {
 				out.add(rows)
 			}
 		}
-	}
-	if thinkingTokens > 0 && m.ToolTokens > 0 && len(out.lines) > 0 {
-		out.lines = append(out.lines, pad+muted.Faint(true).Render("Σ "+tr(txt.ChatBitsThinkingApproxTotal, render.Tokens(thinkingTokens+m.ToolTokens))))
 	}
 	if len(m.Todos) > 0 {
 		out.add(todoRows(m.Todos, c, m.TodoIncomplete, !st.open(partTodos, !m.TodoCollapsedByDefault || mode(partTools) == "expanded")))
@@ -716,7 +702,7 @@ func (v *transcriptView) liveRows(s *tuiStore, stream string, c renderCtx, tick 
 		open, inner := true, c
 		if calls > 0 {
 			open = st.open(partTools, mode(partTools) == "expanded")
-			out.head(partTools, open, pad+toolsHead(calls, 0, open, c))
+			out.head(partTools, open, pad+toolsHead(calls, open, c))
 			inner.width -= 2
 		}
 		var rows blockRows

@@ -91,7 +91,6 @@ func registerPluginCLICommands(cli *commands.CLI, argv []string) {
 	}
 	ctx := context.Background()
 	first, _ := cli.FirstPositional(argv)
-	provider.RecoverLeftCoreForCommand(ctx, first)
 	memoryCommands := memory.DiscoverPluginCLICommands(ctx, processToolsEnv(ctx))
 	plugins.DiscoverPlugins(ctx, false)
 	resolveDeferredPlatformCLICommand(ctx, first)

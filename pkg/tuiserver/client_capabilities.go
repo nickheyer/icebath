@@ -23,7 +23,7 @@ func clientCapabilities(ctx context.Context, rid any, params map[string]any) map
 	if _, present := params["server_requests"]; present {
 		tuihost.Advertise(callerTransport(ctx), p.ServerRequests)
 	}
-	result := tuigateway.ClientCapabilitiesResult{ServerRequests: []string{}, DeclinesNotShown: true, CanonicalClarifyBatch: true}
+	result := tuigateway.ClientCapabilitiesResult{ServerRequests: []string{}}
 	for _, entry := range tuigateway.Entries(tuigateway.KindRequest) {
 		result.ServerRequests = append(result.ServerRequests, entry.Name)
 	}

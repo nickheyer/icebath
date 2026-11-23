@@ -24,7 +24,7 @@ func newLanguageHome(t *testing.T) *languageHome {
 	t.Helper()
 	h, _, errOut := moaKeysHome(t, map[string]any{})
 	root := filepath.Dir(h)
-	writeLeftCoreFile(t, filepath.Join(h, "config.yaml"), "display:\n  language: en\n")
+	writeTextFile(t, filepath.Join(h, "config.yaml"), "display:\n  language: en\n")
 	bundled := filepath.Join(root, "bundled")
 	if err := os.MkdirAll(bundled, 0o755); err != nil {
 		t.Fatal(err)
@@ -92,10 +92,10 @@ func TestUnknownLanguageIsRefusedWithTheAvailableList(t *testing.T) {
 func TestPackLanguageIsAcceptedOnceThePackIsInstalled(t *testing.T) {
 	l := newLanguageHome(t)
 	plugin := filepath.Join(l.h, "plugins", "icebath-lang-pl")
-	writeLeftCoreFile(t, filepath.Join(plugin, "plugin.yaml"),
+	writeTextFile(t, filepath.Join(plugin, "plugin.yaml"),
 		"description: Polish pack\nname: icebath-lang-pl\nprovides_locales:\n- pl\nversion: 1.0.0\n")
-	writeLeftCoreFile(t, filepath.Join(plugin, "locales", "pl.yaml"), "approval:\n  denied: Odrzucono\n")
-	writeLeftCoreFile(t, filepath.Join(l.h, "config.yaml"), "display:\n  language: en\nplugins:\n  enabled:\n  - icebath-lang-pl\n")
+	writeTextFile(t, filepath.Join(plugin, "locales", "pl.yaml"), "approval:\n  denied: Odrzucono\n")
+	writeTextFile(t, filepath.Join(l.h, "config.yaml"), "display:\n  language: en\nplugins:\n  enabled:\n  - icebath-lang-pl\n")
 	config.ResetCache()
 	if err := l.set("pl"); err != nil || l.saved() != "pl" {
 		t.Fatalf("set pl: %v saved %q %s", err, l.saved(), l.errOut)
@@ -106,5 +106,16 @@ func TestPackLanguageIsAcceptedOnceThePackIsInstalled(t *testing.T) {
 	}
 	if got := i18n.T(ctx, "approval.denied", "", nil); got != "Odrzucono" {
 		t.Fatalf("approval.denied %q", got)
+	}
+}
+
+// Writes a text file, creating its folder
+func writeTextFile(t *testing.T, path, text string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

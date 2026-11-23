@@ -266,23 +266,6 @@ func TestDisableDroppedSecretsReturnsTasksAndDropsFallbacks(t *testing.T) {
 	}
 }
 
-func TestCurrentCustomPathFollowsTheEntryIdentity(t *testing.T) {
-	frozen := map[string]any{"custom_providers": []any{map[string]any{"name": "Team", "base_url": "http://a/v1"}}}
-	moved := map[string]any{"custom_providers": []any{map[string]any{"name": "Other", "base_url": "http://b/v1"},
-		map[string]any{"name": "Team", "base_url": "http://a/v1"}}}
-	if got := currentCustomPath(frozen, moved, secretPath{"custom_providers", 0, "api_key"}, 0); !pathEqual(got, []any{"custom_providers", 1, "api_key"}) {
-		t.Fatalf("moved %v", got)
-	}
-	renamed := map[string]any{"custom_providers": []any{map[string]any{"name": "Renamed", "base_url": "http://a/v1/"}}}
-	if got := currentCustomPath(frozen, renamed, secretPath{"custom_providers", 0, "api_key"}, 0); !pathEqual(got, []any{"custom_providers", 0, "api_key"}) {
-		t.Fatalf("renamed %v", got)
-	}
-	gone := map[string]any{"custom_providers": []any{map[string]any{"name": "Else", "base_url": "http://c/v1"}}}
-	if got := currentCustomPath(frozen, gone, secretPath{"custom_providers", 0, "api_key"}, 0); !pathEqual(got, []any{"custom_providers", 1, "api_key"}) {
-		t.Fatalf("gone %v", got)
-	}
-}
-
 func TestLaunchKeyAndRouteLaunchKey(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()

@@ -8,15 +8,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-// Enabled flag, freshness window in seconds and max attempts of the session auto continue settings
-func autoContinueConfig(ctx context.Context) (bool, float64, int) {
-	freshness := max(0, settings.SessionsAutoContinueFreshnessMinutes.Get(ctx).Seconds())
-	return settings.SessionsAutoContinueEnabled.Get(ctx), freshness, settings.SessionsAutoContinueMaxAttempts.Get(ctx)
-}
 
 // Home the session's durable state lives in, its profile home else the launch home
 func sessionHome(ctx context.Context, session *tuihost.Session) string {
@@ -36,13 +29,6 @@ func retireTurnMarker(ctx context.Context, session *tuihost.Session, keys ...str
 			tuihost.ClearTurnMarker(h, key)
 		}
 	}
-}
-
-// System note of an auto continued turn embedding the interrupted request
-func autoContinueNote(prompt string) string {
-	return tuihost.AutoContinueNotePrefix + " — the app or its backend process stopped before the turn could finish. " +
-		"Some of the work may already be complete; check the current state before redoing anything, then " +
-		"finish the task. The interrupted request was:]\n\n" + prompt
 }
 
 // Stripped user text of the live turn

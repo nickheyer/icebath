@@ -22,12 +22,11 @@ var fallbackCheckNotProbed = map[string]bool{"auto": true, "moa": true}
 // Installs icebath fallback check on the fallback command dispatcher
 func init() { provider.SetFallbackCheckCommand(FallbackCheckCommand) }
 
-// Static checks in chain order with left core installs held, then with live the statically ready fixed routes probed in parallel, the instance metadata lookup kept for an EC2 role
+// Static checks in chain order, then with live the statically ready fixed routes probed in parallel, the instance metadata lookup kept for an EC2 role
 func runFallbackChecks(ctx context.Context, chain []map[string]any, live bool) ([]*provider.FallbackEntryCheck, error) {
-	held := provider.WithLeftCoreInstallsHeld(ctx)
 	results := make([]*provider.FallbackEntryCheck, 0, len(chain))
 	for _, entry := range chain {
-		result, err := provider.CheckFallbackEntryStatic(held, entry, redactDebugSupportText)
+		result, err := provider.CheckFallbackEntryStatic(ctx, entry, redactDebugSupportText)
 		if err != nil {
 			return nil, err
 		}

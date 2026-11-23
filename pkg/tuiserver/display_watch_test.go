@@ -4,61 +4,14 @@ package tuiserver
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/botdesktop"
 	_ "github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-// Runs a lease transition in another process bound to home
-func otherProcess(t *testing.T, h, mode, viewer, reason string) {
-	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(exe)
-	cmd.Env = append(os.Environ(), "ICEBATH_HOME="+h, "ICEBATH_TEST_CHILD="+mode, "ICEBATH_TEST_VIEWER="+viewer, "ICEBATH_TEST_REASON="+reason)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("other process %s: %v %s", mode, err, out)
-	}
-}
-
-// Live stand in launcher process whose launcher.pid line matches its real start time
-func startLauncher(t *testing.T) (*exec.Cmd, string) {
-	t.Helper()
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(exe)
-	cmd.Env = append(os.Environ(), "ICEBATH_TEST_CHILD=sleep")
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if cmd.ProcessState == nil {
-			cmd.Process.Kill()
-			cmd.Wait()
-		}
-	})
-	born, err := proc.Birth(cmd.Process.Pid)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return cmd, strconv.Itoa(cmd.Process.Pid) + " " + strconv.FormatFloat(born, 'f', -1, 64)
-}
 
 // Polls pred until it holds or the timeout passes
 func waitFor(pred func() bool, timeout time.Duration) bool {
@@ -88,27 +41,6 @@ func (l *eventLog) all() []recordedEvent {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return append([]recordedEvent(nil), l.events...)
-}
-
-// Payloads of display.lease events whose lease carries every wanted field
-func (l *eventLog) leaseEvents(want map[string]any) []map[string]any {
-	var out []map[string]any
-	for _, ev := range l.all() {
-		if ev.name != "display.lease" {
-			continue
-		}
-		lease := ev.payload["lease"].(*pyjson.Object)
-		match := true
-		for k, v := range want {
-			if lease.GetOr(k, nil) != v {
-				match = false
-			}
-		}
-		if match {
-			out = append(out, ev.payload)
-		}
-	}
-	return out
 }
 
 // Payloads of every display.status event
@@ -153,54 +85,6 @@ func watching(t *testing.T, h string) *eventLog {
 	return log
 }
 
-func TestTakeoverInAnotherProcessIsBroadcast(t *testing.T) {
-	h := filepath.Join(t.TempDir(), "home")
-	if err := os.Mkdir(h, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	events := watching(t, h)
-
-	otherProcess(t, h, "lease-acquire", "cli-viewer", "probe")
-
-	if !waitFor(func() bool { return len(events.leaseEvents(map[string]any{"reason": "probe"})) > 0 }, 3*time.Second) {
-		t.Fatalf("events %v", events.all())
-	}
-	probe := events.leaseEvents(map[string]any{"reason": "probe"})
-	if len(probe) != 1 || probe[0]["profile_key"] != home.Key(h) {
-		t.Fatalf("probe events %v", probe)
-	}
-}
-
-func TestReleaseInAnotherProcessIsBroadcastAndLocalTransitionNotDuplicated(t *testing.T) {
-	h := filepath.Join(t.TempDir(), "home")
-	if err := os.Mkdir(h, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	events := watching(t, h)
-	installLeaseListener()
-
-	if _, err := botdesktop.LeaseAcquire("viewer-1", h, ""); err != nil {
-		t.Fatal(err)
-	}
-	if !waitFor(func() bool { return len(events.leaseEvents(map[string]any{"holder": "human"})) > 0 }, 3*time.Second) {
-		t.Fatalf("events %v", events.all())
-	}
-	before := len(events.all())
-	pollLeaseFiles()
-	if len(events.all()) != before {
-		t.Fatalf("local transition re-broadcast %v", events.all())
-	}
-
-	otherProcess(t, h, "lease-release", "viewer-1", "")
-
-	if !waitFor(func() bool { return len(events.leaseEvents(map[string]any{"holder": "agent"})) > 0 }, 3*time.Second) {
-		t.Fatalf("events %v", events.all())
-	}
-	if got := events.leaseEvents(map[string]any{"holder": "agent"}); len(got) != 1 {
-		t.Fatalf("agent events %v", got)
-	}
-}
-
 func TestScreenStartedOrStoppedByAnotherProcessIsBroadcastAsStatus(t *testing.T) {
 	h := filepath.Join(t.TempDir(), "home")
 	if err := os.MkdirAll(filepath.Join(h, "bot-desktop"), 0o700); err != nil {
@@ -233,89 +117,5 @@ func TestScreenStartedOrStoppedByAnotherProcessIsBroadcastAsStatus(t *testing.T)
 	statuses = events.statuses()
 	if len(statuses) != 2 || statuses[1]["running"] != false {
 		t.Fatalf("statuses %v", statuses)
-	}
-}
-
-func TestLauncherDyingWithoutTouchingItsFilesIsBroadcastAsStopped(t *testing.T) {
-	h := filepath.Join(t.TempDir(), "home")
-	if err := os.MkdirAll(filepath.Join(h, "bot-desktop"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	launcher, line := startLauncher(t)
-	writeFile(t, filepath.Join(h, "bot-desktop", "launcher.pid"), line)
-	writeFile(t, filepath.Join(h, "bot-desktop", "env"), "DISPLAY=:77\n")
-	events := watching(t, h)
-	for range 2 {
-		if err := pollRuntimeFiles(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(events.statuses()) != 0 {
-		t.Fatalf("unchanged state was re-broadcast %v", events.statuses())
-	}
-
-	launcher.Process.Kill()
-	launcher.Wait()
-	for range 2 {
-		if err := pollRuntimeFiles(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	statuses := events.statuses()
-	if len(statuses) != 1 || statuses[0]["running"] != false {
-		t.Fatalf("statuses %v", statuses)
-	}
-}
-
-func TestScreenStartAndStopReachTheModelsTurnNotes(t *testing.T) {
-	root := t.TempDir()
-	h := filepath.Join(root, "home")
-	if err := os.MkdirAll(filepath.Join(h, "bot-desktop"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	events := watching(t, h)
-	mine, other := testAgent(t, agent.AIAgentOptions{}), testAgent(t, agent.AIAgentOptions{})
-	otherHome := filepath.Join(root, "other")
-	if err := os.Mkdir(otherHome, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	tuihost.SetSessionRecord("ws-a", tuihost.NewSession(map[string]any{"agent": mine, "profile_home": h, "transport": tuihost.DetachedWSTransport()}))
-	tuihost.SetSessionRecord("ws-b", tuihost.NewSession(map[string]any{"agent": other, "profile_home": otherHome, "transport": tuihost.DetachedWSTransport()}))
-	t.Cleanup(func() {
-		tuihost.SetSessionRecord("ws-a", nil)
-		tuihost.SetSessionRecord("ws-b", nil)
-	})
-	_, line := startLauncher(t)
-	if err := pollRuntimeFiles(); err != nil {
-		t.Fatal(err)
-	}
-	if mine.GatewayTurnContextNotes() != "" {
-		t.Fatalf("seed staged %q", mine.GatewayTurnContextNotes())
-	}
-
-	writeFile(t, filepath.Join(h, "bot-desktop", "launcher.pid"), line)
-	writeFile(t, filepath.Join(h, "bot-desktop", "env"), "DISPLAY=:77\n")
-	if err := pollRuntimeFiles(); err != nil {
-		t.Fatal(err)
-	}
-	note := mine.GatewayTurnContextNotes()
-	if !strings.Contains(note, "Bot Screen") || !strings.Contains(note, "display :77") || !strings.Contains(note, "RUNNING") {
-		t.Fatalf("note %q", note)
-	}
-	if other.GatewayTurnContextNotes() != "" {
-		t.Fatal("another profile's session was told")
-	}
-
-	if err := os.Remove(filepath.Join(h, "bot-desktop", "env")); err != nil {
-		t.Fatal(err)
-	}
-	if err := pollRuntimeFiles(); err != nil {
-		t.Fatal(err)
-	}
-	if note := mine.GatewayTurnContextNotes(); !strings.Contains(note, "no longer running") {
-		t.Fatalf("note %q", note)
-	}
-	if len(events.statuses()) == 0 {
-		t.Fatal("the broadcast never happened")
 	}
 }

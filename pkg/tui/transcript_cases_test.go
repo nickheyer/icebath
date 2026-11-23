@@ -179,11 +179,6 @@ func TestBlockRenders(t *testing.T) {
 			t.Fatal("trail")
 		}
 	})
-	t.Run("does not render a content-less trail (e.g. finalDetails with only a token tally)", func(t *testing.T) {
-		if blockRenders(msg{Role: "system", Kind: "trail", ToolTokens: 40}, detailsCtx{DetailsMode: "expanded"}) {
-			t.Fatal("tally rendered")
-		}
-	})
 	t.Run("keeps todo trails visible even when details are hidden", func(t *testing.T) {
 		if !blockRenders(todos, detailsCtx{DetailsMode: "hidden", CommandOverride: true}) {
 			t.Fatal("todos hidden")

@@ -456,26 +456,6 @@ func setLanguage(ctx context.Context, rid any, params map[string]any, key string
 	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: tuigateway.TextValue(id)})
 }
 
-// Per section fold state, an empty value clearing it
-func setDetailsSection(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
-	child := settings.DetailSectionModes.Key + "." + strings.TrimPrefix(key, "details_mode.")
-	if settings.Find(child) == nil {
-		return rpcErr(rid, 4002, "unknown section: "+strings.TrimPrefix(key, "details_mode."), nil)
-	}
-	if cfgWord(value) == "" {
-		scope, err := requestScope(params)
-		if err != nil {
-			return rpcErr(rid, 4002, err.Error(), nil)
-		}
-		change, err := settings.Reset(scopedSettingsCtx(ctx, params, scope), child, scope)
-		if err != nil {
-			return rpcErr(rid, 4002, err.Error(), nil)
-		}
-		return registeredAnswer(rid, key, change.New.Value)
-	}
-	return setRegistered(ctx, rid, params, child, value, session)
-}
-
 // Persists an existing working directory, publishing it to the launch process only for the launch profile
 func setCwd(ctx context.Context, rid any, params map[string]any, key string, value any, session *tuihost.Session) map[string]any {
 	raw := ""
@@ -548,35 +528,4 @@ func setSkin(ctx context.Context, rid any, params map[string]any, key string, va
 	broadcastGlobalEvent("skin.changed", resolveSkin(ctx))
 	tuihost.NoteSkinBroadcast(ctx)
 	return setAnswer(rid, tuigateway.ConfigSetResult{Key: key, Value: configValueOf(value)})
-}
-
-// Applies one config key, a stale session refusing the session scoped keys and a backend refusal answering 4002
-func configSet(ctx context.Context, rid any, params map[string]any) (res map[string]any) {
-	key := strOr(params["key"])
-	value, has := params["value"]
-	if !has {
-		value = ""
-	}
-	session := tuihost.SessionRecord(strOr(params["session_id"]))
-	if session == nil && truthy(params["session_id"]) && sessionScopedConfigKeys[key] && cfgWord(params["scope"]) != "global" {
-		_, errResp := sessNowait(ctx, params, rid)
-		return errResp
-	}
-	handler := configSetters[key]
-	if handler == nil && strings.HasPrefix(key, "details_mode.") {
-		handler = setDetailsSection
-	} else if handler == nil && settings.Find(key) != nil {
-		handler = setRegistered
-	}
-	if handler == nil {
-		return rpcErr(rid, 4002, "unknown config key: "+key, nil)
-	}
-	failure := catchPanic(func() { res = handler(ctx, rid, params, key, value, session) })
-	if failure == nil {
-		return res
-	}
-	if isConfigWriteError(failure) {
-		return rpcErr(rid, 4002, failureText(failure), nil)
-	}
-	panic(failure)
 }

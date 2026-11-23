@@ -43,14 +43,6 @@ func recordCrash(kind string, failure any, threadName *string) {
 	fmt.Fprintf(os.Stderr, "[gateway-crash] %s%s: %s\n", who, typeName, first)
 }
 
-// Records a failure that escaped the main goroutine and lets it terminate the process as the default hook does
-func panicHook() {
-	if failure := recover(); failure != nil {
-		recordCrash("unhandled exception", failure, nil)
-		panic(failure)
-	}
-}
-
 // Ends a goroutine whose body raised the way the thread exception hook does, the crash recorded and the process kept
 func threadExceptHook(name string) {
 	if failure := recover(); failure != nil {

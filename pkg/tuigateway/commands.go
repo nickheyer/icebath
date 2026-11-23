@@ -144,11 +144,9 @@ type ClientCapabilitiesParams struct {
 	ServerRequests bool `json:"server_requests,omitzero"`
 }
 
-// Server requests this backend may send, and whether it counts unseen declines and batches clarify answers
+// Server requests the service may send
 type ClientCapabilitiesResult struct {
-	ServerRequests        []string `json:"server_requests"`
-	DeclinesNotShown      bool     `json:"declines_not_shown,omitzero"`
-	CanonicalClarifyBatch bool     `json:"canonical_clarify_batch,omitzero"`
+	ServerRequests []string `json:"server_requests"`
 }
 
 // Runs one safe shell line for the composer, the dangerous and hardline ones refused

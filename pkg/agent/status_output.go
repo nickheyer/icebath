@@ -59,7 +59,7 @@ type statusOutputState struct {
 	pendingFallbackNotice []string
 }
 
-// Hands the turn the kept migration notices when someone sees them, unattended turns leave them in the home
+// Shows the relay setup notice once when someone sees the turn, never on unattended turns
 func deliverKeptStartupNotices(ctx context.Context, a *AIAgent) {
 	if a.suppressStatusOutput || isUnattendedTurn(a) {
 		return
@@ -70,9 +70,6 @@ func deliverKeptStartupNotices(ctx context.Context, a *AIAgent) {
 	}
 	if platform != "cli" && a.noticeCallback == nil {
 		return
-	}
-	for _, message := range provider.ClaimKeptNotices(ctx) {
-		a.emitStartupWarning(message)
 	}
 	if !a.relayNoticeChecked {
 		a.relayNoticeChecked = true

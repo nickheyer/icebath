@@ -198,9 +198,6 @@ func configPathTuple(p *provider.ConfigPath) secretPath {
 	if p == nil {
 		return nil
 	}
-	if p.Section == "custom_providers" {
-		return secretPath{p.Section, p.Index}
-	}
 	return secretPath{p.Section, p.Key}
 }
 
@@ -337,10 +334,10 @@ func secretFingerprint(value any) any {
 }
 
 var (
-	endpointKeys   = []string{"provider", "base_url", "api", "url", "command", "args", "api_mode"}
-	entrySections  = map[string]bool{"providers": true, "custom_providers": true}
+	endpointKeys   = []string{"provider", "base_url", "command", "args", "api_mode"}
+	entrySections  = map[string]bool{"providers": true}
 	auxFollowsMain = map[string]bool{"": true, "auto": true, "main": true}
-	urlKeys        = []string{"base_url", "api", "url"}
+	urlKeys        = []string{"base_url"}
 )
 
 // Whether a path element is the given section name
@@ -362,9 +359,7 @@ func routeOwner(config map[string]any, path secretPath) secretPath {
 			return secretPath{"model", "aliases", rest[1]}
 		}
 		return secretPath{"model"}
-	case isSection(head, "model_aliases") && len(rest) > 1:
-		return secretPath{"model_aliases", rest[0]}
-	case isSection(head, "fallback_model") || isSection(head, "fallback_providers"):
+	case isSection(head, "fallback_providers"):
 		if _, isList := config[head.(string)].([]any); isList && len(rest) > 0 {
 			if _, isInt := pathIndex(rest[0]); isInt {
 				return secretPath{head, rest[0]}
@@ -752,17 +747,10 @@ func recoverReferencedSecrets(ctx context.Context, owner launchSecretOwner, poli
 		config = loadGatewayConfig(ctx, filepath.Join(home, "config.yaml"))
 	}
 	var route map[string]bool
-	var frozen map[string]any
 	values := &RecoveredSecrets{session: source["session"]}
 	for i, path := range paths {
 		var root any = config
 		lookup := []any(path)
-		if index, isInt := pathIndex(pathAt(path, 1)); isSection(path[0], "custom_providers") && len(path) > 2 && isInt {
-			if frozen == nil {
-				frozen = policyObject(policy.ConfigJSON)
-			}
-			lookup = currentCustomPath(frozen, config, path, index)
-		}
 		if path[0] == nil {
 			terminal, err := tools.BuildProfileTerminalScope(ctx, home, nil)
 			if err != nil {
@@ -808,50 +796,6 @@ func pathAt(path []any, i int) any {
 		return path[i]
 	}
 	return nil
-}
-
-// Canonical identity of a custom provider entry, false for an entry with no name
-func customEntryIdentity(entry any) (string, bool) {
-	m, ok := entry.(map[string]any)
-	if !ok || !(pyrepr.Truthy(m["name"]) || pyrepr.Truthy(m["provider_key"])) {
-		return "", false
-	}
-	return provider.CustomProviderSlug(routeStr(m["name"]), routeStr(m["provider_key"])), true
-}
-
-// Custom provider path repointed at the profile entry of the same canonical identity wherever it moved
-func currentCustomPath(frozen, config map[string]any, path secretPath, index int) []any {
-	held, _ := frozen["custom_providers"].([]any)
-	mine, named := "", false
-	if held != nil && index >= 0 && index < len(held) {
-		mine, named = customEntryIdentity(held[index])
-	}
-	current, isList := config["custom_providers"].([]any)
-	if !named || !isList {
-		return path
-	}
-	if index >= 0 && index < len(current) {
-		if identity, ok := customEntryIdentity(current[index]); ok && identity == mine {
-			return path
-		}
-	}
-	repointed := func(i int) []any {
-		return append([]any{path[0], i}, path[2:]...)
-	}
-	for i, entry := range current {
-		if identity, ok := customEntryIdentity(entry); ok && identity == mine {
-			return repointed(i)
-		}
-	}
-	if index >= 0 && index < len(current) {
-		if entry, ok := current[index].(map[string]any); ok {
-			was, _ := held[index].(map[string]any)
-			if provider.NormalizeBaseURLForMatch(provider.EntryURL(entry)) == provider.NormalizeBaseURLForMatch(provider.EntryURL(was)) {
-				return path
-			}
-		}
-	}
-	return repointed(len(current))
 }
 
 // Providers entry a fallback entry authenticates through

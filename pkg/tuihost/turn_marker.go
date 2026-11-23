@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
-	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -55,42 +54,6 @@ func turnMarkerStartedAt(entry *pyjson.Object) (float64, error) {
 func turnMarkerWriterIdentity() (int64, float64, bool) {
 	start, ok := activesessions.OwnStartTime()
 	return int64(os.Getpid()), start, ok
-}
-
-// Alive, dead or unknown for the process that wrote the marker entry
-func MarkerWriterState(entry any) string {
-	var pid, start any
-	switch e := entry.(type) {
-	case *pyjson.Object:
-		pid, _ = e.Get("writer_pid")
-		start, _ = e.Get("writer_start_time")
-	case map[string]any:
-		pid, start = e["writer_pid"], e["writer_start_time"]
-	default:
-		return "unknown"
-	}
-	var n *big.Int
-	switch x := pid.(type) {
-	case int:
-		n = big.NewInt(int64(x))
-	case int64:
-		n = big.NewInt(x)
-	case *big.Int:
-		n = x
-	default:
-		return "unknown"
-	}
-	if n.Sign() <= 0 {
-		return "unknown"
-	}
-	alive, known := activesessions.PidLiveness(pid, start)
-	if !known {
-		return "unknown"
-	}
-	if alive {
-		return "alive"
-	}
-	return "dead"
 }
 
 // Journal entries whose values are objects, empty when missing or unreadable
@@ -227,50 +190,4 @@ func ClearTurnMarker(home, sessionKey string) {
 		}
 		return out, nil
 	}, "clear")
-}
-
-// Marker left by a turn that never concluded, nil when none or unreadable
-func ReadTurnMarker(home, sessionKey string) map[string]any {
-	if sessionKey == "" {
-		return nil
-	}
-	turnMarkerLock.Lock()
-	raw, _ := turnMarkerLoad(turnMarkerPath(home)).Get(sessionKey)
-	turnMarkerLock.Unlock()
-	entry, isObj := raw.(*pyjson.Object)
-	prompt := ""
-	if isObj {
-		if p, _ := entry.Get("prompt"); pyrepr.Truthy(p) {
-			prompt = pyrepr.Str(p)
-		}
-	}
-	if pystr.Strip(prompt) == "" {
-		return nil
-	}
-	attempts := int64(0)
-	if v, _ := entry.Get("attempts"); pyrepr.Truthy(v) {
-		n, err := pyint.Int64(v)
-		if err != nil {
-			return nil
-		}
-		attempts = max(0, n)
-	}
-	startedAt, err := turnMarkerStartedAt(entry)
-	if err != nil {
-		return nil
-	}
-	autoContinue, has := entry.Get("auto_continue")
-	if !has {
-		autoContinue = true
-	}
-	marker := map[string]any{"attempts": attempts, "prompt": prompt, "started_at": startedAt, "auto_continue": pyrepr.Truthy(autoContinue)}
-	for _, key := range []string{"writer_pid", "writer_start_time"} {
-		if v, present := entry.Get(key); present && v != nil {
-			marker[key] = v
-		}
-	}
-	if category, _ := entry.Get("notification_category"); category == "diagnostic" {
-		marker["notification_category"] = "diagnostic"
-	}
-	return marker
 }

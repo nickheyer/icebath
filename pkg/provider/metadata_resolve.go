@@ -258,7 +258,7 @@ func resolveMoaContextLength(ctx context.Context, model string, customProviders 
 	return GetModelContextLength(ctx, ContextLengthRequest{Model: aggModel, BaseURL: rt.BaseURL, APIKey: rt.APIKey, Provider: providerName, CustomProviders: customProviders})
 }
 
-// Config only overrides, explicit model_overrides then custom_providers per model context
+// Config only overrides, explicit model_overrides then providers entries per model context
 func configOverrideContextLength(ctx context.Context, model, baseURL, providerName string, customProviders []map[string]any) int {
 	if providerName != "" && model != "" {
 		if n, ok := modelsDevOverrideContextWindow(ctx, providerName, model); ok && n > 0 {

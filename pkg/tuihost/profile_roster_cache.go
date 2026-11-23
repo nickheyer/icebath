@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 )
 
 // Name, mtime ns, size and optional inode of one file a roster memo keys on
@@ -85,12 +84,6 @@ func rosterCached[K comparable](cache map[K]rosterCacheEntry, key K, signature [
 // Shallow copy of a fields mapping
 func rosterShallowCopy(fields map[string]any) map[string]any { return maps.Clone(fields) }
 
-// Deep copy of a fields mapping
-func rosterDeepCopy(fields map[string]any) map[string]any {
-	copied, _ := pycopy.DeepCopy(fields).(map[string]any)
-	return copied
-}
-
 // Stat parts of each session store file, nil without a store or while an mtime is still racy
 func RosterStoreSignature(profilePath string) []rosterFilePart {
 	var parts []rosterFilePart
@@ -112,27 +105,8 @@ func RosterStoreSignature(profilePath string) []rosterFilePart {
 	return parts
 }
 
-// Name, mtime ns, size and inode of the profile's profile.yaml, nil when absent
-func RosterProfileYAMLSignature(profileDir string) []rosterFilePart {
-	part := rosterFileParts(filepath.Join(profileDir, "profile.yaml"), true)
-	if part == nil {
-		return nil
-	}
-	return []rosterFilePart{*part}
-}
-
-// Session fields of compute reused while the profile's session store has not moved
-func CachedSessionFields(profilePath string, compute func() (map[string]any, error)) (map[string]any, error) {
-	return rosterCached(rosterSessionCache, profilePath, RosterStoreSignature(profilePath), compute, rosterShallowCopy)
-}
-
 // Session fields that also depend on the comparable reader key, reused while the store has not moved
 func CachedReaderSessionFields(profilePath string, reader any, compute func() (map[string]any, error)) (map[string]any, error) {
 	return rosterCached(rosterReaderSessionCache, rosterReaderKey{profilePath, reader}, RosterStoreSignature(profilePath),
 		compute, rosterShallowCopy)
-}
-
-// ui_meta fields of compute deep copied and reused while the profile.yaml has not changed
-func CachedUIMetaFields(profileDir string, compute func() (map[string]any, error)) (map[string]any, error) {
-	return rosterCached(rosterUIMetaCache, profileDir, RosterProfileYAMLSignature(profileDir), compute, rosterDeepCopy)
 }

@@ -182,7 +182,7 @@ func (s *setupForm) on(key string) bool {
 	return on
 }
 
-// Rows of the registry under a prefix in registry order, the settings the form reads only
+// Rows of the registry under a prefix in registry order, the settings the form reads only, advanced ones with a default kept back
 func (s *setupForm) under(prefix string) []setupItem {
 	var keys []string
 	for k := range s.rows {
@@ -193,7 +193,9 @@ func (s *setupForm) under(prefix string) []setupItem {
 	slices.SortFunc(keys, func(x, y string) int { return int(s.rows[x].Order - s.rows[y].Order) })
 	out := make([]setupItem, len(keys))
 	for i, k := range keys {
-		out[i] = setupItem{key: k, more: s.rows[k].Advanced}
+		// An advanced row with no default still needs an answer, so it stays in view
+		row := s.rows[k]
+		out[i] = setupItem{key: k, more: row.Advanced && row.Default != nil && row.Default != ""}
 	}
 	return out
 }
@@ -313,6 +315,16 @@ func (s *setupForm) fields() []cards.Field {
 				continue
 			}
 			fd.Help, fd.More = row.Short, it.more
+			// A choice that takes other values too is still picked from its list, the value it holds kept as a choice
+			if row.Kind == "enum" && row.Open && len(row.Choices) > 0 {
+				fd.Kind, fd.Choices = cards.FieldChoice, nil
+				for _, c := range row.Choices {
+					fd.Choices = append(fd.Choices, cards.Choice{Value: c.Value, Label: c.Label, Meaning: c.Meaning})
+				}
+				if fd.Value != "" && !slices.ContainsFunc(fd.Choices, func(c cards.Choice) bool { return c.Value == fd.Value }) {
+					fd.Choices = append(fd.Choices, cards.Choice{Value: fd.Value, Label: fd.Value})
+				}
+			}
 			out = append(out, fd)
 		case it.env != "":
 			k, ok := s.keys[it.env]
@@ -325,6 +337,9 @@ func (s *setupForm) fields() []cards.Field {
 			}
 			fd := cards.Field{ID: "env:" + it.env, Label: k.Label, Kind: kind, Help: k.Help, More: it.more}
 			if k.URL != "" {
+				if fd.Help != "" && !strings.HasSuffix(fd.Help, ".") {
+					fd.Help += "."
+				}
 				fd.Help = strings.TrimSpace(fd.Help + " " + tr(txt.HubsSetupKeyURL, k.URL))
 			}
 			if k.Set {
@@ -451,7 +466,7 @@ func (a *app) setupVoice(h *cards.Hub) tea.Cmd {
 	var s *setupForm
 	s = &setupForm{title: tr(txt.HubsSetupVoiceTitle), intro: []string{tr(txt.HubsSetupVoiceDetail)},
 		reads: func() setupReads {
-			r := setupReads{keys: []string{"tts.provider"}, prefixes: []string{"tts."}, facts: []string{"xai.oauth", "binary:espeak-ng", "binary:espeak"}}
+			r := setupReads{keys: []string{"tts.provider"}, prefixes: []string{"tts"}, facts: []string{"xai.oauth", "binary:espeak-ng", "binary:espeak"}}
 			for _, names := range voiceKeys {
 				r.envs = append(r.envs, names...)
 			}
@@ -511,7 +526,7 @@ func (a *app) setupTerminal(h *cards.Hub) tea.Cmd {
 	var s *setupForm
 	s = &setupForm{title: tr(txt.HubsSetupTerminalTitle), intro: []string{tr(txt.HubsSetupTerminalDetail)},
 		reads: func() setupReads {
-			return setupReads{keys: []string{"terminal.backend", "terminal.cwd"}, prefixes: []string{"terminal."}, facts: []string{"binary:docker"}}
+			return setupReads{keys: []string{"terminal.backend", "terminal.cwd"}, prefixes: []string{"terminal"}, facts: []string{"binary:docker"}}
 		},
 		items: func(s *setupForm) []setupItem {
 			backend := s.value("terminal.backend")
@@ -747,7 +762,7 @@ var setupHelperFirst = []string{"vision", "compression", "title_generation", "ap
 func (a *app) setupHelpers(h *cards.Hub) tea.Cmd {
 	var providers []tuigateway.ModelOptionProvider
 	s := &setupForm{title: tr(txt.HubsSetupHelpersTitle), intro: []string{tr(txt.HubsSetupHelpersIntro)},
-		reads: func() setupReads { return setupReads{prefixes: []string{"auxiliary."}} },
+		reads: func() setupReads { return setupReads{prefixes: []string{"auxiliary"}} },
 		items: func(s *setupForm) []setupItem {
 			var jobs []string
 			for k := range s.rows {

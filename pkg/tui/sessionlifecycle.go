@@ -129,14 +129,9 @@ func reportRedactionOff(info *tuigateway.SessionInfo, sys func(string)) {
 	}
 }
 
-// Status line of a live session's state
-func statusFromLiveSession(status string, running bool) string {
-	switch {
-	case status == "waiting":
-		return tr(txt.SessionStatusWaitingForInput)
-	case status == "starting":
-		return tr(txt.SessionStatusStartingAgent)
-	case running || status == "working":
+// Status line of a live session, running or ready
+func statusFromLiveSession(running bool) string {
+	if running {
 		return "running…"
 	}
 	return "ready"
@@ -204,26 +199,6 @@ func writeActiveSessionFile(sessionID string) {
 	if err == nil {
 		_ = os.WriteFile(file, raw, 0o600)
 	}
-}
-
-// User bubble of a live session's turn in flight
-func liveSessionInflightMessages(inflight *tuigateway.InflightTurn) []msg {
-	if inflight == nil {
-		return []msg{}
-	}
-	user := strings.TrimFunc(inflight.User, isJSSpace)
-	if user == "" {
-		return []msg{}
-	}
-	return toTranscriptMessages([]tuigateway.TranscriptMessage{{Role: "user", Text: &user, DisplayKind: inflight.DisplayKind, DisplayMetadata: inflight.DisplayMetadata}}, uiState{})
-}
-
-// Streams the partial reply of a live session's turn in flight
-func (l *sessionLifecycle) hydrateLiveSessionInflight(inflight *tuigateway.InflightTurn) {
-	if inflight == nil || inflight.Assistant == "" && !inflight.Streaming {
-		return
-	}
-	l.turn.hydrateStreamingText(inflight.Assistant)
 }
 
 // Tells the app a different session replaced the previous one, true when it did
@@ -638,24 +613,19 @@ func (l *sessionLifecycle) newLiveSession(message, title string, then func(sid s
 func (l *sessionLifecycle) applyAttachment(a attachment, hold *attachHold) tea.Cmd {
 	previous := l.store.ui.Sid
 	l.resetSession()
-	startedAt := l.store.nowMillis()
-	if a.StartedAt != 0 {
-		startedAt = a.StartedAt * 1000
-	}
-	l.view.setSessionStartedAt(startedAt)
-	transcript := append(toTranscriptMessages(a.Messages, l.store.ui), liveSessionInflightMessages(a.Inflight)...)
+	l.view.setSessionStartedAt(l.store.nowMillis())
+	transcript := toTranscriptMessages(a.Messages, l.store.ui)
 	l.view.setHistoryItems(func([]msg) []msg { return append([]msg{introMsg(a.Info)}, transcript...) })
 	reportRedactionOff(a.Info, l.view.sys)
 	reportInventoryNotices(a.Info, l.view.sys)
 	l.store.ui.setConnected(true)
-	l.store.ui.Info, l.store.ui.Sid, l.store.ui.Status, l.store.ui.StoredSid, l.store.ui.Usage = a.Info, a.SessionID, statusFromLiveSession(a.Status, a.Running), a.StoredSID, usageFrom(a.Info)
+	l.store.ui.Info, l.store.ui.Sid, l.store.ui.Status, l.store.ui.StoredSid, l.store.ui.Usage = a.Info, a.SessionID, statusFromLiveSession(a.Running), a.StoredSID, usageFrom(a.Info)
 	if a.Snapshot != nil {
 		l.store.replayEpoch, l.store.lastSeq = a.Snapshot.ReplayEpoch, a.Snapshot.LastSequence
 	}
 	l.store.setBusy(a.Running)
 	l.view.sessionBound(previous)
 	l.gw.hydrateSharedPrompts(a.Snapshot, a.OpenRequests)
-	l.hydrateLiveSessionInflight(a.Inflight)
 	l.gw.settleAttach(hold, a.Snapshot)
 	return l.scheduleResumeScrollToBottom()
 }

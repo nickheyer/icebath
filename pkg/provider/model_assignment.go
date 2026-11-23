@@ -93,7 +93,7 @@ func normalizeMainModelAssignment(ctx context.Context, provider, model string) (
 	userProviders, _ := cfg["providers"].(map[string]any)
 	declared := resolveUserProvider(provIn, userProviders)
 	if declared == nil {
-		declared = resolveCustomProvider(provIn, compatibleCustomProvidersList(cfg))
+		declared = resolveCustomProvider(provIn, ProviderEntryList(cfg))
 	}
 	if declared != nil {
 		return declared.ID, modelIn
@@ -134,8 +134,8 @@ func modelsNormalizeProvider(provider string) string {
 	return normalized
 }
 
-// Deduplicated custom provider view of a config as the list the resolvers take
-func compatibleCustomProvidersList(cfg map[string]any) []any {
+// ProviderEntryList is ProviderEntries as a list of any, the shape the route options take
+func ProviderEntryList(cfg map[string]any) []any {
 	rows := ProviderEntries(cfg)
 	out := make([]any, len(rows))
 	for i, row := range rows {
@@ -187,7 +187,7 @@ func validatedMainModelSelection(ctx context.Context, cfg map[string]any, provid
 	if explicit {
 		opts.CurrentProvider = "custom"
 	} else {
-		opts.CustomProviders = compatibleCustomProvidersList(cfg)
+		opts.CustomProviders = ProviderEntryList(cfg)
 	}
 	if isBareCustom {
 		opts.CurrentBaseURL, opts.CurrentAPIKey = baseURL, apiKey

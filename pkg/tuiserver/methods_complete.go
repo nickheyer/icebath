@@ -398,51 +398,6 @@ func dirListingItems(ctx context.Context, root, word, pathPart, prefixTag string
 	return items, nil
 }
 
-// Path completions of the composer word resolved against the session folder or its backend cwd
-func completePath(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	request, err := tuigateway.CompletePath.Params(params)
-	if err != nil {
-		return rpcErr(rid, 4000, err.Error(), nil), nil
-	}
-	word := deref(request.Word)
-	if word == "" {
-		return ok(rid, tuigateway.Plain(tuigateway.CompletionItemsResult{Items: []tuigateway.CompletionItem{}})), nil
-	}
-	session := tuihost.SessionRecord(deref(request.SessionID))
-	local := effectiveTerminalBackend(ctx) == "local"
-	var clientCwd any
-	if request.Cwd != nil {
-		clientCwd = *request.Cwd
-	}
-	if session != nil && pyrepr.Equal(clientCwd, session.Get("cwd")) && isRemoteLaunchCwd(ctx, session) {
-		clientCwd = nil
-	}
-	var root string
-	if local {
-		resolved, err := completionCwd(ctx, params)
-		if err != nil {
-			return nil, err
-		}
-		root = resolved
-	} else if root = strOr(clientCwd); root == "" {
-		if session != nil {
-			root = terminalTaskCwd(ctx, session)
-		}
-		if root == "" {
-			root = "."
-		}
-	}
-	sessionKey := ""
-	if session != nil {
-		sessionKey = strOr(session.Get("session_key"))
-	}
-	items, err := PathCompletionItems(ctx, word, root, sessionKey, local)
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, tuigateway.Plain(tuigateway.CompletionItemsResult{Items: items})), nil
-}
-
 // Typed rows of the item maps a completion builder produced, a misfit reported against the method
 func completionRows(method string, items []map[string]any) []tuigateway.CompletionItem {
 	out := make([]tuigateway.CompletionItem, 0, len(items))
@@ -499,24 +454,6 @@ func pathCompletionItems(ctx context.Context, word, root, sessionKey string, loc
 	return items, nil
 }
 
-// Slash popup completions bound to the calling session's profile and workspace, or a draft's named profile
-func completeSlash(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	request, err := tuigateway.CompleteSlash.Params(params)
-	if err != nil {
-		return rpcErr(rid, 4000, err.Error(), nil), nil
-	}
-	session := tuihost.SessionRecord(deref(request.SessionID))
-	cwd, err := completionCwd(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	result, err := SlashCompletions(ctx, deref(request.Text), sessionHomeScope(session, cwd, deref(request.Profile)))
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, tuigateway.Plain(result)), nil
-}
-
 // Live agent of the session the params name, nil when none
 func paramsSessionAgent(params map[string]any) *agent.AIAgent {
 	session := tuihost.SessionRecord(strOr(params["session_id"]))
@@ -534,22 +471,6 @@ func modelSkewErr(ctx context.Context, rid any) map[string]any {
 	}
 	inner := i18n.T(ctx, "gateway.model.err_skew", "", map[string]any{"boot_rev": bootRev, "disk_rev": diskRev})
 	return rpcErr(rid, 5098, i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": inner}), nil)
-}
-
-// Model picker inventory of the scoped profile, the live agent route taking precedence
-func modelOptions(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	if skew := modelSkewErr(ctx, rid); skew != nil {
-		return skew, nil
-	}
-	pc, err := modelPickerContext(ctx, paramsSessionAgent(params))
-	if err != nil {
-		return nil, err
-	}
-	payload, err := buildModelOptionsPayload(ctx, pc, truthy(params["explicit_only"]), truthy(params["include_unconfigured"]), truthy(params["refresh"]))
-	if err != nil {
-		return nil, err
-	}
-	return ok(rid, payload), nil
 }
 
 // Saves an API key as an owned login of the provider, its profile default, and answers its refreshed picker row marked authenticated

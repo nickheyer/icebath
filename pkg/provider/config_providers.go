@@ -200,7 +200,7 @@ func normalizeProviderModels(models any) (map[string]any, bool) {
 	return map[string]any{}, discovered
 }
 
-// NormalizeCustomProviderEntry returns the runtime shape of one providers or custom_providers block or nil
+// NormalizeCustomProviderEntry returns the runtime shape of one providers block or nil
 func NormalizeCustomProviderEntry(raw any, providerKey string) map[string]any {
 	src, ok := raw.(map[string]any)
 	if !ok {

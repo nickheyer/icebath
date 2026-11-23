@@ -2,13 +2,14 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func effortCfg(effort string) *Reasoning { return &Reasoning{Enabled: bptr(true), Effort: effort} }

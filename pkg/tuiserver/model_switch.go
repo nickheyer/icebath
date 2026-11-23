@@ -44,19 +44,3 @@ func sessionProfileRuntimeScope(ctx context.Context, session *tuihost.Session, h
 func sessionDefaultRoute(ctx context.Context, session *tuihost.Session) (string, string) {
 	return resolveModel(profileRuntimeScope(ctx, strOr(session.Get("profile_home")), false)), ""
 }
-
-// Model and provider session info reports for a not yet built session, the client's sticky pick else the profile default
-func lazyInfoRoute(ctx context.Context, session *tuihost.Session, override map[string]any) map[string]any {
-	var model, providerName any
-	if len(override) > 0 {
-		model, providerName = override["model"], override["provider"]
-	} else {
-		m, p := sessionDefaultRoute(ctx, session)
-		model, providerName = m, p
-	}
-	out := map[string]any{"model": model}
-	if truthy(providerName) {
-		out["provider"] = providerName
-	}
-	return out
-}

@@ -161,39 +161,6 @@ func sessionTodoState(session *tuihost.Session) *pyjson.Object {
 	return cached
 }
 
-// Attaches the authoritative todo snapshot to a session response
-func attachTodoState(payload map[string]any, session *tuihost.Session) map[string]any {
-	if state := sessionTodoState(session); state != nil {
-		payload["todo_state"] = state
-	}
-	return payload
-}
-
-// Cold resume todo snapshot of a stored session without the page or history limits
-func todoStateFromDB(ctx context.Context, db todoResultReader, sessionID string) (state *pyjson.Object) {
-	if db == nil {
-		return nil
-	}
-	defer func() {
-		if failure := recover(); failure != nil {
-			pkgLog().Debug("failed to read persisted todo state", "exc_info", failureText(failure))
-			state = nil
-		}
-	}()
-	content, found, err := db.GetLatestTodoResult(ctx, sessionID, nil)
-	if err != nil {
-		panic(err)
-	}
-	if !found || len(content) > tools.MaxTodoResultChars {
-		return nil
-	}
-	decoded, err := pyjson.Loads(content)
-	if err != nil {
-		return nil
-	}
-	return tuihost.NormalizeTodoState(decoded)
-}
-
 // Store that serves the newest todo tool result of a session
 type todoResultReader interface {
 	GetLatestTodoResult(ctx context.Context, sessionID string, maxChars *int) (string, bool, error)

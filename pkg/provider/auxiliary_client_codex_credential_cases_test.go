@@ -18,14 +18,6 @@ func auxCodexAuthHome(t *testing.T, accessToken string) context.Context {
 	return ctx
 }
 
-// Swaps the auth.json Codex token reader for a fixed token
-func auxFixedCodexSingletonToken(t *testing.T, token string) {
-	t.Helper()
-	prev := auxReadCodexSingletonTokenFn
-	auxReadCodexSingletonTokenFn = func(context.Context) string { return token }
-	t.Cleanup(func() { auxReadCodexSingletonTokenFn = prev })
-}
-
 // Swaps the Anthropic SDK builder alone, recording the key and base URL it receives
 func auxRecordAnthropicBuild(t *testing.T) *[2]any {
 	t.Helper()
@@ -116,39 +108,12 @@ func TestAnthropicOAuthFlagPoolEntryTakesPriorityOverLegacyResolution(t *testing
 	}
 }
 
-func TestBuildCodexClientPoolWithoutSelectedEntryFallsBackToAuthStore(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	auxFixedPoolEntry(t, true, nil)
-	auxFixedCodexSingletonToken(t, "codex-auth-token")
-	client, model, err := auxBuildCodexClient(ctx, "gpt-5.4")
-	if err != nil || client == nil || model != "gpt-5.4" {
-		t.Fatalf("got %v %q %v", client, model, err)
-	}
-	if client.APIKey() != "codex-auth-token" || strings.TrimRight(client.BaseURL(), "/") != "https://chatgpt.com/backend-api/codex" {
-		t.Fatalf("key %q base %q", client.APIKey(), client.BaseURL())
-	}
-}
-
 func TestBuildCodexClientProfileCodexBaseUrlOverridesPoolEndpoint(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
 	entry := &PooledCredential{Provider: "openai-codex", AccessToken: "codex-pool-token", BaseURL: "https://chatgpt.com/backend-api/codex"}
 	auxFixedPoolEntry(t, true, entry)
 	t.Setenv("ICEBATH_CODEX_BASE_URL", "http://127.0.0.1:8787/v1")
 	client, model, err := auxBuildCodexClient(ctx, "gpt-5.4")
-	if err != nil || client == nil || model != "gpt-5.4" {
-		t.Fatalf("got %v %q %v", client, model, err)
-	}
-	if strings.TrimRight(client.BaseURL(), "/") != "http://127.0.0.1:8787/v1" {
-		t.Fatalf("base %q", client.BaseURL())
-	}
-}
-
-func TestBuildCodexClientProfileCodexBaseUrlAppliesToRawCodexClient(t *testing.T) {
-	ctx := auxMainTestHome(t, "")
-	auxFixedPoolEntry(t, false, nil)
-	auxFixedCodexSingletonToken(t, "codex-auth-token")
-	t.Setenv("ICEBATH_CODEX_BASE_URL", "http://127.0.0.1:8787/v1")
-	client, model, err := ResolveProviderClient(ctx, "openai-codex", "gpt-5.4", ProviderClientOptions{RawCodex: true})
 	if err != nil || client == nil || model != "gpt-5.4" {
 		t.Fatalf("got %v %q %v", client, model, err)
 	}

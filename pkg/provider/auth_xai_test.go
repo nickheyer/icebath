@@ -25,63 +25,6 @@ func TestXAIProactiveRefreshSkewShortLivedToken(t *testing.T) {
 	}
 }
 
-func TestXAIReadTokensUsesCredentialPoolWhenProviderTokensEmpty(t *testing.T) {
-	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{
-		"providers": map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{}, "last_auth_error": map[string]any{}}},
-		"credential_pool": map[string]any{"xai-oauth": []any{map[string]any{
-			"access_token": "pool-access", "refresh_token": "pool-refresh", "token_type": "Bearer", "last_refresh": "2026-06-03T19:00:00Z"}}},
-	})
-	resolved, err := readXAIOAuthTokens(testEnv(t, h), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tokens := resolved["tokens"].(map[string]any)
-	if tokens["access_token"] != "pool-access" || tokens["refresh_token"] != "pool-refresh" || tokens["token_type"] != "Bearer" ||
-		resolved["last_refresh"] != "2026-06-03T19:00:00Z" {
-		t.Fatalf("%v", resolved)
-	}
-}
-
-func TestXAIReadTokensMissingIsRelogin(t *testing.T) {
-	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
-	_, err := readXAIOAuthTokens(testEnv(t, h), true)
-	var ae *AuthError
-	if !errors.As(err, &ae) || ae.Code != "xai_auth_missing" || !ae.ReloginRequired {
-		t.Fatalf("%v", err)
-	}
-}
-
-func TestXAIWriteThroughIsNoopInClassicMode(t *testing.T) {
-	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
-	if err := saveXAIOAuthTokens(testEnv(t, h), map[string]any{"access_token": "a", "refresh_token": "r"}, xaiSaveOptions{SetActive: true}); err != nil {
-		t.Fatal(err)
-	}
-	state := readAuthStore(t, h)["providers"].(map[string]any)["xai-oauth"].(map[string]any)
-	if state["tokens"].(map[string]any)["refresh_token"] != "r" || state["auth_mode"] != "oauth_device_code" {
-		t.Fatalf("%v", state)
-	}
-}
-
-func TestXAIRootResolvedGrantWritesBackToRootOnly(t *testing.T) {
-	profile, root, env := profileEnvForTest(t, "work")
-	writeAuthStore(t, profile, map[string]any{"version": 2, "providers": map[string]any{}})
-	writeAuthStore(t, root, map[string]any{"version": 2, "providers": map[string]any{"xai-oauth": map[string]any{
-		"tokens": map[string]any{"access_token": "old", "refresh_token": "old-r"}}}})
-	if err := saveXAIOAuthTokens(env, map[string]any{"access_token": "new", "refresh_token": "new-r"}, xaiSaveOptions{}); err != nil {
-		t.Fatal(err)
-	}
-	rootState := readAuthStore(t, root)["providers"].(map[string]any)["xai-oauth"].(map[string]any)
-	if rootState["tokens"].(map[string]any)["refresh_token"] != "new-r" {
-		t.Fatalf("root %v", rootState)
-	}
-	if _, has := readAuthStore(t, profile)["providers"].(map[string]any)["xai-oauth"]; has {
-		t.Fatal("a profile copy would shadow root")
-	}
-}
-
 func TestXAIValidateOAuthEndpointPinsTheOrigin(t *testing.T) {
 	for raw, code := range map[string]string{
 		"https://auth.x.ai/oauth2/token": "", "http://auth.x.ai/oauth2/token": "xai_discovery_invalid",

@@ -354,7 +354,7 @@ func clearModelEndpointCredentials(modelCfg map[string]any, clearAPIKey, clearAP
 		return modelCfg
 	}
 	if clearAPIKey {
-		for _, k := range []string{"api_key", "api", "key_env", "api_key_env"} {
+		for _, k := range []string{"api_key", "key_env"} {
 			delete(modelCfg, k)
 		}
 	}

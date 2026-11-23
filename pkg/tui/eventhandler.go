@@ -382,7 +382,7 @@ func (h *eventHandler) forgeSession(after func() tea.Cmd) tea.Cmd {
 
 // Records whether the gateway runs another build, returning the line to tell once per gateway build or nil
 func (h *eventHandler) noteGatewayBuild(ready tuigateway.GatewayReadyPayload) func() tea.Cmd {
-	other := !tuigateway.SameBuild(ready.Build, ready.Contract)
+	other := !tuigateway.SameBuild(ready.Build)
 	gatewayOtherBuild.Store(other)
 	if !other {
 		h.toldBuild = nil

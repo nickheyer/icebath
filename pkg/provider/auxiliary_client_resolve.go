@@ -167,7 +167,7 @@ var auxGetNamedCustomProviderFn = func(ctx context.Context, name string) map[str
 // Named custom credential from inline api_key, key_env, key_cmd, the credential pool, else no-key-required
 func auxNamedCustomAPIKey(ctx context.Context, entry map[string]any, provider, customBase string) (any, error) {
 	var key any = strings.TrimSpace(cfgString(entry["api_key"]))
-	keyEnv := strings.TrimSpace(auxFirstNonEmpty(cfgString(entry["key_env"]), cfgString(entry["api_key_env"])))
+	keyEnv := strings.TrimSpace(cfgString(entry["key_env"]))
 	if key == "" && keyEnv != "" {
 		scoped, err := scopedKeyEnv(ctx, keyEnv)
 		if err != nil {

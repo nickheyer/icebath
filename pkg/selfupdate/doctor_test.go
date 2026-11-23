@@ -14,7 +14,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
@@ -284,25 +283,6 @@ func doctorFailingInstalls(t *testing.T) *[]string {
 }
 
 const doctorCopilotAuxConfig = "model:\n  provider: openrouter\nauxiliary:\n  vision:\n    provider: copilot\n    model: gpt-4.1\n"
-
-func TestDoctorInATerminalFrontEndLeavesKeptNoticesForTheNextAgent(t *testing.T) {
-	d, buf := doctorRawHome(t, doctorCopilotAuxConfig, "")
-	doctorFailingInstalls(t)
-	ctx := context.Background()
-	provider.DeferStartupNotice(ctx, "kept by the gateway's start")
-	prev := provider.SwapNoticesOnStderrForTests(false)
-	t.Cleanup(func() { provider.SwapNoticesOnStderrForTests(prev) })
-	provider.ServeNoticesOnStderr()
-	out, _ := doctorWalk(t, d, buf, map[string]any{"fix": false, "ack": nil, "live": false}, doctorConfigFileEntry)
-	if strings.Contains(out, "kept by the gateway's start") {
-		t.Fatalf("the kept notice was printed: %q", out)
-	}
-	kept := provider.ClaimKeptNotices(ctx)
-	if len(kept) != 1 || kept[0] != "kept by the gateway's start" {
-		t.Fatalf("kept = %q", kept)
-	}
-	config.ResetCache()
-}
 
 func TestNpmAuditOnlyFindingDoesNotOfferDoctorFix(t *testing.T) {
 	out := &bytes.Buffer{}

@@ -31,8 +31,7 @@ type GatewayEndpoint struct {
 	ControlHome     string
 	CodeSHA         string
 	// Go build ID and wire contract version the owner runs, empty and zero for an owner older than both
-	BuildID         string
-	ContractVersion int64
+	BuildID string
 }
 
 // ObservedEndpoint is a discovery or ensure verdict, empty strings standing for None
@@ -144,11 +143,10 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 	}
 	codeSHA, _ := recGet(payload, "code_sha").(string)
 	buildID, _ := recGet(payload, "build_id").(string)
-	contractVersion, _ := recGet(payload, "contract_version").(int64)
 	endpoint := &GatewayEndpoint{
 		ProfileID: profileID, InstanceID: instance, AuthorityEpoch: epochInt, RuntimeProtocol: 1,
 		APIOrigin: origin, Supervisor: sup, ControlHome: controlHome, CodeSHA: codeSHA,
-		BuildID: buildID, ContractVersion: contractVersion,
+		BuildID: buildID,
 	}
 	if restartWait {
 		return ObservedEndpoint{State: "draining", Endpoint: endpoint, ReasonCode: RestartWaitReason}, nil

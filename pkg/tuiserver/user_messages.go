@@ -139,9 +139,3 @@ const agentBuildAbandoned = "agent build aborted: the session was closed or repl
 
 const agentMissingForTurn = "Icebath could not start the assistant for this session, so your message was not run. " +
 	"Reopen the session (or start a new one with /new) and send it again."
-
-// Resume failure copy naming the unreadable transcript
-func resumeFailedMessage(err any) string {
-	return "Could not reopen that session (its transcript could not be read). Details: " + pyrepr.Str(err) + ". " +
-		"Start a new session (/new), or pick another from /sessions."
-}

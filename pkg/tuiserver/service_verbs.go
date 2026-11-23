@@ -147,4 +147,3 @@ func ticketProfileRequest(req map[string]any, ticketHome string) (map[string]any
 	bound["params"] = scoped
 	return bound, ticketHome, true
 }
-

@@ -741,14 +741,6 @@ func (a *GatewayACPAgent) resume(ctx context.Context, cwd, heldID string, server
 	params := map[string]any{"session_id": sessionID}
 	var editor *pyjson.Object
 	if len(servers) > 0 {
-		descriptor, err := a.rpc(ctx, link, "runtime.describe", nil)
-		if err != nil {
-			return nil, err
-		}
-		capabilities, _ := dget(descriptor, "capabilities").([]any)
-		if !containsValue(capabilities, "acp-session-mcp-v1") {
-			return nil, &gateway.GatewayClientError{Msg: "acp_mcp_policy_unavailable"}
-		}
 		editor = pyjson.NewObject()
 		editor.Set("mcp_servers", mcpServersPayload(servers))
 		params["editor"] = editor

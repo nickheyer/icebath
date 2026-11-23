@@ -269,7 +269,7 @@ func (t *DirectAliasTable) equals(entries []NamedDirectAlias) bool {
 	return true
 }
 
-// Built in direct aliases, extended by the model_aliases config section
+// Built in direct aliases, extended by the model.aliases setting
 var builtinDirectAliases []NamedDirectAlias
 
 // DirectAliases holds the builtin plus active profile aliases, reloaded in place when the profile config changes
@@ -282,68 +282,37 @@ var (
 	directAliasLoaded     []NamedDirectAlias
 )
 
-// Direct aliases from model_aliases and model.aliases of the given config, or of the active profile config when nil
+// Direct aliases from model.aliases of the given config, or of the active profile config when nil
 func loadDirectAliases(ctx context.Context, cfg map[string]any) *DirectAliasTable {
 	merged := NewDirectAliasTable(builtinDirectAliases...)
 	if cfg == nil {
 		cfg = LoadConfigSafe(ctx, home.Dir(ctx))
 	}
-	if userAliases, ok := cfg["model_aliases"].(map[string]any); ok {
-		for _, name := range sortedKeys(userAliases) {
-			entry, ok := userAliases[name].(map[string]any)
-			if !ok || !pyTruthy(entry["model"]) {
-				continue
-			}
-			provider := "custom"
-			if v, present := entry["provider"]; present {
-				provider = pyStrOrEmpty(v)
-			}
-			merged.Set(strings.ToLower(pyStripSpace(name)), DirectAlias{
-				Model: pyStrOrEmpty(entry["model"]), Provider: provider, BaseURL: pyStrOrEmpty(entry["base_url"]),
-				APIKey: msClean(entry["api_key"]), KeyEnv: msClean(entry["key_env"])})
-		}
-	}
 	modelSection, _ := cfg["model"].(map[string]any)
-	simpleAliases, ok := modelSection["aliases"].(map[string]any)
+	aliases, ok := modelSection["aliases"].(map[string]any)
 	if !ok {
 		return merged
 	}
 	currentProvider := pyStrOrEmpty(modelSection["provider"])
-	for _, name := range sortedKeys(simpleAliases) {
+	for _, name := range sortedKeys(aliases) {
 		key := strings.ToLower(pyStripSpace(name))
-		if _, taken := merged.Get(key); key == "" || taken {
+		value, ok := aliases[name].(map[string]any)
+		if key == "" || !ok {
 			continue
 		}
-		switch value := simpleAliases[name].(type) {
-		case map[string]any:
-			model := msClean(value["model"])
-			if model == "" {
-				continue
-			}
-			provider := msClean(value["provider"])
-			if provider == "" {
-				provider = currentProvider
-			}
-			if provider == "" {
-				provider = "custom"
-			}
-			merged.Set(key, DirectAlias{Model: model, Provider: provider, BaseURL: msClean(value["base_url"]),
-				APIKey: msClean(value["api_key"]), KeyEnv: msClean(value["key_env"])})
-		case string:
-			val := pyStripSpace(value)
-			if val == "" {
-				continue
-			}
-			provider, model := currentProvider, val
-			if before, after, found := strings.Cut(val, "/"); found {
-				provider, model = before, after
-			}
-			provider = pyStripSpace(provider)
-			if provider == "" {
-				provider = currentProvider
-			}
-			merged.Set(key, DirectAlias{Model: pyStripSpace(model), Provider: provider})
+		model := msClean(value["model"])
+		if model == "" {
+			continue
 		}
+		provider := msClean(value["provider"])
+		if provider == "" {
+			provider = currentProvider
+		}
+		if provider == "" {
+			provider = "custom"
+		}
+		merged.Set(key, DirectAlias{Model: model, Provider: provider, BaseURL: msClean(value["base_url"]),
+			APIKey: msClean(value["api_key"]), KeyEnv: msClean(value["key_env"])})
 	}
 	return merged
 }

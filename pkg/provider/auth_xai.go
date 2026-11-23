@@ -34,90 +34,6 @@ func xaiTokenPair(tokens any) (string, string) {
 	return xaiClean(m["access_token"]), xaiClean(m["refresh_token"])
 }
 
-// Usable xAI OAuth state from the provider block or the first complete pool row
-func xaiOAuthStateFromStore(env PoolEnv, data AuthData) map[string]any {
-	state := env.Store.ProviderState(data, "xai-oauth")
-	if state != nil {
-		if a, r := xaiTokenPair(state["tokens"]); a != "" && r != "" {
-			return state
-		}
-	}
-	for _, entry := range poolEntries(poolMap(data)["xai-oauth"]) {
-		accessToken, refreshToken := xaiTokenPair(entry)
-		if accessToken == "" || refreshToken == "" {
-			continue
-		}
-		merged := cloneMap(state)
-		if merged == nil {
-			merged = map[string]any{}
-		}
-		tokenType := pyOrStr(entry["token_type"])
-		if tokenType == "" {
-			tokenType = "Bearer"
-		}
-		merged["tokens"] = map[string]any{"access_token": accessToken, "refresh_token": refreshToken, "token_type": tokenType}
-		if pyTruthy(entry["last_refresh"]) {
-			merged["last_refresh"] = entry["last_refresh"]
-		}
-		if _, has := merged["auth_mode"]; !has {
-			merged["auth_mode"] = "oauth_pkce"
-		}
-		return merged
-	}
-	return state
-}
-
-func xaiOAuthStateHasUsableTokens(state map[string]any) bool {
-	if state == nil {
-		return false
-	}
-	a, r := xaiTokenPair(state["tokens"])
-	return a != "" && r != ""
-}
-
-// Stored xAI OAuth tokens from the profile store, then the global root, failing with relogin codes
-func readXAIOAuthTokens(env PoolEnv, lock bool) (map[string]any, error) {
-	data, err := loadAuthStoreMaybeLocked(env, lock)
-	if err != nil {
-		return nil, err
-	}
-	state := xaiOAuthStateFromStore(env, data)
-	if !xaiOAuthStateHasUsableTokens(state) {
-		if globalState := xaiOAuthStateFromStore(env, env.Store.LoadGlobal()); xaiOAuthStateHasUsableTokens(globalState) {
-			state = globalState
-		}
-	}
-	if len(state) == 0 {
-		return nil, xaiErr("No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `icebath model`.", "xai_auth_missing", true)
-	}
-	tokens, ok := state["tokens"].(map[string]any)
-	if !ok {
-		return nil, xaiErr("xAI OAuth state is missing tokens. "+xaiRelogin, "xai_auth_invalid_shape", true)
-	}
-	accessToken, refreshToken := xaiTokenPair(tokens)
-	for _, field := range [][2]string{{accessToken, "access_token"}, {refreshToken, "refresh_token"}} {
-		if field[0] == "" {
-			return nil, xaiErr(fmt.Sprintf("xAI OAuth state is missing %s. %s", field[1], xaiRelogin), "xai_auth_missing_"+field[1], true)
-		}
-	}
-	discovery := state["discovery"]
-	if !pyTruthy(discovery) {
-		discovery = map[string]any{}
-	}
-	return map[string]any{"tokens": tokens, "last_refresh": state["last_refresh"], "discovery": discovery, "redirect_uri": state["redirect_uri"]}, nil
-}
-
-// Persists a rotated xAI grant into the global root auth.json, logging and swallowing any failure
-func writeThroughXAIOAuthToGlobalRoot(env PoolEnv, state map[string]any) {
-	globalPath := env.Store.GlobalPath()
-	if globalPath == "" {
-		return
-	}
-	if _, err := env.Store.PersistProviderStateToStore("xai-oauth", state, globalPath, false); err != nil {
-		env.log().Debug(fmt.Sprintf("xAI OAuth: write-through to global root failed: %s", err))
-	}
-}
-
 // xaiSaveOptions carries the optional parts of an xAI token save
 type xaiSaveOptions struct {
 	Discovery   map[string]any
@@ -125,48 +41,6 @@ type xaiSaveOptions struct {
 	LastRefresh string
 	AuthMode    string
 	SetActive   bool
-}
-
-// Persists xAI OAuth tokens back to the store the grant was resolved from, root only when root owns it
-func saveXAIOAuthTokens(env PoolEnv, tokens map[string]any, opts xaiSaveOptions) error {
-	if opts.LastRefresh == "" {
-		opts.LastRefresh = utcNowZ()
-	}
-	if opts.AuthMode == "" {
-		opts.AuthMode = "oauth_device_code"
-	}
-	unlock, err := env.Store.Lock(AuthLockTimeout)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	data, err := env.Store.Load()
-	if err != nil {
-		return err
-	}
-	found, sourcePath := env.Store.ProviderStateWithSource(data, "xai-oauth")
-	state := cloneMap(found)
-	if state == nil {
-		state = map[string]any{}
-	}
-	state["tokens"] = tokens
-	state["last_refresh"] = opts.LastRefresh
-	state["auth_mode"] = opts.AuthMode
-	if len(opts.Discovery) > 0 {
-		state["discovery"] = opts.Discovery
-	}
-	if opts.RedirectURI != "" {
-		state["redirect_uri"] = opts.RedirectURI
-	}
-	globalRoot := env.Store.GlobalPath()
-	if sourcePath != "" && globalRoot != "" && samePath(sourcePath, globalRoot) {
-		writeThroughXAIOAuthToGlobalRoot(env, state)
-		return nil
-	}
-	if err := env.Store.StoreProviderState(data, "xai-oauth", state, opts.SetActive); err != nil {
-		return err
-	}
-	return env.Store.Save(data)
 }
 
 func isXAIOriginHost(host string) bool { return host == "x.ai" || strings.HasSuffix(host, ".x.ai") }
@@ -366,66 +240,6 @@ func refreshXAIOAuthPureAt(ctx context.Context, accessToken, refreshToken, token
 	out := xaiTokensFromPayload(payload, refreshedAccess, refreshToken)
 	out["last_refresh"] = utcNowZ()
 	return out, nil
-}
-
-// Refreshes the stored xAI tokens and saves them without touching the active provider
-func refreshXAIOAuthTokens(env PoolEnv, tokens map[string]any, tokenEndpoint, redirectURI string, timeout time.Duration) (map[string]any, error) {
-	authMode := "oauth_device_code"
-	if data, err := env.Store.Load(); err == nil {
-		if mode := pyOrStr(env.Store.ProviderState(data, "xai-oauth")["auth_mode"]); mode != "" {
-			authMode = mode
-		}
-	}
-	refreshed, err := xaiRefreshPureAtFn(env.ctx(), xaiClean(tokens["access_token"]), xaiClean(tokens["refresh_token"]), tokenEndpoint, timeout)
-	if err != nil {
-		return nil, err
-	}
-	updated := cloneMap(tokens)
-	updated["access_token"] = refreshed["access_token"]
-	updated["refresh_token"] = refreshed["refresh_token"]
-	if pyTruthy(refreshed["id_token"]) {
-		updated["id_token"] = refreshed["id_token"]
-	}
-	if refreshed["expires_in"] != nil {
-		updated["expires_in"] = refreshed["expires_in"]
-	}
-	if pyTruthy(refreshed["token_type"]) {
-		updated["token_type"] = refreshed["token_type"]
-	}
-	err = saveXAIOAuthTokens(env, updated, xaiSaveOptions{
-		Discovery: map[string]any{"token_endpoint": tokenEndpoint}, RedirectURI: redirectURI,
-		LastRefresh: anyString(refreshed["last_refresh"]), AuthMode: authMode, SetActive: false,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return updated, nil
-}
-
-// Clears dead xAI tokens after a terminal refresh failure so later sessions fail fast
-func quarantineXAIOAuthTokens(env PoolEnv, authErr *AuthError) {
-	err := func() error {
-		data, err := env.Store.Load()
-		if err != nil {
-			return err
-		}
-		state := cloneMap(env.Store.ProviderState(data, "xai-oauth"))
-		if state == nil {
-			state = map[string]any{}
-		}
-		tokens := cloneMap(anyMap(state["tokens"]))
-		delete(tokens, "access_token")
-		delete(tokens, "refresh_token")
-		state["tokens"] = tokens
-		state["last_auth_error"] = lastAuthErrorMarker("xai-oauth", authErr, "runtime_refresh_failure", "xai_refresh_failed")
-		if err := env.Store.StoreProviderState(data, "xai-oauth", state, false); err != nil {
-			return err
-		}
-		return env.Store.Save(data)
-	}()
-	if err != nil {
-		env.log().Debug(fmt.Sprintf("xAI OAuth: failed to persist quarantined state: %s", err))
-	}
 }
 
 // Inference base URL for the xAI OAuth bearer, env overrides pinned to the xAI origin

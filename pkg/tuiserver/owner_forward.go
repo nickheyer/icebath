@@ -294,17 +294,6 @@ func (r *ownerRelay) relay(ctx context.Context, client *gateway.GatewayClient, a
 	return nil
 }
 
-// One request and answer on the owner serving the home under the host scoped grant of this host
-func forwardRPC(ctx context.Context, profileHome string, endpoint *gateway.GatewayEndpoint, method string, params map[string]any) (any, error) {
-	frame := int64((gateway.MaxAttachmentBytes+2)/3*4 + 1<<20)
-	client, err := connectOwner(ctx, profileHome, endpoint, "host", frame)
-	if err != nil {
-		return nil, err
-	}
-	defer client.Close()
-	return client.RPCTimeout(ctx, method, params, 0)
-}
-
 // Admits the text into the owner FIFO for this session and returns the owner receipt
 func forwardPrompt(ctx context.Context, sid string, session *tuihost.Session, text string, emit func(event, sid string, payload map[string]any), profileHome string) (map[string]any, error) {
 	key := pyrepr.Str(orEmpty(session.Get("session_key")))

@@ -2,10 +2,11 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 func TestOpencodeGoAppearsWhenAPIKeySet(t *testing.T) {

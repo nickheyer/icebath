@@ -36,8 +36,6 @@ type msg struct {
 	Thinking               string
 	IsMoaReference         bool
 	IsLiveReasoning        bool
-	ThinkingTokens         int
-	ToolTokens             int
 	Tools                  []toolRow
 	Todos                  []todoItem
 	TodoIncomplete         bool

@@ -7,12 +7,9 @@ type attachment struct {
 	SessionID      string
 	StoredSID      string
 	SubscriptionID string
-	Status         string
 	Info           *tuigateway.SessionInfo
 	Running        bool
-	StartedAt      float64
 	Messages       []tuigateway.TranscriptMessage
-	Inflight       *tuigateway.InflightTurn
 	Connection     *tuigateway.ConnectionRequestPayload
 	Snapshot       *tuigateway.CanonicalSnapshot
 	// Server requests the session still waits on, delivered again once the view shows it

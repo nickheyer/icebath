@@ -14,9 +14,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/home"
 )
@@ -115,69 +112,6 @@ func PluginHomeLabel(h string) string {
 
 var interactiveTerminal = func() bool {
 	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
-}
-
-// SwapLeftCoreTableForTests replaces the rows and returns the restore of the previous table
-func SwapLeftCoreTableForTests(rows []LeftCoreFeature) func() {
-	prev := leftCoreTable
-	leftCoreTable = rows
-	return func() { leftCoreTable = prev }
-}
-
-// Dependency consent without a terminal comes from the lazy install policy of the home in ctx
-func unattendedConsent(ctx context.Context) bool {
-	return !interactiveTerminal() && leftCoreLazyInstallsAllowed(ctx)
-}
-
-func homeConsent(h string) bool {
-	return unattendedConsent(home.WithOverride(context.Background(), h))
-}
-
-// Toolset list a saved platform_toolsets value encodes, a list literal string parsed into names
-func parsePlatformToolsetsValue(value any) ([]any, bool) {
-	switch v := value.(type) {
-	case []any:
-		return v, true
-	case string:
-		if !strings.HasPrefix(pystr.Strip(v), "[") {
-			return nil, false
-		}
-		items, ok, err := pyast.LiteralStrList(v)
-		if err != nil {
-			panic(err)
-		}
-		if !ok {
-			return nil, false
-		}
-		out := make([]any, len(items))
-		for i, item := range items {
-			out[i] = item
-		}
-		return out, true
-	}
-	return nil, false
-}
-
-// Config string list from a list, a list literal string or one scalar name
-func parseConfigStringList(value any) []string {
-	switch v := value.(type) {
-	case string:
-		if strings.HasPrefix(pystr.Strip(v), "[") {
-			items, ok, err := pyast.LiteralStrList(v)
-			if err != nil {
-				panic(err)
-			}
-			if ok {
-				return items
-			}
-		}
-		return []string{v}
-	case []any:
-		return pyStrList(v)
-	case []string:
-		return append([]string(nil), v...)
-	}
-	return nil
 }
 
 // Python repr of a decoded config value

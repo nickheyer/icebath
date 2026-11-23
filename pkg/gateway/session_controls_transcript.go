@@ -69,3 +69,17 @@ func resumeTranscript(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	}
 	return pyjson.ObjectOf("messages", []any{}, "messages_omitted", true, "message_count", int64(read.count), "todo_state", read.todo), nil
 }
+
+// Display rows with the reasoning of every reply left out, for a session that does not show it
+func withoutReasoning(rows []any) {
+	for _, row := range rows {
+		if m, isRow := row.(map[string]any); isRow {
+			for _, key := range historyReasoningKeys {
+				delete(m, key)
+			}
+		}
+	}
+}
+
+// Reply fields of a display row that carry the model's reasoning
+var historyReasoningKeys = []string{"reasoning", "reasoning_content", "reasoning_details", "codex_reasoning_items"}

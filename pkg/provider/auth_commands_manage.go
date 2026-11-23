@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
 )
 
 // icebath auth list, every pooled provider or the one named, free tier rows rendered as the upgrade hint
@@ -200,11 +199,6 @@ func (c *authCLI) refresh() error {
 	return nil
 }
 
-// icebath auth status|logout <provider> after that provider left core for its plugin's own command
-func (c *authCLI) movedAuthHint(action, provider string) string {
-	return MovedCommandHint(c.ctx, "icebath auth", provider, action)
-}
-
 // icebath auth status, the provider's login state with its account fields
 func (c *authCLI) status() error {
 	provider := c.normalizeProvider(authTextOr(c.ns["provider"]))
@@ -213,9 +207,6 @@ func (c *authCLI) status() error {
 	}
 	if owned, err := dispatchPluginAuth("status", c.pluginArgs(), provider); err != nil || owned {
 		return err
-	}
-	if moved := c.movedAuthHint("status", provider); moved != "" {
-		return authExit(moved)
 	}
 	if SingleUseRefreshPoolProviders[provider] {
 		LoadPool(c.env, provider)
@@ -248,9 +239,6 @@ func (c *authCLI) logout() error {
 	normalized := c.normalizeProvider(raw)
 	if owned, err := dispatchPluginAuth("logout", c.pluginArgs(), normalized); err != nil || owned {
 		return err
-	}
-	if moved := c.movedAuthHint("logout", normalized); moved != "" {
-		return authExit(moved)
 	}
 	return LogoutLogin(c.env, raw, nsFlag(c.ns, "all"), c.out)
 }
@@ -384,4 +372,3 @@ var authStrategyDescriptions = map[string]string{
 	StrategyRoundRobin: "Cycle through keys evenly",
 	StrategyLeastUsed:  "Always pick the least-used key",
 	StrategyRandom:     "Random selection"}
-

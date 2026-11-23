@@ -129,36 +129,11 @@ func ResolveCodexCredentialAndBase(ctx context.Context) (string, string, error) 
 
 // Registry rows and the auth.json Codex token reader, swapped by tests
 var (
-	auxRegistryRowsFn            = canonicalRegistryRows
-	auxReadCodexSingletonTokenFn = auxReadCodexSingletonToken
+	auxRegistryRowsFn = canonicalRegistryRows
 )
 
 // Wall clock seam of the Codex expiry check
 var auxCodexNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-
-// Profile auth.json Codex access token with expired JWTs skipped, empty when unusable
-func auxReadCodexSingletonToken(ctx context.Context) string {
-	var data codexTokenData
-	if err := auxRecoverRaise(func() {
-		var readErr error
-		data, readErr = readCodexTokens(modelsPoolEnv(ctx), true)
-		if readErr != nil {
-			panic(readErr)
-		}
-	}); err != nil {
-		pkgLog().Debug(fmt.Sprintf("Could not read Codex auth for auxiliary client: %v", err))
-		return ""
-	}
-	accessToken, ok := data.tokens["access_token"].(string)
-	if !ok || strings.TrimSpace(accessToken) == "" {
-		return ""
-	}
-	if exp, ok := auxJWTExp(accessToken); ok && exp != 0 && auxCodexNow() > exp {
-		pkgLog().Debug(fmt.Sprintf("Codex access token expired (exp=%s), skipping", pyrepr.Float(exp)))
-		return ""
-	}
-	return strings.TrimSpace(accessToken)
-}
 
 // Numeric exp claim of a JWT payload, false for a non JWT token or a non numeric claim
 func auxJWTExp(token string) (float64, bool) {

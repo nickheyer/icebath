@@ -11,19 +11,14 @@ import (
 	"sync"
 )
 
-// Version of the wire contract, raised when a declared type changes so that a peer of an older contract misreads it
-const ContractVersion = 1
-
 // Go build ID of the running executable, empty when the executable cannot be read
 var BuildID = sync.OnceValue(readBuildID)
 
 // Read at start so a binary replaced on disk later never changes the answer
 func init() { go BuildID() }
 
-// Whether a peer that reported this build and contract version runs the same build as this process
-func SameBuild(build string, contract int64) bool {
-	return build == BuildID() && contract == ContractVersion
-}
+// Whether a peer that reported this build runs the same build as this process; the window and its background service are always one build
+func SameBuild(build string) bool { return build == BuildID() }
 
 const (
 	buildIDScan     = 32 << 10

@@ -98,7 +98,7 @@ var providerFailureAction = func() map[string]string {
 			"`icebath cron run {job_id}` to retry.",
 		"model_not_found": "Pick another model with `icebath cron edit {job_id} --model <name>`.",
 		"upstream_blocked": "A firewall in front of the provider blocked the request (not your key): set a User-Agent " +
-			"via `extra_headers` on the provider's custom_providers entry, or pin another provider with " +
+			"via `extra_headers` on the provider's entry under providers, or pin another provider with " +
 			"`icebath cron edit {job_id} --provider <name>`.",
 		"context_overflow": "Shorten the job's prompt with `icebath cron edit {job_id} --prompt <text>`.",
 	}

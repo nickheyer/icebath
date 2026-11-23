@@ -38,7 +38,6 @@ var loadToolsetRequirements = func(ctx context.Context, env *tools.Env) map[stri
 
 // Session tool surface with the disabled toolsets pinned, kanban guidance and the startup tool banner
 func loadTools(ctx context.Context, a *AIAgent, enabled, disabled []string) {
-	provider.RecoverLeftCoreAtStartup(ctx, nil, false)
 	func() {
 		defer func() {
 			if r := recover(); r != nil {

@@ -2,7 +2,6 @@ package tuiserver
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -70,82 +69,4 @@ func (c *fanoutPipeClient) receive(t *testing.T) map[string]any {
 func (c *fanoutPipeClient) empty() bool {
 	time.Sleep(50 * time.Millisecond)
 	return len(c.frames) == 0
-}
-
-func TestMembershipPreservesTerminalDeliveryAndRevokesDepartedPeers(t *testing.T) {
-	for _, attachment := range []string{"direct", "flattened"} {
-		t.Run(attachment, func(t *testing.T) {
-			t.Setenv("ICEBATH_HOME", t.TempDir())
-			ctx := context.Background()
-			a, b, stranger := newFanoutPipeClient(t), newFanoutPipeClient(t), newFanoutPipeClient(t)
-			session := tuihost.NewSession(map[string]any{"transport": a, "agent": nil, "session_key": "fanout-invariant", "history": []any{},
-				"history_lock": &sync.Mutex{}, "history_version": int64(0), "running": false, "attached_images": []any{}})
-			swapSessions(t, map[string]*tuihost.Session{"fanout-invariant": session})
-			var newcomer tuihost.Transport = b
-			if attachment == "flattened" {
-				newcomer = tuihost.NewFanoutTransport(a, b)
-			}
-			if !tuihost.AttachSessionTransport(session, newcomer) || !tuihost.AttachSessionTransport(session, b) {
-				t.Fatal("attach refused")
-			}
-			for _, kind := range []string{"message.delta", "reasoning.delta", "message.complete"} {
-				tuihost.Emit(ctx, kind, "fanout-invariant", map[string]any{"text": "α"})
-				first, second := a.receive(t), b.receive(t)
-				params, _ := first["params"].(map[string]any)
-				if !pyjson.Equal(first, second) || params["type"] != kind {
-					t.Fatalf("%s first %v second %v", kind, first, second)
-				}
-			}
-			for _, c := range []struct {
-				client  *fanoutPipeClient
-				allowed bool
-			}{{a, true}, {b, true}, {stranger, false}} {
-				authority, _ := currentSessionSteerAuthority(tuihost.BindTransport(ctx, c.client), "fanout-invariant")
-				if (authority == tuihost.Transport(c.client)) != c.allowed {
-					t.Fatalf("steer authority %v for %p", authority, c.client)
-				}
-			}
-			if !tuihost.WriteJSON(tuihost.BindTransport(ctx, a), pyjson.ObjectOf("jsonrpc", "2.0", "id", "private", "result", "owner only")) {
-				t.Fatal("reply write failed")
-			}
-			if reply := a.receive(t); reply["id"] != "private" || !b.empty() {
-				t.Fatalf("reply %v leaked to the subscriber set", reply)
-			}
-			session.Set("viewers", map[tuihost.Transport]float64{b: 0, stranger: 0})
-			if !tuihost.DetachSessionTransport(session, b) {
-				t.Fatal("detach refused")
-			}
-			if viewers, _ := session.Get("viewers").(map[tuihost.Transport]float64); len(viewers) != 0 || tuihost.SessionTransportContains(session, b) {
-				t.Fatalf("viewers %v contains %v", viewers, tuihost.SessionTransportContains(session, b))
-			}
-			tuihost.Emit(ctx, "message.complete", "fanout-invariant", map[string]any{"text": "only A"})
-			payload, _ := a.receive(t)["params"].(map[string]any)["payload"].(map[string]any)
-			if payload["text"] != "only A" || !b.empty() {
-				t.Fatalf("payload %v", payload)
-			}
-			if !tuihost.AttachSessionTransport(session, b) {
-				t.Fatal("reattach refused")
-			}
-			tuihost.Emit(ctx, "message.complete", "fanout-invariant", map[string]any{"text": "reattached"})
-			if first, second := a.receive(t), b.receive(t); !pyjson.Equal(first, second) {
-				t.Fatalf("first %v second %v", first, second)
-			}
-			b.Close()
-			if tuihost.AttachSessionTransport(session, b) || tuihost.SessionTransportContains(session, b) {
-				t.Fatal("a dead peer regained authority")
-			}
-			if tuihost.AttachSessionTransport(session, tuihost.ModuleStdioTransport()) {
-				t.Fatal("stdio joined a websocket session")
-			}
-			if reaped, detached := closeSessionsForTransport(ctx, b, "ws_disconnect"); reaped != 0 || detached != 0 {
-				t.Fatalf("b counts %d %d", reaped, detached)
-			}
-			if reaped, detached := closeSessionsForTransport(ctx, a, "ws_disconnect"); reaped != 0 || detached != 1 {
-				t.Fatalf("a counts %d %d", reaped, detached)
-			}
-			if session.Get("transport") != tuihost.DetachedWSTransport() {
-				t.Fatalf("transport %v", session.Get("transport"))
-			}
-		})
-	}
 }

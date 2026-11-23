@@ -85,7 +85,7 @@ func ListCustomPoolProviders(store *Store) []string {
 	return keys
 }
 
-// The custom_providers config entry matching a custom prefixed pool key
+// The providers entry matching a custom prefixed pool key
 func getCustomProviderConfig(poolKey string, cfg map[string]any) map[string]any {
 	if !strings.HasPrefix(poolKey, CustomPoolPrefix) {
 		return nil

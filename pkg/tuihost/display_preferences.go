@@ -28,22 +28,3 @@ func NormalizeToolProgressMode(mode any, def string) string {
 var focusStatusWords = map[string]bool{"status": true, "show": true, "?": true}
 var focusOnWords = map[string]bool{"on": true, "enable": true, "enabled": true, "true": true, "yes": true, "1": true}
 var focusOffWords = map[string]bool{"off": true, "disable": true, "disabled": true, "false": true, "no": true, "0": true}
-
-// Focus argument mapped to set, status or usage and the requested enabled state for set
-func ResolveFocusArg(arg string, current bool) (string, *bool) {
-	text := pystr.Lower(pystr.Strip(arg))
-	switch {
-	case text == "" || text == "toggle":
-		target := !current
-		return "set", &target
-	case focusStatusWords[text]:
-		return "status", nil
-	case focusOnWords[text]:
-		on := true
-		return "set", &on
-	case focusOffWords[text]:
-		off := false
-		return "set", &off
-	}
-	return "usage", nil
-}

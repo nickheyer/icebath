@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -72,42 +70,5 @@ func TestTUINonCustomAdapterKeepsAdapterIdentity(t *testing.T) {
 	a := identityAgent(t, "beta-model", "anthropic", "custom:beta", sharedRelayURL)
 	if got := runtimeModelConfig(context.Background(), a, nil)["provider"]; got != "anthropic" {
 		t.Fatalf("provider %v", got)
-	}
-}
-
-func TestTUIRuntimeConfigDoesNotPairAnEditedEntryKeyWithTheOldEndpoint(t *testing.T) {
-	const oldURL, newURL = "https://old.example/v1", "https://new.example/v1"
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	ctx := context.Background()
-	cfg := map[string]any{
-		"model": map[string]any{"default": "m", "provider": "custom:alpha"},
-		"custom_providers": []any{
-			map[string]any{"name": "alpha", "base_url": oldURL, "api_key": "sk-old", "model": "m"},
-			map[string]any{"name": "old-owner", "base_url": oldURL, "api_key": "sk-old", "model": "m"},
-		},
-	}
-	writeIdentityConfig(t, h, cfg)
-	rt, err := provider.ResolveRuntimeProvider(ctx, h, "custom:alpha", "m", "", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	a := identityAgent(t, "m", rt.Provider, rt.RequestedProvider, rt.BaseURL)
-	entry := cfg["custom_providers"].([]any)[0].(map[string]any)
-	entry["base_url"], entry["api_key"] = newURL, "sk-new"
-	writeIdentityConfig(t, h, cfg)
-	modelConfig, err := json.Marshal(runtimeModelConfig(ctx, a, nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	row := pyjson.ObjectOf("model", "m", "model_config", string(modelConfig))
-	overrides := storedSessionRuntimeOverrides(ctx, row)
-	providerOverride, _ := overrides["provider_override"].(string)
-	_, restored, _, err := resolveAgentModelRuntime(ctx, overrides["model_override"], providerOverride)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if restored.BaseURL != oldURL || restored.APIKey != "sk-old" {
-		t.Fatalf("resumed route %s %s", restored.BaseURL, restored.APIKey)
 	}
 }

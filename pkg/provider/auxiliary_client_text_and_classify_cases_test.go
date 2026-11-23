@@ -11,12 +11,6 @@ import (
 func TestGetTextAuxiliaryClientCodexPoolEntryTakesPriorityOverAuthStore(t *testing.T) {
 	ctx := auxMainTestHome(t, "")
 	auxFixedPoolEntry(t, true, &PooledCredential{Provider: "openai-codex", AccessToken: "pooled-codex-token", BaseURL: "https://chatgpt.com/backend-api/codex"})
-	prev := auxReadCodexSingletonTokenFn
-	auxReadCodexSingletonTokenFn = func(context.Context) string {
-		t.Fatal("legacy codex store should not run")
-		return ""
-	}
-	t.Cleanup(func() { auxReadCodexSingletonTokenFn = prev })
 	client, model, err := auxBuildCodexClient(ctx, "gpt-5.4")
 	if err != nil || model != "gpt-5.4" {
 		t.Fatalf("got %q %v", model, err)

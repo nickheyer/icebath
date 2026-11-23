@@ -2,11 +2,12 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/config/remote"

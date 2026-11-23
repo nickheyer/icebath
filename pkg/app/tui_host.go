@@ -191,7 +191,7 @@ func ownerIdle(h string, endpoint *gateway.GatewayEndpoint) bool {
 // Owner of another build or contract replaced by one of this build while idle and alone, with the build it replaced
 func replaceOtherBuildOwner(ctx context.Context, h string, receipt gateway.ObservedEndpoint) (gateway.ObservedEndpoint, string, error) {
 	other := receipt.Endpoint
-	if tuigateway.SameBuild(other.BuildID, other.ContractVersion) {
+	if tuigateway.SameBuild(other.BuildID) {
 		return receipt, "", nil
 	}
 	if _, reproduced := reproducedBuilds.Load(other.BuildID); reproduced || !ownerIdle(h, other) {
@@ -202,7 +202,7 @@ func replaceOtherBuildOwner(ctx context.Context, h string, receipt gateway.Obser
 	if err != nil || !gateway.Attachable(fresh) {
 		return fresh, "", err
 	}
-	if refusal != "" || !tuigateway.SameBuild(fresh.Endpoint.BuildID, fresh.Endpoint.ContractVersion) {
+	if refusal != "" || !tuigateway.SameBuild(fresh.Endpoint.BuildID) {
 		reproducedBuilds.Store(fresh.Endpoint.BuildID, true)
 		return fresh, "", nil
 	}

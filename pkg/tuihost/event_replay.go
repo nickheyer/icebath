@@ -246,19 +246,3 @@ func LatestSeq(sid string) int {
 	defer replay.Unlock()
 	return replay.nextSeq[sid]
 }
-
-// Clears every ring, counter and released key
-func ResetReplayState() {
-	replay.Lock()
-	defer replay.Unlock()
-	replay.order.Init()
-	clear(replay.buffers)
-	clear(replay.bufferBytes)
-	clear(replay.evictedThrough)
-	clear(replay.nextSeq)
-	clear(replay.forgotten)
-	replay.releasedMu.Lock()
-	replay.released = nil
-	replay.releasedMu.Unlock()
-	replay.totalBytes = 0
-}

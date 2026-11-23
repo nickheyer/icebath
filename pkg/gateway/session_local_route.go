@@ -26,7 +26,7 @@ func resolveLaunchRoute(ctx context.Context, params, cfg map[string]any) (map[st
 		current = pyStrOf(modelCfg["provider"])
 	}
 	userProviders, _ := cfg["providers"].(map[string]any)
-	customProviders, _ := cfg["custom_providers"].([]any)
+	customProviders := provider.ProviderEntryList(cfg)
 	route, err := provider.ResolveStartupModelRoute(ctx, model, provider.StartupRouteOptions{
 		ExplicitProvider: explicit, CurrentProvider: strings.ToLower(strings.TrimSpace(current)),
 		UserProviders: userProviders, CustomProviders: customProviders, AliasConfig: cfg})

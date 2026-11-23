@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/config/roundtrip"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Writes config text on a new inode and drops every config cache
@@ -114,12 +113,6 @@ func TestP6NullSectionSurvivesTheCLIAndTUIWriters(t *testing.T) {
 						t.Fatalf("[%s] cli_set: %v", ctxName, err)
 					}
 				}, []string{"terminal", "timeout"}},
-				{"tui_rpc", func(t *testing.T) {
-					res := tuiserver.Method("config.set")(ctx, 1, map[string]any{"key": "skin", "value": "taro"})
-					if _, ok := res["result"]; !ok {
-						t.Fatalf("[%s] tui config.set: %v", ctxName, res)
-					}
-				}, []string{"display", "skin"}},
 			}
 			for _, w := range writers {
 				writeNullSectionConfig(t, cfg, text)

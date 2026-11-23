@@ -9,7 +9,7 @@ import (
 )
 
 // Model block keys bound to one endpoint, never carried from another profile's block
-var inheritBoundKeys = []string{"api_key", "api", "key_env", "api_key_env", "context_length"}
+var inheritBoundKeys = []string{"api_key", "key_env", "context_length"}
 
 // ModelAssignmentRejected is a main model pick the model switch refused, its message saying why
 type ModelAssignmentRejected struct{ Msg string }

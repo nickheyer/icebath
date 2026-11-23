@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // Followup a failed configured feature dependency install is owed under
@@ -21,13 +20,11 @@ const featureDependenciesFollowup = "feature_dependencies"
 
 // Feature dependency install and home migrations both update tails run, replaced by tests
 var featureRefreshSteps = struct {
-	featureDeps     func(ctx context.Context, projectRoot string) error
-	memoryMigrate   func(ctx context.Context, say func(string)) ([]string, error)
-	leftCoreMigrate func(ctx context.Context, say func(string)) ([]string, error)
+	featureDeps   func(ctx context.Context, projectRoot string) error
+	memoryMigrate func(ctx context.Context, say func(string)) ([]string, error)
 }{
-	featureDeps:     pm.InstallConfiguredFeaturesMissingDeps,
-	memoryMigrate:   memory.MigrateAllMemoryHomes,
-	leftCoreMigrate: provider.MigrateAllLeftCoreHomes,
+	featureDeps:   pm.InstallConfiguredFeaturesMissingDeps,
+	memoryMigrate: memory.MigrateAllMemoryHomes,
 }
 
 // Installs missing configured feature dependencies and memory provider plugins then migrates plugins that left core, only the install failing
@@ -47,12 +44,6 @@ func refreshConfiguredFeatures(ctx context.Context, projectRoot string, out io.W
 			return err
 		}
 		fmt.Fprintf(out, "  ⚠ Memory provider migration skipped: %v\n", err)
-	}
-	if _, err := featureRefreshSteps.leftCoreMigrate(ctx, say); err != nil {
-		if isInterrupt(err) {
-			return err
-		}
-		fmt.Fprintf(out, "  ⚠ Plugin migration skipped: %v\n", err)
 	}
 	return failure
 }

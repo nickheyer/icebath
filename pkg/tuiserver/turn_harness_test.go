@@ -2,14 +2,11 @@ package tuiserver
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
@@ -21,42 +18,6 @@ type turnHarness struct {
 	session  *tuihost.Session
 	recorder *frameRecorder
 	home     string
-}
-
-// Session of a real agent on the scripted provider registered through initSession, in place of the fake agent
-func newTurnHarness(t *testing.T, script []any, extraConfig string) *turnHarness {
-	t.Helper()
-	srv, err := fakellm.New(script, fakellm.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(srv.Stop)
-	h := sessionCaseScope(t)
-	t.Setenv("ICEBATH_ISO_CERTIFY_SYNTH_TURN", "")
-	if err := fakellm.WriteHome(h, srv.BaseURL(), "", extraConfig); err != nil {
-		t.Fatal(err)
-	}
-	db, err := state.NewSessionDB(context.Background(), filepath.Join(h, "state.db"), false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	useSharedDB(t, db)
-	recorder := &frameRecorder{}
-	ctx := tuihost.BindTransport(context.Background(), recorder)
-	hz := &turnHarness{srv: srv, ctx: ctx, sid: "sid", key: "session-key", recorder: recorder, home: h}
-	opts := agent.AIAgentOptions{Model: fakellm.ModelID, Provider: "custom", BaseURL: srv.BaseURL(), APIKey: "sk-fake-e2e",
-		APIMode: "chat_completions", SessionID: hz.key, Platform: "tui", QuietMode: true, SkipContextFiles: true, SkipMemory: true,
-		MaxIterations: new(10), SessionDB: db, EnabledToolsets: []string{"todo"}}
-	agentCbs(ctx, hz.sid).applyTo(&opts)
-	built, err := agent.NewAIAgent(ctx, opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	initSession(ctx, hz.sid, hz.key, built, []any{}, 80, h, nil, "", "", false)
-	hz.session = tuihost.SessionRecord(hz.sid)
-	t.Cleanup(func() { closeSessionByID(context.Background(), hz.sid, "test_cleanup", nil) })
-	return hz
 }
 
 // Submits one prompt and waits until its turn completed and the session settled

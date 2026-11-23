@@ -130,7 +130,7 @@ func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved ma
 // Fields that together pick where an auxiliary call goes and travel as one unit
 var auxRouteKeys = map[string]bool{
 	"provider": true, "model": true, "base_url": true, "api_key": true, "api_mode": true, "key_env": true,
-	"api_key_env": true, "reasoning_effort": true,
+	"reasoning_effort": true,
 }
 
 // Exported auxiliary route fields that travel as one unit

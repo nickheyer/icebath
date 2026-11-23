@@ -55,13 +55,11 @@ type OpenSessionCLI struct {
 type GatewaySessionStore struct {
 	Connection *GatewayConnection
 	// Destination of the config warning a create prints
-	Stderr           io.Writer
-	mu               sync.Mutex
-	snapshots        map[string]*pyjson.Object
-	current          *pyjson.Object
-	reader           *SurfaceLabelReader
-	createParameters []any
-	described        bool
+	Stderr    io.Writer
+	mu        sync.Mutex
+	snapshots map[string]*pyjson.Object
+	current   *pyjson.Object
+	reader    *SurfaceLabelReader
 }
 
 // Store over a connection, the process wide one when connection is nil
@@ -249,29 +247,9 @@ func terminalIsLocal() bool {
 	return backend == "" || backend == "local"
 }
 
-// client_env of this shell when the gateway takes it, the create contract described once per store
+// client_env of this shell, the environment a session created from here starts with
 func (s *GatewaySessionStore) ClientEnv(ctx context.Context) (map[string]any, error) {
-	s.mu.Lock()
-	described, parameters := s.described, s.createParameters
-	s.mu.Unlock()
-	if !described {
-		result, err := s.Call(ctx, "runtime.describe", map[string]any{})
-		if err != nil {
-			return nil, err
-		}
-		parameters = []any{}
-		if runtime, ok := pyjson.AsObject(result); ok {
-			if contract, ok := pyjson.AsObject(runtime.Vals["session_create"]); ok {
-				if list, ok := contract.Vals["parameters"].([]any); ok {
-					parameters = append(parameters, list...)
-				}
-			}
-		}
-		s.mu.Lock()
-		s.described, s.createParameters = true, parameters
-		s.mu.Unlock()
-	}
-	return ClientEnvPolicy(ctx, parameters)
+	return ClientEnvPolicy(ctx)
 }
 
 // Required snapshot member, a KeyError when the owner left it out

@@ -34,7 +34,7 @@ var (
 		"skills": true, "checkpoints": true, "accept_hooks": true, "pass_session_id": true, "follow_profile_config": true,
 		"service_tier": true, "cwd_explicit": true, "run_budget": true, "verbose": true, "row_cwd": true, "client_env": true}
 	// Sections a profile following session re-reads from the owning profile each turn
-	FollowSections = []string{"model", "providers", "custom_providers", "fallback_providers", "fallback_model", "model_aliases",
+	FollowSections = []string{"model", "providers", "fallback_providers",
 		"platform_toolsets"}
 	// Agent keys a profile following session re-reads each turn
 	FollowAgentKeys = []string{"reasoning_effort", "reasoning_overrides", "service_tier", "disabled_toolsets", "coding_context"}

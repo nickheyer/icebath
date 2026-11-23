@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,76 +100,6 @@ func codexRuntimeResult(env PoolEnv, apiKey, source string, lastRefresh any, bas
 	}
 }
 
-// Loads the auth store, taking the cross process lock unless the caller already holds it
-func loadAuthStoreMaybeLocked(env PoolEnv, lock bool) (AuthData, error) {
-	if lock {
-		unlock, err := env.Store.Lock(AuthLockTimeout)
-		if err != nil {
-			return nil, err
-		}
-		defer unlock()
-	}
-	return env.Store.Load()
-}
-
-// codexTokenData is the stored Codex token pair and its last refresh stamp
-type codexTokenData struct {
-	tokens      map[string]any
-	lastRefresh any
-}
-
-// Reads the Codex OAuth tokens from the Icebath auth store
-func readCodexTokens(env PoolEnv, lock bool) (codexTokenData, error) {
-	data, err := loadAuthStoreMaybeLocked(env, lock)
-	if err != nil {
-		return codexTokenData{}, err
-	}
-	state := env.Store.ProviderState(data, "openai-codex")
-	if len(state) == 0 || anyString(state["moved_to_login"]) != "" {
-		return codexTokenData{}, codexErr(fmt.Sprintf(codexNoCredentialsMsg, codexReloginCommand(env)), "codex_auth_missing", true)
-	}
-	tokens, ok := state["tokens"].(map[string]any)
-	if !ok {
-		return codexTokenData{}, codexErr(fmt.Sprintf("Codex auth state is missing tokens. Run `%s` to re-authenticate.", codexReloginCommand(env)), "codex_auth_invalid_shape", true)
-	}
-	if stripped(tokens["access_token"]) == "" {
-		return codexTokenData{}, codexErr(fmt.Sprintf(codexMissingAccessTokenMsg, codexReloginCommand(env)), "codex_auth_missing_access_token", true)
-	}
-	if stripped(tokens["refresh_token"]) == "" {
-		return codexTokenData{}, codexErr(fmt.Sprintf(codexMissingRefreshTokenMsg, codexReloginCommand(env)), "codex_auth_missing_refresh_token", true)
-	}
-	return codexTokenData{tokens: tokens, lastRefresh: state["last_refresh"]}, nil
-}
-
-// Mirrors a fresh Codex re-auth into the device_code pool row and legacy singleton aliases only
-func syncCodexPoolEntries(data AuthData, tokens map[string]any, lastRefresh string, previousSingletonTokens map[string]any) {
-	accessToken := anyString(tokens["access_token"])
-	if accessToken == "" {
-		return
-	}
-	refreshToken := anyString(tokens["refresh_token"])
-	entries := codexPoolEntriesIn(data)
-	if entries == nil {
-		return
-	}
-	prevAT := anyString(previousSingletonTokens["access_token"])
-	for _, entry := range entries {
-		source := anyString(entry["source"])
-		isAlias := source == SourceManualDeviceCode && prevAT != "" && anyString(entry["access_token"]) == prevAT
-		if !(source == "device_code" || isAlias) {
-			continue
-		}
-		entry["access_token"] = accessToken
-		if refreshToken != "" {
-			entry["refresh_token"] = refreshToken
-		}
-		if lastRefresh != "" {
-			entry["last_refresh"] = lastRefresh
-		}
-		clearPoolEntryStatus(entry)
-	}
-}
-
 // The live Codex pool row maps of a store, nil when the store holds no list for the provider
 func codexPoolEntriesIn(data AuthData) []map[string]any {
 	pool, _ := data["credential_pool"].(map[string]any)
@@ -182,86 +111,6 @@ func codexPoolEntriesIn(data AuthData) []map[string]any {
 		return nil
 	}
 	return poolEntries(list)
-}
-
-// Saves Codex OAuth tokens to the store the grant was resolved from, root for a borrowed refresh
-func saveCodexTokens(env PoolEnv, tokens map[string]any, lastRefresh, label string, setActive, writeThrough bool) error {
-	if lastRefresh == "" {
-		lastRefresh = utcNowZ()
-	}
-	return env.Store.ProviderTransaction("openai-codex", AuthLockTimeout, func(tx *ProviderTxn) error {
-		state := map[string]any{}
-		for k, v := range tx.State {
-			state[k] = v
-		}
-		previousSingletonTokens, _ := state["tokens"].(map[string]any)
-		state["tokens"] = tokens
-		state["last_refresh"] = lastRefresh
-		state["auth_mode"] = "chatgpt"
-		if strings.TrimSpace(label) != "" {
-			state["label"] = strings.TrimSpace(label)
-		}
-		targetData, targetPath := tx.Data, env.Store.Path()
-		if writeThrough && tx.SourcePath != "" && !samePath(tx.SourcePath, env.Store.Path()) {
-			rootData, err := env.Store.LoadFile(tx.SourcePath)
-			if err != nil {
-				return err
-			}
-			targetData, targetPath, setActive = rootData, tx.SourcePath, false
-		}
-		if err := env.Store.StoreProviderState(targetData, "openai-codex", state, setActive); err != nil {
-			return err
-		}
-		syncCodexPoolEntries(targetData, tokens, lastRefresh, previousSingletonTokens)
-		return env.Store.SaveTo(targetData, targetPath)
-	})
-}
-
-// Adopts a valid Codex CLI token pair into the credential the caller observed, nil when nothing applies
-func recoverCodexTokensFromCLI(env PoolEnv, reason, observedAccessToken string) map[string]any {
-	if !AdoptExternalLoginsEnabled(env) {
-		return nil
-	}
-	imported := importCodexCLITokensFn(env)
-	if imported == nil || stripped(imported["access_token"]) == "" || stripped(imported["refresh_token"]) == "" {
-		return nil
-	}
-	observed := stripped(observedAccessToken)
-	adopted := false
-	err := env.Store.ProviderTransaction("openai-codex", AuthLockTimeout, func(tx *ProviderTxn) error {
-		stored, _ := tx.State["tokens"].(map[string]any)
-		if stripped(stored["access_token"]) != observed {
-			env.log().Info(fmt.Sprintf("Codex CLI recovery skipped (%s): the credential was re-authenticated meanwhile.", reason))
-			return nil
-		}
-		knownAcc, knownSub, known := codexPrincipalIdentity(observed)
-		if known {
-			impAcc, impSub, impOK := codexPrincipalIdentity(anyString(imported["access_token"]))
-			if impOK && (impAcc != knownAcc || impSub != knownSub) {
-				env.log().Warn(fmt.Sprintf("Codex CLI recovery refused (%s): the Codex CLI login belongs to a different ChatGPT "+
-					"workspace than the Icebath credential. Run `%s` to re-authenticate it.", reason, codexReloginCommand(env)))
-				return nil
-			}
-		}
-		env.log().Info(fmt.Sprintf("Codex auth recovered from Codex CLI auth.json (%s).", reason))
-		if err := saveCodexTokens(env, imported, "", "", true, false); err != nil {
-			return err
-		}
-		adopted = true
-		return nil
-	})
-	if err != nil {
-		env.log().Debug(fmt.Sprintf("Codex CLI recovery failed (%s): %v", reason, err))
-		return nil
-	}
-	if !adopted {
-		return nil
-	}
-	out := map[string]any{}
-	for k, v := range imported {
-		out[k] = v
-	}
-	return out
 }
 
 // oauthRefreshParse names the historical wording for each way a token refresh body can be wrong
@@ -382,9 +231,6 @@ var codexOAuthTokenURL = CodexOAuthTokenURL
 
 // Pure refresh the locked refresh and the pre probe refresh go through, swappable so tests script the endpoint
 var codexRefreshPureFn = refreshCodexOAuthPure
-
-// Codex CLI token import the recovery paths go through, swappable so tests script the CLI file
-var importCodexCLITokensFn = importCodexCLITokens
 
 // Live quota probe the persisted entry path goes through, swappable so tests script the usage endpoint
 var probeCodexQuotaRestoredFn = probeCodexQuotaRestored
@@ -537,92 +383,6 @@ func refreshCodexOAuthPure(ctx context.Context, accessToken, refreshToken string
 		updated["refresh_token"] = strings.TrimSpace(next)
 	}
 	return updated, nil
-}
-
-// Refreshes the Codex access token inside the source store's transaction, adopting a peer's rotation
-func refreshCodexAuthTokens(env PoolEnv, tokens map[string]any, timeout time.Duration) (map[string]any, error) {
-	lockTimeout := timeout + 5*time.Second
-	if lockTimeout < AuthLockTimeout {
-		lockTimeout = AuthLockTimeout
-	}
-	var result map[string]any
-	err := env.Store.ProviderTransaction("openai-codex", lockTimeout, func(tx *ProviderTxn) error {
-		stored, _ := tx.State["tokens"].(map[string]any)
-		storedAT, storedRT := stripped(stored["access_token"]), stripped(stored["refresh_token"])
-		if storedAT != "" && storedRT != "" && storedRT != stripped(tokens["refresh_token"]) {
-			env.log().Info("Codex refresh token already rotated by a peer — adopting the stored pair.")
-			result = mergeTokens(tokens, map[string]any{"access_token": storedAT, "refresh_token": storedRT})
-			return nil
-		}
-		refreshed, err := codexRefreshPureFn(env.ctx(), anyString(tokens["access_token"]), anyString(tokens["refresh_token"]), timeout)
-		if err != nil {
-			var authErr *AuthError
-			if !errors.As(err, &authErr) || !authErr.ReloginRequired {
-				return err
-			}
-			code := authErr.Code
-			if code == "" {
-				code = "auth_error"
-			}
-			imported := recoverCodexTokensFromCLI(env, "refresh_token rejected: "+code, storedAT)
-			if imported == nil {
-				return err
-			}
-			result = imported
-			return nil
-		}
-		updatedTokens := mergeTokens(tokens, map[string]any{"access_token": refreshed["access_token"], "refresh_token": refreshed["refresh_token"]})
-		if err := saveCodexTokens(env, updatedTokens, "", "", true, true); err != nil {
-			return err
-		}
-		result = updatedTokens
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func mergeTokens(base, overrides map[string]any) map[string]any {
-	out := map[string]any{}
-	for k, v := range base {
-		out[k] = v
-	}
-	for k, v := range overrides {
-		out[k] = v
-	}
-	return out
-}
-
-// Reads the Codex CLI auth.json tokens when valid and unexpired, never writing
-func importCodexCLITokens(env PoolEnv) map[string]any {
-	authPath := filepath.Join(codexHomeDir(), "auth.json")
-	info, err := os.Stat(authPath)
-	if err != nil || info.IsDir() {
-		return nil
-	}
-	raw, err := os.ReadFile(authPath)
-	if err != nil {
-		return nil
-	}
-	var doc map[string]any
-	if err := json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &doc); err != nil {
-		return nil
-	}
-	tokens, ok := doc["tokens"].(map[string]any)
-	if !ok || anyString(tokens["access_token"]) == "" || anyString(tokens["refresh_token"]) == "" {
-		return nil
-	}
-	if codexAccessTokenIsExpiring(anyString(tokens["access_token"]), 0) {
-		env.log().Debug(fmt.Sprintf("Codex CLI tokens at %s are expired — skipping import.", authPath))
-		return nil
-	}
-	out := map[string]any{}
-	for k, v := range tokens {
-		out[k] = v
-	}
-	return out
 }
 
 // CodexResolveOptions tune the Codex runtime credential resolution

@@ -2,9 +2,10 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var kimiThinkingEnabled = map[string]any{"thinking": map[string]any{"type": "enabled"}}

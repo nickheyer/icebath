@@ -202,25 +202,3 @@ func publishSessionControlSnapshot(ctx context.Context, sid string, session *tui
 		pkgLog().Debug("session.control.update publish failed for "+sid, "error", errorMessage(failure))
 	}
 }
-
-// Current stable control snapshot of a live session
-func sessionControlRead(ctx context.Context, rid any, params map[string]any) map[string]any {
-	session, errResp := sessNowait(ctx, params, rid)
-	if errResp != nil {
-		return errResp
-	}
-	sessionKey := strOr(session.Get("session_key"))
-	if sessionKey == "" {
-		return rpcErr(rid, 4001, "session has no stored key", nil)
-	}
-	var control map[string]any
-	if failure := catchPanic(func() {
-		var err error
-		control, err = snapshotControlFn(ctx, sessionKey)
-		panicIf(err)
-	}); failure != nil {
-		pkgLog().Debug("session.control.read failed: " + errorMessage(failure))
-		return rpcErr(rid, 5031, "session.control.read failed: "+errorMessage(failure), nil)
-	}
-	return ok(rid, map[string]any{"control": control})
-}

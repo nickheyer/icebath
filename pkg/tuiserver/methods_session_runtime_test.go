@@ -42,13 +42,3 @@ func TestSpawnTreeLoadRejectsNonDictSnapshot(t *testing.T) {
 		t.Fatalf("envelope %v", envelope)
 	}
 }
-
-// test_protocol.py test_approval_respond_4001_when_nothing_resolves
-func TestApprovalRespond4001WhenNothingResolves(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	response := handleRequest(context.Background(), map[string]any{"id": "r-nope", "method": "approval.respond",
-		"params": map[string]any{"session_id": "nope", "request_id": "req-x", "choice": "once"}})
-	if code := rpcErrorOf(t, response)["code"]; code != 4001 {
-		t.Fatalf("response %v", response)
-	}
-}

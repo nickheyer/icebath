@@ -20,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 // CLIHandler runs one bound CLI subcommand
@@ -617,19 +616,13 @@ func (c *CLI) unknownCommand(cmd *cobra.Command, value string) error {
 	close := pydifflib.GetCloseMatches(value, subcommandChoices(cmd), 3, 0.6)
 	ctx := context.Background()
 	install := pluginCommandInstallHint(ctx, prog, value)
-	moved := ""
-	if install == "" {
-		moved = provider.MovedCommandHint(ctx, prog, value, "")
-	}
 	owner := ""
-	if install == "" && moved == "" && prog == "icebath" {
+	if install == "" && prog == "icebath" {
 		owner = pluginCommandOwnerLine(value)
 	}
 	switch {
 	case install != "":
 		lines = append(lines, fmt.Sprintf("The '%s' memory plugin is not installed. Install it with: %s", value, install))
-	case moved != "":
-		lines = append(lines, moved)
 	case owner != "":
 		lines = append(lines, owner)
 	case len(close) > 0:

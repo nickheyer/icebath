@@ -51,42 +51,6 @@ func delegationStatus(ctx context.Context, rid any, params map[string]any) map[s
 	return ok(rid, tuigateway.Plain(result))
 }
 
-// Blocks or unblocks new spawns, a pause when the flag is absent
-func delegationPause(ctx context.Context, rid any, params map[string]any) map[string]any {
-	request, err := tuigateway.DelegationPause.Params(params)
-	if err != nil {
-		return rpcErr(rid, 4000, err.Error(), nil)
-	}
-	paused := request.Paused == nil || *request.Paused
-	return ok(rid, tuigateway.Plain(tuigateway.DelegationPauseResult{Paused: agent.SetSpawnPaused(paused)}))
-}
-
-// Queues steering text into a live delegated child owned by the caller's session
-func subagentSteer(ctx context.Context, rid any, params map[string]any) map[string]any {
-	request, err := tuigateway.SubagentSteer.Params(params)
-	if err != nil {
-		return rpcErr(rid, 4000, err.Error(), nil)
-	}
-	if request.SubagentID == "" {
-		return rpcErr(rid, 4000, "subagent_id required", nil)
-	}
-	text := strings.TrimSpace(request.Text)
-	if text == "" {
-		return rpcErr(rid, 4002, "text is required", nil)
-	}
-	if _, errResp := sessNowait(ctx, params, rid); errResp != nil {
-		return errResp
-	}
-	ownerID := request.SessionID
-	transport, owner := currentSessionSteerAuthority(ctx, ownerID)
-	queued := transport != nil && owner != nil && agent.SteerSubagent(request.SubagentID, text, &ownerID, transport, owner)
-	status := tuigateway.SteerStatus("rejected")
-	if queued {
-		status = "queued"
-	}
-	return ok(rid, tuigateway.Plain(tuigateway.SubagentSteerResult{Status: status, SubagentID: request.SubagentID, Text: text}))
-}
-
 // Writes a finished spawn tree snapshot under the session directory, a file saved again keeping its one index entry
 func spawnTreeSave(ctx context.Context, rid any, params map[string]any) map[string]any {
 	request, err := tuigateway.SpawnTreeSave.Params(params)

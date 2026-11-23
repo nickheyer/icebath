@@ -387,8 +387,12 @@ func (h *Hub) Update(msg tea.Msg) (wm.Card, tea.Cmd) {
 				return h, h.back()
 			}
 		case "search.close":
-			if l, ok := h.Top().(*List); ok && l.pick && len(h.stack) > 1 {
-				return h, h.Pop()
+			// Esc on a list to pick from goes back, closing the hub from its first view
+			if l, ok := h.Top().(*List); ok && l.pick {
+				if len(h.stack) > 1 {
+					return h, h.Pop()
+				}
+				return h, wm.RequestDismissOf(h)
 			}
 		case "hub.help":
 			if p, ok := h.Top().(*Page); ok && p.help {

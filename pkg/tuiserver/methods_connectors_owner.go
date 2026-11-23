@@ -30,9 +30,3 @@ func captureConnectorRPCOwner(ctx context.Context, params map[string]any) contex
 	}
 	return context.WithValue(ctx, connectorRPCOriginKey{}, origin)
 }
-
-// Origin captured for the connector RPC of this context, nil when none was captured
-func connectorRPCOriginOf(ctx context.Context) *connectorRPCOrigin {
-	origin, _ := ctx.Value(connectorRPCOriginKey{}).(*connectorRPCOrigin)
-	return origin
-}

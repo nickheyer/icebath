@@ -2,8 +2,9 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestCustomPluginProfileMatchesUpstreamRegistration(t *testing.T) {

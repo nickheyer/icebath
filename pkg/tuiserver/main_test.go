@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -24,8 +23,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	runEntryTestChild()
-	runTestChild()
 	home.DispatchScratchPruneEntry(context.Background())
 	hermetic.BlockExternalHTTP()
 	hermetic.BlockExternalDNS()
@@ -214,28 +211,6 @@ func testAgent(t *testing.T, o agent.AIAgentOptions) *agent.AIAgent {
 		t.Fatal(err)
 	}
 	return a
-}
-
-// Child mode of the test binary, a lease transition or a sleeping launcher stand in for another process
-func runTestChild() {
-	switch os.Getenv("ICEBATH_TEST_CHILD") {
-	case "":
-		return
-	case "lease-acquire":
-		if _, err := botdesktop.LeaseAcquire(os.Getenv("ICEBATH_TEST_VIEWER"), "", os.Getenv("ICEBATH_TEST_REASON")); err != nil {
-			os.Exit(1)
-		}
-	case "lease-release":
-		viewer := os.Getenv("ICEBATH_TEST_VIEWER")
-		if _, err := botdesktop.LeaseRelease(botdesktop.LeaseReleaseOptions{ViewerID: &viewer}); err != nil {
-			os.Exit(1)
-		}
-	case "sleep":
-		time.Sleep(30 * time.Second)
-	case "session-lease-holder":
-		sessionLeaseHolderChild()
-	}
-	os.Exit(0)
 }
 
 // Writes text to a file the test owns

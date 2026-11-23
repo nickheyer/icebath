@@ -53,22 +53,17 @@ func ShellClientEnv(ctx context.Context) (map[string]string, error) {
 	return state.CollectClientEnv(nil, cfg), nil
 }
 
-// client_env of a new session when the gateway create contract takes it, nothing for an older gateway
-func ClientEnvPolicy(ctx context.Context, parameters []any) (map[string]any, error) {
-	for _, name := range parameters {
-		if name == "client_env" {
-			env, err := ShellClientEnv(ctx)
-			if err != nil {
-				return nil, err
-			}
-			plain := make(map[string]any, len(env))
-			for k, v := range env {
-				plain[k] = v
-			}
-			return map[string]any{"client_env": plain}, nil
-		}
+// client_env of a new session created from this shell
+func ClientEnvPolicy(ctx context.Context) (map[string]any, error) {
+	env, err := ShellClientEnv(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return map[string]any{}, nil
+	plain := make(map[string]any, len(env))
+	for k, v := range env {
+		plain[k] = v
+	}
+	return map[string]any{"client_env": plain}, nil
 }
 
 // Namespace value with string lists widened so they compare with decoded JSON

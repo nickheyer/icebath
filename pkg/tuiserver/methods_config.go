@@ -2,7 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -248,27 +247,6 @@ var configGetters = map[string]func(ctx context.Context, params map[string]any) 
 		return wordAnswer(settings.Mouse.Get(ctx))
 	},
 	"mtime": cfgGetMtime,
-}
-
-// Reads one config key, a failing provider or approval getter answering its own error code
-func configGet(ctx context.Context, rid any, params map[string]any) (resp map[string]any) {
-	key, present := params["key"]
-	if !present {
-		key = ""
-	}
-	name, _ := key.(string)
-	getter := configGetters[name]
-	if getter == nil {
-		return rpcErr(rid, 4002, fmt.Sprintf("unknown config key: %s", pyStrOf(key)), nil)
-	}
-	if code, mapped := configGetErr[name]; mapped {
-		defer func() {
-			if r := recover(); r != nil {
-				resp = rpcErr(rid, code, panicMessage(r), nil)
-			}
-		}()
-	}
-	return ok(rid, tuigateway.Plain(getter(ctx, params)))
 }
 
 // str of a param value

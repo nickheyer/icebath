@@ -92,13 +92,3 @@ func TestBroadcastFailureDoesNotBreakTeardown(t *testing.T) {
 		t.Fatalf("finalize did not run with ws_orphan_reap, end reason %v", reclaimEndReason(t, session))
 	}
 }
-
-func TestReapPathsStampTheRuntimeIdTheClientHolds(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	tuihost.SetSessionRecord("live-xyz", tuihost.NewSession(map[string]any{"session_key": "k"}))
-	popped := popSessionByID("live-xyz")
-	tuihost.SetSessionRecord("live-xyz", nil)
-	if popped == nil || popped.Get("_sid") != "live-xyz" {
-		t.Fatalf("popped %v", popped)
-	}
-}

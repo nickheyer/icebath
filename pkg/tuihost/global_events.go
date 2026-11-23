@@ -41,9 +41,6 @@ func UnregisterLiveTransport(transport Transport) {
 	Forget(transport)
 }
 
-// Marks real stdout as the JSON RPC client channel, true only in the stdio TUI process
-func SetStdioIsRPCChannel(on bool) { stdioIsRPCChannel.Store(on) }
-
 // True when real stdout is the JSON RPC client channel
 func StdioIsRPCChannel() bool { return stdioIsRPCChannel.Load() }
 

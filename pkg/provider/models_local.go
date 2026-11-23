@@ -212,7 +212,7 @@ func getOllamaRequestHeaders(ctx context.Context) map[string]string {
 	if result == nil {
 		result = map[string]string{}
 	}
-	apiKey := apiKeyFromProviderConfig(ctx, entry, "key_env", "api_key_env")
+	apiKey := apiKeyFromProviderConfig(ctx, entry, "key_env")
 	if apiKey != "" && !hasAuthorization(result) {
 		result["Authorization"] = "Bearer " + apiKey
 	}

@@ -2,23 +2,12 @@ package tuiserver
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-// Detached idle TUI session under a fresh home, with a 20 s orphan grace and no delegations
-func detachedLoopSession(t *testing.T) (string, *tuihost.Session) {
-	t.Helper()
-	sid := "sid-detached-loop"
-	session := orphanRaceSession(t, sid, 600, map[string]any{"session_key": "tui-loop-session", "running": false,
-		"last_active": 0.0, "created_at": 0.0})
-	return sid, session
-}
 
 // Stores an active half hour loop for the session key, with an optional gateway chat route
 func setSessionLoop(t *testing.T, sessionKey string, route *pyjson.Object) {
@@ -62,106 +51,4 @@ func assertCollected(t *testing.T, sid string) {
 	if tuihost.SessionRecord(sid) != nil {
 		t.Fatal("detached session survived the reap")
 	}
-}
-
-func TestOrphanReapKeepsDetachedSessionWithActiveLoop(t *testing.T) {
-	sid, session := detachedLoopSession(t)
-	setSessionLoop(t, "tui-loop-session", nil)
-	fireOrphanReap(sid)
-	assertKeptDetached(t, sid, session)
-}
-
-func TestOrphanReapStillCollectsSessionOnceLoopStops(t *testing.T) {
-	sid, _ := detachedLoopSession(t)
-	setSessionLoop(t, "tui-loop-session", nil)
-	agent.NewLoopManager(context.Background(), "tui-loop-session").Clear(context.Background())
-	fireOrphanReap(sid)
-	assertCollected(t, sid)
-}
-
-func TestGatewayRoutedLoopDoesNotPinDetachedSession(t *testing.T) {
-	sid, _ := detachedLoopSession(t)
-	route := pyjson.NewObject()
-	route.Set("platform", "discord")
-	route.Set("chat_id", "123")
-	setSessionLoop(t, "tui-loop-session", route)
-	fireOrphanReap(sid)
-	assertCollected(t, sid)
-}
-
-func TestTtlAndCapReapersSpareSessionWithActiveLoop(t *testing.T) {
-	ctx := context.Background()
-	sid, session := detachedLoopSession(t)
-	prevTTL := sessionTTLS
-	sessionTTLS = 1
-	t.Cleanup(func() { sessionTTLS = prevTTL })
-	now := nowSeconds()
-	if !sessionIsEvictable(ctx, sid, session, now) {
-		t.Fatal("idle detached session past its TTL is not evictable")
-	}
-	setSessionLoop(t, "tui-loop-session", nil)
-	if sessionIsEvictable(ctx, sid, session, now) {
-		t.Fatal("looping session is evictable")
-	}
-	if sessionIsReapable(ctx, sid, session) {
-		t.Fatal("looping session is reapable")
-	}
-	if !sessionIsLRUEvictable(ctx, sid, session) {
-		t.Fatal("idle looping session blocks a memory trim")
-	}
-}
-
-func TestSettledClientGoneInterruptIsCollectedDespiteActiveLoop(t *testing.T) {
-	sid, session := detachedLoopSession(t)
-	setSessionLoop(t, "tui-loop-session", nil)
-	orphanRaceStale(t, 0)
-	session.Set("_run_thread", liveTurnThread(t))
-	session.Set("running", true)
-	fireOrphanReap(sid)
-	if !truthy(session.Get("_client_gone_interrupt_requested")) || tuihost.SessionRecord(sid) != session {
-		t.Fatal("stale detached turn was not interrupted in place")
-	}
-	session.Set("running", false)
-	fireReap(pendingReap(sid), 1, 1)
-	assertCollected(t, sid)
-}
-
-func TestOrphanReapKeepsDetachedSessionWithActiveLocalHeartbeat(t *testing.T) {
-	sid, session := detachedLoopSession(t)
-	setSessionHeartbeat(t, "tui-loop-session")
-	fireOrphanReap(sid)
-	if tuihost.SessionRecord(sid) != session {
-		t.Fatal("detached session with a local heartbeat was reaped")
-	}
-}
-
-func TestPausedOrClearedHeartbeatReleasesDetachedSession(t *testing.T) {
-	for _, release := range []string{"pause", "clear"} {
-		t.Run(release, func(t *testing.T) {
-			sid, _ := detachedLoopSession(t)
-			setSessionHeartbeat(t, "tui-loop-session")
-			heartbeat := agent.NewHeartbeatManager(context.Background(), "tui-loop-session")
-			if release == "pause" {
-				heartbeat.Pause()
-			} else {
-				heartbeat.Clear()
-			}
-			fireOrphanReap(sid)
-			assertCollected(t, sid)
-		})
-	}
-}
-
-func TestGatewayOwnedHeartbeatDoesNotPinDetachedSession(t *testing.T) {
-	ctx := context.Background()
-	sid, _ := detachedLoopSession(t)
-	setSessionHeartbeat(t, "tui-loop-session")
-	db := ledgerHandle(t, filepath.Join(os.Getenv("ICEBATH_HOME"), "state.db"))
-	useSharedDB(t, db)
-	entry := `{"session_id": "tui-loop-session", "origin": {"platform": "discord", "chat_id": "123"}}`
-	if err := db.SaveGatewayRoutingEntry(ctx, "agent:main:discord:dm:123", entry, "default"); err != nil {
-		t.Fatal(err)
-	}
-	fireOrphanReap(sid)
-	assertCollected(t, sid)
 }

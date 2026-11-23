@@ -23,66 +23,6 @@ func issuesWhere(issues []ConfigIssue, keep func(ConfigIssue) bool) []ConfigIssu
 	return out
 }
 
-func TestCustomProvidersValidationDictInsteadOfList(t *testing.T) {
-	issues := validate(map[string]any{
-		"custom_providers": map[string]any{
-			"name": "Generativelanguage.googleapis.com", "base_url": "https://generativelanguage.googleapis.com/v1beta",
-			"api_key": "xxx", "model": "models/gemini-2.5-flash", "rate_limit_delay": 2.0,
-			"fallback_model": map[string]any{"provider": "openrouter", "model": "qwen/qwen3.6-plus:free"},
-		},
-		"fallback_providers": []any{},
-	})
-	if len(issuesWhere(issues, func(i ConfigIssue) bool {
-		return i.Severity == "error" && strings.Contains(i.Message, "dict") && strings.Contains(i.Message, "list")
-	})) == 0 {
-		t.Fatalf("custom_providers dict not detected: %+v", issues)
-	}
-}
-
-func TestCustomProvidersValidationScalarIsAnErrorNamingKeyAndType(t *testing.T) {
-	issues := validate(map[string]any{"custom_providers": "oops", "model": map[string]any{"provider": "openrouter"}})
-	if len(issuesWhere(issues, func(i ConfigIssue) bool {
-		return i.Severity == "error" && strings.HasPrefix(i.Message, "custom_providers is a str") && strings.Contains(i.Message, "list")
-	})) == 0 {
-		t.Fatalf("scalar custom_providers: %+v", issues)
-	}
-	ok := validate(map[string]any{"custom_providers": []any{map[string]any{"name": "x", "base_url": "http://h/v1"}},
-		"model": map[string]any{"provider": "custom"}})
-	if errs := issuesWhere(ok, func(i ConfigIssue) bool { return i.Severity == "error" }); len(errs) != 0 {
-		t.Fatalf("valid list reported errors: %+v", errs)
-	}
-}
-
-func TestCustomProvidersValidationDictDetectsMisplacedFields(t *testing.T) {
-	issues := validate(map[string]any{"custom_providers": map[string]any{"name": "test", "base_url": "https://example.com", "api_key": "xxx"}})
-	misplaced := issuesWhere(issues, func(i ConfigIssue) bool {
-		return i.Severity == "warning" && strings.Contains(i.Message, "custom_providers entry fields")
-	})
-	if len(misplaced) != 1 {
-		t.Fatalf("misplaced = %+v", misplaced)
-	}
-	if !strings.Contains(misplaced[0].Message, "['api_key', 'base_url']") {
-		t.Fatalf("message = %q", misplaced[0].Message)
-	}
-}
-
-func TestCustomProvidersValidationListEntryNotDict(t *testing.T) {
-	issues := validate(map[string]any{"custom_providers": []any{"not-a-dict"}, "model": map[string]any{"provider": "custom"}})
-	if len(issuesWhere(issues, func(i ConfigIssue) bool { return strings.Contains(i.Message, "not a dict") })) == 0 {
-		t.Fatalf("issues = %+v", issues)
-	}
-}
-
-func TestMissingModelSectionCustomProvidersWithModel(t *testing.T) {
-	issues := validate(map[string]any{
-		"custom_providers": []any{map[string]any{"name": "test", "base_url": "https://example.com/v1"}},
-		"model":            map[string]any{"provider": "custom", "default": "test-model"},
-	})
-	if len(issuesWhere(issues, func(i ConfigIssue) bool { return strings.Contains(i.Message, "no 'model' section") })) != 0 {
-		t.Fatalf("issues = %+v", issues)
-	}
-}
-
 func TestVoiceSubmitModeValidationDirectAndDraftAreValid(t *testing.T) {
 	for _, mode := range []string{"direct", "draft"} {
 		issues := validate(map[string]any{"voice": map[string]any{"submit_mode": mode}})

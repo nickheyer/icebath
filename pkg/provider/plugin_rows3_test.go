@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func extrasOf(t *testing.T, name string, r *Reasoning, kw map[string]any) (map[string]any, map[string]any) {

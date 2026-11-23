@@ -119,7 +119,7 @@ func diffSegmentBody(m msg) (string, bool) {
 	return "", false
 }
 
-func hasDetails(m msg) bool { return m.Thinking != "" || len(m.Tools) > 0 || m.ToolTokens != 0 }
+func hasDetails(m msg) bool { return m.Thinking != "" || len(m.Tools) > 0 }
 
 // Task list of the planning tool, items without an id or content left out and a parent naming itself dropped
 func parseTodos(items []tuigateway.TodoItem) []todoItem {
@@ -485,7 +485,7 @@ func (c *turnController) syncReasoningSegment(live bool) {
 	if thinking == "" {
 		return
 	}
-	m := msg{Kind: "trail", Role: "system", Thinking: thinking, ThinkingTokens: estimateTokensRough(thinking), ToolTokens: c.toolTokenAcc, IsLiveReasoning: live}
+	m := msg{Kind: "trail", Role: "system", Thinking: thinking, IsLiveReasoning: live}
 	if c.reasoningSegmentIndex < 0 {
 		c.reasoningSegmentIndex = len(c.segmentMessages)
 		c.segmentMessages = append(slices.Clone(c.segmentMessages), m)
@@ -661,7 +661,6 @@ func (c *turnController) recordMessageComplete(payload tuigateway.MessageComplet
 	if existing == "" {
 		saved = split.Reasoning
 	}
-	savedToolTokens := c.toolTokenAcc
 	tools := c.pendingSegmentTools
 	if n := len(c.segmentMessages); len(tools) > 0 && n > 0 && isToolShelfMessage(&c.segmentMessages[n-1]) {
 		last := c.segmentMessages[n-1]
@@ -682,10 +681,7 @@ func (c *turnController) recordMessageComplete(payload tuigateway.MessageComplet
 	if !hasReasoningSegment {
 		finalThinking = strings.TrimFunc(saved, isJSSpace)
 	}
-	details := msg{Kind: "trail", Role: "system", Thinking: finalThinking, ToolTokens: savedToolTokens, Tools: tools}
-	if finalThinking != "" {
-		details.ThinkingTokens = estimateTokensRough(finalThinking)
-	}
+	details := msg{Kind: "trail", Role: "system", Thinking: finalThinking, Tools: tools}
 	finalMessages := append(c.store.archiveTodosAtTurnEnd(), segments...)
 	if hasDetails(details) {
 		finalMessages = append(finalMessages, details)
@@ -773,7 +769,7 @@ func (c *turnController) recordMoaReference(label, text string, index, count int
 	if body := strings.TrimFunc(text, isJSSpace); body != "" {
 		thinking = header + "\n" + body
 	}
-	c.pushSegment(msg{Kind: "trail", Role: "system", Thinking: thinking, IsMoaReference: true, ThinkingTokens: estimateTokensRough(thinking)})
+	c.pushSegment(msg{Kind: "trail", Role: "system", Thinking: thinking, IsMoaReference: true})
 	c.store.turn.StreamSegments = c.segmentMessages
 }
 
@@ -936,13 +932,6 @@ func (c *turnController) scheduleStreaming() {
 		return
 	}
 	c.arm(timerStream, c.streamDelay)
-}
-
-// Replaces the streamed text with a resumed turn's buffer and shows it at once
-func (c *turnController) hydrateStreamingText(text string) {
-	c.clear(timerStream)
-	c.bufRef = text
-	c.store.turn.Streaming = boundedLiveRenderText(c.visibleStream(), liveRenderMaxChars, liveRenderMaxLines)
 }
 
 // Starts a turn, yielding flash notices and dropping any archive a lost final left parked

@@ -151,7 +151,7 @@ func InheritLaunchModel(ctx context.Context, path string) (bool, error) {
 	}
 	merged["model"] = assigned
 	config.SetMappingKeys(merged, keys)
-	saving := config.RefusingLockedOmissions(target, "model", "providers", "custom_providers")
+	saving := config.RefusingLockedOmissions(target, "model", "providers")
 	if err := config.SaveConfig(saving, home.Dir(saving), merged, config.SaveOptions{}); err != nil {
 		return false, err
 	}

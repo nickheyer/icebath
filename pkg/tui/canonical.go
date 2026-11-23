@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"regexp"
-	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -22,64 +20,23 @@ type sharedControl struct {
 	PromptID            string
 }
 
-// Order the launch options take on session.create
-var creationOptionOrder = []string{
-	"model", "provider", "cwd", "toolsets", "skills", "client_env", "max_turns", "yolo", "ignore_rules",
-	"safe_mode", "ignore_user_config", "checkpoints", "pass_session_id", "accept_hooks", "source", "request_id",
-}
-
 var (
 	toolProgressModes = map[string]bool{"off": true, "new": true, "all": true, "verbose": true}
 	skillSplitRe      = regexp.MustCompile(`[,\n]`)
 	unlimitedTurns    = map[string]bool{"none": true, "null": true, "unlimited": true, "infinite": true, "infinity": true, "inf": true, "\u221e": true}
 )
 
-// Keys of params in creation option order, unknown keys after them sorted
-func orderedKeys(params map[string]any) []string {
-	var keys, rest []string
-	for _, k := range creationOptionOrder {
-		if _, ok := params[k]; ok {
-			keys = append(keys, k)
-		}
-	}
-	for k := range params {
-		if !slices.Contains(creationOptionOrder, k) {
-			rest = append(rest, k)
-		}
-	}
-	sort.Strings(rest)
-	return append(keys, rest...)
-}
-
-// Request rewritten for the canonical gateway, a tui session.create checked against its contract
-func canonicalRequest(method string, original map[string]any, contract *tuigateway.SessionCreateDescriptor) (string, map[string]any, error) {
-	params := make(map[string]any, len(original))
+// Params of a session.create as this window sends them, under a request id a retry can name
+func createRequest(original map[string]any) map[string]any {
+	params := make(map[string]any, len(original)+2)
 	for k, v := range original {
 		params[k] = v
 	}
-	if method == "session.create" {
-		delete(params, "cols")
-		params["source"] = "tui"
-		if params["request_id"] == nil {
-			params["request_id"] = uuid.NewString()
-		}
-		if contract == nil || !slices.Contains(contract.Sources, "tui") {
-			return "", nil, errors.New(tr(txt.CanonicalLaunchNoTuiPolicy))
-		}
-		if !slices.Contains(contract.Parameters, "client_env") {
-			delete(params, "client_env")
-		}
-		var unsupported []string
-		for _, k := range orderedKeys(params) {
-			if !slices.Contains(contract.Parameters, k) {
-				unsupported = append(unsupported, k)
-			}
-		}
-		if len(unsupported) > 0 {
-			return "", nil, errors.New(tr(txt.CanonicalLaunchUnsupportedOptions, strings.Join(unsupported, ", ")))
-		}
+	params["source"] = "tui"
+	if params["request_id"] == nil {
+		params["request_id"] = uuid.NewString()
 	}
-	return method, params, nil
+	return params
 }
 
 // Copy of a map with extra keys laid over it

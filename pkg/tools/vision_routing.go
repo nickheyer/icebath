@@ -223,34 +223,7 @@ func modelSupportsVisionOverride(modelsCfg any, model string) (bool, bool) {
 	return coerceCapabilityBool(raw)
 }
 
-// Dict entries of the legacy custom_providers list
-func customProviderList(cfg map[string]any) []map[string]any {
-	raw, _ := cfg["custom_providers"].([]any)
-	var out []map[string]any
-	for _, e := range raw {
-		if m := dictOrNil(e); m != nil {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-// Legacy custom provider entries matching names case insensitively, names as the outer loop
-func customProviderEntries(cfg map[string]any, names []string) []map[string]any {
-	entries := customProviderList(cfg)
-	var out []map[string]any
-	for _, n := range names {
-		wanted := strings.ToLower(strings.TrimSpace(n))
-		for _, e := range entries {
-			if strings.ToLower(cleanStr(e["name"])) == wanted {
-				out = append(out, e)
-			}
-		}
-	}
-	return out
-}
-
-// User declared vision capability from config, the first hit across model, providers, and custom_providers
+// User declared vision capability from config, the first hit across model and providers
 func supportsVisionOverride(cfg map[string]any, provider, model, requestedProvider string) (bool, bool) {
 	if cfg == nil {
 		return false, false
@@ -281,9 +254,6 @@ func supportsVisionOverride(cfg map[string]any, provider, model, requestedProvid
 	for _, p := range candidates {
 		maps = append(maps, dictOrNil(providersCfg[p])["models"])
 	}
-	for _, e := range customProviderEntries(cfg, candidates) {
-		maps = append(maps, e["models"])
-	}
 	for _, m := range maps {
 		if v, ok := modelSupportsVisionOverride(m, model); ok {
 			return v, true
@@ -292,7 +262,7 @@ func supportsVisionOverride(cfg map[string]any, provider, model, requestedProvid
 	return false, false
 }
 
-// base_url or api_key of the active inference provider, runtime first then model, providers, custom_providers
+// base_url or api_key of the active inference provider, runtime first then model and providers
 func resolveInferenceValue(env *Env, cfg map[string]any, provider, key string, runtimeOK func(string) bool) string {
 	var runtime string
 	if key == "api_key" {
@@ -334,20 +304,10 @@ func resolveInferenceValue(env *Env, cfg map[string]any, provider, key string, r
 			add("custom:" + p)
 		}
 	}
-	lowered := map[string]bool{}
-	for _, n := range names {
-		lowered[strings.ToLower(n)] = true
-	}
 	providersCfg := dictOrNil(cfg["providers"])
 	var entries []map[string]any
 	for _, n := range names {
 		if e := dictOrNil(providersCfg[n]); e != nil {
-			entries = append(entries, e)
-		}
-	}
-	for _, e := range customProviderList(cfg) {
-		name := cleanStr(e["name"])
-		if seen[name] || lowered[strings.ToLower(name)] {
 			entries = append(entries, e)
 		}
 	}

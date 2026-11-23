@@ -372,10 +372,10 @@ var apiModeMap = map[string]string{
 	"cohere": "chat_completions",
 }
 
-// Providers whose keys are imported but which need no custom_providers entry
+// Providers whose keys are imported but which need no providers entry
 var wellKnownProviders = []string{"openrouter", "openai", "anthropic", "deepseek", "google", "groq"}
 
-// Adds custom providers to custom_providers, imports provider keys when secrets are enabled and archives the model catalog
+// Adds custom providers as providers entries, imports provider keys when secrets are enabled and archives the model catalog
 func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 	cfg = m.cfgOr(cfg)
 	models := or(dget(cfg, "models", nil), pyjson.NewObject())
@@ -386,7 +386,7 @@ func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 	}
 	path := m.configPath()
 	icebathCfg := loadYAML(path)
-	customProviders := or(dget(icebathCfg, "custom_providers", nil), []any{})
+	userProviders := or(dget(icebathCfg, "providers", nil), newYAMLMap())
 	added := 0
 	for _, e := range ditems(providers) {
 		provName, provCfg := e.Key, e.Val
@@ -400,12 +400,9 @@ func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 		if containsString(wellKnownProviders, lower(provName)) || !truthy(dget(provCfg, "baseUrl", nil)) {
 			continue
 		}
-		existingNames := map[string]bool{}
-		for _, p := range pyIter(customProviders) {
-			existingNames[lowerAttr(dget(p, "name", ""))] = true
-		}
-		if existingNames[lower(provName)] && !m.overwrite {
-			m.record("full-providers", "models.providers."+provName, "config.yaml custom_providers", StatusConflict, fmt.Sprintf("Provider '%s' already exists", provName))
+		entryKey := strings.ReplaceAll(lower(provName), " ", "-")
+		if truthy(dget(userProviders, entryKey, nil)) && !m.overwrite {
+			m.record("full-providers", "models.providers."+provName, "config.yaml providers", StatusConflict, fmt.Sprintf("Provider '%s' already exists", provName))
 			continue
 		}
 		apiType := or(or(or(dget(provCfg, "apiType", nil), dget(provCfg, "api", nil)), dget(provCfg, "type", nil)), "openai")
@@ -421,17 +418,16 @@ func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 		dset(entry, "base_url", toYAML(dindex(provCfg, "baseUrl")))
 		dset(entry, "api_key", "")
 		dset(entry, "api_mode", apiMode)
-		list, ok := customProviders.([]any)
-		if !ok {
-			raisef("AttributeError", "custom_providers must be a list, got %s", errchain.Kind(customProviders))
+		if !isDict(userProviders) {
+			raisef("AttributeError", "providers must be a mapping, got %s", errchain.Kind(userProviders))
 		}
-		customProviders = append(list, entry)
+		dset(userProviders, entryKey, entry)
 		added++
-		m.record("full-providers", "models.providers."+provName, "config.yaml custom_providers["+provName+"]", StatusMigrated, "")
+		m.record("full-providers", "models.providers."+provName, "config.yaml providers."+entryKey, StatusMigrated, "")
 	}
 	if added > 0 && m.execute {
 		m.maybeBackup(path)
-		dset(icebathCfg, "custom_providers", customProviders)
+		dset(icebathCfg, "providers", userProviders)
 		dumpYAML(path, icebathCfg)
 	}
 	agentDefaults := or(dget(or(dget(cfg, "agents", nil), pyjson.NewObject()), "defaults", nil), pyjson.NewObject())

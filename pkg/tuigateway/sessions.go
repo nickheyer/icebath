@@ -615,14 +615,12 @@ type SessionUsagePayload struct {
 }
 
 type GatewayReadyPayload struct {
-	Skin             *SkinPayloadModel `json:"skin,omitzero"`
-	ChangeEvents     bool              `json:"change_events"`
-	ReplayEpoch      string            `json:"replay_epoch"`
-	Heartbeat        *bool             `json:"heartbeat,omitzero"`
-	SessionAuthority *bool             `json:"session_authority,omitzero"`
-	// Go build ID and contract version of the gateway, absent from a gateway older than both
-	Build    string `json:"build"`
-	Contract int64  `json:"contract"`
+	Skin         *SkinPayloadModel `json:"skin,omitzero"`
+	ChangeEvents bool              `json:"change_events"`
+	ReplayEpoch  string            `json:"replay_epoch"`
+	Heartbeat    *bool             `json:"heartbeat,omitzero"`
+	// Go build ID of the service
+	Build string `json:"build"`
 }
 
 type SkinPayloadModel struct {
@@ -839,19 +837,11 @@ type CanonicalCreateParams struct {
 }
 
 type RuntimeDescribeResult struct {
-	InstanceID     string                  `json:"instance_id"`
-	ProfileID      string                  `json:"profile_id"`
-	AuthorityEpoch int64                   `json:"authority_epoch"`
-	Capabilities   []string                `json:"capabilities"`
-	SessionCreate  SessionCreateDescriptor `json:"session_create"`
-	Skin           *SkinPayloadModel       `json:"skin,omitzero"`
-	Build          string                  `json:"build"`
-	Contract       int64                   `json:"contract"`
-}
-
-type SessionCreateDescriptor struct {
-	Sources    []string `json:"sources"`
-	Parameters []string `json:"parameters"`
+	InstanceID     string            `json:"instance_id"`
+	ProfileID      string            `json:"profile_id"`
+	AuthorityEpoch int64             `json:"authority_epoch"`
+	Skin           *SkinPayloadModel `json:"skin,omitzero"`
+	Build          string            `json:"build"`
 }
 
 type RuntimeDescribeParams struct {

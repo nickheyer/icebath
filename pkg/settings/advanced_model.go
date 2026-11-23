@@ -413,6 +413,9 @@ var VertexRegion = Register(&String{Meta: Meta{Key: "vertex.region", Label: "Ver
 // Which upstream providers OpenRouter may route requests to, per model or for all
 var ProviderRouting = Register(&Map{Meta: Meta{Key: "provider_routing", Label: "OpenRouter routing", Short: "Which upstream providers OpenRouter may send your requests to.", Help: "Keys such as only, ignore, order and sort, optionally under a model name.", Group: GroupModel, Order: 3000, Advanced: true, Apply: NextTurn}})
 
+// Short names that switch to a given model and provider
+var ModelAliases = Register(&Map{Meta: Meta{Key: "model.aliases", Label: "Model shortcuts", Short: "Short names for models: each gives a model and its provider.", Group: GroupModel, Order: 3015, Advanced: true}})
+
 // Extra HTTP headers sent with every model request
 var ModelDefaultHeaders = Register(&Map{Meta: Meta{Key: "model.default_headers", Label: "Extra headers", Short: "Extra HTTP headers sent with every request to the model.", Help: "Header names map to values. A header set here replaces the built-in one.", Group: GroupModel, Order: 3010, Advanced: true, Apply: NewSession}})
 

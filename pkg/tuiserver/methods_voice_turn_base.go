@@ -126,4 +126,3 @@ func voiceTTSEnabled() bool {
 	voiceFlags.once.Do(loadVoiceFlags)
 	return voiceFlags.speaks.Load()
 }
-

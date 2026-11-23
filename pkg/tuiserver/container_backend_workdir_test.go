@@ -47,38 +47,6 @@ func containerLaunchHome(t *testing.T) string {
 	return h
 }
 
-func TestContainerCwdIsTheSessionWorkspace(t *testing.T) {
-	for _, bridged := range []bool{false, true} {
-		name := "config-only"
-		if bridged {
-			name = "env-bridged"
-		}
-		t.Run(name, func(t *testing.T) {
-			h := containerLaunchHome(t)
-			container := containerDir(t)
-			if bridged {
-				t.Setenv("TERMINAL_ENV", "docker")
-				t.Setenv("TERMINAL_CWD", container)
-			} else {
-				writeCfg(t, h, "terminal:\n  backend: docker\n  cwd: "+container+"\n")
-			}
-			if got := completionCwdOf(t, map[string]any{}); got != container {
-				t.Fatalf("completion cwd = %q", got)
-			}
-			if got := terminalTaskCwd(t.Context(), nil); got != container {
-				t.Fatalf("task cwd = %q", got)
-			}
-			session := tuihost.NewSession(map[string]any{"cwd": completionCwdOf(t, map[string]any{}), "profile_home": nil})
-			if sessionIsLocalBackend(t.Context(), session) {
-				t.Fatal("container session reported local")
-			}
-			if got := displaySessionCwd(t.Context(), session); got != container {
-				t.Fatalf("display cwd = %q", got)
-			}
-		})
-	}
-}
-
 func TestLocalBackendMissingCwdStillFallsBack(t *testing.T) {
 	h := containerLaunchHome(t)
 	writeCfg(t, h, "terminal:\n  backend: local\n  cwd: "+containerDir(t)+"\n")

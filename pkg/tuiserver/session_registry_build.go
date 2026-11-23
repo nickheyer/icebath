@@ -62,12 +62,6 @@ func agentBuildWaitCap(ctx context.Context) float64 {
 	return agentBuildDefaultWaitCapSe
 }
 
-// float() of a config value, false when it does not parse
-func pyFloatOf(v any) (float64, bool) {
-	value, err := pyFloat(v)
-	return value, err == nil
-}
-
 // Patient build wait of a deferred prompt, nil on success or cancel, an error once the build died
 func waitAgentForPrompt(ctx context.Context, session *tuihost.Session, rid any, sid string) map[string]any {
 	ready, isEvent := session.Get("agent_ready").(*pythread.Event)
@@ -526,57 +520,4 @@ func makeAgent(ctx context.Context, sid, key string, o makeAgentOptions) (any, e
 // Shared owner MCP discovery wait the session socket starts
 func mcpStartupWait(ctx context.Context) {
 	mcp.WaitForDiscovery(ctx, configEnv(ctx), nil, false)
-}
-
-// Registers a live session record around a built agent, then wires it, starts its services and announces it
-func initSession(ctx context.Context, sid, key string, built any, history []any, cols int, cwd string, sessionDB *state.DB, source, profileHome string, explicitCwd bool) {
-	now := nowSeconds()
-	if cwd == "" {
-		resolved, err := completionCwd(ctx, nil)
-		if err != nil {
-			panic(err)
-		}
-		cwd = resolved
-	}
-	transport := tuihost.CurrentTransport(ctx)
-	if transport == nil {
-		transport = tuihost.ModuleStdioTransport()
-	}
-	var authUserID any
-	if owner := tuihost.TransportAuthUserID(tuihost.CurrentTransport(ctx)); owner != nil {
-		authUserID = *owner
-	}
-	var profile any
-	if profileHome != "" {
-		profile = profileHome
-	}
-	func() {
-		sessionsLock.Lock()
-		defer sessionsLock.Unlock()
-		record := tuihost.NewSession(map[string]any{
-			"agent": built, "session_key": key, "history": history, "history_lock": &sync.Mutex{},
-			"history_version": int64(0), "inflight_turn": nil, "created_at": now, "last_active": now,
-			"running": false, "attached_images": []any{}, "image_counter": 0, "cwd": cwd,
-			"explicit_cwd": explicitCwd, "cols": cols,
-			"source": resolveSessionSource(source), "edit_snapshots": map[string]any{}, "tool_started_at": map[string]any{},
-			"profile_home": profile, "model_override": nil, "transport": transport, "auth_user_id": authUserID})
-		tuihost.SetSessionRecord(sid, record)
-		sessionTodoState(record)
-	}()
-	hydrateSessionCwd(ctx, sid, key, sessionDB, profileHome)
-	if err := applyLaunchToolProgress(ctx, sid); err != nil {
-		pkgLog().Warn("launch tool progress not applied", "session", sid, "err", err)
-	}
-	registerSessionCwd(ctx, tuihost.SessionRecord(sid))
-	wireSessionAgent(ctx, sid, key, built)
-	current := tuihost.SessionRecord(sid)
-	if current == nil {
-		current = tuihost.NewSession(nil)
-	}
-	startSessionServices(ctx, sid, key, current)
-	a, _ := built.(*agent.AIAgent)
-	tuihost.Emit(ctx, "session.info", sid, sessionInfo(ctx, a, current))
-	if a != nil {
-		scheduleMCPLateRefresh(ctx, sid, a)
-	}
 }

@@ -25,7 +25,6 @@ func TestMain(m *testing.M) {
 	installLocalStackProbeDoubles()
 	installSpilloverWiring()
 	DispatchCodexToolsMCPServerEntry()
-	dispatchLeftCoreAgentStartEntry()
 	dispatchMoAPresetProbeEntry()
 	dispatchRemoteBootChildEntry()
 	os.Exit(runUnderPrivateHome(m))

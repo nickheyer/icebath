@@ -4,14 +4,10 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"reflect"
-	"sort"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/state"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
 
 const reaperIdleS = 6 * 3600
@@ -33,20 +29,6 @@ func swapVar[T any](t *testing.T, target *T, value T) {
 	old := *target
 	*target = value
 	t.Cleanup(func() { *target = old })
-}
-
-// Live session registry holding exactly the given records for the case
-func swapSessions(t *testing.T, records map[string]*tuihost.Session) {
-	t.Helper()
-	for _, live := range tuihost.LiveSessions() {
-		saved := live
-		tuihost.SetSessionRecord(saved.SID, nil)
-		t.Cleanup(func() { tuihost.SetSessionRecord(saved.SID, saved.Session) })
-	}
-	for sid, record := range records {
-		tuihost.SetSessionRecord(sid, record)
-		t.Cleanup(func() { tuihost.SetSessionRecord(sid, nil) })
-	}
 }
 
 func reaperExec(t *testing.T, db *state.DB, query string, args ...any) {
@@ -88,114 +70,6 @@ func reaperRow(t *testing.T, db *state.DB, sid string) map[string]any {
 		out[key] = row.Vals[key]
 	}
 	return out
-}
-
-// Sweep scope of the TestSweepOrphanedSessionRows cases over the given store
-func sweepScope(t *testing.T, db *state.DB, ttl float64, records map[string]*tuihost.Session) {
-	t.Helper()
-	swapVar(t, &reaperDB, func(context.Context) (*state.DB, error) { return db, nil })
-	swapVar(t, &sessionTTLS, ttl)
-	swapSessions(t, records)
-}
-
-func TestEndsStaleTuiAndSubagent(t *testing.T) {
-	db := reaperTestDB(t)
-	stale := nowSeconds() - 8*3600
-	for _, row := range [][2]string{{"stale-tui", "tui"}, {"stale-sub", "subagent"}} {
-		seedReaperSession(t, db, row[0], row[1], stale, nil)
-	}
-	sweepScope(t, db, reaperIdleS, nil)
-	swept := sweepOrphanedSessionRows(context.Background())
-	sort.Strings(swept)
-	if !reflect.DeepEqual(swept, []string{"stale-sub", "stale-tui"}) {
-		t.Fatalf("swept %v", swept)
-	}
-	for _, sid := range []string{"stale-tui", "stale-sub"} {
-		row := reaperRow(t, db, sid)
-		if row["ended_at"] == nil || row["end_reason"] != "startup_orphan_reap" {
-			t.Fatalf("%s not ended: %v", sid, row)
-		}
-	}
-}
-
-func TestSparesFreshRowWithOldCopiedHistory(t *testing.T) {
-	db := reaperTestDB(t)
-	started := nowSeconds()
-	seedReaperSession(t, db, "fresh-branch", "tui", nowSeconds()-8*3600, &started)
-	sweepScope(t, db, reaperIdleS, nil)
-	if swept := sweepOrphanedSessionRows(context.Background()); len(swept) != 0 {
-		t.Fatalf("swept %v", swept)
-	}
-	if reaperRow(t, db, "fresh-branch")["ended_at"] != nil {
-		t.Fatal("fresh branch ended")
-	}
-}
-
-func TestSparesPinnedIdleRow(t *testing.T) {
-	db := reaperTestDB(t)
-	stale := nowSeconds() - 8*3600
-	seedReaperSession(t, db, "pinned-tui", "tui", stale, nil)
-	seedReaperSession(t, db, "stale-tui", "tui", stale, nil)
-	if _, err := db.SetSessionPinned(context.Background(), "pinned-tui", true); err != nil {
-		t.Fatal(err)
-	}
-	sweepScope(t, db, reaperIdleS, nil)
-	if swept := sweepOrphanedSessionRows(context.Background()); !reflect.DeepEqual(swept, []string{"stale-tui"}) {
-		t.Fatalf("swept %v", swept)
-	}
-	if reaperRow(t, db, "pinned-tui")["ended_at"] != nil || reaperRow(t, db, "stale-tui")["end_reason"] != "startup_orphan_reap" {
-		t.Fatal("pinned row swept or stale row kept")
-	}
-}
-
-func TestSparesLiveInMemoryAndGatewayRows(t *testing.T) {
-	db := reaperTestDB(t)
-	stale := nowSeconds() - 8*3600
-	seedReaperSession(t, db, "resumed-tui", "tui", stale, nil)
-	seedReaperSession(t, db, "gateway-row", "telegram", stale, nil)
-	seedReaperSession(t, db, "recent-tui", "tui", nowSeconds()-30, nil)
-	resumedAgent := &agent.AIAgent{}
-	resumedAgent.SetSessionID("resumed-tui")
-	sweepScope(t, db, reaperIdleS, map[string]*tuihost.Session{
-		"mem-sid": tuihost.NewSession(map[string]any{"agent": resumedAgent, "session_key": "resumed-tui"}),
-	})
-	if swept := sweepOrphanedSessionRows(context.Background()); len(swept) != 0 {
-		t.Fatalf("swept %v", swept)
-	}
-	for _, sid := range []string{"resumed-tui", "gateway-row", "recent-tui"} {
-		if reaperRow(t, db, sid)["ended_at"] != nil {
-			t.Fatalf("%s ended", sid)
-		}
-	}
-}
-
-func TestLeavesAlreadyEndedRowsUntouched(t *testing.T) {
-	db := reaperTestDB(t)
-	seedReaperSession(t, db, "reaped-tui", "tui", nowSeconds()-8*3600, nil)
-	if err := db.EndSession("reaped-tui", "ws_orphan_reap"); err != nil {
-		t.Fatal(err)
-	}
-	before := reaperRow(t, db, "reaped-tui")
-	sweepScope(t, db, reaperIdleS, nil)
-	if swept := sweepOrphanedSessionRows(context.Background()); len(swept) != 0 {
-		t.Fatalf("swept %v", swept)
-	}
-	after := reaperRow(t, db, "reaped-tui")
-	if after["end_reason"] != "ws_orphan_reap" || after["ended_at"] != before["ended_at"] {
-		t.Fatalf("row rewritten %v", after)
-	}
-}
-
-func TestZeroTTLSkipsSweep(t *testing.T) {
-	db := reaperTestDB(t)
-	seedReaperSession(t, db, "stale-tui", "tui", nowSeconds()-8*3600, nil)
-	sweepScope(t, db, 0, nil)
-	if swept := sweepOrphanedSessionRows(context.Background()); len(swept) != 0 {
-		t.Fatalf("swept %v", swept)
-	}
-	if reaperRow(t, db, "stale-tui")["ended_at"] != nil {
-		t.Fatal("row ended")
-	}
 }
 
 func TestOncePerProcessAndConfigAndTTLGates(t *testing.T) {

@@ -4,56 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/tuihost"
 )
-
-func TestInitSessionAttachesBackgroundReviewCallback(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	a := testAgent(t, agent.AIAgentOptions{Model: "fake/model"})
-	recorder := &frameRecorder{}
-	ctx := tuihost.BindTransport(context.Background(), recorder)
-	initSession(ctx, "sid-abc", "session-key", a, []any{}, 80, t.TempDir(), nil, "", "", false)
-	t.Cleanup(func() { closeSessionByID(context.Background(), "sid-abc", "test_cleanup", nil) })
-	cb, isFunc := a.BackgroundReviewCallback().(func(string))
-	if !isFunc || cb == nil {
-		t.Fatalf("initSession attached no background review callback: %T", a.BackgroundReviewCallback())
-	}
-	recorder.mu.Lock()
-	recorder.frames = nil
-	recorder.mu.Unlock()
-	message := "💾 Self-improvement review: Skill 'icebath-release' patched"
-	cb(message)
-	var matched [][2]any
-	recorder.mu.Lock()
-	for _, frame := range recorder.frames {
-		params, _ := frame.GetOr("params", nil).(interface{ GetOr(string, any) any })
-		if params == nil || params.GetOr("type", nil) != "review.summary" {
-			continue
-		}
-		matched = append(matched, [2]any{params.GetOr("session_id", nil), params.GetOr("payload", nil)})
-	}
-	recorder.mu.Unlock()
-	if len(matched) != 1 {
-		t.Fatalf("review.summary frames %v", matched)
-	}
-	if matched[0][0] != "sid-abc" {
-		t.Fatalf("review.summary for %v", matched[0][0])
-	}
-	payload := map[string]any{}
-	switch p := matched[0][1].(type) {
-	case map[string]any:
-		payload = p
-	case interface{ GetOr(string, any) any }:
-		payload["text"] = p.GetOr("text", nil)
-	}
-	if !reflect.DeepEqual(payload, map[string]any{"text": message}) {
-		t.Fatalf("payload %v", matched[0][1])
-	}
-}
 
 func TestLoadMemoryNotificationsNormalization(t *testing.T) {
 	for _, tc := range []struct {

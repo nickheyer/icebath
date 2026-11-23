@@ -94,7 +94,7 @@ var MigrationOptions = []OptionMeta{
 	{"agent-config", "Agent defaults and multi-agent setup", "Import agent defaults (compaction, context, thinking) into Icebath config. Archive multi-agent list."},
 	{"gateway-config", "Gateway configuration", "Import gateway port and auth settings. Archive full gateway config for manual setup."},
 	{"session-config", "Session configuration", "Archive advanced session settings; automatic reset timers are not imported."},
-	{"full-providers", "Full model provider definitions", "Import custom model providers (baseUrl, apiType, headers) into Icebath custom_providers."},
+	{"full-providers", "Full model provider definitions", "Import custom model providers (baseUrl, apiType, headers) into Icebath providers."},
 	{"deep-channels", "Deep channel configuration", "Import extended channel settings (Matrix, Mattermost, IRC, group configs). Archive complex settings."},
 	{"browser-config", "Browser configuration", "Import browser automation settings into Icebath config.yaml."},
 	{"tools-config", "Tools configuration", "Import tool settings (exec timeout, sandbox, web search) into Icebath config.yaml."},

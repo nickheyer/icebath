@@ -90,7 +90,7 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 	if c.model != "" {
 		current := firstNonEmpty(providerArg, nestedProvider, cfgProvider)
 		userProviders := settings.Providers.Get(c.ctx)
-		customProviders, _ := c.config["custom_providers"].([]any)
+		customProviders := provider.ProviderEntryList(c.config)
 		route, err := provider.ResolveStartupModelRoute(c.ctx, c.model, provider.StartupRouteOptions{
 			ExplicitProvider: providerArg, CurrentProvider: current, UserProviders: userProviders, CustomProviders: customProviders})
 		if err != nil {
@@ -215,7 +215,6 @@ func (c *CLI) initPromptAndReasoning(reasoning string) {
 
 // Opens the session store and sets every per run mutable field, queues, overlays, pet, voice and status bar
 func (c *CLI) initRuntimeState(resume string) {
-	provider.ServeNoticesOnStderr()
 	c.activeAgentRouteSignature = ""
 	c.setAgent(nil)
 	c.conversationHistory = []map[string]any{}

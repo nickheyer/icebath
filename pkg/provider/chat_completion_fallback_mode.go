@@ -21,7 +21,7 @@ func isAnthropicWireURL(url string) bool {
 
 // FallbackAPIModeHint is the explicit flag and api mode of a fallback entry read from its original base url
 func FallbackAPIModeHint(ctx context.Context, fb map[string]any, fbProvider string, fbBaseURLHint *string) (bool, string, error) {
-	if explicit := (*resolver)(nil).parseAPIMode(pyOr(fb["api_mode"], fb["transport"])); explicit != "" {
+	if explicit := (*resolver)(nil).parseAPIMode(fb["api_mode"]); explicit != "" {
 		return true, string(explicit), nil
 	}
 	if fbProvider != "" && fbProvider != "custom" && fbProvider != "moa" {

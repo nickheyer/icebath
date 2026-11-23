@@ -3,10 +3,8 @@ package tuiserver
 import (
 	"context"
 	"maps"
-	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
@@ -28,89 +26,6 @@ type closedPeer struct{}
 func (*closedPeer) Write(*pyjson.Object) bool { return false }
 func (*closedPeer) Close()                    {}
 func (*closedPeer) Closed() bool              { return true }
-
-func TestEnforceSessionCapEvictsOldestDetachedOnly(t *testing.T) {
-	h := t.TempDir()
-	t.Setenv("ICEBATH_HOME", h)
-	writeFile(t, filepath.Join(h, "config.yaml"), "max_live_sessions: 2\n")
-	useSharedDB(t, ledgerHandle(t, filepath.Join(h, "state.db")))
-	detached := tuihost.DetachedWSTransport()
-	record := func(fields map[string]any) *tuihost.Session {
-		fields["agent_ready"] = readyEvent()
-		return tuihost.NewSession(fields)
-	}
-	swapSessions(t, map[string]*tuihost.Session{
-		"old_detached":     record(map[string]any{"transport": detached, "last_active": 100.0}),
-		"new_detached":     record(map[string]any{"transport": detached, "last_active": 300.0}),
-		"running_detached": record(map[string]any{"transport": detached, "last_active": 50.0, "running": true}),
-		"focused_live":     record(map[string]any{"transport": &orphanRacePeer{id: 20}, "last_active": 200.0}),
-	})
-	enforceSessionCap(context.Background())
-	for sid, kept := range map[string]bool{"old_detached": false, "new_detached": false, "running_detached": true, "focused_live": true} {
-		if (tuihost.SessionRecord(sid) != nil) != kept {
-			t.Fatalf("%s kept=%v", sid, !kept)
-		}
-	}
-}
-
-func TestIdleReaperRearmsMissingWsOrphanTimer(t *testing.T) {
-	for _, closedTransport := range []bool{false, true} {
-		t.Run(map[bool]string{false: "detached", true: "closed"}[closedTransport], func(t *testing.T) {
-			ctx := context.Background()
-			h := filepath.Join(t.TempDir(), ".icebath")
-			if err := os.MkdirAll(h, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("ICEBATH_HOME", h)
-			useSharedDB(t, ledgerHandle(t, filepath.Join(h, "state.db")))
-			sid, siblingSID := "detached-without-reaper", "live-sibling"
-			orphanLease, refusal, err := activesessions.TryAcquire(ctx, sid, "tui", map[string]any{}, nil, h, true)
-			if err != nil || orphanLease == nil || refusal != nil {
-				t.Fatalf("orphan lease %v %v %v", orphanLease, refusal, err)
-			}
-			siblingLease, refusal, err := activesessions.TryAcquire(ctx, siblingSID, "tui", map[string]any{}, nil, h, true)
-			if err != nil || siblingLease == nil || refusal != nil {
-				t.Fatalf("sibling lease %v %v %v", siblingLease, refusal, err)
-			}
-			t.Cleanup(func() { _ = siblingLease.Release() })
-			record := func(key string, lease *activesessions.Lease, transport tuihost.Transport) *tuihost.Session {
-				now := nowSeconds()
-				return tuihost.NewSession(map[string]any{"active_session_lease": lease, "created_at": now, "history": []any{},
-					"last_active": now, "session_key": key, "source": "tui", "transport": transport})
-			}
-			var dead tuihost.Transport = tuihost.DetachedWSTransport()
-			if closedTransport {
-				dead = &closedPeer{}
-			}
-			swapSessions(t, map[string]*tuihost.Session{sid: record(sid, orphanLease, dead), siblingSID: record(siblingSID, siblingLease, &orphanRacePeer{id: 21})})
-			t.Cleanup(func() { cancelWSOrphanReap(sid) })
-			prevGrace, prevTTL := wsOrphanReapGraceS, sessionTTLS
-			wsOrphanReapGraceS, sessionTTLS = func() float64 { return 0.05 }, 3600
-			t.Cleanup(func() { wsOrphanReapGraceS, sessionTTLS = prevGrace, prevTTL })
-			reapIdleSessions(ctx)
-			deadline := time.Now().Add(2 * time.Second)
-			for (tuihost.SessionRecord(sid) != nil || !orphanLease.Released()) && time.Now().Before(deadline) {
-				time.Sleep(10 * time.Millisecond)
-			}
-			if tuihost.SessionRecord(sid) != nil || !orphanLease.Released() {
-				t.Fatal("detached lane kept its record or lease")
-			}
-			if tuihost.SessionRecord(siblingSID) == nil {
-				t.Fatal("live sibling was reaped")
-			}
-			assertRegistrySessions := func() {
-				t.Helper()
-				entries := registryEntries(t, h)
-				if len(entries) != 1 || entries[0]["session_id"] != siblingSID {
-					t.Fatalf("registry %v", entries)
-				}
-			}
-			assertRegistrySessions()
-			spawnLeaseHolder(t, h, sid).finish(t)
-			assertRegistrySessions()
-		})
-	}
-}
 
 func TestSyncSessionKeyAfterCompressReanchorsActiveSessionLease(t *testing.T) {
 	ctx := context.Background()
@@ -182,47 +97,4 @@ func createdSID(t *testing.T, resp map[string]any) string {
 		t.Fatalf("no session id in %v", resp)
 	}
 	return sid
-}
-
-// Isolated home whose live registry starts empty
-func idempotencyScope(t *testing.T) {
-	t.Helper()
-	sessionCaseScope(t)
-	swapSessions(t, map[string]*tuihost.Session{})
-}
-
-func TestSessionCreateIdempotencyKeyDedupesRetry(t *testing.T) {
-	idempotencyScope(t)
-	params := map[string]any{"cols": 96, "source": "tui", "messages": []any{map[string]any{"role": "user", "content": "branch me"}},
-		"parent_session_id": "parent-1", "idempotency_key": "branch-retry-abc"}
-	first := createdSID(t, createCall(t, "c1", params))
-	if n := len(tuihost.LiveSessions()); n != 1 {
-		t.Fatalf("%d live sessions", n)
-	}
-	if second := createdSID(t, createCall(t, "c2", params)); second != first {
-		t.Fatalf("retry created %s, first %s", second, first)
-	}
-	if n := len(tuihost.LiveSessions()); n != 1 {
-		t.Fatalf("%d live sessions after retry", n)
-	}
-}
-
-func TestSessionCreateNoIdempotencyKeyCreatesDistinctSessions(t *testing.T) {
-	idempotencyScope(t)
-	params := map[string]any{"cols": 96, "source": "tui"}
-	first, second := createdSID(t, createCall(t, "c1", params)), createdSID(t, createCall(t, "c2", params))
-	if first == second || len(tuihost.LiveSessions()) != 2 {
-		t.Fatalf("sessions %s %s live %d", first, second, len(tuihost.LiveSessions()))
-	}
-}
-
-func TestSessionCreateIdempotencyKeyExpiresWithSession(t *testing.T) {
-	idempotencyScope(t)
-	params := map[string]any{"cols": 96, "source": "tui", "idempotency_key": "branch-retry-xyz"}
-	first := createdSID(t, createCall(t, "c1", params))
-	tuihost.SetSessionRecord(first, nil)
-	second := createdSID(t, createCall(t, "c2", params))
-	if second == first || len(tuihost.LiveSessions()) != 1 {
-		t.Fatalf("second %s first %s live %d", second, first, len(tuihost.LiveSessions()))
-	}
 }

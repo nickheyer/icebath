@@ -2,7 +2,6 @@ package tuiserver
 
 import (
 	"context"
-	"fmt"
 	"sync"
 )
 
@@ -18,17 +17,3 @@ var (
 
 // Passes the reload leader re-hashes the config before accepting the loaded revision
 const mcpReloadMaxPasses = 3
-
-// Persists the always opt out when asked and answers the reloaded payload with its loaded revision
-func finishReload(ctx context.Context, rid any, params map[string]any, coalesced bool) map[string]any {
-	if truthy(params["always"]) {
-		if failure := catchPanic(func() { SaveConfigValue(ctx, "approvals.mcp_reload_confirm", false) }); failure != nil {
-			pkgLog().Warn(fmt.Sprintf("Failed to persist mcp_reload_confirm=false: %s", panicMessage(failure)))
-		}
-	}
-	out := map[string]any{"status": "reloaded", "loaded_rev": mcpReloadLoadedRev}
-	if coalesced {
-		out["coalesced"] = true
-	}
-	return ok(rid, out)
-}

@@ -36,7 +36,6 @@ func isUndeliveredCorrectionRefusal(err error) bool {
 // Gateway surface of a prompt submission, the gateway client in production
 type submitGateway interface {
 	turnGateway
-	clarifyBatch() bool
 	publishLocalEvent(ev gatewayEventMsg)
 }
 
@@ -385,7 +384,7 @@ func (p *promptSubmitter) submitPrompt(text string, showUserMessage bool, displa
 				return readmitOr(p.settleCorrection(item, ack.Status, current, current && ack.Status == "rejected" && ack.Delivered != nil && !*ack.Delivered, focused))
 			}), nil
 		}
-		params := tuigateway.CanonicalSubmitParams{SessionID: sid, Text: text, Attachments: attachments, VoiceTurn: voice, Interrupted: speech.takeInterrupted(), ClarifyBatch: p.gw.clarifyBatch()}
+		params := tuigateway.CanonicalSubmitParams{SessionID: sid, Text: text, Attachments: attachments, VoiceTurn: voice, Interrupted: speech.takeInterrupted(), ClarifyBatch: true}
 		if item != nil {
 			params.InputID, params.Queued = &item.SubmissionID, item.Queued == nil || *item.Queued
 		}

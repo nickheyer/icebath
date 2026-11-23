@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
-	"github.com/nickheyer/icebath/pkg/tuiserver"
 )
 
 // Kanban tool names of the quiet raw schema build for a selection, a nil selection naming every toolset
@@ -102,7 +101,7 @@ func optInSameSet(a, b map[string]bool) bool {
 }
 
 func TestSavedOptInRoundtripReachesSchemaAndBoard(t *testing.T) {
-	for _, surface := range []string{"cli", "rpc"} {
+	for _, surface := range []string{"cli"} {
 		t.Run(surface, func(t *testing.T) {
 			root, h := optInHome(t)
 			ctx := context.Background()
@@ -117,21 +116,8 @@ func TestSavedOptInRoundtripReachesSchemaAndBoard(t *testing.T) {
 				if enabled {
 					action = "enable"
 				}
-				switch surface {
-				case "rpc":
-					resp := tuiserver.Method("tools.configure")(ctx, "kanban-opt-in", map[string]any{"action": action, "names": []any{"kanban"}})
-					if _, failed := resp["error"]; failed {
-						t.Fatal(resp)
-					}
-					result, _ := resp["result"].(map[string]any)
-					changed, _ := result["changed"].([]string)
-					if !optInHas(changed, "kanban") {
-						t.Fatal(resp)
-					}
-				default:
-					if err := mcp.ApplyToolsetChange(ctx, optInLoad(t, h), "cli", []string{"kanban"}, action); err != nil {
-						t.Fatal(err)
-					}
+				if err := mcp.ApplyToolsetChange(ctx, optInLoad(t, h), "cli", []string{"kanban"}, action); err != nil {
+					t.Fatal(err)
 				}
 			}
 

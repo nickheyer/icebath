@@ -630,7 +630,7 @@ func entryAliases(entry map[string]any) map[string]bool {
 	return CustomProviderAliases(name, key)
 }
 
-// Inline api_key with env template expansion, else key_env or api_key_env through the reader
+// Inline api_key with env template expansion, else key_env through the reader
 func entryConfiguredKey(cfg map[string]any, readEnv func(string) string) string {
 	key := msClean(cfg["api_key"])
 	if strings.HasPrefix(key, "${") && strings.HasSuffix(key, "}") && len(key) >= 3 {

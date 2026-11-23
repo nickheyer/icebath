@@ -31,7 +31,7 @@ func propCLIHome(t *testing.T, c *roundtrip.Case) (string, string) {
 		t.Setenv(k, v)
 	}
 	cfg := filepath.Join(h, "config.yaml")
-	writeLeftCoreFile(t, cfg, c.Text)
+	writeTextFile(t, cfg, c.Text)
 	config.ResetCache()
 	return h, cfg
 }
@@ -139,7 +139,7 @@ func TestP2RealCLIEnvSettingChangesExactlyOneEnvLineAndNoConfigBytes(t *testing.
 	os.Unsetenv("TELEGRAM_HOME_CHANNEL")
 	envFile := filepath.Join(h, ".env")
 	before := "# hand-written\nC18_KEEP=one\nexport C18_OTHER=\"two # not comment\"\nTELEGRAM_HOME_CHANNEL=5\n"
-	writeLeftCoreFile(t, envFile, before)
+	writeTextFile(t, envFile, before)
 	if code, err := propConfigSet(h, "TELEGRAM_HOME_CHANNEL", "4242"); code != 0 {
 		t.Fatalf("exit %d: %v", code, err)
 	}
@@ -161,7 +161,7 @@ func TestP2EnvLockRefusalIsNotReportedAsSuccess(t *testing.T) {
 		t.Run(key, func(t *testing.T) {
 			h, _, _ := moaKeysHome(t, map[string]any{})
 			managed := filepath.Join(filepath.Dir(h), "managed")
-			writeLeftCoreFile(t, filepath.Join(managed, ".env"), "DEEPSEEK_API_KEY=sk-admin\nTELEGRAM_HOME_CHANNEL=111\n")
+			writeTextFile(t, filepath.Join(managed, ".env"), "DEEPSEEK_API_KEY=sk-admin\nTELEGRAM_HOME_CHANNEL=111\n")
 			t.Setenv(config.EnvManagedDir, managed)
 			config.InvalidateManagedCache()
 			t.Cleanup(config.InvalidateManagedCache)
@@ -172,8 +172,8 @@ func TestP2EnvLockRefusalIsNotReportedAsSuccess(t *testing.T) {
 			envPath, cfgPath := filepath.Join(h, ".env"), filepath.Join(h, "config.yaml")
 			envBefore := "DEEPSEEK_API_KEY=sk-old\nTELEGRAM_HOME_CHANNEL=5\n"
 			cfgText := "model:\n  default: deepseek-chat\n  api_key: sk-old\n"
-			writeLeftCoreFile(t, envPath, envBefore)
-			writeLeftCoreFile(t, cfgPath, cfgText)
+			writeTextFile(t, envPath, envBefore)
+			writeTextFile(t, cfgPath, cfgText)
 			config.ResetCache()
 			code, err := propConfigSet(h, key, "c18-new")
 			envAfter, _ := os.ReadFile(envPath)
