@@ -19,7 +19,7 @@ type PoolPresenceSource interface {
 	HasPoolCredentials(provider string) bool
 }
 
-// Pool rows, auth store logins, the active login and the free tier one home's resolution reads
+// Pool rows, auth store logins and the signed in provider one home's resolution reads
 type homeCredentials struct {
 	*PoolCredentials
 	env PoolEnv
@@ -95,25 +95,8 @@ func (c *homeCredentials) RuntimeCredential(provider string) (Credential, error)
 	return Credential{APIKey: anyString(creds["api_key"]), BaseURL: anyString(creds["base_url"]), Source: anyString(creds["source"])}, nil
 }
 
-// auth.json active provider when it is a registry provider reporting logged in
-func (c *homeCredentials) ActiveLoggedInProvider() string {
-	data, err := c.env.Store.Load()
-	if err != nil {
-		pkgLog().Debug("Could not pre-read active auth provider", "error", err)
-		return ""
-	}
-	maybe, _ := data["active_provider"].(string)
-	if maybe == "" {
-		return ""
-	}
-	if _, ok := registryProfileCtx(c.env.ctx(), maybe); !ok {
-		return ""
-	}
-	if truthy(GetAuthStatus(c.env, maybe)["logged_in"]) {
-		return maybe
-	}
-	return ""
-}
+// First registry provider, in picker order, whose stored logins report signed in
+func (c *homeCredentials) SignedInProvider() string { return SignedInProvider(c.env, nil) }
 
 // Logged in and configured flags get_auth_status reports for the provider in the bound home
 func providerAuthStatus(ctx context.Context, provider string) (loggedIn, configured bool) {

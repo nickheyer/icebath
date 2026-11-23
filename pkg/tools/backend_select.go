@@ -172,23 +172,29 @@ func readRawConfig(env *Env) (config.Tree, error) {
 	return config.Tree(doc), nil
 }
 
-// Lowercased value of a setting the user stored, empty when it holds only its default
-func storedChoice(env *Env, key string) string {
+// Value of a setting the user stored, stripped and spelled as written, empty when it holds only its default
+func storedSetting(env *Env, key string) string {
 	v, err := settings.Resolve(envHomeCtx(context.Background(), env), key)
 	if err != nil || v.Source == settings.SourceDefault {
 		return ""
 	}
-	return pystr.Lower(pystr.Strip(pyOrStr(v.Value)))
+	return pystr.Strip(pyOrStr(v.Value))
 }
 
-// ReadSelection returns the provider choice stored for a section, empty when none was chosen
-func ReadSelection(env *Env, section string) string {
+// Lowercased value of a setting the user stored, empty when it holds only its default
+func storedChoice(env *Env, key string) string { return pystr.Lower(storedSetting(env, key)) }
+
+// StoredProvider returns the provider name stored for a section spelled as the user wrote it, empty when none was chosen
+func StoredProvider(env *Env, section string) string {
 	key, ok := selectionKeys[section]
 	if !ok {
 		return ""
 	}
-	return storedChoice(env, key)
+	return storedSetting(env, key)
 }
+
+// ReadSelection returns the provider choice stored for a section in lower case, empty when none was chosen
+func ReadSelection(env *Env, section string) string { return pystr.Lower(StoredProvider(env, section)) }
 
 // ReadWebCapabilitySelection returns the selection deciding one web capability
 func ReadWebCapabilitySelection(env *Env, capability string) string {
@@ -225,12 +231,22 @@ func RemovedBackendNote(section, name string) string {
 	return RemovedBackends[section][key]
 }
 
-// SelectionError is the uniform message for a selected but broken provider
+// Settings screen group holding the provider choice of each section
+var selectionGroups = map[string]settings.GroupID{
+	"browser": settings.GroupTools, "web": settings.GroupTools, "image_gen": settings.GroupMedia,
+	"video_gen": settings.GroupMedia, "tts": settings.GroupVoice, "stt": settings.GroupVoice,
+}
+
+// SelectionError is the uniform message for a selected but broken provider, naming where the choice is changed
 func SelectionError(section, selectionName, failure string) string {
 	if note := RemovedBackendNote(section, selectionName); note != "" {
 		failure = note
 	}
-	return section + " is configured to use " + selectionName + " (set via icebath tools), but " + failure + ". Run 'icebath tools' to change it."
+	where := "/settings"
+	if group, ok := settings.GroupOf(selectionGroups[section]); ok {
+		where += " → " + group.Label
+	}
+	return section + " is configured to use " + selectionName + ", but " + failure + ". Pick another one in " + where + "."
 }
 
 // FalKeyIsConfigured reports whether FAL_KEY holds a non blank value in scope or .env

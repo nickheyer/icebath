@@ -58,7 +58,7 @@ func newVoiceBot(profile string) *voiceBot {
 // test_voice_transcript_dedup_scope.py test_dedup_is_scoped_to_the_receiving_bot_and_its_binding
 func TestDedupIsScopedToTheReceivingBotAndItsBinding(t *testing.T) {
 	t.Setenv(home.EnvHome, t.TempDir())
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
+	setSettings(t, map[string]any{"gateway.allow_all_users": true})
 	ctx := context.Background()
 	botA, botB := newVoiceBot(""), newVoiceBot("bot-b")
 	r := allocGatewayRunner()

@@ -167,7 +167,7 @@ func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
 		}
 		if pyrepr.Truthy(content) {
 			escaped := escapeHTML(content)
-			if role == "tool" {
+			if role == "tool" || role == shellLineRole {
 				escaped = "<pre><code>" + escaped + "</code></pre>"
 			}
 			html += `  <div class="content">` + escaped + `</div>`
@@ -265,7 +265,7 @@ func sessionViewHTML(s *pyjson.Object, isMulti bool) (string, error) {
 	if v := rowValue(s, "model"); pyrepr.Truthy(v) {
 		model = v
 	}
-	messages, err := generateMessagesHTML(exportMessageRows(s))
+	messages, err := generateMessagesHTML(exportDisplayRows(s))
 	if err != nil {
 		return "", err
 	}

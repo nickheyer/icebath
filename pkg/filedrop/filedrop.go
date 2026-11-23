@@ -18,7 +18,8 @@ var ImageExtensions = map[string]bool{
 	".bmp": true, ".tiff": true, ".tif": true, ".svg": true, ".ico": true,
 }
 
-func ResolveAttachmentPath(rawPath string) string {
+// Regular file a typed path names, a relative one read against base and against the working directory of the process without one, empty when it names none
+func ResolveAttachmentPath(rawPath, base string) string {
 	token := strings.TrimSpace(rawPath)
 	if token == "" {
 		return ""
@@ -54,9 +55,12 @@ func ResolveAttachmentPath(rawPath string) string {
 	}
 	path := expanded
 	if !filepath.IsAbs(path) {
-		base := os.Getenv("TERMINAL_CWD")
 		if base == "" {
-			base, _ = os.Getwd()
+			cwd, err := os.Getwd()
+			if err != nil {
+				return ""
+			}
+			base = cwd
 		}
 		path = filepath.Join(base, path)
 	}
@@ -81,8 +85,8 @@ type Drop struct {
 	Remainder string
 }
 
-// Detects a dragged or pasted file path at the start of the input, nil when the text is not a path
-func DetectFileDrop(userInput string) *Drop {
+// Detects a dragged or pasted file path at the start of the input, a relative one read against base, nil when the text is not a path
+func DetectFileDrop(userInput, base string) *Drop {
 	stripped := strings.TrimSpace(userInput)
 	if stripped == "" {
 		return nil
@@ -98,17 +102,17 @@ func DetectFileDrop(userInput string) *Drop {
 	if !startsLikePath {
 		return nil
 	}
-	if direct := ResolveAttachmentPath(stripped); direct != "" {
+	if direct := ResolveAttachmentPath(stripped, base); direct != "" {
 		return dropResult(direct, "")
 	}
 	firstToken, remainder := SplitPathInput(stripped)
-	dropPath := ResolveAttachmentPath(firstToken)
+	dropPath := ResolveAttachmentPath(firstToken, base)
 	if dropPath == "" && strings.Contains(stripped, " ") && !quoted {
 		for pos := len(stripped) - 1; pos >= 0; pos-- {
 			if stripped[pos] != ' ' {
 				continue
 			}
-			dropPath = ResolveAttachmentPath(strings.TrimRight(stripped[:pos], " "))
+			dropPath = ResolveAttachmentPath(strings.TrimRight(stripped[:pos], " "), base)
 			if dropPath != "" {
 				remainder = strings.TrimSpace(stripped[pos+1:])
 				break

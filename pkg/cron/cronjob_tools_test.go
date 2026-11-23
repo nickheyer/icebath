@@ -379,7 +379,7 @@ func TestValidateCronBaseURLStoredKeyOnlyGoesToTheConfiguredOrigin(t *testing.T)
 func TestValidateCronBaseURLBareCustomSendsAStoredKeyOnlyToAConfiguredOrigin(t *testing.T) {
 	s, _ := newTestStore(t)
 	configured := "https://api.acmellm.example/v1"
-	if err := os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte("custom_providers:\n  - name: acme\n    base_url: "+configured+"\n  - name: broken\n    base_url: http://[::1/v1\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(s.home, "config.yaml"), []byte("providers:\n  acme:\n    base_url: "+configured+"\n  broken:\n    base_url: http://[::1/v1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	saved := cronProviderResolver

@@ -122,8 +122,8 @@ func anthWriteConfig(t *testing.T, yaml string) {
 	}
 }
 
-const anthWAFConfig = `custom_providers:
-  - name: wafproxy
+const anthWAFConfig = `providers:
+  wafproxy:
     base_url: https://proxy.example.com/v1
     api_mode: anthropic_messages
     extra_headers:

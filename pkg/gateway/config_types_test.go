@@ -29,11 +29,11 @@ func yamlHome(t *testing.T, text string) (context.Context, string) {
 	return home.WithOverride(context.Background(), h), h
 }
 
-// The config.yaml and gateway.json layers read the way load_gateway_config reads them before env overrides
+// The config.yaml layer read the way LoadGatewayConfig reads it before env overrides
 func loadLayers(t *testing.T, ctx context.Context, h string) *GatewayConfig {
 	t.Helper()
-	gw := LoadLegacyGatewayJSON(h)
-	if err := LoadYAMLLayerAny(ctx, h, gw); err != nil {
+	gw := map[string]any{}
+	if err := LoadYAMLLayer(ctx, h, gw); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := GatewayConfigFromDict(ctx, gw)
@@ -280,9 +280,6 @@ func TestMergePlatformSectionsOrder(t *testing.T) {
 	if _, err := MergePlatformSections(ctx, bad, nil, map[string]any{}, nil); err == nil || err.Error() != "expected a mapping, got nothing" {
 		t.Fatalf("extra None %v", err)
 	}
-	if enabled, token := providerPlatformEnabled(map[string]any{"token": 77}); enabled || token != "77" {
-		t.Fatal("provider platform enabled hook")
-	}
 }
 
 func TestAuthoredExtraWinsAndSharedKeys(t *testing.T) {
@@ -413,8 +410,7 @@ func TestPluginYAMLHooksAndActivation(t *testing.T) {
 
 func TestToolsAndProviderHooksInstalled(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	if tools.RegisteredAdapterSecretEnv == nil || tools.RegisteredPlatformNames == nil ||
-		provider.GatewayHooks.MergePlatformSections == nil || provider.GatewayHooks.PlatformEnabled == nil {
+	if tools.RegisteredAdapterSecretEnv == nil || tools.RegisteredPlatformNames == nil || provider.GatewayHooks.ServesHome == nil {
 		t.Fatal("init installs the hooks")
 	}
 	h := t.TempDir()

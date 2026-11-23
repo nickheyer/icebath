@@ -106,7 +106,7 @@ func TestResumeAcceptsTheCreationAliasAndRelaunchesAnotherModel(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	config := "model:\n  provider: custom\n  base_url: http://127.0.0.1:1/v1\n  default: model-main\n" +
-		"model_aliases:\n  fast: {model: model-alias, provider: custom, base_url: http://127.0.0.1:3/v1}\n"
+		"  aliases:\n    fast: {model: model-alias, provider: custom, base_url: http://127.0.0.1:3/v1}\n"
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -127,34 +127,16 @@ func TestResumeAcceptsTheCreationAliasAndRelaunchesAnotherModel(t *testing.T) {
 	}
 }
 
-func TestClassicCLICreateSendsClientEnvWhenTheGatewayTakesIt(t *testing.T) {
-	for _, takes := range []bool{true, false} {
-		db, client := storeFixture(t)
-		clientShell(t)
-		parameters := []any{"cwd", "source", "row_cwd"}
-		if takes {
-			parameters = append(parameters, "client_env")
-		}
-		client.setRPC(func(ctx context.Context, method string, params map[string]any) (any, error) {
-			if method == "runtime.describe" {
-				client.record(method, params)
-				return map[string]any{"session_create": map[string]any{"sources": []any{"cli"}, "parameters": parameters}}, nil
-			}
-			return client.base(ctx, method, params)
-		})
-		if _, err := db.Create(context.Background(), map[string]any{}, "", false); err != nil {
-			t.Fatal(err)
-		}
-		created := client.of("session.create")
-		if len(created) != 1 {
-			t.Fatalf("takes=%v: creates %v", takes, created)
-		}
-		env, sent := created[0]["client_env"]
-		if takes {
-			plain, _ := env.(map[string]any)
-			expectClientEnv(t, plain)
-		} else if sent {
-			t.Fatalf("client_env sent to a gateway that does not take it: %v", created[0])
-		}
+func TestClassicCLICreateSendsClientEnv(t *testing.T) {
+	db, client := storeFixture(t)
+	clientShell(t)
+	if _, err := db.Create(context.Background(), map[string]any{}, "", false); err != nil {
+		t.Fatal(err)
 	}
+	created := client.of("session.create")
+	if len(created) != 1 || len(client.of("runtime.describe")) != 0 {
+		t.Fatalf("calls %v", client.all())
+	}
+	plain, _ := created[0]["client_env"].(map[string]any)
+	expectClientEnv(t, plain)
 }

@@ -65,7 +65,7 @@ func TestResolvedRouteIdentityAndURL(t *testing.T) {
 	}
 }
 
-func TestConfiguredEntryKeyIsTheKeyOrALegacyEntrysDisplayName(t *testing.T) {
+func TestConfiguredEntryKeyIsTheProvidersKeyBehindAnyOfItsNames(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	ctx := context.Background()
 	heldKey := func(entries map[string]any, providerName string) string {
@@ -80,7 +80,6 @@ func TestConfiguredEntryKeyIsTheKeyOrALegacyEntrysDisplayName(t *testing.T) {
 		return ConfiguredEntryKey(ctx, identity, cfg)
 	}
 	keyed := map[string]any{"providers": map[string]any{"work": map[string]any{"name": "OpenRouter", "base_url": routeA}}}
-	legacy := map[string]any{"custom_providers": []any{map[string]any{"name": "OpenRouter", "base_url": routeA}}}
 	for i, tc := range []struct {
 		entries  map[string]any
 		provider string
@@ -88,7 +87,6 @@ func TestConfiguredEntryKeyIsTheKeyOrALegacyEntrysDisplayName(t *testing.T) {
 	}{
 		{keyed, "custom:work", "work"},
 		{keyed, "custom:openrouter", "work"},
-		{legacy, "custom:openrouter", "openrouter"},
 		{map[string]any{}, "openrouter", ""},
 	} {
 		if got := heldKey(tc.entries, tc.provider); got != tc.want {
@@ -98,7 +96,7 @@ func TestConfiguredEntryKeyIsTheKeyOrALegacyEntrysDisplayName(t *testing.T) {
 }
 
 func TestRouteBoundKeysCoverRouteWireWindowAndCredentials(t *testing.T) {
-	want := []string{"provider", "base_url", "api_mode", "context_length", "api_key", "api", "api_key_from", "key_env", "api_key_env"}
+	want := []string{"provider", "base_url", "api_mode", "context_length", "api_key", "api", "api_key_from", "key_env"}
 	if !reflect.DeepEqual(RouteBoundKeys, want) {
 		t.Fatalf("keys %v", RouteBoundKeys)
 	}

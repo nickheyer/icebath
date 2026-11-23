@@ -97,21 +97,20 @@ func TestInvalidInputs(t *testing.T) {
 	t.Run("test_dict_returns_default", func(t *testing.T) { unlimited(t, map[string]any{}, map[string]any{"max_turns": 90}) })
 }
 
-// Python int() spellings parse, a NaN string falls back and an infinite float raises as int() does
-func TestResolveTurnLimitFollowsPythonIntConversion(t *testing.T) {
-	for raw, want := range map[any]int{"1_000": 1000, "+7": 7, "1e2": 100, "nan": 42, int64(9): 9, "99999999999999999999": TurnLimitUnlimited} {
+// Numeric spellings parse, a NaN falls back and an infinity means no limit
+func TestResolveTurnLimitReadsNumericSpellings(t *testing.T) {
+	for raw, want := range map[any]int{"1_000": 1000, "+7": 7, "1e2": 100, "nan": 42, int64(9): 9, "99999999999999999999": TurnLimitUnlimited,
+		"-inf": TurnLimitUnlimited, "1e400": TurnLimitUnlimited} {
 		if got := ResolveTurnLimit(raw, 42); got != want {
 			t.Fatalf("%#v resolved to %d want %d", raw, got, want)
 		}
 	}
-	for _, raw := range []any{math.Inf(1), math.NaN(), "-inf"} {
-		func() {
-			defer func() {
-				if recover() == nil {
-					t.Fatalf("%#v did not raise", raw)
-				}
-			}()
-			ResolveTurnLimit(raw, 42)
-		}()
+	if got := ResolveTurnLimit(math.NaN(), 42); got != 42 {
+		t.Fatalf("NaN resolved to %d", got)
+	}
+	for _, raw := range []any{math.Inf(1), math.Inf(-1), float32(math.Inf(1))} {
+		if got := ResolveTurnLimit(raw, 42); got != TurnLimitUnlimited {
+			t.Fatalf("%#v resolved to %d", raw, got)
+		}
 	}
 }

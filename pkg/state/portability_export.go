@@ -272,6 +272,9 @@ func (d *SessionDB) withMessages(ctx context.Context, session *pyjson.Object, in
 	out := session.Copy()
 	out.Set("messages", anyObjectList(messages))
 	out.Set("timings", exportTimings(messages, sessionID))
+	if err := d.attachShellLines(ctx, session, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -292,6 +295,7 @@ func (d *SessionDB) ExportSessionLineage(ctx context.Context, sessionID string, 
 	}
 	segments := []any{}
 	messages := []any{}
+	shell := []any{}
 	var last *pyjson.Object
 	ids := []any{}
 	for _, sid := range lineage {
@@ -308,6 +312,9 @@ func (d *SessionDB) ExportSessionLineage(ctx context.Context, sessionID string, 
 		if list, ok := rowValue(segment, "messages").([]any); ok {
 			messages = append(messages, list...)
 		}
+		if lines, ok := rowValue(segment, "shell_lines").([]any); ok {
+			shell = append(shell, lines...)
+		}
 	}
 	if last == nil {
 		return nil, nil
@@ -318,6 +325,10 @@ func (d *SessionDB) ExportSessionLineage(ctx context.Context, sessionID string, 
 	out.Set("message_count", int64(len(messages)))
 	out.Set("messages", messages)
 	out.Set("timings", exportTimings(objectsOf(messages), sessionID))
+	out.Delete("shell_lines")
+	if len(shell) > 0 {
+		out.Set("shell_lines", shell)
+	}
 	return out, nil
 }
 
@@ -382,6 +393,9 @@ func (d *SessionDB) ExportAll(ctx context.Context, source string, includeCompact
 		exported := session.Copy()
 		exported.Set("messages", bySession[sid])
 		exported.Set("timings", exportTimings(objectsOf(bySession[sid]), sid))
+		if err := d.attachShellLines(ctx, session, exported); err != nil {
+			return nil, err
+		}
 		out = append(out, exported)
 	}
 	return out, nil

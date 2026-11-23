@@ -6,7 +6,6 @@ import (
 	"maps"
 	"regexp"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -95,37 +94,6 @@ func (a *DiscordAdapter) settingSet(ctx context.Context, e settings.Entry) strSe
 	return out
 }
 
-// Comma separated or list gate value as a set of stripped non empty strings
-func gateCSVSet(raw any) strSet {
-	out := strSet{}
-	if raw == nil {
-		return out
-	}
-	raw = gateway.DecodeJSONListLiteral(raw)
-	if items, ok := raw.([]any); ok {
-		for _, part := range items {
-			if s := pystr.Strip(pyrepr.Str(part)); s != "" {
-				out[s] = struct{}{}
-			}
-		}
-		return out
-	}
-	if items, ok := raw.([]string); ok {
-		for _, part := range items {
-			if s := pystr.Strip(part); s != "" {
-				out[s] = struct{}{}
-			}
-		}
-		return out
-	}
-	for _, part := range strings.Split(pyrepr.Str(raw), ",") {
-		if s := pystr.Strip(part); s != "" {
-			out[s] = struct{}{}
-		}
-	}
-	return out
-}
-
 // Channels this adapter answers in, empty for every channel
 func (a *DiscordAdapter) getAllowedChannels(ctx context.Context) strSet {
 	return a.settingSet(ctx, settings.DiscordAllowedChannels)
@@ -157,6 +125,37 @@ func (a *DiscordAdapter) getAllowedRoles(ctx context.Context) (strSet, error) {
 	return canonicalRoleIDs(a.settingSet(ctx, settings.DiscordAllowedRoles))
 }
 
+// Text of the allowed people and allowed roles settings of this adapter's profile
+func (a *DiscordAdapter) allowlistSettingsText(ctx context.Context) [2]string {
+	sctx := a.sctx(ctx)
+	return [2]string{gateway.SettingText(sctx, settings.DiscordAllowFrom), gateway.SettingText(sctx, settings.DiscordAllowedRoles)}
+}
+
+// Takes up a change of the allowed people or allowed roles settings made since they were last read, resolving usernames anew
+func (a *DiscordAdapter) syncAllowlists(ctx context.Context) {
+	stamp := a.allowlistSettingsText(ctx)
+	a.mu.Lock()
+	unchanged := a.allowlistStamp == stamp
+	a.mu.Unlock()
+	if unchanged {
+		return
+	}
+	users := a.getAllowedUsers(ctx)
+	roles, err := a.getAllowedRoles(ctx)
+	if err != nil {
+		pkgLog().Warn(fmt.Sprintf("[%s] %s does not read, so no role is allowed until it is fixed: %s", a.Name(), settings.DiscordAllowedRoles.Key, err))
+		roles = strSet{}
+	}
+	a.mu.Lock()
+	a.allowedUserIDs, a.allowedRoleIDs, a.allowlistStamp = users, roles, stamp
+	a.mu.Unlock()
+	if client := a.liveClient(); client != nil && client.Identify.Intents&discordgo.IntentGuildMembers == 0 && needsServerMembersIntent(keysOf(users), keysOf(roles)) {
+		pkgLog().Warn(fmt.Sprintf("[%s] The allowed people or roles now need Discord's Server Members Intent, which this connection was opened without. "+
+			"Restart the background service so usernames resolve and roles count in direct messages.", a.Name()))
+	}
+	a.resolveAllowedUsernames(ctx)
+}
+
 // Role ids of a set in canonical decimal form, entries that are not ids skipped
 func canonicalRoleIDs(entries strSet) (strSet, error) {
 	out := strSet{}
@@ -174,11 +173,27 @@ func canonicalRoleIDs(entries strSet) (strSet, error) {
 	return out, nil
 }
 
-// Numeric ids resolved from username allowlist entries at connect time, read by the access checks
+// Numeric ids the allowed people entries name without spelling them plainly, resolved usernames and pasted mentions, read by the access checks
 func (a *DiscordAdapter) ResolvedAllowlistUserIDs() (any, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	return slices.Sorted(maps.Keys(a.usernameResolvedIDs)), nil
+	ctx := a.runCtx
+	a.mu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	a.syncAllowlists(ctx)
+	ids := strSet{}
+	for entry := range a.settingSet(ctx, settings.DiscordAllowFrom) {
+		if cleaned := cleanDiscordID(entry); cleaned != entry && isDigitString(cleaned) {
+			ids[cleaned] = struct{}{}
+		}
+	}
+	a.mu.Lock()
+	for id := range a.usernameResolvedIDs {
+		ids[id] = struct{}{}
+	}
+	a.mu.Unlock()
+	return slices.Sorted(maps.Keys(ids)), nil
 }
 
 // Whether this adapter's profile lets everyone talk to it on Discord

@@ -140,7 +140,8 @@ type Model struct {
 	dialWidths                              map[string]int
 }
 
-// Sends every command an owned card returns through route, so an app with several owners gets each answer back to the right one
+// Passes what an owned card returns for every message it takes through route, a nil command included, so an app with several owners hears
+// which of them took a message and gets each answer back to the right one
 func (m *Model) SetRoute(route func(owner any, cmd tea.Cmd) tea.Cmd) { m.route = route }
 
 // Runs fn with owner as the owner of every card it opens
@@ -167,9 +168,9 @@ func (m *Model) OwnerOf(c Card) any {
 	return nil
 }
 
-// Command of an entry's card through the route of its owner
+// What an entry's card returned for a message through the route of its owner, the route hearing of the message even when the card returned nothing
 func (m *Model) routed(e *entry, cmd tea.Cmd) tea.Cmd {
-	if cmd == nil || m.route == nil || e.owner == nil {
+	if m.route == nil || e.owner == nil {
 		return cmd
 	}
 	return m.route(e.owner, cmd)

@@ -49,14 +49,12 @@ func driveStopWith(t *testing.T, source *gateway.SessionSource, running map[stri
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
-	for _, k := range []string{"SLACK_ALLOWED_USERS", "WHATSAPP_ALLOWED_USERS", "TELEGRAM_ALLOWED_USERS", "MATRIX_ALLOWED_USERS",
-		"GATEWAY_ALLOWED_USERS", "SLACK_ALLOW_ALL_USERS", "WHATSAPP_ALLOW_ALL_USERS", "TELEGRAM_ALLOW_ALL_USERS", "MATRIX_ALLOW_ALL_USERS"} {
+	for _, k := range []string{"SLACK_ALLOWED_USERS", "GATEWAY_ALLOWED_USERS", "SLACK_ALLOW_ALL_USERS", "WHATSAPP_ALLOW_ALL_USERS",
+		"TELEGRAM_ALLOW_ALL_USERS", "MATRIX_ALLOW_ALL_USERS"} {
 		t.Setenv(k, "")
 	}
 	if authorized {
-		t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
-	} else {
-		t.Setenv("GATEWAY_ALLOW_ALL_USERS", "")
+		setSettings(t, map[string]any{"gateway.allow_all_users": true})
 	}
 	ctx := context.Background()
 	r := allocGatewayRunner()

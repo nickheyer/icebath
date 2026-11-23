@@ -56,9 +56,6 @@ var (
 	CanonicalSubmitImageNotSubmitted                       = Key{"canonical.submit.imageNotSubmitted"}
 	CanonicalSubmitInputRetained                           = Key{"canonical.submit.inputRetained"}
 	CanonicalSubmitInterruptFailed                         = Key{"canonical.submit.interruptFailed"}
-	CanonicalSubmitLegacyDelivery                          = Key{"canonical.submit.legacyDelivery"}
-	CanonicalSubmitLegacyUnconfirmed                       = Key{"canonical.submit.legacyUnconfirmed"}
-	CanonicalSubmitLegacyUnconfirmedWith                   = Key{"canonical.submit.legacyUnconfirmedWith"}
 	CanonicalSubmitStatusAdmissionUnconfirmed              = Key{"canonical.submit.statusAdmissionUnconfirmed"}
 	CanonicalSubmitStatusDeliveryUnconfirmed               = Key{"canonical.submit.statusDeliveryUnconfirmed"}
 	CanonicalSubmitStatusImageNotSubmitted                 = Key{"canonical.submit.statusImageNotSubmitted"}
@@ -1867,6 +1864,8 @@ var (
 	KeysTuiApprovalPageLabel                               = Key{"keys.tui.approval.page.label"}
 	KeysTuiChatappsSendDoc                                 = Key{"keys.tui.chatapps.send.doc"}
 	KeysTuiChatappsSendLabel                               = Key{"keys.tui.chatapps.send.label"}
+	KeysTuiChatappsServiceDoc                              = Key{"keys.tui.chatapps.service.doc"}
+	KeysTuiChatappsServiceLabel                            = Key{"keys.tui.chatapps.service.label"}
 	KeysTuiCronHealthDoc                                   = Key{"keys.tui.cron.health.doc"}
 	KeysTuiCronHealthLabel                                 = Key{"keys.tui.cron.health.label"}
 	KeysTuiCronHistoryDoc                                  = Key{"keys.tui.cron.history.doc"}
@@ -1909,8 +1908,8 @@ var (
 	KeysTuiMcpTestLabel                                    = Key{"keys.tui.mcp.test.label"}
 	KeysTuiModelDoc                                        = Key{"keys.tui.model.doc"}
 	KeysTuiModelLabel                                      = Key{"keys.tui.model.label"}
-	KeysTuiModelsDisconnectDoc                             = Key{"keys.tui.models.disconnect.doc"}
-	KeysTuiModelsDisconnectLabel                           = Key{"keys.tui.models.disconnect.label"}
+	KeysTuiModelsLoginsDoc                                 = Key{"keys.tui.models.logins.doc"}
+	KeysTuiModelsLoginsLabel                               = Key{"keys.tui.models.logins.label"}
 	KeysTuiModelsScopeDoc                                  = Key{"keys.tui.models.scope.doc"}
 	KeysTuiModelsScopeLabel                                = Key{"keys.tui.models.scope.label"}
 	KeysTuiPasteExpandDoc                                  = Key{"keys.tui.paste.expand.doc"}
@@ -2212,8 +2211,6 @@ var (
 	LibTextTerminalSetupConfigureFailed                    = Key{"libText.terminalSetup.configureFailed"}
 	LibTextTerminalSetupConflicts                          = Key{"libText.terminalSetup.conflicts"}
 	LibTextTerminalSetupKeybindingsNotArray                = Key{"libText.terminalSetup.keybindingsNotArray"}
-	LibTextTerminalSetupMigratedOne                        = Key{"libText.terminalSetup.migratedOne"}
-	LibTextTerminalSetupMigratedOther                      = Key{"libText.terminalSetup.migratedOther"}
 	LibTextTerminalSetupMustRunLocally                     = Key{"libText.terminalSetup.mustRunLocally"}
 	LibTextTerminalSetupNoSupportedIde                     = Key{"libText.terminalSetup.noSupportedIde"}
 	LibTextTerminalSetupReadFailed                         = Key{"libText.terminalSetup.readFailed"}
@@ -3289,13 +3286,7 @@ var (
 	SystemMigrationsCodexCheckDoes                         = Key{"system.migrations.codexCheckDoes"}
 	SystemMigrationsCodexConfirm                           = Key{"system.migrations.codexConfirm"}
 	SystemMigrationsCodexDoes                              = Key{"system.migrations.codexDoes"}
-	SystemMigrationsConfig                                 = Key{"system.migrations.config"}
-	SystemMigrationsConfigConfirm                          = Key{"system.migrations.configConfirm"}
-	SystemMigrationsConfigDoes                             = Key{"system.migrations.configDoes"}
 	SystemMigrationsCovers                                 = Key{"system.migrations.covers"}
-	SystemMigrationsRelay                                  = Key{"system.migrations.relay"}
-	SystemMigrationsRelayConfirm                           = Key{"system.migrations.relayConfirm"}
-	SystemMigrationsRelayDoes                              = Key{"system.migrations.relayDoes"}
 	SystemMigrationsTitle                                  = Key{"system.migrations.title"}
 	SystemMigrationsXai                                    = Key{"system.migrations.xai"}
 	SystemMigrationsXaiCheck                               = Key{"system.migrations.xaiCheck"}
@@ -3637,9 +3628,6 @@ var all = []Key{
 	CanonicalSubmitImageNotSubmitted,
 	CanonicalSubmitInputRetained,
 	CanonicalSubmitInterruptFailed,
-	CanonicalSubmitLegacyDelivery,
-	CanonicalSubmitLegacyUnconfirmed,
-	CanonicalSubmitLegacyUnconfirmedWith,
 	CanonicalSubmitStatusAdmissionUnconfirmed,
 	CanonicalSubmitStatusDeliveryUnconfirmed,
 	CanonicalSubmitStatusImageNotSubmitted,
@@ -5448,6 +5436,8 @@ var all = []Key{
 	KeysTuiApprovalPageLabel,
 	KeysTuiChatappsSendDoc,
 	KeysTuiChatappsSendLabel,
+	KeysTuiChatappsServiceDoc,
+	KeysTuiChatappsServiceLabel,
 	KeysTuiCronHealthDoc,
 	KeysTuiCronHealthLabel,
 	KeysTuiCronHistoryDoc,
@@ -5490,8 +5480,8 @@ var all = []Key{
 	KeysTuiMcpTestLabel,
 	KeysTuiModelDoc,
 	KeysTuiModelLabel,
-	KeysTuiModelsDisconnectDoc,
-	KeysTuiModelsDisconnectLabel,
+	KeysTuiModelsLoginsDoc,
+	KeysTuiModelsLoginsLabel,
 	KeysTuiModelsScopeDoc,
 	KeysTuiModelsScopeLabel,
 	KeysTuiPasteExpandDoc,
@@ -5793,8 +5783,6 @@ var all = []Key{
 	LibTextTerminalSetupConfigureFailed,
 	LibTextTerminalSetupConflicts,
 	LibTextTerminalSetupKeybindingsNotArray,
-	LibTextTerminalSetupMigratedOne,
-	LibTextTerminalSetupMigratedOther,
 	LibTextTerminalSetupMustRunLocally,
 	LibTextTerminalSetupNoSupportedIde,
 	LibTextTerminalSetupReadFailed,
@@ -6870,13 +6858,7 @@ var all = []Key{
 	SystemMigrationsCodexCheckDoes,
 	SystemMigrationsCodexConfirm,
 	SystemMigrationsCodexDoes,
-	SystemMigrationsConfig,
-	SystemMigrationsConfigConfirm,
-	SystemMigrationsConfigDoes,
 	SystemMigrationsCovers,
-	SystemMigrationsRelay,
-	SystemMigrationsRelayConfirm,
-	SystemMigrationsRelayDoes,
 	SystemMigrationsTitle,
 	SystemMigrationsXai,
 	SystemMigrationsXaiCheck,

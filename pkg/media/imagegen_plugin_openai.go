@@ -289,7 +289,8 @@ func (p *openAIImageGenProvider) Generate(ctx context.Context, env *tools.Env, r
 	}
 	first := response.Data[0]
 	imageRef, failure := materializeImage(ctx, env, openAIItemString(first, "b64_json"), openAIItemString(first, "url"),
-		materializeOptions{Prefix: "openai_" + tierID, Label: "OpenAI", Provider: "openai", Model: tierID, Prompt: prompt, Aspect: aspect, Log: logOf(env)})
+		materializeOptions{Prefix: "openai_" + tierID, Label: "OpenAI", Provider: "openai", Model: tierID, Prompt: prompt, Aspect: aspect,
+			ProviderBase: baseURL, Log: logOf(env)})
 	if failure != nil {
 		return failure, nil
 	}

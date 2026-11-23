@@ -414,8 +414,8 @@ func refuseRepointed(t *testing.T, cases []routedSecretCase) {
 
 func TestASecretIsBoundToTheEndpointItsRouteResolvesTo(t *testing.T) {
 	refuseRepointed(t, []routedSecretCase{
-		{"entry_api_url", `{"model": {"provider": "p2", "default": "m"}, "providers": {"p2": {"api": "http://good.invalid/v1", "api_key": "K-p2"}}}`,
-			[]any{"providers", "p2", "api"}, "providers.p2.api_key"},
+		{"entry_base_url", `{"model": {"provider": "p2", "default": "m"}, "providers": {"p2": {"base_url": "http://good.invalid/v1", "api_key": "K-p2"}}}`,
+			[]any{"providers", "p2", "base_url"}, "providers.p2.api_key"},
 		{"fallback_key_via_entry", `{"model": {"provider": "custom", "default": "m", "base_url": "http://good.invalid/v1"}, ` +
 			`"providers": {"fb": {"base_url": "http://good-fb.invalid/v1"}}, "fallback_providers": [{"provider": "fb", "model": "x", "api_key": "K-fb"}]}`,
 			[]any{"providers", "fb", "base_url"}, "fallback_providers.0.api_key"},
@@ -426,9 +426,6 @@ func TestASecretIsBoundToTheEndpointItsRouteResolvesTo(t *testing.T) {
 
 func TestEveryRouteShapeBindsItsSecretToTheOwningRoute(t *testing.T) {
 	refuseRepointed(t, []routedSecretCase{
-		{"alias_key_via_api_key_from", `{"model": {"provider": "custom", "default": "m", "base_url": "http://good.invalid/v1", "api_key_from": ["model_aliases", "alt", "api_key"]}, ` +
-			`"model_aliases": {"alt": {"provider": "custom", "model": "x", "api_key": "K-alias"}}}`,
-			[]any{"model", "base_url"}, "model_aliases.alt.api_key"},
 		{"aux_fallback_chain_via_entry", `{` + baseRoute + `, "providers": {"team": {"base_url": "http://good.invalid/v1"}}, ` +
 			`"auxiliary": {"compression": {"provider": "custom", "model": "m", "base_url": "http://good.invalid/v1", "fallback_chain": [{"provider": "team", "model": "m", "api_key": "K-chain"}]}}}`,
 			[]any{"providers", "team", "base_url"}, "auxiliary.compression.fallback_chain.0.api_key"},
@@ -439,9 +436,6 @@ func TestEveryRouteShapeBindsItsSecretToTheOwningRoute(t *testing.T) {
 		{"aux_task_via_entry", `{` + baseRoute + `, "providers": {"team": {"base_url": "http://good.invalid/v1"}}, ` +
 			`"auxiliary": {"compression": {"provider": "team", "model": "m", "api_key": "K-aux"}}}`,
 			[]any{"providers", "team", "base_url"}, "auxiliary.compression.api_key"},
-		{"fallback_model_dict_via_entry", `{` + baseRoute + `, "providers": {"fb": {"base_url": "http://good.invalid/v1"}}, ` +
-			`"fallback_model": {"provider": "fb", "model": "x", "api_key": "K-fb"}}`,
-			[]any{"providers", "fb", "base_url"}, "fallback_model.api_key"},
 		{"fallback_providers_dict", `{` + baseRoute + `, "fallback_providers": {"provider": "custom", "model": "x", "base_url": "http://good.invalid/v1", "api_key": "K-fb"}}`,
 			[]any{"fallback_providers", "base_url"}, "fallback_providers.api_key"},
 		{"fallback_providers_dict_via_entry", `{` + baseRoute + `, "providers": {"fb": {"base_url": "http://good.invalid/v1"}}, ` +
@@ -613,40 +607,40 @@ func recoveredConfig(t *testing.T, ctx context.Context, policy *LocalSessionPoli
 	return config
 }
 
-func TestAnUnchangedCustomProvidersKeySurvivesARestart(t *testing.T) {
+func TestAnUnchangedProvidersEntryKeySurvivesARestart(t *testing.T) {
 	config := func(key string) string {
 		return `{"model": {"provider": "custom:local", "default": "m"}, ` +
-			`"custom_providers": [{"name": "Local", "base_url": "http://127.0.0.1:1234/v1", "api_key": "` + key + `"}]}`
+			`"providers": {"local": {"name": "Local", "base_url": "http://127.0.0.1:1234/v1", "api_key": "` + key + `"}}}`
 	}
 	ctx, profileHome, owner, policy := bindLoadedSession(t, config("cp-token"))
-	if key := configAt(t, recoveredConfig(t, ctx, policy, owner), "custom_providers", 0, "api_key"); key != "cp-token" {
+	if key := configAt(t, recoveredConfig(t, ctx, policy, owner), "providers", "local", "api_key"); key != "cp-token" {
 		t.Fatalf("recovered key %v", key)
 	}
 	writeProfileConfig(t, profileHome, config("rotated-token"))
 	_, err := policy.config(ctx, owner(), true)
 	refusal, _ := err.(*state.RuntimeStoreError)
-	if refusal == nil || refusalField(err) != "custom_providers.0.api_key" || refusal.Detail == nil || !strings.Contains(*refusal.Detail, "changed in") {
+	if refusal == nil || refusalField(err) != "providers.local.api_key" || refusal.Detail == nil || !strings.Contains(*refusal.Detail, "changed in") {
 		t.Fatalf("rotated key: %v field %q", err, refusalField(err))
 	}
 }
 
 func TestOnlyTheEntryTheRuntimeSelectsIsTheRoute(t *testing.T) {
 	config := func(first, second string) string {
-		return `{"model": {"provider": "custom:shared", "default": "m"}, "custom_providers": [` +
-			`{"name": "Shared", "base_url": "http://127.0.0.1:1111/v1", "api_key": "` + first + `"}, ` +
-			`{"name": "Shared", "base_url": "http://127.0.0.1:2222/v1", "api_key": "` + second + `"}]}`
+		return `{"model": {"provider": "custom:shared", "default": "m"}, "providers": {` +
+			`"a-shared": {"name": "Shared", "base_url": "http://127.0.0.1:1111/v1", "api_key": "` + first + `"}, ` +
+			`"b-shared": {"name": "Shared", "base_url": "http://127.0.0.1:2222/v1", "api_key": "` + second + `"}}}`
 	}
 	ctx, profileHome, owner, policy := bindLoadedSession(t, config("first-token", "second-token"))
 	writeProfileConfig(t, profileHome, config("first-token", "rotated-second"))
 	recovered := recoveredConfig(t, ctx, policy, owner)
-	if key := configAt(t, recovered, "custom_providers", 0, "api_key"); key != "first-token" {
+	if key := configAt(t, recovered, "providers", "a-shared", "api_key"); key != "first-token" {
 		t.Fatalf("selected entry key %v", key)
 	}
-	if key := configAt(t, recovered, "custom_providers", 1, "api_key"); key != nil {
+	if key := configAt(t, recovered, "providers", "b-shared", "api_key"); key != nil {
 		t.Fatalf("unused entry key %v", key)
 	}
 	writeProfileConfig(t, profileHome, config("rotated-first", "rotated-second"))
-	if _, err := policy.config(ctx, owner(), true); refusalReason(err) == "" || refusalField(err) != "custom_providers.0.api_key" {
+	if _, err := policy.config(ctx, owner(), true); refusalReason(err) == "" || refusalField(err) != "providers.a-shared.api_key" {
 		t.Fatalf("rotated selected key: %v field %q", err, refusalField(err))
 	}
 }
@@ -668,22 +662,22 @@ func TestACustomPrefixedProvidersKeyIsTheRoute(t *testing.T) {
 
 func TestABareCustomKeySelectedByUrlIsTheRoute(t *testing.T) {
 	config := func(other, local string) string {
-		return `{"model": {"provider": "custom", "base_url": "http://127.0.0.1:1234/v1", "default": "m"}, "custom_providers": [` +
-			`{"name": "Other", "base_url": "http://127.0.0.1:9999/v1", "api_key": "` + other + `"}, ` +
-			`{"name": "Local", "base_url": "http://127.0.0.1:1234/v1/", "api_key": "` + local + `"}]}`
+		return `{"model": {"provider": "custom", "base_url": "http://127.0.0.1:1234/v1", "default": "m"}, "providers": {` +
+			`"a-other": {"name": "Other", "base_url": "http://127.0.0.1:9999/v1", "api_key": "` + other + `"}, ` +
+			`"b-local": {"name": "Local", "base_url": "http://127.0.0.1:1234/v1/", "api_key": "` + local + `"}}}`
 	}
 	ctx, profileHome, owner, policy := bindLoadedSession(t, config("other-token", "url-token"))
-	if key := configAt(t, recoveredConfig(t, ctx, policy, owner), "custom_providers", 1, "api_key"); key != "url-token" {
+	if key := configAt(t, recoveredConfig(t, ctx, policy, owner), "providers", "b-local", "api_key"); key != "url-token" {
 		t.Fatalf("recovered key %v", key)
 	}
 	writeProfileConfig(t, profileHome, config("rotated-other", "url-token"))
-	if key := configAt(t, recoveredConfig(t, ctx, policy, owner), "custom_providers", 0, "api_key"); key != nil {
+	if key := configAt(t, recoveredConfig(t, ctx, policy, owner), "providers", "a-other", "api_key"); key != nil {
 		t.Fatalf("unrelated entry key %v", key)
 	}
 	writeProfileConfig(t, profileHome, config("rotated-other", "rotated-url-token"))
 	_, err := policy.config(ctx, owner(), true)
 	refusal, _ := err.(*state.RuntimeStoreError)
-	if refusal == nil || refusalField(err) != "custom_providers.1.api_key" {
+	if refusal == nil || refusalField(err) != "providers.b-local.api_key" {
 		t.Fatalf("rotated route key: %v field %q", err, refusalField(err))
 	}
 	if refusal.Detail != nil && strings.Contains(*refusal.Detail, "rotated") {

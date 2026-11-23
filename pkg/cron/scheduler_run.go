@@ -1166,9 +1166,6 @@ func (s *Store) resolveCronAgentSetup(ctx context.Context, job *Job, jobID, jobN
 	if agentCfg, ok := cfg["agent"].(map[string]any); ok {
 		maxTurns = agentCfg["max_turns"]
 	}
-	if maxTurns == nil {
-		maxTurns = cfg["max_turns"]
-	}
 	setup.maxIterations = config.ResolveTurnLimit(maxTurns, config.TurnLimitUnlimited)
 	if err := s.guardJobCredentialExfil(job); err != nil {
 		return nil, err

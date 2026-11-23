@@ -41,7 +41,7 @@ func readinessCheckStatus(t *testing.T, result *pyjson.Object, name string) any 
 
 func TestCollectRuntimeReadinessReportsHealthyLocalRuntime(t *testing.T) {
 	ctx, h := readinessHome(t, true)
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model:\n  provider: openrouter\n  model: test/model\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model:\n  provider: openrouter\n  default: test/model\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	result := CollectRuntimeReadiness(ctx, "test/model", pyjson.ObjectOf("gateway_state", "running",

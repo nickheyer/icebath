@@ -21,7 +21,7 @@ const LegacyVercelRuntime = "node24"
 // Full default configuration document
 func defaultsLiteral() Tree {
 	return Tree(map[string]any{
-		"model":              "",
+		"model":              map[string]any{},
 		"providers":          map[string]any{},
 		"fallback_providers": []any{},
 		"fallback": map[string]any{
@@ -71,9 +71,9 @@ func defaultsLiteral() Tree {
 				"enabled":            true,
 				"cost_threshold_usd": 0.25,
 			},
-			"service_tier":                          "",
+			"service_tier":                          "normal",
 			"fast_auto_seconds":                     60,
-			"text_verbosity":                        "",
+			"text_verbosity":                        nil,
 			"daybreak":                              false,
 			"tool_use_enforcement":                  "auto",
 			"execution_guidance":                    "auto",
@@ -289,7 +289,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          120,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 				"download_timeout": 30,
 			},
 			"compression": map[string]any{
@@ -299,7 +299,7 @@ func defaultsLiteral() Tree {
 				"api_key":             "",
 				"timeout":             120,
 				"extra_body":          map[string]any{},
-				"reasoning_effort":    "",
+				"reasoning_effort":    nil,
 				"no_progress_timeout": nil,
 			},
 			"approval": map[string]any{
@@ -309,7 +309,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          30,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"review": map[string]any{
 				"provider": "auto",
@@ -325,7 +325,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          30,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"title_generation": map[string]any{
 				"enabled":               true,
@@ -337,7 +337,7 @@ func defaultsLiteral() Tree {
 				"api_key":               "",
 				"timeout":               30,
 				"extra_body":            map[string]any{},
-				"reasoning_effort":      "",
+				"reasoning_effort":      nil,
 				"language":              "",
 			},
 			"memory_query_rewrite": map[string]any{
@@ -355,7 +355,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          30,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"voice_chat": map[string]any{
 				"provider":         "auto",
@@ -373,7 +373,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          120,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"kanban_decomposer": map[string]any{
 				"provider":         "auto",
@@ -382,7 +382,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          180,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"profile_describer": map[string]any{
 				"provider":         "auto",
@@ -391,7 +391,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          60,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"goal_judge": map[string]any{
 				"provider":         "auto",
@@ -400,7 +400,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          60,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"curator": map[string]any{
 				"provider":         "auto",
@@ -409,7 +409,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          600,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"monitor": map[string]any{
 				"provider":         "auto",
@@ -418,7 +418,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          60,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"background_review": map[string]any{
 				"enabled":          true,
@@ -428,7 +428,7 @@ func defaultsLiteral() Tree {
 				"api_key":          "",
 				"timeout":          120,
 				"extra_body":       map[string]any{},
-				"reasoning_effort": "",
+				"reasoning_effort": nil,
 			},
 			"moa_reference": map[string]any{
 				"provider":   "auto",
@@ -464,7 +464,7 @@ func defaultsLiteral() Tree {
 			"reasoning_full":                   false,
 			"memory_notifications":             "on",
 			"background_process_notifications": "concise",
-			"streaming":                        false,
+			"streaming":                        true,
 			"timestamps":                       false,
 			"timestamp_format":                 "%H:%M",
 			"final_response_markdown":          "strip",
@@ -489,20 +489,7 @@ func defaultsLiteral() Tree {
 			"reasoning_style":                  "code",
 			"ephemeral_system_ttl":             0,
 			"sections":                         map[string]any{},
-			"platforms": map[string]any{
-				"telegram": map[string]any{
-					"streaming": true,
-				},
-				"discord": map[string]any{
-					"streaming": false,
-				},
-				"slack": map[string]any{
-					"streaming": false,
-				},
-				"wecom": map[string]any{
-					"streaming": true,
-				},
-			},
+			"platforms":                        map[string]any{},
 			"runtime_footer": map[string]any{
 				"enabled": false,
 				"fields":  []any{"model", "context_pct", "cwd"},
@@ -724,7 +711,7 @@ func defaultsLiteral() Tree {
 			"max_iterations":                      250,
 			"max_summary_chars":                   24000,
 			"child_timeout_seconds":               0,
-			"reasoning_effort":                    "",
+			"reasoning_effort":                    nil,
 			"max_concurrent_children":             10,
 			"independent_completions":             false,
 			"gateway_mode":                        "auto",
@@ -804,17 +791,17 @@ func defaultsLiteral() Tree {
 		"timezone": "",
 		"slack": map[string]any{
 			"require_mention":            true,
-			"free_response_channels":     "",
-			"allowed_channels":           "",
-			"require_mention_channels":   "",
+			"free_response_channels":     []any{},
+			"allowed_channels":           []any{},
+			"require_mention_channels":   []any{},
 			"ignore_other_user_mentions": false,
 			"thread_require_mention":     false,
 			"channel_prompts":            map[string]any{},
 		},
 		"discord": map[string]any{
 			"require_mention":             true,
-			"free_response_channels":      "",
-			"allowed_channels":            "",
+			"free_response_channels":      []any{},
+			"allowed_channels":            []any{},
 			"auto_thread":                 true,
 			"free_response_auto_thread":   false,
 			"thread_require_mention":      false,
@@ -823,7 +810,7 @@ func defaultsLiteral() Tree {
 			"history_backfill_limit":      50,
 			"missed_message_backfill": map[string]any{
 				"enabled":        false,
-				"channels":       "",
+				"channels":       []any{},
 				"window_seconds": 21600,
 				"limit":          100,
 				"max_dispatches": 10,
@@ -858,7 +845,7 @@ func defaultsLiteral() Tree {
 		"telegram": map[string]any{
 			"reactions":       false,
 			"channel_prompts": map[string]any{},
-			"allowed_chats":   "",
+			"allowed_chats":   []any{},
 			"extra": map[string]any{
 				"rich_messages":           false,
 				"rich_drafts":             false,
@@ -868,14 +855,14 @@ func defaultsLiteral() Tree {
 		},
 		"mattermost": map[string]any{
 			"require_mention":        true,
-			"free_response_channels": "",
-			"allowed_channels":       "",
+			"free_response_channels": []any{},
+			"allowed_channels":       []any{},
 			"channel_prompts":        map[string]any{},
 		},
 		"matrix": map[string]any{
 			"require_mention":     true,
-			"free_response_rooms": "",
-			"allowed_rooms":       "",
+			"free_response_rooms": []any{},
+			"allowed_rooms":       []any{},
 		},
 		"approvals": map[string]any{
 			"mode":                      "smart",

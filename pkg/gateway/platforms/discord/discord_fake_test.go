@@ -22,13 +22,43 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Adapter built the way the test fixtures build one, the instance state of a fresh constructor
-func newTestAdapter(t *testing.T, extra map[string]any) *DiscordAdapter {
+// Gives the test a home of its own unless it already took one
+func ownHome(t *testing.T) {
 	t.Helper()
-	if extra == nil {
-		extra = map[string]any{}
+	if h := os.Getenv("ICEBATH_HOME"); h == "" || h == packageHome {
+		t.Setenv("ICEBATH_HOME", t.TempDir())
+	}
+}
+
+// Stores one setting in the test's home the way the settings screen does
+func setSetting(t *testing.T, key string, value any) {
+	t.Helper()
+	ownHome(t)
+	if _, err := settings.Set(context.Background(), key, value, settings.Global); err != nil {
+		t.Fatalf("%s: %v", key, err)
+	}
+}
+
+// Stores one discord setting in the test's home, key its leaf under discord
+func setDiscord(t *testing.T, key string, value any) {
+	t.Helper()
+	setSetting(t, "discord."+key, value)
+}
+
+// Adapter built the way the test fixtures build one, the instance state of a fresh constructor; block is the discord section of the home's config.yaml, its settings stored there and the other keys handed over as the platform extra
+func newTestAdapter(t *testing.T, block map[string]any) *DiscordAdapter {
+	t.Helper()
+	ownHome(t)
+	extra := map[string]any{}
+	for key, value := range block {
+		if settings.Lookup("discord."+key) != nil {
+			setDiscord(t, key, value)
+		} else {
+			extra[key] = value
+		}
 	}
 	cfg := gateway.NewPlatformConfig()
 	cfg.Enabled = true
@@ -47,9 +77,6 @@ func newTestAdapter(t *testing.T, extra map[string]any) *DiscordAdapter {
 	a.handleMessage = a.BasePlatformAdapter.HandleMessage
 	applyDiscordTraits(a)
 	a.voiceState = newVoiceState()
-	if os.Getenv("ICEBATH_HOME") == "" {
-		t.Setenv("ICEBATH_HOME", t.TempDir())
-	}
 	a.slashCommands = true
 	return a
 }

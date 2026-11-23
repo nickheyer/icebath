@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -214,11 +213,7 @@ var doctorWebCapabilityRows = func(ctx context.Context, d *Doctor) (rows []docto
 		}
 		name := provider.Name()
 		if name == "" {
-			t := reflect.TypeOf(provider)
-			for t.Kind() == reflect.Pointer {
-				t = t.Elem()
-			}
-			name = t.Name()
+			name = "unnamed provider"
 		}
 		if tools.WebProviderIsReady(env, provider) {
 			rows = append(rows, doctorWebRow{"ok", capability.label, "(" + name + ")"})

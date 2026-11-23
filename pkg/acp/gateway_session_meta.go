@@ -29,7 +29,7 @@ var gatewayCommandSpecs = []gatewayCommandSpec{
 	{"model", "Show current model and provider, or switch models", "model name to switch to"},
 	{"tools", "List available tools", ""},
 	{"context", "Show conversation context usage", ""},
-	{"reset", "Clear conversation history", ""},
+	{"new", "Start a new conversation with an empty history", ""},
 	{"compress", "Compress conversation context", ""},
 	{"steer", "Inject guidance into the currently running agent turn", "guidance for the active turn"},
 	{"queue", "Queue a prompt to run after the current turn finishes", "prompt to run next"},

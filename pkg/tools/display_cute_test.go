@@ -58,7 +58,7 @@ func TestTrimErrorShortMessageUnchanged(t *testing.T) {
 func TestTrimErrorLongMessageTruncatedToCap(t *testing.T) {
 	ctx := cuteTestHome(t)
 	trimmed := trimError(ctx, strings.Repeat("x", 200))
-	if pystr.Len(trimmed) > errorSuffixMaxLen || !strings.HasSuffix(trimmed, "...") {
+	if pystr.Len(trimmed) > errorSuffixMaxLen || !strings.HasSuffix(trimmed, "…") {
 		t.Fatalf("got %q", trimmed)
 	}
 }

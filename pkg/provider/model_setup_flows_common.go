@@ -138,17 +138,9 @@ func beginModelConfig(env PoolEnv, selected, providerID string) (config.Tree, ma
 	return cfg, model, nil
 }
 
-// Persists the config and deactivates any OAuth provider
+// Persists the config of the env's home
 func commitModelConfig(env PoolEnv, cfg config.Tree) error {
-	h := envHome(env)
-	if err := config.Save(h, cfg); err != nil {
-		return err
-	}
-	store := env.Store
-	if store == nil {
-		store = NewStore(h)
-	}
-	return store.DeactivateProvider()
+	return config.Save(envHome(env), cfg)
 }
 
 // persistModelOptions are the endpoint fields written, dropped or kept by the standard persist step
@@ -448,16 +440,12 @@ func printNumbered(out io.Writer, title string, rows []string, defaultIdx int) {
 	}
 }
 
-// Use, reauth or cancel from the standard radio prompt with a numbered fallback, a TUI back out cancelling
+// Use, reauth or cancel from the standard radio prompt with a numbered fallback
 func promptAuthCredentialsChoice(out io.Writer, title string) string {
 	choices := []string{"Use existing credentials", "Reauthenticate (new OAuth login)", "Cancel"}
-	idx, ok := cursesChoice(title, choices, 0)
-	switch {
-	case ok && idx >= 0:
+	if idx, ok := cursesChoice(title, choices, 0); ok && idx >= 0 {
 		fmt.Fprintln(out)
 		return []string{"use", "reauth", "cancel"}[idx]
-	case ok && hostedAsker() != nil:
-		return "cancel"
 	}
 	printNumbered(out, title, choices, 0)
 	fmt.Fprintln(out)

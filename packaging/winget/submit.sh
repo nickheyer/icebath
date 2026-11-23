@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pushes a rendered WinGet manifest set to a branch of the nickheyer/winget-pkgs fork and opens its pull request on microsoft/winget-pkgs
+# Pushes a rendered WinGet manifest set to a branch of the nickheyer/winget-pkgs fork, opens its pull request on microsoft/winget-pkgs and closes the open ones it supersedes
 set -eu
 dir=${1:?usage: submit.sh <manifest dir>}
 : "${WINGET_TOKEN:?submit: WINGET_TOKEN is not set}"
@@ -12,8 +12,8 @@ base=master
 version=$(awk 'index($0, "PackageVersion: ") == 1 { v = substr($0, 17); gsub(/^"|"$/, "", v); print v; exit }' "$dir/$id.yaml")
 [ -n "$version" ] || { echo "submit: $dir/$id.yaml names no PackageVersion" >&2; exit 1; }
 branch=icebath-$version
-path=manifests/n/nickheyer/icebath/$version
-msg="New version: $id $version"
+package=manifests/n/nickheyer/icebath
+path=$package/$version
 body=$(mktemp)
 request=$(mktemp)
 trap 'rm -f "$body" "$request"' EXIT
@@ -36,12 +36,37 @@ refuse() {
     exit 1
 }
 
+# Closes every other open pull request of this package that the token's account opened, naming the one that replaces it
+supersede() {
+    call GET "/user"
+    [ "$code" = 200 ] || refuse GET "/user"
+    login=$(jq -r '.login' "$body")
+    query=$(printf 'repo:%s is:pr is:open author:%s in:title %s' "$upstream" "$login" "$id" | jq -sRr '@uri')
+    call GET "/search/issues?q=$query&per_page=100"
+    [ "$code" = 200 ] || refuse GET "/search/issues"
+    for other in $(jq -r --argjson n "$1" '.items[].number | select(. != $n)' "$body"); do
+        call POST "/repos/$upstream/issues/$other/comments" "$(jq -n --arg b "Superseded by #$1" '{body: $b}')"
+        [ "$code" = 201 ] || refuse POST "/repos/$upstream/issues/$other/comments"
+        call PATCH "/repos/$upstream/pulls/$other" '{"state":"closed"}'
+        [ "$code" = 200 ] || refuse PATCH "/repos/$upstream/pulls/$other"
+        echo "submit: closed pull request #$other, superseded by #$1"
+    done
+}
+
 call GET "/repos/$upstream/contents/$path?ref=$base"
 case $code in
     200) echo "submit: $upstream $base already has $path, nothing to submit"; exit 0 ;;
     404) ;;
     *) refuse GET "/repos/$upstream/contents/$path" ;;
 esac
+
+call GET "/repos/$upstream/contents/$package?ref=$base"
+case $code in
+    200) kind='New version' ;;
+    404) kind='New package' ;;
+    *) refuse GET "/repos/$upstream/contents/$package" ;;
+esac
+msg="$kind: $id version $version"
 
 call GET "/repos/$fork"
 [ "$code" = 200 ] || refuse GET "/repos/$fork"
@@ -72,9 +97,9 @@ esac
 
 for name in "$id.yaml" "$id.installer.yaml" $(cd "$dir" && ls "$id".locale.*.yaml); do
     case $name in
-        *.installer.yaml) kind=installer ;;
-        *.locale.*.yaml) kind=locale ;;
-        *) kind=version ;;
+        *.installer.yaml) part=installer ;;
+        *.locale.*.yaml) part=locale ;;
+        *) part=version ;;
     esac
     file=$dir/$name
     call GET "/repos/$fork/contents/$path/$name?ref=$branch"
@@ -89,7 +114,7 @@ for name in "$id.yaml" "$id.installer.yaml" $(cd "$dir" && ls "$id".locale.*.yam
         404) sha= ;;
         *) refuse GET "/repos/$fork/contents/$path/$name" ;;
     esac
-    call PUT "/repos/$fork/contents/$path/$name" "$(jq -n --arg m "$msg: add $kind" --arg c "$(base64 -w0 < "$file")" --arg b "$branch" --arg s "$sha" \
+    call PUT "/repos/$fork/contents/$path/$name" "$(jq -n --arg m "$msg: add $part" --arg c "$(base64 -w0 < "$file")" --arg b "$branch" --arg s "$sha" \
         '{message: $m, content: $c, branch: $b, committer: {name: "nickheyer", email: "nick@heyer.app"}} + (if $s == "" then {} else {sha: $s} end)')"
     case $code in
         200 | 201) echo "submit: pushed $path/$name to $branch" ;;
@@ -100,9 +125,10 @@ done
 owner=${fork%%/*}
 call GET "/repos/$upstream/pulls?state=open&head=$owner:$branch&base=$base"
 [ "$code" = 200 ] || refuse GET "/repos/$upstream/pulls"
-open=$(jq -r '.[0].html_url // empty' "$body")
-if [ -n "$open" ]; then
-    echo "submit: pull request already open: $open"
+number=$(jq -r '.[0].number // empty' "$body")
+if [ -n "$number" ]; then
+    echo "submit: pull request already open: $(jq -r '.[0].html_url' "$body")"
+    supersede "$number"
     exit 0
 fi
 
@@ -116,4 +142,6 @@ footer="###### Automated with the icebath release workflow ($GITHUB_SERVER_URL/$
 call POST "/repos/$upstream/pulls" "$(jq -n --arg t "$msg" --arg h "$owner:$branch" --arg b "$base" --arg d "$template
 $footer" '{title: $t, head: $h, base: $b, body: $d, draft: false}')"
 [ "$code" = 201 ] || refuse POST "/repos/$upstream/pulls"
+number=$(jq -r '.number' "$body")
 echo "submit: opened $(jq -r '.html_url' "$body")"
+supersede "$number"

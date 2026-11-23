@@ -209,7 +209,7 @@ func TestGenerateSubmitsPollsAndDownloadsFromConfiguredOrigin(t *testing.T) {
 	if saved[0].url != "https://openrouter.ai/api/v1/videos/job-1/content" {
 		t.Fatal(saved[0].url)
 	}
-	if saved[0].opts.Headers["Authorization"] != "Bearer sk-or-test" || !saved[0].opts.RequireVideoContentType || !saved[0].opts.TrustedOrigin {
+	if saved[0].opts.Headers["Authorization"] != "Bearer sk-or-test" || !saved[0].opts.RequireVideoContentType || saved[0].opts.ProviderBase != "https://openrouter.ai/api/v1" {
 		t.Fatal(saved[0].opts)
 	}
 }

@@ -443,8 +443,7 @@ func TestNativeGatewayRuntimeLive(t *testing.T) {
 	} else if !errors.Is(err, websocket.ErrBadHandshake) || response == nil {
 		t.Fatalf("unauthenticated dial = %v", err)
 	}
-	capabilities, _ := descriptor["capabilities"].([]any)
-	if epoch, _ := descriptor["authority_epoch"].(float64); !slices.Contains(capabilities, any("session-authority-v1")) || epoch <= 0 {
+	if epoch, _ := descriptor["authority_epoch"].(float64); epoch <= 0 {
 		t.Fatalf("descriptor = %v", descriptor)
 	}
 	ws := hn.websocket(t, descriptor)

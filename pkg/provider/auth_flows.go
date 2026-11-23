@@ -33,8 +33,6 @@ type OAuthProviderFlow struct {
 	Status     func(env PoolEnv) map[string]any
 	// Codes for which retrying the same refresh token cannot succeed
 	TerminalRefreshCodes map[string]bool
-	// Logout with no active provider falls back to config.yaml model.provider for these
-	LogoutFromConfig bool
 }
 
 // IsTerminalRefreshError is true when the error is this provider's relogin required grant death
@@ -74,7 +72,6 @@ func builtinOAuthProviderFlows() map[string]OAuthProviderFlow {
 			},
 			Status:               GetCodexAuthStatus,
 			TerminalRefreshCodes: codeSet(oauthGrantDeadCodes, map[string]bool{"codex_refresh_failed": true, "codex_auth_missing_refresh_token": true}),
-			LogoutFromConfig:     true,
 		},
 		"xai-oauth": {
 			ProviderID: "xai-oauth",
@@ -83,7 +80,6 @@ func builtinOAuthProviderFlows() map[string]OAuthProviderFlow {
 			},
 			Status:               GetXAIOAuthAuthStatus,
 			TerminalRefreshCodes: map[string]bool{"xai_refresh_failed": true, "xai_auth_missing_refresh_token": true},
-			LogoutFromConfig:     true,
 		},
 		"qwen-oauth": {
 			ProviderID: "qwen-oauth",
@@ -300,13 +296,9 @@ var statusByAuthType = map[string]func(env PoolEnv, provider string) map[string]
 	AuthTypeOAuthExternal:   getPluginOAuthAuthStatus,
 }
 
-// GetAuthStatus dispatches to the bespoke builder, then the registry auth type, for the provider or the active one
+// GetAuthStatus dispatches to the bespoke builder, then the registry auth type, of the provider
 func GetAuthStatus(env PoolEnv, providerID string) map[string]any {
 	target := strings.ToLower(strings.TrimSpace(providerID))
-	if target == "" {
-		active, _ := env.Store.ActiveProvider()
-		target = strings.ToLower(strings.TrimSpace(active))
-	}
 	if target == "" {
 		return map[string]any{"logged_in": false}
 	}
@@ -415,15 +407,8 @@ func envHome(env PoolEnv) string {
 	return home.Process()
 }
 
-// Writes the active provider into auth.json and model.provider plus base_url into config.yaml
+// Writes model.provider plus base_url into config.yaml
 func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultModel string, clearDefault bool) (string, error) {
-	err := env.Store.Update(func(data AuthData) (bool, error) {
-		data["active_provider"] = providerID
-		return true, nil
-	})
-	if err != nil {
-		return "", err
-	}
 	h := envHome(env)
 	configPath := home.ConfigPath(h)
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
@@ -437,16 +422,11 @@ func updateConfigForProvider(env PoolEnv, providerID, inferenceBaseURL, defaultM
 		return "", err
 	}
 	modelCfg := map[string]any{}
-	switch current := cfg["model"].(type) {
-	case map[string]any:
+	if current, ok := cfg["model"].(map[string]any); ok {
 		for k, v := range current {
 			modelCfg[k] = v
 		}
 		config.SetMappingKeys(modelCfg, config.MappingKeys(current))
-	case string:
-		if strings.TrimSpace(current) != "" {
-			modelCfg["default"] = strings.TrimSpace(current)
-		}
 	}
 	pyDictSet(modelCfg, "provider", providerID)
 	if strings.TrimSpace(inferenceBaseURL) != "" {
@@ -484,14 +464,13 @@ func shouldResetConfigProviderOnLogout(env PoolEnv, providerID string) bool {
 	return getConfigProvider(env) == normalized
 }
 
-// Logout target when auth.json names no active provider but config.yaml still selects an OAuth provider
+// Logout target when none is named, the provider config.yaml selects when it is known or holds logins
 func logoutDefaultProviderFromConfig(env PoolEnv) string {
 	provider := getConfigProvider(env)
-	flow, ok := OAuthProviderFlows[provider]
-	if ok && flow.LogoutFromConfig {
-		return provider
+	if provider == "" || (!isKnownAuthProvider(provider) && !storeHoldsLogins(env, provider)) {
+		return ""
 	}
-	return ""
+	return provider
 }
 
 // Resets config.yaml model.provider to auto after logout
@@ -566,15 +545,12 @@ type UnknownAuthProviderError struct{ Provider string }
 
 func (e *UnknownAuthProviderError) Error() string { return "Unknown provider: " + e.Provider }
 
-// LogoutLogin removes the default login of the named, active or configured provider, or with all every login, its auth state and its env sources
+// LogoutLogin removes the default login of the named or configured provider, or with all every login, its auth state and its env sources
 func LogoutLogin(env PoolEnv, providerID string, all bool, out io.Writer) error {
 	if providerID != "" && !isKnownAuthProvider(providerID) && !storeHoldsLogins(env, providerID) {
 		return &UnknownAuthProviderError{Provider: providerID}
 	}
 	target := providerID
-	if target == "" {
-		target, _ = env.Store.ActiveProvider()
-	}
 	if target == "" {
 		target = logoutDefaultProviderFromConfig(env)
 	}

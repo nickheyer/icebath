@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -112,7 +113,8 @@ type videoURLOptions struct {
 	MaxBytes                int64
 	Headers                 map[string]string
 	RequireVideoContentType bool
-	TrustedOrigin           bool
+	// API endpoint the profile is configured to call for the provider that produced the URL
+	ProviderBase string
 }
 
 // Downloads a provider video URL into the generated videos cache, tests swap it to observe the call
@@ -130,7 +132,7 @@ var saveURLVideo = func(ctx context.Context, env *tools.Env, rawURL string, o vi
 		Prefix: o.Prefix, Timeout: o.Timeout, MaxBytes: o.MaxBytes, ChunkSize: 256 * 1024,
 		ContentTypes: urlVideoContentTypes, URLExtensions: []string{"mp4", "webm", "mov", "mkv"},
 		DefaultExtension: "mp4", Label: "Video", EmptyError: "Video at {url} was empty (0 bytes).",
-		Headers: o.Headers, RequireKnownContentType: o.RequireVideoContentType, TrustedOrigin: o.TrustedOrigin,
+		Headers: o.Headers, RequireKnownContentType: o.RequireVideoContentType, ProviderBase: o.ProviderBase,
 	})
 }
 
@@ -372,7 +374,7 @@ func (p *openAICompatibleVideoGenProvider) Generate(ctx context.Context, env *to
 	}
 	var videoRef string
 	if deliveryURL != "" {
-		videoRef, err = saveURLVideo(ctx, env, deliveryURL, videoURLOptions{Prefix: name})
+		videoRef, err = saveURLVideo(ctx, env, deliveryURL, videoURLOptions{Prefix: name, ProviderBase: baseURL})
 	} else {
 		var id string
 		if id, err = video.id(); err == nil {
@@ -422,7 +424,7 @@ func VideoGenScopedRegistry() plugins.ScopedRegistry {
 // Configured provider failing closed when unregistered, else the single available registered provider
 func GetActiveVideoGenProvider(ctx context.Context, env *tools.Env) VideoGenProvider {
 	ctx = envContext(ctx, env)
-	configured := provider.ConfiguredProviderName(ctx, "video_gen", pkgLog())
+	configured := tools.StoredProvider(&tools.Env{Home: home.Dir(ctx)}, "video_gen")
 	snapshot := videoGenRegistry.Merged(ctx, "")
 	if configured != "" {
 		p, ok := snapshot.Get(configured)

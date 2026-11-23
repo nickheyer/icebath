@@ -49,13 +49,7 @@ func approvalTestEnv(t *testing.T, sessionKey string, approvals map[string]any, 
 		approvals = map[string]any{"mode": "manual"}
 	}
 	env := &Env{Home: t.TempDir(), Values: &sync.Map{}}
-	doc, err := yaml.Marshal(map[string]any{"approvals": approvals})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), doc, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeHomeConfigDoc(t, env, map[string]any{"approvals": approvals})
 	if os.Getenv("ICEBATH_HOME") == "" {
 		t.Setenv("ICEBATH_HOME", env.Home)
 	}
@@ -64,6 +58,28 @@ func approvalTestEnv(t *testing.T, sessionKey string, approvals map[string]any, 
 		env.Values.Store("session."+k, v)
 	}
 	return env
+}
+
+// Replaces the config.yaml of the env's home with the document written as YAML
+func writeHomeConfigDoc(t *testing.T, env *Env, doc map[string]any) {
+	t.Helper()
+	raw, err := yaml.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Bytes the config.yaml of the env's home holds
+func readApprovalConfig(t *testing.T, env *Env) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(env.Home, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
 }
 
 // Asker returning a scripted answer or blocking until the context ends
@@ -721,12 +737,13 @@ func TestRequestToolApprovalCLIDenyBlocks(t *testing.T) {
 func TestRequestToolApprovalSessionPersistsSessionOnly(t *testing.T) {
 	env := approvalTestEnv(t, "test-session", nil, map[string]any{"interactive": true})
 	env.Ask = &scriptedAsker{answer: "session"}
+	before := readApprovalConfig(t, env)
 	res := RequestToolApproval(context.Background(), env, "write_file", "reason", "ssh-writes")
 	if !res.Approved || !IsApproved(env, "test-session", "plugin_rule:ssh-writes") || isPermanentlyApproved(env, "plugin_rule:ssh-writes") {
 		t.Fatalf("result %+v", res)
 	}
-	if _, err := os.Stat(filepath.Join(env.Home, "config.yaml")); err == nil {
-		t.Fatal("session choice must not persist to config")
+	if after := readApprovalConfig(t, env); after != before {
+		t.Fatalf("session choice must not persist to config, config.yaml became %q", after)
 	}
 }
 
@@ -1221,6 +1238,7 @@ func TestSanitizeCommandForDisplay(t *testing.T) {
 func TestEvaluateCommandVerdicts(t *testing.T) {
 	env := approvalTestEnv(t, "eval", nil, nil)
 	env.Ask = forbiddenAsker{t}
+	before := readApprovalConfig(t, env)
 	if v := EvaluateCommand(env, "ls -la", "local"); v.Verdict != "allow" || v.ExitCode != 0 {
 		t.Fatalf("benign %+v", v)
 	}
@@ -1253,8 +1271,8 @@ func TestEvaluateCommandVerdicts(t *testing.T) {
 	if plain.ExitCode != 3 || obf.ExitCode != 3 || !strings.Contains(RenderVerdict(obf), "recursive delete of root filesystem") || !strings.Contains(RenderVerdict(obf), "rm -rf /") {
 		t.Fatalf("obfuscated %+v %+v", plain, obf)
 	}
-	if _, err := os.Stat(filepath.Join(env.Home, "config.yaml")); err == nil {
-		t.Fatal("dry run must not persist")
+	if after := readApprovalConfig(t, env); after != before {
+		t.Fatalf("dry run must not persist, config.yaml became %q", after)
 	}
 	rendered := RenderVerdict(v)
 	for _, want := range []string{"command : ", "env-type: ", "verdict : ", "normalized trace"} {
@@ -1317,21 +1335,18 @@ func TestPersistChoiceAlwaysWritesConfigAndSyncsHandEdits(t *testing.T) {
 	}
 }
 
-func TestLegacyStringAllowlist(t *testing.T) {
-	env := approvalTestEnv(t, "legacy", nil, nil)
-	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("command_allowlist: '[\"git push *\", \"ls *\"]'\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got := LoadPermanentAllowlist(env)
-	if !got["git push *"] || !got["ls *"] {
-		t.Fatalf("legacy allowlist %v", got)
-	}
-	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("command_allowlist:\n  - 1\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	config.ResetCache()
-	if got := LoadPermanentAllowlist(env); len(got) != 0 {
-		t.Fatalf("malformed allowlist %v", got)
+func TestMalformedAllowlistGrantsNothing(t *testing.T) {
+	env := approvalTestEnv(t, "malformed", nil, nil)
+	for _, text := range []string{"command_allowlist: '[\"git push *\", \"ls *\"]'\n", "command_allowlist:\n  - 'git push *'\n  - 1\n"} {
+		if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got := LoadPermanentAllowlist(env); len(got) != 0 {
+			t.Fatalf("%q granted %v", text, got)
+		}
+		if IsApproved(env, "malformed", "git push *") {
+			t.Fatalf("%q approved a command", text)
+		}
 	}
 }
 
@@ -1473,7 +1488,8 @@ func TestElicitationConsent(t *testing.T) {
 
 func TestApprovalTransportFlow(t *testing.T) {
 	env := approvalTestEnv(t, "transport", nil, map[string]any{"interactive": true})
-	env.Config["security"] = map[string]any{"approval": map[string]any{"transport": "telegram-cards"}}
+	manual := map[string]any{"mode": "manual"}
+	writeHomeConfigDoc(t, env, map[string]any{"approvals": manual, "security": map[string]any{"approval": map[string]any{"transport": "telegram-cards"}}})
 	env.Ask = forbiddenAsker{t}
 	t.Cleanup(func() { RegisterApprovalTransportResolver(nil) })
 	RegisterApprovalTransportResolver(func(env *Env, name string) (*RegisteredApprovalTransport, error) { return nil, nil })
@@ -1514,7 +1530,7 @@ func TestApprovalTransportFlow(t *testing.T) {
 	if res.Approved || res.Outcome != "denied" || !strings.Contains(res.Message, "through the selected approval transport") {
 		t.Fatalf("deny %+v", res)
 	}
-	env.Config["security"] = map[string]any{"approval": map[string]any{"transport": "telegram-cards", "transport_fallback": "builtin"}}
+	writeHomeConfigDoc(t, env, map[string]any{"approvals": manual, "security": map[string]any{"approval": map[string]any{"transport": "telegram-cards", "transport_fallback": "builtin"}}})
 	RegisterApprovalTransportResolver(func(env *Env, name string) (*RegisteredApprovalTransport, error) {
 		return &RegisteredApprovalTransport{Name: name, Present: func(ctx context.Context, req ApprovalRequest) (ApprovalTransportDecision, error) {
 			return ApprovalTransportDecision{}, errors.New("plugin crashed")

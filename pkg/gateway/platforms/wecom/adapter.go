@@ -270,7 +270,7 @@ func NewWeComAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*WeComAd
 	if a.secret, err = setting("WECOM_SECRET", "", "secret"); err != nil {
 		return nil, err
 	}
-	if a.wsURL, err = setting("WECOM_WEBSOCKET_URL", defaultWSURL, "websocket_url", "websocketUrl"); err != nil {
+	if a.wsURL, err = setting("WECOM_WEBSOCKET_URL", defaultWSURL, "websocket_url"); err != nil {
 		return nil, err
 	}
 	if a.wsURL == "" {
@@ -281,7 +281,7 @@ func NewWeComAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*WeComAd
 		return nil, err
 	}
 	a.DMPolicy = pystr.Lower(dmPolicy)
-	allowRaw := pyrepr.Or(extra["allow_from"], extra["allowFrom"])
+	allowRaw := extra["allow_from"]
 	if !pyrepr.Truthy(allowRaw) {
 		secret, err := gateway.GetScopedSecret(ctx, "WECOM_ALLOWED_USERS", "", false)
 		if err != nil {
@@ -295,7 +295,7 @@ func NewWeComAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*WeComAd
 		return nil, err
 	}
 	a.GroupPolicy = pystr.Lower(groupPolicy)
-	a.groupAllowFrom = coerceList(pyrepr.Or(extra["group_allow_from"], extra["groupAllowFrom"]))
+	a.groupAllowFrom = coerceList(extra["group_allow_from"])
 	for _, entry := range a.allowFrom {
 		a.AllowFrom[entry] = true
 	}

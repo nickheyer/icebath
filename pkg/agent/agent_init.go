@@ -267,7 +267,7 @@ func parseConfigInt(raw any, def int) int {
 	return n
 }
 
-// Legacy string set truthiness of a compression section key
+// Whether a config section key reads true, 1 or yes in any case, the default when absent
 func cfgFlag(cfg map[string]any, key string, def bool) bool {
 	v, ok := cfg[key]
 	if !ok {

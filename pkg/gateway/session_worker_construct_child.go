@@ -101,17 +101,9 @@ func WorkerRoute(ctx context.Context, policy *LocalSessionPolicy, construct map[
 	return map[string]any{"api_key": apiKey, "base_url": runtime.BaseURL, "api_mode": apiMode}, nil
 }
 
-// Agent checkpoint arguments of a config with the defaults filled in, a legacy boolean section meaning enabled
+// Agent checkpoint arguments of a config with the defaults filled in
 func CheckpointAgentKwargs(cfg map[string]any) map[string]any {
-	var section map[string]any
-	switch typed := cfg["checkpoints"].(type) {
-	case bool:
-		section = map[string]any{"enabled": typed}
-	case map[string]any:
-		section = typed
-	default:
-		section = map[string]any{}
-	}
+	section, _ := cfg["checkpoints"].(map[string]any)
 	defaults, _ := map[string]any(config.Defaults())["checkpoints"].(map[string]any)
 	pick := func(key string) any {
 		if value, ok := section[key]; ok {

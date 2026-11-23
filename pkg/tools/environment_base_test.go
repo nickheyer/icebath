@@ -29,6 +29,20 @@ func newTestToolEnv(t *testing.T) *Env {
 	return &Env{Home: h, Secrets: config.NewSecrets(h), Values: &sync.Map{}}
 }
 
+// Replaces the config.yaml of the env's home with text
+func writeHomeConfig(t *testing.T, env *Env, text string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Stores the tool batch time limit, in seconds, as the only setting of the env's home
+func setToolBatchLimit(t *testing.T, env *Env, seconds string) {
+	t.Helper()
+	writeHomeConfig(t, env, "timeouts:\n  tools:\n    concurrent_batch: "+seconds+"\n")
+}
+
 // Installs the hook vars other packages normally provide, restoring them after the test
 func installTestEnvHooks(t *testing.T) {
 	t.Helper()
@@ -1080,7 +1094,9 @@ func TestSandboxDirHonoursOverride(t *testing.T) {
 		t.Fatalf("%q %v", dir, err)
 	}
 	custom := filepath.Join(t.TempDir(), "custom")
-	t.Setenv("TERMINAL_SANDBOX_DIR", custom)
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("terminal:\n  sandbox_dir: "+custom+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ResetTerminalScopeCache()
 	dir, err = SandboxDir(env)
 	if err != nil || dir != custom {

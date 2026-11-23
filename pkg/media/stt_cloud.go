@@ -48,14 +48,20 @@ type sttHints struct {
 // One built in backend call returning the envelope or an escaped failure
 type sttHandler func(ctx context.Context, filePath, modelName string, h sttHints) (map[string]any, error)
 
-// xAI credentials preferring nothing, the seam tests replace
-var sttResolveXAICredentials = func(ctx context.Context) (string, string, string) {
-	return tools.ResolveXAIHTTPCredentials(nil, false)
+// Tool env of the profile the context names, the home and secrets its credential readers resolve under
+func sttCredentialEnv(ctx context.Context) *tools.Env {
+	h := home.Dir(ctx)
+	return &tools.Env{Home: h, Secrets: config.NewSecrets(h)}
 }
 
-// Force refreshed xAI OAuth credentials for an API key hint, the seam tests replace
+// xAI credentials of the context profile, its default login first, the seam tests replace
+var sttResolveXAICredentials = func(ctx context.Context) (string, string, string) {
+	return tools.ResolveXAIHTTPCredentials(sttCredentialEnv(ctx), false)
+}
+
+// Force refreshed xAI OAuth credentials of the context profile for an API key hint, the seam tests replace
 var sttRefreshXAICredentials = func(ctx context.Context, apiKeyHint string) (string, string, string, error) {
-	p, k, b := tools.ResolveXAIHTTPCredentialsRefreshed(nil, apiKeyHint)
+	p, k, b := tools.ResolveXAIHTTPCredentialsRefreshed(sttCredentialEnv(ctx), apiKeyHint)
 	return p, k, b, nil
 }
 
@@ -825,10 +831,12 @@ func directOpenAICredentials(ctx context.Context, cfgAPIKey, cfgBaseURL any) (st
 }
 
 // Voice tools then OpenAI key, the seam tests replace
-var sttResolveOpenAIAudioAPIKey = func(ctx context.Context) string { return tools.ResolveOpenAIAudioAPIKey(nil) }
+var sttResolveOpenAIAudioAPIKey = func(ctx context.Context) string {
+	return tools.ResolveOpenAIAudioAPIKey(sttCredentialEnv(ctx))
+}
 
 // Stored stt selection, empty when never configured, the seam tests replace
-var sttReadSelection = func(ctx context.Context) string { return tools.ReadSelection(nil, "stt") }
+var sttReadSelection = func(ctx context.Context) string { return tools.ReadSelection(sttCredentialEnv(ctx), "stt") }
 
 // Audio transcoder ahead of a cloud upload, the seam tests replace
 var sttTranscode = transcodeAudioForSTT

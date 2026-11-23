@@ -70,7 +70,7 @@ func TestProfileTargetAndModelRoute(t *testing.T) {
 	}{
 		{map[string]any{"model": map[string]any{"default": " m1 ", "provider": "Auto"}}, "m1", ""},
 		{map[string]any{"model": map[string]any{"default": "m2", "provider": " openrouter "}}, "m2", "openrouter"},
-		{map[string]any{"model": " scalar "}, "scalar", ""},
+		{map[string]any{"model": " scalar "}, "", ""},
 		{map[string]any{}, "", ""},
 	} {
 		if m, p := profileTarget(tc.config); m != tc.model || p != tc.provider {
@@ -105,8 +105,8 @@ func TestBoundRouteHoldsAndEntryServes(t *testing.T) {
 	if entryServes(ctx, map[string]any{"provider": "team", "base_url": routeA}, moved) {
 		t.Fatal("moved entry still serves")
 	}
-	aliased := map[string]any{"model_aliases": map[string]any{"fast": map[string]any{"base_url": routeB, "api_key": "k"}}}
-	if entryServes(ctx, map[string]any{"base_url": routeA, "api_key_from": []any{"model_aliases", "fast", "api_key"}}, aliased) {
+	aliased := map[string]any{"model": map[string]any{"aliases": map[string]any{"fast": map[string]any{"base_url": routeB, "api_key": "k"}}}}
+	if entryServes(ctx, map[string]any{"base_url": routeA, "api_key_from": []any{"model", "aliases", "fast", "api_key"}}, aliased) {
 		t.Fatal("alias entry on another endpoint serves")
 	}
 	if !entryServes(ctx, map[string]any{"provider": "openrouter"}, team) {
@@ -124,12 +124,14 @@ func TestHeldPickAndPresentSections(t *testing.T) {
 	if got := heldPick(frozen, other); !reflect.DeepEqual(got, frozen) {
 		t.Fatalf("other endpoint %v", got)
 	}
-	got := presentSections(map[string]any{"gateway": nil, "model": "m", "agent": map[string]any{}})
+	got := presentSections(map[string]any{"gateway": nil, "model": map[string]any{"default": "m"}, "agent": map[string]any{}})
 	if !reflect.DeepEqual(got, map[string]any{"model": map[string]any{"default": "m"}, "agent": map[string]any{}}) {
 		t.Fatalf("sections %v", got)
 	}
-	if got := presentSections(map[string]any{"model": "  "}); !reflect.DeepEqual(got, map[string]any{"model": map[string]any{}}) {
-		t.Fatalf("blank model %v", got)
+	for _, held := range []any{"", "m", []any{"m"}} {
+		if got := presentSections(map[string]any{"model": held}); !reflect.DeepEqual(got, map[string]any{"model": map[string]any{}}) {
+			t.Fatalf("model %v read as %v", held, got)
+		}
 	}
 }
 

@@ -102,7 +102,7 @@ func TestZaiDetectedBaseURLCachesSuccessAndBacksOffFailures(t *testing.T) {
 		}
 	}
 	state := readAuthStore(t, h)["providers"].(map[string]any)["zai"].(map[string]any)["detected_endpoint"].(map[string]any)
-	if probes.Load() != 2 || state["endpoint_id"] != "coding-global" || len(anyString(state["key_hash"])) != 16 || readAuthStore(t, h)["active_provider"] != nil {
+	if probes.Load() != 2 || state["endpoint_id"] != "coding-global" || len(anyString(state["key_hash"])) != 16 {
 		t.Fatalf("%d %v", probes.Load(), state)
 	}
 }

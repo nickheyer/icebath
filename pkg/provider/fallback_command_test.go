@@ -171,28 +171,6 @@ func TestAddCommandAddPreservesPrimaryWhenPickerChangesIt(t *testing.T) {
 	}
 }
 
-func TestAddCommandRestorePreservesAbsentActiveProvider(t *testing.T) {
-	h, _ := fallbackTestHome(t)
-	store := NewStore(h)
-	if err := store.Save(AuthData{"version": 2, "providers": map[string]any{}}); err != nil {
-		t.Fatal(err)
-	}
-	before, present, err := SnapshotAuthActiveProvider(store)
-	if err != nil || present {
-		t.Fatalf("snapshot %v %v %v", before, present, err)
-	}
-	if err := RestoreAuthActiveProvider(store, before, present); err != nil {
-		t.Fatal(err)
-	}
-	data, err := store.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, has := data["active_provider"]; has {
-		t.Fatalf("active_provider written %v", data)
-	}
-}
-
 func TestAddCommandPickerFailureRestoresPersistedPrimaryWithoutMaskingError(t *testing.T) {
 	primary := map[string]any{"provider": "anthropic", "default": "claude-sonnet-4-6", "base_url": "https://api.anthropic.com", "api_mode": "anthropic_messages"}
 	picked := map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6", "base_url": "https://openrouter.ai/api/v1", "api_mode": "chat_completions"}

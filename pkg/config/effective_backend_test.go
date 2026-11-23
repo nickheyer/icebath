@@ -188,7 +188,7 @@ func effectiveHomes(t *testing.T) (string, string) {
 	return h, managed
 }
 
-const effectiveUserYAML = "model:\n  name: user/model\n  api_key: ${FIXTURE_USER_KEY}\nprovider: custom\ndisplay:\n  skin: user-skin\n"
+const effectiveUserYAML = "model:\n  default: user/model\n  provider: custom\n  api_key: ${FIXTURE_USER_KEY}\ndisplay:\n  skin: user-skin\n"
 
 func TestEffectiveIsUserPlusManagedPlusEnvWithNoDefaults(t *testing.T) {
 	h, managed := effectiveHomes(t)

@@ -4,17 +4,18 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Values a string require mention setting counts as on
+// Words a text switch in the platform config counts as on
 var whatsappTruthy = map[string]bool{"true": true, "1": true, "yes": true, "on": true}
 
 // Practical reply length limit, not the protocol maximum
@@ -70,12 +71,19 @@ func whatsappHeaderToBold(m regexp2.Match) string {
 // WhatsApp behaviour shared by the bridge and Cloud API adapters, gating, mentions and formatting
 type WhatsAppBehaviorMixin struct {
 	*gateway.OwnAccessPolicyMixin
-	Config          *gateway.PlatformConfig
-	Name            string
-	MentionPatterns []*regexp2.Regexp
-	ReplyPrefix     *string
+	Config      *gateway.PlatformConfig
+	Name        string
+	ReplyPrefix *string
 
 	dmAllowlistSource *string
+	mentionPatterns   mentionPatternCache
+}
+
+// Compiled mention patterns with the setting value they were compiled from
+type mentionPatternCache struct {
+	mu       sync.Mutex
+	source   string
+	compiled []*regexp2.Regexp
 }
 
 var _ gateway.DMAllowedAdapter = (*WhatsAppBehaviorMixin)(nil)
@@ -158,32 +166,14 @@ func (b *WhatsAppBehaviorMixin) OutgoingChunkLimit(ctx context.Context) (int, er
 	return max(1024, whatsappMaxMessageLength-pystr.Len(prefix)), err
 }
 
-// Whether group messages need a mention, config first then the scoped env
-func (b *WhatsAppBehaviorMixin) WhatsAppRequireMention(ctx context.Context) (bool, error) {
-	configured, ok := b.extra()["require_mention"]
-	if !ok || configured == nil {
-		value, _, err := whatsappSecret(ctx, "WHATSAPP_REQUIRE_MENTION")
-		if err != nil {
-			return false, err
-		}
-		if value == "" {
-			value = "false"
-		}
-		configured = value
-	}
-	if s, isStr := configured.(string); isStr {
-		return whatsappTruthy[pystr.Lower(s)], nil
-	}
-	return pyrepr.Truthy(configured), nil
+// Whether group messages need a mention for the profile in scope
+func (b *WhatsAppBehaviorMixin) WhatsAppRequireMention(ctx context.Context) bool {
+	return settings.WhatsappRequireMention.Get(gateway.SettingsContext(ctx))
 }
 
-// Chats answered without a mention, the config extra unless blank then the scoped env list
-func (b *WhatsAppBehaviorMixin) WhatsAppFreeResponseChats(ctx context.Context) (map[string]bool, error) {
-	raw, err := gateway.ExtraOrSecret(ctx, b.extra(), "free_response_chats", "WHATSAPP_FREE_RESPONSE_CHATS", "", true)
-	if err != nil {
-		return nil, err
-	}
-	return CoerceAllowList(raw), nil
+// Chats the profile in scope answers without a mention
+func (b *WhatsAppBehaviorMixin) WhatsAppFreeResponseChats(ctx context.Context) map[string]bool {
+	return gateway.SettingSet(ctx, settings.WhatsappFreeResponseChats)
 }
 
 // Allowlist of config, a list or JSON list string, or an env CSV as a set of stripped entries
@@ -232,7 +222,7 @@ func SelectAllowlist(extra map[string]any, configKeys, envKeys []string, readEnv
 
 // Raw DM allowlist, the winning source recorded so live DM checks keep the same precedence
 func (b *WhatsAppBehaviorMixin) SelectDMAllowlist(extra map[string]any, envKeys []string, readEnv func(name string) (string, error)) (any, error) {
-	source, raw, err := SelectAllowlist(extra, []string{"allow_from", "allowFrom"}, envKeys, readEnv)
+	source, raw, err := SelectAllowlist(extra, []string{"allow_from"}, envKeys, readEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -299,48 +289,35 @@ func MatchesWhatsAppAllowlist(ctx context.Context, candidate string, allowFrom m
 	return false, nil
 }
 
-// Mention patterns of the config extra or the scoped env, invalid ones logged and skipped
-func (b *WhatsAppBehaviorMixin) CompileMentionPatterns(ctx context.Context) ([]*regexp2.Regexp, error) {
-	patterns, configured := b.extra()["mention_patterns"]
-	if !configured || patterns == nil {
-		patterns = nil
-		raw, _, err := whatsappSecret(ctx, "WHATSAPP_MENTION_PATTERNS")
-		if err != nil {
-			return nil, err
-		}
-		if raw = pystr.Strip(raw); raw != "" {
-			if decoded, err := pyjson.Loads(raw); err == nil {
-				patterns = pyjson.Plain(decoded)
-			} else {
-				var lines []any
-				for _, p := range pystr.Splitlines(raw, false) {
-					if p = pystr.Strip(p); p != "" {
-						lines = append(lines, p)
-					}
-				}
-				if len(lines) == 0 {
-					for _, p := range strings.Split(raw, ",") {
-						if p = pystr.Strip(p); p != "" {
-							lines = append(lines, p)
-						}
-					}
-				}
-				patterns = lines
-			}
-		}
+// Mention patterns of the profile in scope as set right now, compiled again only when the setting changed
+func (b *WhatsAppBehaviorMixin) currentMentionPatterns(ctx context.Context) []*regexp2.Regexp {
+	var raw any
+	if v, err := settings.Resolve(gateway.SettingsContext(ctx), settings.WhatsappMentionPatterns.Key); err == nil {
+		raw = v.Value
 	}
-	if patterns == nil {
-		return []*regexp2.Regexp{}, nil
+	source := pyrepr.Repr(raw)
+	b.mentionPatterns.mu.Lock()
+	defer b.mentionPatterns.mu.Unlock()
+	if b.mentionPatterns.source != source {
+		b.mentionPatterns.compiled, b.mentionPatterns.source = b.compileMentionPatterns(raw), source
 	}
+	return b.mentionPatterns.compiled
+}
+
+// Case insensitive patterns of a list or one text, invalid ones logged and skipped
+func (b *WhatsAppBehaviorMixin) compileMentionPatterns(patterns any) []*regexp2.Regexp {
 	if s, ok := patterns.(string); ok {
 		patterns = []any{s}
 	}
+	if patterns == nil {
+		return nil
+	}
 	list, ok := patterns.([]any)
 	if !ok {
-		pkgLog().Warn(fmt.Sprintf("[%s] whatsapp mention_patterns must be a list or string; got %s", b.Name, pyrepr.TypeName(patterns)))
-		return []*regexp2.Regexp{}, nil
+		pkgLog().Warn(fmt.Sprintf("[%s] whatsapp mention_patterns must be a list or text; got %s", b.Name, pyrepr.TypeName(patterns)))
+		return nil
 	}
-	compiled := []*regexp2.Regexp{}
+	var compiled []*regexp2.Regexp
 	for _, pattern := range list {
 		text, ok := pattern.(string)
 		if !ok || pystr.Strip(text) == "" {
@@ -356,7 +333,7 @@ func (b *WhatsAppBehaviorMixin) CompileMentionPatterns(ctx context.Context) ([]*
 	if len(compiled) > 0 {
 		pkgLog().Info(fmt.Sprintf("[%s] Loaded %d WhatsApp mention pattern(s)", b.Name, len(compiled)))
 	}
-	return compiled, nil
+	return compiled
 }
 
 // Normalised bot ids the bridge reported on the message
@@ -403,13 +380,13 @@ func MessageMentionsBot(data map[string]any) bool {
 	return false
 }
 
-// Whether a configured mention pattern matches the message body
-func (b *WhatsAppBehaviorMixin) MessageMatchesMentionPatterns(data map[string]any) bool {
+// Whether a mention pattern of the profile in scope matches the message body
+func (b *WhatsAppBehaviorMixin) MessageMatchesMentionPatterns(ctx context.Context, data map[string]any) bool {
 	body := ""
 	if pyrepr.Truthy(data["body"]) {
 		body = pyrepr.Str(data["body"])
 	}
-	for _, pattern := range b.MentionPatterns {
+	for _, pattern := range b.currentMentionPatterns(ctx) {
 		if m, err := pattern.FindStringMatch(body); err == nil && m != nil {
 			return true
 		}
@@ -462,15 +439,7 @@ func (b *WhatsAppBehaviorMixin) ShouldProcessMessage(ctx context.Context, data m
 	if allowed, err := b.IsGroupAllowed(ctx, chatID, ""); err != nil || !allowed {
 		return false, err
 	}
-	free, err := b.WhatsAppFreeResponseChats(ctx)
-	if err != nil {
-		return false, err
-	}
-	requireMention, err := b.WhatsAppRequireMention(ctx)
-	if err != nil {
-		return false, err
-	}
-	if free[chatID] || !requireMention {
+	if b.WhatsAppFreeResponseChats(ctx)[chatID] || !b.WhatsAppRequireMention(ctx) {
 		return true, nil
 	}
 	body := ""
@@ -478,7 +447,7 @@ func (b *WhatsAppBehaviorMixin) ShouldProcessMessage(ctx context.Context, data m
 		body = pyrepr.Str(data["body"])
 	}
 	return strings.HasPrefix(pystr.Strip(body), "/") || MessageIsReplyToBot(data) || MessageMentionsBot(data) ||
-		b.MessageMatchesMentionPatterns(data), nil
+		b.MessageMatchesMentionPatterns(ctx, data), nil
 }
 
 // Markdown converted to WhatsApp syntax, fenced and inline code protected behind NUL markers

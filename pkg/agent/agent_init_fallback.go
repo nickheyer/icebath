@@ -53,14 +53,6 @@ func initFallbackChain(a *AIAgent, fallbackModel []map[string]any) {
 	_, _ = fmt.Fprintf(statusStdout, "\U0001f504 Fallback chain (%d providers): %s\n", len(chain), strings.Join(labels, " → "))
 }
 
-// First fallback entry, the legacy single fallback model external callers read
-func (a *AIAgent) FallbackModel() map[string]any {
-	if len(a.fallbackChain) == 0 {
-		return nil
-	}
-	return a.fallbackChain[0]
-}
-
 // Gives an init time fallback its own api mode, a detection failure keeping the primary mode
 func recomputeInitFallbackAPIMode(ctx context.Context, a *AIAgent, fbBaseURL string) {
 	mode, err := provider.FallbackAPIModeResolved(ctx, a, a.provider, a.model, fbBaseURL)

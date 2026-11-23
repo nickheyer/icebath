@@ -212,7 +212,7 @@ func TestRedactionFailureDeniesBeforeTransportCallback(t *testing.T) {
 	}
 	t.Cleanup(func() { approvalRequestRedactor = prev })
 	env := approvalTestEnv(t, "redaction-failure-session", nil, map[string]any{"interactive": true})
-	env.Config["security"] = map[string]any{"approval": map[string]any{"transport": "phone"}}
+	writeHomeConfigDoc(t, env, map[string]any{"approvals": map[string]any{"mode": "manual"}, "security": map[string]any{"approval": map[string]any{"transport": "phone"}}})
 	env.Ask = forbiddenAsker{t}
 	result := CheckAllCommandGuards(context.Background(), env, "rm -rf /tmp/example", "local", false)
 	if result.Approved || result.Outcome != "transport_error" {

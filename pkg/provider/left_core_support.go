@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
@@ -108,10 +107,6 @@ func PluginHomeLabel(h string) string {
 		return fmt.Sprintf("profile '%s'", profile)
 	}
 	return h
-}
-
-var interactiveTerminal = func() bool {
-	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
 }
 
 // Python repr of a decoded config value

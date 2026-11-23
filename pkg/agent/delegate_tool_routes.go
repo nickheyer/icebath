@@ -78,12 +78,7 @@ func profileModelRequestOf(ctx context.Context, cfg map[string]any) (profileMode
 	cfgProvider := ""
 	if modelCfg, ok := cfg["model"].(map[string]any); ok {
 		model = modelCfg["default"]
-		if !pyTruthy(model) {
-			model = modelCfg["model"]
-		}
 		cfgProvider = pystr.Strip(liveText(modelCfg["provider"]))
-	} else if s, ok := cfg["model"].(string); ok {
-		model = s
 	}
 	text, isStr := model.(string)
 	request := profileModelRequest{}

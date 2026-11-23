@@ -1,10 +1,14 @@
 package provider
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/errchain"
 )
 
 // Auth actions a provider plugin's auth handler can own
@@ -127,4 +131,110 @@ func getPluginOAuthAuthStatus(env PoolEnv, provider string) map[string]any {
 		"configured": true, "provider": provider, "logged_in": len(live) > 0, "needs_refresh": len(refreshable) > 0,
 		"accounts": len(entries), "base_url": baseURL, "hint": hint,
 	}
+}
+
+// Whether a profile signs in through its own device login hooks
+func profileHasDeviceLogin(p Profile) bool {
+	return p.StartDeviceLogin != nil && p.PollDeviceLogin != nil && p.SaveDeviceLogin != nil
+}
+
+// Copy of a profile device login that ended refused or expired, keyed by the status its poll reported
+var deviceLoginEndings = map[string]string{"denied": "Authorization was denied.", "expired": "Device code expired before approval"}
+
+// Whole number of a device login reply, text parsed and any other shape refused
+func deviceLoginInt(v any) (int, error) {
+	if s, ok := v.(string); ok {
+		return parsePyInt(s)
+	}
+	if n, ok := anyInt(v); ok {
+		return n, nil
+	}
+	return 0, fmt.Errorf("a device login value is %s, expected a whole number", errchain.Kind(v))
+}
+
+// Required field of a device login reply, an error when the profile left it out
+func deviceLoginField(login map[string]any, key string) (any, error) {
+	v, ok := login[key]
+	if !ok {
+		return nil, fmt.Errorf("the device login reply has no %s", key)
+	}
+	return v, nil
+}
+
+// Device code sign in through the profile's hooks, polled at its pace until it ends or the context stops, the browser opened here when asked
+func profileDeviceLogin(ctx context.Context, out io.Writer, name string, profile Profile, openBrowser bool) error {
+	started, err := profile.StartDeviceLogin(ctx)
+	if err != nil {
+		return err
+	}
+	login := hostedMapOrNil(started)
+	if len(login) == 0 {
+		return authExit(fmt.Sprintf("Provider %s does not support device-code flow", name))
+	}
+	fields := map[string]any{}
+	for _, key := range []string{"user_code", "verification_url", "expires_in", "interval"} {
+		if fields[key], err = deviceLoginField(login, key); err != nil {
+			return err
+		}
+	}
+	expiresIn, err := deviceLoginInt(fields["expires_in"])
+	if err != nil {
+		return err
+	}
+	interval, err := deviceLoginInt(fields["interval"])
+	if err != nil {
+		return err
+	}
+	interval = max(1, interval)
+	if err := printDeviceCodeInstructions(out, hostedStr(fields["verification_url"]), hostedStr(fields["user_code"]), openBrowser && !isRemoteSession(), "—", true); err != nil {
+		return err
+	}
+	fmt.Fprintln(out, "Waiting for approval...")
+	state := login["state"]
+	deadline := time.Now().Add(time.Duration(expiresIn) * time.Second)
+	cancelled := func() bool { return ctx.Err() != nil }
+	result := map[string]any{}
+	for time.Now().Before(deadline) {
+		if cancellableSleep(time.Duration(interval)*time.Second, cancelled) != nil {
+			return &SignInCancelledError{ExitCode: 130, HasCode: true}
+		}
+		polled, err := profile.PollDeviceLogin(ctx, state)
+		if err != nil {
+			return err
+		}
+		result = hostedMap(polled)
+		if next, ok := result["state"]; ok {
+			state = next
+		}
+		if hostedStr(result["status"]) != "pending" {
+			break
+		}
+		if truthy(result["interval"]) {
+			if interval, err = deviceLoginInt(result["interval"]); err != nil {
+				return err
+			}
+		}
+	}
+	if cancelled() {
+		return &SignInCancelledError{ExitCode: 130, HasCode: true}
+	}
+	status := hostedStr(result["status"])
+	if status == "" || status == "pending" {
+		status = "expired"
+	}
+	if status != "approved" {
+		message := hostedStr(result["message"])
+		if message == "" {
+			message = deviceLoginEndings[status]
+		}
+		if message == "" {
+			message = "Sign-in failed"
+		}
+		return authExit(message)
+	}
+	if err := profile.SaveDeviceLogin(ctx, result["credential"]); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Signed in to %s.\n", name)
+	return nil
 }

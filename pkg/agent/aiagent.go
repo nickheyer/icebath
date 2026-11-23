@@ -485,8 +485,6 @@ type AIAgentOptions struct {
 	MemoryManager                      *memory.MemoryManager
 	ToolResultMetadataCallback         any
 	Env                                *tools.Env
-	// Deprecated keyword kept for compatibility, warned about and ignored
-	ToolDelay *float64
 }
 
 // RunConversationOptions are the run_conversation keywords the callers above pkg/agent pass
@@ -507,16 +505,8 @@ type RunConversationOptions struct {
 	Prelude                    Prelude
 }
 
-// Deprecation notice, recorded below the default level so it stays silent
-var warnDeprecation = func(message string) {
-	pkgLog().Debug("deprecated: " + message)
-}
-
 // Builds an agent through the init_agent forwarder, runtime fields filling the route keywords like cron does
 func NewAIAgent(ctx context.Context, o AIAgentOptions) (*AIAgent, error) {
-	if o.ToolDelay != nil {
-		warnDeprecation("tool_delay is deprecated and ignored; sequential tool calls no longer sleep between executions.")
-	}
 	if rt := o.Runtime; rt != nil {
 		o.APIKey, o.BaseURL, o.Provider = rt.APIKeyValue(), rt.BaseURL, rt.Provider
 		o.RequestedProvider, o.APIMode = rt.RequestedProvider, string(rt.APIMode)

@@ -98,9 +98,6 @@ func unknownPluginMessage(name string, downloadedOnly bool) string {
 	if line, absent := bundledTierRefusal(name); absent {
 		return "[red]" + line + "[/red]"
 	}
-	if moved := movedPluginHint(name); moved != "" {
-		return fmt.Sprintf("[red]No plugin named '%s'.[/red] %s", name, moved)
-	}
 	return fmt.Sprintf("[red]No plugin named '%s'.[/red] Run `icebath plugins list` to see the exact names "+
 		"(nested plugins use their full key, e.g. web/firecrawl).%s "+
 		"To add one: `icebath plugins install <owner/repo>`.", name, scope)
@@ -122,13 +119,10 @@ func pluginAliases(h, key string) (map[string]bool, error) {
 	return aliasesFrom(key, entries), nil
 }
 
-// Key, bare leaf, legacy keys and the manifest names of the entries carrying the key
+// Key, bare leaf and the manifest names of the entries carrying the key
 func aliasesFrom(key string, entries []PluginEntry) map[string]bool {
 	parts := strings.Split(key, "/")
 	names := map[string]bool{key: true, parts[len(parts)-1]: true}
-	for _, legacy := range legacyPluginKeys(key) {
-		names[legacy] = true
-	}
 	for _, e := range entries {
 		if e.Key == key {
 			names[e.Name] = true
@@ -310,26 +304,12 @@ func resolvePluginKeyAndSource(ctx context.Context, name string) (string, string
 func CmdEnable(ctx context.Context, name string, allowToolOverride *bool, out io.Writer) error {
 	console := NewConsole(out)
 	h := home.Dir(ctx)
-	refuseLegacyRelay := func(plugin string) error {
-		if legacyRelayPluginKeys[plugin] {
-			return fail(console, fmt.Sprintf("[red]Plugin '%s' was removed.[/red] Relay lifecycle is owned "+
-				"by Icebath core; configure a standard user or system Relay plugins.toml, or use "+
-				"%s for an explicit user-file override.", plugin, tools.RelayPluginsConfigEnv))
-		}
-		return nil
-	}
-	if err := refuseLegacyRelay(name); err != nil {
-		return err
-	}
 	key, source, err := resolvePluginKeyAndSource(ctx, name)
 	if err != nil {
 		return err
 	}
 	if key == "" {
 		return fail(console, unknownPluginMessage(name, false))
-	}
-	if err := refuseLegacyRelay(key); err != nil {
-		return err
 	}
 	if line, absent := catalogTierRefusal(filepath.Base(key)); absent {
 		return fail(console, line)

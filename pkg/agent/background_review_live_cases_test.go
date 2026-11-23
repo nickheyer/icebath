@@ -474,21 +474,21 @@ func TestLiveTurnProceedsWhenReviewAcknowledgementTimesOut(t *testing.T) {
 	}
 }
 
-func TestLiveTurnInterruptsLegacyReviewButKeepsForegroundPriority(t *testing.T) {
+func TestLiveTurnInterruptsAReviewWithoutARunTokenButKeepsForegroundPriority(t *testing.T) {
 	agent := brLiveAgent(t)
-	legacy := &AIAgent{quietMode: true, requestOverrides: map[string]any{}, env: &tools.Env{Values: &sync.Map{}},
+	tracked := &AIAgent{quietMode: true, requestOverrides: map[string]any{}, env: &tools.Env{Values: &sync.Map{}},
 		hardInterruptRequested: &pythread.Event{}}
 	agent.backgroundReviewRun = nil
-	agent.backgroundReviewAgent = legacy
+	agent.backgroundReviewAgent = tracked
 	var boundaryCalls []bool
 	brInstallLiveTurnBoundary(t, func() { boundaryCalls = append(boundaryCalls, true) })
 	relay := brInstallRelayRecorder(t, nil)
 	live := brRunLiveTurn(agent)
-	if !brWaitFor(2.0, func() bool { return legacy.interruptRequested.Load() }) {
-		t.Fatal("legacy review never interrupted")
+	if !brWaitFor(2.0, func() bool { return tracked.interruptRequested.Load() }) {
+		t.Fatal("the tracked review was never interrupted")
 	}
-	if legacy.interruptMessage != "superseded by a new live turn" {
-		t.Fatalf("interrupt message %q", legacy.interruptMessage)
+	if tracked.interruptMessage != "superseded by a new live turn" {
+		t.Fatalf("interrupt message %q", tracked.interruptMessage)
 	}
 	if len(boundaryCalls) != 1 || !live.boundary {
 		t.Fatalf("boundary %v live %+v", boundaryCalls, live)

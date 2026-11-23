@@ -14,7 +14,9 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // File the loopback getFile answers for an id, failing with a status when set
@@ -173,7 +175,9 @@ func TestDocumentDownloadBlockVoiceCacheFailureRepliesAndSignalsAgent(t *testing
 
 func TestDocumentDownloadBlockVideoNoteFailureReplyIsLocalized(t *testing.T) {
 	a, fake, sink := docAdapter(t, map[string]fakeFile{"note-file": {status: 502}})
-	t.Setenv("ICEBATH_LANGUAGE", "de")
+	setSetting(t, settings.Language.Key, "de")
+	i18n.ResetLanguageCache()
+	t.Cleanup(i18n.ResetLanguageCache)
 	m := docMessage("")
 	m.VideoNote = &models.VideoNote{FileID: "note-file", FileUniqueID: "n", FileSize: 100}
 	handleMedia(t, a, m)

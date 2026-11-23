@@ -18,8 +18,8 @@ func threadPosts(f *fakeDiscordAPI) []fakeCall {
 
 func TestIgnoredChannelBlocksEvenWithMention(t *testing.T) {
 	a, _, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "true")
-	t.Setenv("DISCORD_IGNORED_CHANNELS", "500")
+	setDiscord(t, "require_mention", true)
+	setDiscord(t, "ignored_channels", "500")
 	bot := a.selfUser()
 	a.handleDiscordMessage(t.Context(), makeMessage(textChannel(t, a, "500"), "<@999> hello", bot), false, false)
 	if len(c.all()) != 0 {
@@ -29,8 +29,8 @@ func TestIgnoredChannelBlocksEvenWithMention(t *testing.T) {
 
 func TestNonIgnoredChannelProcessesNormally(t *testing.T) {
 	a, _, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "false")
-	t.Setenv("DISCORD_IGNORED_CHANNELS", "500,600")
+	setDiscord(t, "require_mention", false)
+	setDiscord(t, "ignored_channels", "500,600")
 	a.handleDiscordMessage(t.Context(), makeMessage(textChannel(t, a, "700"), "hello"), false, false)
 	if len(c.all()) != 1 {
 		t.Fatalf("dispatched %d", len(c.all()))
@@ -39,8 +39,8 @@ func TestNonIgnoredChannelProcessesNormally(t *testing.T) {
 
 func TestIgnoredChannelsEmptyStringIgnoresNothing(t *testing.T) {
 	a, _, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "false")
-	t.Setenv("DISCORD_IGNORED_CHANNELS", "")
+	setDiscord(t, "require_mention", false)
+	setDiscord(t, "ignored_channels", "")
 	a.handleDiscordMessage(t.Context(), makeMessage(textChannel(t, a, "500"), "hello"), false, false)
 	if len(c.all()) != 1 {
 		t.Fatalf("dispatched %d", len(c.all()))
@@ -49,8 +49,8 @@ func TestIgnoredChannelsEmptyStringIgnoresNothing(t *testing.T) {
 
 func TestNoThreadChannelSkipsAutoThread(t *testing.T) {
 	a, f, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "false")
-	t.Setenv("DISCORD_NO_THREAD_CHANNELS", "800")
+	setDiscord(t, "require_mention", false)
+	setDiscord(t, "no_thread_channels", "800")
 	a.handleDiscordMessage(t.Context(), makeMessage(textChannel(t, a, "800"), "hello"), false, false)
 	if len(threadPosts(f)) != 0 {
 		t.Fatal("auto thread created in a no-thread channel")
@@ -62,8 +62,8 @@ func TestNoThreadChannelSkipsAutoThread(t *testing.T) {
 
 func TestAutoThreadFailureSkipsAgentAndNotifiesUser(t *testing.T) {
 	a, f, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "false")
-	t.Setenv("DISCORD_AUTO_THREAD", "true")
+	setDiscord(t, "require_mention", false)
+	setDiscord(t, "auto_thread", true)
 	f.fail = func(call fakeCall, _ int) (int, string) {
 		if call.Method == "POST" && strings.HasSuffix(call.Path, "/threads") {
 			return 500, `{"message":"boom","code":0}`

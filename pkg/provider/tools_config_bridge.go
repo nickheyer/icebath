@@ -54,7 +54,7 @@ func installToolsConfigHooks() {
 	hooks.CodexDeviceCodeLogin = func(ctx context.Context, h string, out io.Writer) (map[string]any, error) {
 		return codexDeviceCodeLogin(credentialLifecycleEnv(ctx, h), out)
 	}
-	hooks.SaveCodexTokens = func(ctx context.Context, h string, tokens map[string]any, lastRefresh string, _ bool) error {
+	hooks.SaveCodexTokens = func(ctx context.Context, h string, tokens map[string]any, lastRefresh string) error {
 		return saveCodexLogin(credentialLifecycleEnv(ctx, h), tokens, lastRefresh)
 	}
 	hooks.XAIOAuthLoginFromSetup = func(ctx context.Context, h string) bool {

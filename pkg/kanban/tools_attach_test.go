@@ -11,16 +11,19 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Secure default of the SSRF guard, private targets refused
-func defaultURLGuard(t *testing.T) {
+// Turns security.allow_private_urls on in the config.yaml of the test's home, so a download reaches a loopback server
+func allowPrivateURLs(t *testing.T) {
 	t.Helper()
-	unsetEnv(t, "ICEBATH_ALLOW_PRIVATE_URLS")
+	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), []byte("security:\n  allow_private_urls: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // Calls attach_url and asserts the SSRF guard fired with no attachment row written
@@ -76,13 +79,11 @@ func TestAttachURLRejectsNonHTTPScheme(t *testing.T) {
 
 func TestAttachURLBlocksLoopback(t *testing.T) {
 	tid := toolWorkerEnv(t)
-	defaultURLGuard(t)
 	assertAttachURLBlocked(t, tid, "http://127.0.0.1/")
 }
 
 func TestAttachURLHappyPathPublicHost(t *testing.T) {
 	tid := toolWorkerEnv(t)
-	defaultURLGuard(t)
 	fakePublicDNS(t, map[string]string{"files.example.com": "93.184.216.34"})
 	payload := []byte("public fetch body")
 	patchAttachTransport(t, func(r *http.Request) (*http.Response, error) {
@@ -106,7 +107,8 @@ func TestAttachURLHappyPathPublicHost(t *testing.T) {
 }
 
 func TestDownloadURLWithCapFollowsRelativeRedirectsPerHop(t *testing.T) {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
+	setupKanbanHome(t)
+	allowPrivateURLs(t)
 	var hops []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hops = append(hops, r.URL.Path+" "+r.Header.Get("User-Agent"))
@@ -138,7 +140,8 @@ func TestDownloadURLWithCapFollowsRelativeRedirectsPerHop(t *testing.T) {
 }
 
 func TestDownloadURLWithCapRedirectFailures(t *testing.T) {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
+	setupKanbanHome(t)
+	allowPrivateURLs(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/empty":
@@ -179,7 +182,8 @@ func TestDownloadURLWithCapRedirectFailures(t *testing.T) {
 }
 
 func TestDownloadURLWithCapRefusesABodyOverTheCap(t *testing.T) {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
+	setupKanbanHome(t)
+	allowPrivateURLs(t)
 	const mb = 1024 * 1024
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		size := mb
@@ -203,7 +207,7 @@ func TestDownloadURLWithCapRefusesABodyOverTheCap(t *testing.T) {
 
 func TestAttachURLReportsDownloadFailures(t *testing.T) {
 	toolWorkerEnv(t)
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
+	allowPrivateURLs(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/gone" {
 			w.WriteHeader(http.StatusNotFound)

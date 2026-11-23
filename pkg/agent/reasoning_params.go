@@ -19,7 +19,7 @@ type reasoningRouteCacheEntry struct {
 	route                             provider.ReasoningReplayRoute
 }
 
-// Whether model.reasoning_echo marks the current provider must echo
+// Whether agent.reasoning_echo, or the fallback entry in use, marks the current provider as one that must echo
 func (a *AIAgent) reasoningEchoOptIn() bool {
 	return pyTruthy(a.reasoningEchoFlag)
 }

@@ -242,9 +242,6 @@ func modelFlowBedrock(r *ModelFlowRun) error {
 	if authChoice == "2" {
 		return modelFlowBedrockAPIKey(r, region)
 	}
-	if ask := hostedAsker(); ask != nil {
-		bedrockHostedSSOLogin(r, ask, region)
-	}
 	fmt.Fprintf(r.Out, "  Discovering models in %s...\n", region)
 	liveModels := DiscoverBedrockModels(ctx, region, nil)
 	var modelList []string

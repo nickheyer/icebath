@@ -89,15 +89,11 @@ func progressLine(view map[string]any) string {
 	return line
 }
 
-// Renders a job until it settles and returns its status, Ctrl-C or a stopped TUI flow pausing a pausable phase
+// Renders a job until it settles and returns its status, Ctrl-C pausing a pausable phase
 func followJob(r *ModelFlowRun, jobID string) (string, error) {
 	interrupts := make(chan os.Signal, 1)
 	signal.Notify(interrupts, os.Interrupt)
 	defer signal.Stop(interrupts)
-	var stopped <-chan struct{}
-	if hostedAsker() != nil {
-		stopped = r.ctx().Done()
-	}
 	shownPhase, width, phaseShown := "", 0, false
 	var view map[string]any
 	for {
@@ -118,11 +114,8 @@ func followJob(r *ModelFlowRun, jobID string) (string, error) {
 		length := utf8.RuneCountInString(line)
 		fmt.Fprintf(r.Out, "\r%s%s", line, strings.Repeat(" ", max(0, width-length)))
 		width = length
-		hostedStop := false
 		select {
 		case <-interrupts:
-		case <-stopped:
-			hostedStop = true
 		case <-time.After(localModelsPollInterval):
 			continue
 		}
@@ -132,11 +125,6 @@ func followJob(r *ModelFlowRun, jobID string) (string, error) {
 			return "", err
 		}
 		if !truthy(current["can_pause"]) || !LocalModelsPauseJob(jobID) {
-			if hostedStop {
-				fmt.Fprintln(r.Out, "  This step cannot pause, so setup waits for it to finish.")
-				stopped, phaseShown = nil, false
-				continue
-			}
 			fmt.Fprintln(r.Out, "  Stopped following. Setup continues only while this process runs.")
 			return "interrupted", nil
 		}

@@ -112,11 +112,11 @@ func (r *GatewayRunner) stopBeginTeardown(ctx context.Context, sc *stopContext) 
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Warn("Group Chat worker could not stop cleanly; the next gateway start will recover durable work", "exc_info", rec)
+				pkgLog().Warn("The room worker could not stop cleanly; the next start of the background service recovers its durable work", "exc_info", rec)
 			}
 		}()
 		if !r.stopHostedRoomWorker(ctx, 5.0) {
-			pkgLog().Warn("Group Chat worker is still settling durable work; the next gateway start will recover it")
+			pkgLog().Warn("The room worker is still settling durable work; the next start of the background service recovers it")
 		}
 	}()
 	r.stopSystemdWatchdog(ctx)

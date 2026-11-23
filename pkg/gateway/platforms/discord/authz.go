@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Inbound message with its channel resolved from the client cache
@@ -92,7 +93,7 @@ func (a *DiscordAdapter) getEffectiveTopic(ch *discordgo.Channel, isThread bool)
 	return topic
 }
 
-// Whether the channel ids intersect DISCORD_ALLOWED_CHANNELS
+// Whether the channel ids intersect the allowed channels
 func (a *DiscordAdapter) discordChannelIDsAllowed(ctx context.Context, channelIDs strSet) bool {
 	if len(channelIDs) == 0 {
 		return false
@@ -149,8 +150,8 @@ func (a *DiscordAdapter) isAllowedUser(ctx context.Context, userID string, autho
 		return false
 	}
 	if isDM || guildID == "" {
-		dmGuildID, err := ReadDMRoleAuthGuild(ctx)
-		if err != nil || dmGuildID == nil {
+		dmGuildID := a.dmRoleAuthGuild(ctx)
+		if dmGuildID == nil {
 			return false
 		}
 		a.mu.Lock()
@@ -198,7 +199,7 @@ func (a *DiscordAdapter) guildMemberHasRole(guildID, userID string, allowedRoles
 	return false
 }
 
-// Logs once when Discord traffic is denied because no allowlist is configured
+// Logs once when Discord traffic is denied because no allow list is set
 func (a *DiscordAdapter) warnIfFailClosedDefault(ctx context.Context) {
 	a.mu.Lock()
 	warned, users, roles := a.warnedFailClosedDefault, len(a.allowedUserIDs), len(a.allowedRoleIDs)
@@ -212,8 +213,9 @@ func (a *DiscordAdapter) warnIfFailClosedDefault(ctx context.Context) {
 	a.mu.Lock()
 	a.warnedFailClosedDefault = true
 	a.mu.Unlock()
-	pkgLog().Warn(fmt.Sprintf("[%s] Discord messages are being denied because no allowlist is configured. "+
-		"Set DISCORD_ALLOWED_USERS, DISCORD_ALLOWED_ROLES, or DISCORD_ALLOWED_CHANNELS, or set DISCORD_ALLOW_ALL_USERS=true for open access.", a.Name()))
+	pkgLog().Warn(fmt.Sprintf("[%s] Discord messages are being denied because no allow list is set. "+
+		"Set %s, %s or %s, or turn on %s for open access.", a.Name(), settings.DiscordAllowFrom.Key, settings.DiscordAllowedRoles.Key,
+		settings.DiscordAllowedChannels.Key, settings.DiscordAllowAllUsers.Key))
 }
 
 // Whether the message sits in a thread the bot joined that needs no mention
@@ -267,6 +269,7 @@ func (a *DiscordAdapter) discordMessageAdmission(ctx context.Context, m *inbound
 		if m.Member != nil {
 			roles = &authorRoles{roles: m.Member.Roles, guildID: m.Member.GuildID}
 		}
+		a.syncAllowlists(ctx)
 		if !a.isAllowedUser(ctx, userID, roles, m.GuildID, isDM, channelIDs) {
 			a.warnIfFailClosedDefault(ctx)
 			return false, false

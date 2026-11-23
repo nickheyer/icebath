@@ -206,14 +206,38 @@ func loginOAuthProvider(provider string) string {
 	return provider
 }
 
+// Profile of a provider that signs in through its own device login hooks instead of an icebath OAuth flow, false for any other provider
+func deviceLoginProfile(provider string) (Profile, bool) {
+	if _, builtin := authOAuthAddSpecs[provider]; builtin {
+		return Profile{}, false
+	}
+	profile, ok := pluginProfile(provider)
+	return profile, ok && profileHasDeviceLogin(profile)
+}
+
+// Login a device login profile's sign in left behind, the provider's login in use else a row standing for the sign in
+func deviceLoginResult(env PoolEnv, provider string) Login {
+	group := ListLogins(env, provider)
+	for _, l := range group.Logins {
+		if l.Active {
+			return l
+		}
+	}
+	if len(group.Logins) > 0 {
+		return group.Logins[0]
+	}
+	return Login{Provider: provider, Name: provider, Label: group.Label, AuthType: AuthTypeOAuth, Origin: LoginOriginOwned, Status: LoginStatusReady}
+}
+
 // StartLoginOAuth starts a provider's OAuth sign in in the background, reusing the device code and PKCE flows of icebath auth add
 func StartLoginOAuth(env PoolEnv, provider string, o LoginOAuthOptions) (*LoginOAuthJob, error) {
 	asked := strings.ToLower(strings.TrimSpace(provider))
 	provider = loginOAuthProvider(asked)
-	if _, ok := authOAuthAddSpecs[provider]; !ok {
+	profile, deviceLogin := deviceLoginProfile(provider)
+	if _, ok := authOAuthAddSpecs[provider]; !ok && !deviceLogin {
 		return nil, loginFault(LoginFaultAuthType, "%s", noOAuthSignInMessage(asked))
 	}
-	if o.Name != "" {
+	if o.Name != "" && !deviceLogin {
 		if err := checkNewLoginName(env, provider, o.Name); err != nil {
 			return nil, err
 		}
@@ -237,6 +261,17 @@ func StartLoginOAuth(env PoolEnv, provider string, o LoginOAuthOptions) (*LoginO
 				job.finish(nil, fmt.Errorf("sign in failed: %v", r))
 			}
 		}()
+		if deviceLogin {
+			if err := profileDeviceLogin(ctx, job, profile.Label(), profile, false); err != nil {
+				if !isSignInCancelled(err) {
+					job.finish(nil, err)
+				}
+				return
+			}
+			signedIn := deviceLoginResult(jobEnv, provider)
+			job.finish(&signedIn, nil)
+			return
+		}
 		named, err := cli.signInLogin(provider, o, job.cancelled)
 		if errors.Is(err, errSignInCancelled) {
 			return
@@ -293,6 +328,12 @@ type OAuthSignIn struct {
 // SignInOAuthLogin runs a provider's OAuth sign in in the terminal and stores it as a new owned login, the profile default when asked
 func SignInOAuthLogin(env PoolEnv, out io.Writer, provider string, o OAuthSignIn) (Login, error) {
 	provider = loginOAuthProvider(provider)
+	if profile, deviceLogin := deviceLoginProfile(provider); deviceLogin {
+		if err := profileDeviceLogin(env.ctx(), out, profile.Label(), profile, !o.NoBrowser); err != nil {
+			return Login{}, err
+		}
+		return deviceLoginResult(env, provider), nil
+	}
 	if _, ok := authOAuthAddSpecs[provider]; !ok {
 		return Login{}, loginFault(LoginFaultAuthType, "%s", noOAuthSignInMessage(provider))
 	}

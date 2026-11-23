@@ -171,19 +171,29 @@ func TestTurnControllerTurnFlow(t *testing.T) {
 			t.Fatalf("final %#v", result.FinalMessages)
 		}
 	})
-	t.Run("an interrupt seals the partial reply and cools down to ready", func(t *testing.T) {
+	t.Run("an interrupt sends the interrupt call, seals the partial reply on its answer and cools down to ready", func(t *testing.T) {
+		t.Setenv("ICEBATH_HOME", t.TempDir())
 		c := stillController()
+		c.store.ui.Sid = "s1"
+		c.store.ui.Info = &tuigateway.SessionInfo{AuthorityEpoch: ptr(int64(3)), ExecutionGeneration: ptr(int64(7))}
 		c.startMessage()
 		c.recordMessageDelta("partial answer")
 		var appended []msg
-		gw := &recordingGateway{}
+		gw := &recordingGateway{answer: map[string]any{"execution_state": "running", "execution_generation": float64(7)}}
 		cmd, err := c.interruptTurn(interruptDeps{AppendMessage: func(m msg) { appended = append(appended, m) }, Gateway: gw, Sid: "s1", Sys: func(string) {}}, false)
 		if err != nil || cmd == nil {
 			t.Fatalf("interrupt %v", err)
 		}
-		cmd()
-		if len(gw.calls) != 1 || gw.calls[0]["method"] != "session.interrupt" {
+		answer := cmd().(interruptReplyMsg)
+		if len(gw.calls) != 1 || gw.calls[0]["method"] != "session.interrupt" || gw.calls[0]["params"].(map[string]any)["session_id"] != "s1" {
 			t.Fatalf("calls %#v", gw.calls)
+		}
+		if len(appended) != 0 || !c.store.ui.Busy {
+			t.Fatalf("sealed before the answer %#v busy %v", appended, c.store.ui.Busy)
+		}
+		c.settleInterrupt(answer)
+		if c.store.ui.Busy {
+			t.Fatal("turn still busy after the interrupt was confirmed")
 		}
 		if len(appended) != 1 || appended[0].Text != "partial answer\n\n*[interrupted]*" || c.store.ui.Status != "interrupted" {
 			t.Fatalf("appended %#v status %q", appended, c.store.ui.Status)

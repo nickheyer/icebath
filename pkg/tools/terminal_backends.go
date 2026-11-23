@@ -96,7 +96,7 @@ func sshConfigFromConfig(cfg map[string]any) map[string]any {
 	return shapeConfig(cfg, sshConfigKeys)
 }
 
-// Local kwargs for createEnvironment, TERMINAL_LOCAL_PERSISTENT default on
+// Local kwargs for createEnvironment, the persistent local shell on by default
 func localConfigFromConfig(cfg map[string]any) map[string]any {
 	persistent := true
 	if v, ok := cfg["local_persistent"]; ok && v != nil {
@@ -198,7 +198,7 @@ func createEnvironment(ctx context.Context, env *Env, envType, image, cwd string
 		host, _ := sshConfig["host"].(string)
 		user, _ := sshConfig["user"].(string)
 		if host == "" || user == "" {
-			return nil, fmt.Errorf("SSH environment requires a host and a user (TERMINAL_SSH_HOST, TERMINAL_SSH_USER): set them in /setup terminal")
+			return nil, errors.New("running commands over SSH needs a host and a user: set them in /setup terminal")
 		}
 		for k, v := range sshConfig {
 			cc["ssh_"+k] = v
@@ -236,7 +236,7 @@ func checkRequirements(env *Env, envType string, cfg map[string]any) bool {
 		if line, refused := TerminalBackendRefusal(envType); refused {
 			return rejectBackend(env, line)
 		}
-		return rejectBackend(env, fmt.Sprintf("Unknown TERMINAL_ENV '%s' (terminal.backend). Use one of: %s, or a plugin-registered backend, picked in /setup terminal",
+		return rejectBackend(env, fmt.Sprintf("Unknown terminal backend '%s' (terminal.backend). Use one of: %s, or a plugin-registered backend, picked in /setup terminal",
 			envType, linkedBuiltinBackendList()))
 	}
 	if err := provider.CheckRequirements(env, cfg); err != nil {

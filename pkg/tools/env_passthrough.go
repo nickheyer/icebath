@@ -184,7 +184,7 @@ func isIcebathProviderCredential(env *Env, name string) bool {
 var (
 	passthroughMu      sync.Mutex
 	passthroughAllowed = map[string]bool{}
-	passthroughConfig  = map[string]map[string]bool{}
+	passthroughConfig  = map[string]passthroughConfigEntry{}
 )
 
 // Yields non empty names that are not provider credentials, logging each refusal
@@ -219,30 +219,37 @@ func RegisterEnvPassthrough(env *Env, varNames []string) {
 	}
 }
 
-// Loads terminal.env_passthrough from config.yaml cached per home with the same credential filter
+// Accepted names of one home's passed variables setting with the stored list they were filtered from
+type passthroughConfigEntry struct {
+	stored string
+	names  map[string]bool
+}
+
+// Names the passed variables setting of the env's home allows, filtered like skill registrations and rebuilt when the stored list changes
 func loadConfigPassthrough(env *Env) map[string]bool {
 	homeKey := ""
 	if env != nil && env.Home != "" {
 		homeKey = home.Key(env.Home)
 	}
-	passthroughMu.Lock()
-	cached, ok := passthroughConfig[homeKey]
-	passthroughMu.Unlock()
-	if ok {
-		return cached
-	}
-	result := map[string]bool{}
 	var items []string
 	for _, s := range settings.TerminalEnvPassthrough.Strings(envHomeCtx(context.Background(), env)) {
 		items = append(items, strings.TrimSpace(s))
 	}
+	stored := strings.Join(items, "\x00")
+	passthroughMu.Lock()
+	cached, ok := passthroughConfig[homeKey]
+	passthroughMu.Unlock()
+	if ok && cached.stored == stored {
+		return cached.names
+	}
+	result := map[string]bool{}
 	for _, name := range passthroughAccepted(env, items,
 		"env passthrough: refusing to register icebath provider credential from config.yaml (blocked by the provider env blocklist). "+
 			"Operator configuration must not override the execute_code sandbox's credential scrubbing; see GHSA-rhgp-j443-p4rf.") {
 		result[name] = true
 	}
 	passthroughMu.Lock()
-	passthroughConfig[homeKey] = result
+	passthroughConfig[homeKey] = passthroughConfigEntry{stored: stored, names: result}
 	passthroughMu.Unlock()
 	return result
 }
@@ -503,7 +510,7 @@ func ClearEnvPassthrough() {
 // ResetEnvPassthroughConfigCache drops the per home config allowlist cache
 func ResetEnvPassthroughConfigCache() {
 	passthroughMu.Lock()
-	passthroughConfig = map[string]map[string]bool{}
+	passthroughConfig = map[string]passthroughConfigEntry{}
 	passthroughMu.Unlock()
 	providerBlocklistMu.Lock()
 	providerBlocklist = nil

@@ -163,7 +163,7 @@ func TestNewIdentityIsLimitedToTheOfficialEndpoint(t *testing.T) {
 }
 
 func TestAuxiliaryRawAndAsyncClientsSendExpectedHeaders(t *testing.T) {
-	ctx := auxCodexSingletonHome(t, auxAttributionJWT("acct-attribution-test"))
+	ctx := auxCodexLoginHome(t, auxAttributionJWT("acct-attribution-test"))
 	wire := auxInstallAttributionWire(t)
 	wrapped, model, err := auxBuildCodexClient(ctx, "gpt-5.4")
 	if err != nil || wrapped == nil {
@@ -210,7 +210,7 @@ func TestCredentialPoolCustomEndpointKeepsExistingIdentity(t *testing.T) {
 }
 
 func TestLegacyDisabledSettingCannotDisableAttributionForNewClients(t *testing.T) {
-	ctx := auxCodexSingletonHome(t, auxAttributionJWT("acct-attribution-test"))
+	ctx := auxCodexLoginHome(t, auxAttributionJWT("acct-attribution-test"))
 	wire := auxInstallAttributionWire(t)
 	legacy := func(enabled bool) {
 		writeConfig(t, home.Dir(ctx), map[string]any{"telemetry": map[string]any{"usage_attribution": map[string]any{"enabled": enabled}}})

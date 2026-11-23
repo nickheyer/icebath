@@ -69,7 +69,6 @@ func TestSmallSubcommandParsersMatchTheirShapes(t *testing.T) {
 		"import":            {"force"},
 		"security audit":    {"json", "fail-on", "skip-venv", "skip-plugins", "skip-mcp"},
 		"migrate xai":       {"apply", "no-backup"},
-		"migrate relay":     {"all-profiles", "no-validate"},
 		"checkpoints prune": {"retention-days", "max-size-mb", "keep-orphans", "force"},
 	} {
 		cmd := c.find(path)

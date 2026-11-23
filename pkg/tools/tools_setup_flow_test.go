@@ -182,7 +182,7 @@ func TestToolsFlowCodexStepSignsInOrSkips(t *testing.T) {
 		io.WriteString(out, "open the device page\n")
 		return map[string]any{"tokens": map[string]any{"access_token": "a"}}, nil
 	}
-	ToolsConfigHooks.SaveCodexTokens = func(context.Context, string, map[string]any, string, bool) error { saved++; return nil }
+	ToolsConfigHooks.SaveCodexTokens = func(context.Context, string, map[string]any, string) error { saved++; return nil }
 	for _, answer := range []string{"Sign in", "Skip"} {
 		ask := &flowScript{t: t, answers: []func(string, []string) (any, error){flowPick(answer)}}
 		f := &ToolsSetup{Ctx: context.Background(), Env: &Env{Home: h}, Con: flowConsole(ask), Ask: ask, Flow: strictFlowHooks(t)}

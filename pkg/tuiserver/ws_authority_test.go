@@ -23,7 +23,8 @@ func (wsTestAuthorityRunner) AdapterForSource(context.Context, *gateway.SessionS
 	return nil, nil
 }
 
-func TestLegacyFallbackNeverWritesAnAuthorityOwnedSession(t *testing.T) {
+// A session method the authority does not know is refused as unknown and changes nothing of the session it names
+func TestAnUnknownSessionMethodNeverWritesAnAuthorityOwnedSession(t *testing.T) {
 	for _, row := range []struct {
 		method string
 		params *pyjson.Object

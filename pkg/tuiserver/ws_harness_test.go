@@ -28,8 +28,37 @@ type wsTestSocket struct {
 	closes    int
 }
 
+// Socket of the cases, admitted with a session authority like every socket the service serves
 func newWSTestSocket() *wsTestSocket {
-	return &wsTestSocket{inbound: make(chan any, 4096), failIDs: map[any]bool{}}
+	return &wsTestSocket{inbound: make(chan any, 4096), failIDs: map[any]bool{}, authority: new(gateway.SessionAuthority)}
+}
+
+// Authority connection of the socket cases, each request answered by dispatch and as an unknown method without one
+type wsTestConnection struct {
+	dispatch func(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error)
+}
+
+func (c *wsTestConnection) Dispatch(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error) {
+	if c.dispatch != nil {
+		return c.dispatch(ctx, request)
+	}
+	return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil),
+		"error", pyjson.ObjectOf("code", -32601, "message", "unknown method")), nil
+}
+func (c *wsTestConnection) Close(context.Context) error { return nil }
+func (c *wsTestConnection) Actor() gateway.Principal    { return gateway.Principal{} }
+func (c *wsTestConnection) AwaitsProfileStart(context.Context, map[string]any, []string) (string, <-chan struct{}, bool, error) {
+	return "", nil, false, nil
+}
+
+// Answers the requests of every socket of one case with dispatch in place of a real authority connection
+func wsTestFakeAuthority(t *testing.T, dispatch func(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error)) {
+	t.Helper()
+	prev := wsNewAuthorityConnection
+	wsNewAuthorityConnection = func(*gateway.SessionAuthority, *tuihost.WSTransport, map[string]any, bool) (authorityConn, error) {
+		return &wsTestConnection{dispatch: dispatch}, nil
+	}
+	t.Cleanup(func() { wsNewAuthorityConnection = prev })
 }
 
 func (s *wsTestSocket) Accept(_ context.Context, subprotocol *string) error {
@@ -154,6 +183,22 @@ func wsTestNoOrphanGrace(t *testing.T) {
 	wsEnsureSkinWatcher, wsEnsureLeaseWatcher, wsStartBackendLiveness = func(context.Context) {}, func() {}, func(context.Context) {}
 	t.Cleanup(func() {
 		wsOrphanReapGraceS, wsEnsureSkinWatcher, wsEnsureLeaseWatcher, wsStartBackendLiveness = prev, prevSkin, prevLease, prevLiveness
+	})
+}
+
+// Registers a method for one case and restores the registry after it
+func wsTestMethod(t *testing.T, name string, fn Handler) {
+	t.Helper()
+	prev := lookupMethod(name)
+	registerMethod(name, fn)
+	t.Cleanup(func() {
+		methodsMu.Lock()
+		defer methodsMu.Unlock()
+		if prev == nil {
+			delete(methods, name)
+			return
+		}
+		methods[name] = prev
 	})
 }
 

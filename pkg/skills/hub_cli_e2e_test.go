@@ -69,7 +69,7 @@ func TestTier1AdvisoryPrintsFindingsAndContinues(t *testing.T) {
 
 // Hub CLI over home whose router holds only the URL source and whose URL guards admit the loopback server
 func urlInstallCLI(t *testing.T, home string) (*HubCLI, *bytes.Buffer) {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
+	allowPrivateURLs(t, home)
 	s := NewScope(home, nil)
 	h := NewHub(s)
 	h.io.isSafeURL = func(string) bool { return true }

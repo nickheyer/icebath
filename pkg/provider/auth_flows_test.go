@@ -150,7 +150,7 @@ func poolOnlyCodexHome(t *testing.T, accessTokens []string) (string, PoolEnv, *[
 	entries := make([]any, 0, len(accessTokens))
 	for i, token := range accessTokens {
 		entries = append(entries, map[string]any{
-			"id": "codex-pool-entry-" + string(rune('0'+i)), "label": "device_code-" + string(rune('0'+i)), "auth_type": "oauth", "source": "device_code",
+			"id": "codex-pool-entry-" + string(rune('0'+i)), "label": "device_code-" + string(rune('0'+i)), "auth_type": "oauth", "source": "manual:device_code",
 			"priority": i, "request_count": 0, "access_token": token, "refresh_token": "codex-refresh-token-" + string(rune('0'+i)), "base_url": DefaultCodexBaseURL})
 	}
 	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{"openai-codex": entries}})
@@ -215,33 +215,24 @@ func TestStatusSnapshotLeavesRoundRobinOrderAndCountsUntouched(t *testing.T) {
 	}
 }
 
-func singletonOnlyCodexHome(t *testing.T, tokens, cliTokens map[string]any) (string, PoolEnv) {
+// Home whose auth.json holds one ChatGPT login of openai-codex with the given tokens
+func codexLoginHome(t *testing.T, tokens map[string]any) (string, PoolEnv) {
 	t.Helper()
 	h, env := codexTestEnv(t)
-	seedCodexHomes(t, h, tokens, cliTokens)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openai-codex", "providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens, "auth_mode": "chatgpt"}}})
+	writeAuthStore(t, h, codexLoginStore(tokens))
 	return h, env
 }
 
-func TestStatusSnapshotNeverAdoptsCodexCLITokens(t *testing.T) {
-	stale := map[string]any{"access_token": jwtExpiringIn(-60)}
-	h, env := singletonOnlyCodexHome(t, stale, map[string]any{"access_token": jwtExpiringIn(86400), "refresh_token": "cli-refresh"})
-	GetCodexAuthStatus(env)
-	if !reflect.DeepEqual(singletonTokens(t, h), stale) {
-		t.Fatal("a status read persisted the Codex CLI login into auth.json")
-	}
-	resolved, err := resolveCodexRuntimeCredentials(env, CodexResolveOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved["source"] != "icebath-auth-store" || singletonTokens(t, h)["refresh_token"] != "cli-refresh" {
-		t.Fatalf("runtime resolver did not self heal: %v %v", resolved, singletonTokens(t, h))
-	}
+// Access and refresh token of the stored ChatGPT login
+func codexLoginTokens(t *testing.T, h string) map[string]any {
+	t.Helper()
+	row := poolRows(t, h, "openai-codex")[0]
+	return map[string]any{"access_token": row["access_token"], "refresh_token": row["refresh_token"]}
 }
 
-func TestStatusSnapshotNeverRefreshesAnExpiredSingleton(t *testing.T) {
-	expired := map[string]any{"access_token": jwtExpiringIn(-60), "refresh_token": "singleton-refresh"}
-	h, env := singletonOnlyCodexHome(t, expired, map[string]any{})
+func TestStatusSnapshotNeverRefreshesAnExpiredLogin(t *testing.T) {
+	expired := map[string]any{"access_token": jwtExpiringIn(-60), "refresh_token": "login-refresh"}
+	h, env := codexLoginHome(t, expired)
 	var refreshCalls []string
 	rotate := func(ctx context.Context, accessToken, refreshToken string, timeout time.Duration) (map[string]any, error) {
 		refreshCalls = append(refreshCalls, refreshToken)
@@ -255,31 +246,30 @@ func TestStatusSnapshotNeverRefreshesAnExpiredSingleton(t *testing.T) {
 	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	status := GetCodexAuthStatus(env)
 	if len(refreshCalls) != 0 {
-		t.Fatal("a status read spent the single use singleton refresh token")
+		t.Fatal("a status read spent the single use refresh token of the login")
 	}
-	if status["logged_in"] != true || status["api_key"] != expired["access_token"] || status["source"] != "icebath-auth-store" {
+	if status["logged_in"] != true || status["api_key"] != expired["access_token"] {
 		t.Fatalf("status %v", status)
 	}
-	if !reflect.DeepEqual(singletonTokens(t, h), expired) {
-		t.Fatal("status read rewrote the singleton")
+	if !reflect.DeepEqual(codexLoginTokens(t, h), expired) {
+		t.Fatal("status read rewrote the login")
 	}
 	if _, err := resolveCodexRuntimeCredentials(env, CodexResolveOptions{ForceRefresh: true, ReadOnly: true}); err != nil {
 		t.Fatal(err)
 	}
-	if len(refreshCalls) != 0 || !reflect.DeepEqual(singletonTokens(t, h), expired) {
+	if len(refreshCalls) != 0 || !reflect.DeepEqual(codexLoginTokens(t, h), expired) {
 		t.Fatal("read only did not win over force refresh")
 	}
 	if _, err := resolveCodexRuntimeCredentials(env, CodexResolveOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if len(refreshCalls) != 1 || refreshCalls[0] != "singleton-refresh" || singletonTokens(t, h)["refresh_token"] != "rotated-refresh" {
-		t.Fatalf("runtime path did not rotate: %v %v", refreshCalls, singletonTokens(t, h))
+	if len(refreshCalls) != 1 || refreshCalls[0] != "login-refresh" || codexLoginTokens(t, h)["refresh_token"] != "rotated-refresh" {
+		t.Fatalf("runtime path did not rotate: %v %v", refreshCalls, codexLoginTokens(t, h))
 	}
 }
 
 func TestStatusSnapshotLeavesTheAuthStoreManifestByteIdentical(t *testing.T) {
-	expired := map[string]any{"access_token": jwtExpiringIn(-60), "refresh_token": "singleton-refresh"}
-	h, env := singletonOnlyCodexHome(t, expired, map[string]any{})
+	h, env := codexLoginHome(t, map[string]any{"access_token": jwtExpiringIn(-60), "refresh_token": "login-refresh"})
 	GetCodexAuthStatus(env)
 	_ = os.Remove(filepath.Join(h, "auth.lock"))
 	manifest := map[string][]byte{}
@@ -290,8 +280,7 @@ func TestStatusSnapshotLeavesTheAuthStoreManifestByteIdentical(t *testing.T) {
 			manifest[e.Name()] = raw
 		}
 	}
-	status := GetCodexAuthStatus(env)
-	if status["source"] != "icebath-auth-store" {
+	if status := GetCodexAuthStatus(env); status["logged_in"] != true {
 		t.Fatalf("status %v", status)
 	}
 	entries, _ = os.ReadDir(h)
@@ -321,16 +310,6 @@ func TestOAuthProviderFlowTerminalRefreshCodes(t *testing.T) {
 	if isTerminalCodexOAuthRefreshError(nil) || isTerminalCodexOAuthRefreshError(os.ErrNotExist) {
 		t.Fatal("non auth errors are never terminal")
 	}
-	for _, id := range []string{"openai-codex", "xai-oauth"} {
-		if !OAuthProviderFlows[id].LogoutFromConfig {
-			t.Fatalf("%s must log out from config", id)
-		}
-	}
-	for _, id := range []string{"qwen-oauth", "minimax-oauth"} {
-		if OAuthProviderFlows[id].LogoutFromConfig {
-			t.Fatalf("%s must not log out from config", id)
-		}
-	}
 }
 
 // ---- config helpers ----
@@ -350,13 +329,13 @@ func seedCustomProviderConfig(t *testing.T, h, apiMode string) {
 	writeConfigYAML(t, h, "model:\n  provider: custom\n  base_url: https://api.minimax.io/anthropic\n  api_key: mxp-stale-key\n  api_mode: "+apiMode+"\n  default: claude-sonnet-4-6\n")
 }
 
-func TestClearModelEndpointCredentialsRemovesKeyAliasAndMode(t *testing.T) {
-	modelCfg := map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6", "api_key": "sk-stale", "api": "sk-legacy-stale", "api_mode": "anthropic_messages"}
+func TestClearModelEndpointCredentialsRemovesKeyAndMode(t *testing.T) {
+	modelCfg := map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4.6", "api_key": "sk-stale", "api_mode": "anthropic_messages"}
 	returned := clearModelEndpointCredentials(modelCfg, true, true, false)
 	if len(returned) != 2 || returned["provider"] != "openrouter" {
 		t.Fatalf("unexpected %v", returned)
 	}
-	for _, k := range []string{"api_key", "api", "api_mode"} {
+	for _, k := range []string{"api_key", "api_mode"} {
 		if _, has := modelCfg[k]; has {
 			t.Fatalf("%s survived", k)
 		}
@@ -364,7 +343,7 @@ func TestClearModelEndpointCredentialsRemovesKeyAliasAndMode(t *testing.T) {
 }
 
 func TestClearModelEndpointCredentialsTreatsKeyEnvLikeTheInlineKey(t *testing.T) {
-	modelCfg := map[string]any{"provider": "custom_x", "key_env": "CUSTOM_X_API_KEY", "api_key_env": "LEGACY_PTR", "api_mode": "openai"}
+	modelCfg := map[string]any{"provider": "custom_x", "key_env": "CUSTOM_X_API_KEY", "api_mode": "openai"}
 	clearModelEndpointCredentials(modelCfg, false, true, false)
 	if modelCfg["key_env"] != "CUSTOM_X_API_KEY" {
 		t.Fatal("key_env cleared under clear_api_key=false")
@@ -375,9 +354,6 @@ func TestClearModelEndpointCredentialsTreatsKeyEnvLikeTheInlineKey(t *testing.T)
 	clearModelEndpointCredentials(modelCfg, true, true, false)
 	if _, has := modelCfg["key_env"]; has {
 		t.Fatal("key_env survived")
-	}
-	if _, has := modelCfg["api_key_env"]; has {
-		t.Fatal("api_key_env survived")
 	}
 }
 
@@ -399,10 +375,6 @@ func TestSwitchingToOpenRouterClearsAPIKeyAndAPIMode(t *testing.T) {
 	}
 	if modelCfg["default"] != "claude-sonnet-4-6" {
 		t.Fatalf("a direct style default was replaced: %v", modelCfg["default"])
-	}
-	active, _ := env.Store.ActiveProvider()
-	if active != "openrouter" {
-		t.Fatalf("active provider %q", active)
 	}
 }
 
@@ -557,17 +529,18 @@ func TestGetAPIKeyProviderStatus(t *testing.T) {
 func TestGetMinimaxOAuthAuthStatus(t *testing.T) {
 	h, env := codexTestEnv(t)
 	if status := GetMinimaxOAuthAuthStatus(env); status["logged_in"] != false {
-		t.Fatalf("no state %v", status)
+		t.Fatalf("no login %v", status)
 	}
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"minimax-oauth": map[string]any{"access_token": "tok", "expires_at": isoIn(3600), "region": "cn"}}})
+	writeMinimaxLogin(t, h, minimaxLogin(time.Hour))
 	status := GetMinimaxOAuthAuthStatus(env)
-	if status["logged_in"] != true || status["region"] != "cn" {
-		t.Fatalf("valid %v", status)
+	if status["logged_in"] != true || anyString(status["expires_at"]) == "" {
+		t.Fatalf("signed in %v", status)
 	}
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"minimax-oauth": map[string]any{"access_token": "tok", "expires_at": isoIn(-3600)}}})
-	status = GetMinimaxOAuthAuthStatus(env)
-	if status["logged_in"] != false || status["region"] != "global" {
-		t.Fatalf("expired %v", status)
+	withoutToken := minimaxLogin(time.Hour)
+	withoutToken["access_token"] = ""
+	writeMinimaxLogin(t, h, withoutToken)
+	if status = GetMinimaxOAuthAuthStatus(env); status["logged_in"] != false {
+		t.Fatalf("login without a token %v", status)
 	}
 }
 

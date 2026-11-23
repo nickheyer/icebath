@@ -3,10 +3,11 @@ package codeexec
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -37,7 +38,9 @@ func cuDispatchEnv(t *testing.T, approvals string) (*tools.Env, *noopBackend) {
 	cuInjectedBackend = b
 	cuBackendMu.Unlock()
 	env := cuPluginHome(t, t.TempDir(), nil, "")
-	env.Config = config.Tree{"approvals": map[string]any{"mode": approvals}}
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte("approvals:\n  mode: \""+approvals+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return env, b
 }
 

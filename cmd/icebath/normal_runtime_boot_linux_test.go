@@ -454,10 +454,6 @@ func TestNormalEntrypointEarnsAuthenticatedAuthorityReadiness(t *testing.T) {
 	if !reflect.DeepEqual(descriptor["served_profiles"], served) {
 		t.Fatalf("served_profiles = %v, want %v", descriptor["served_profiles"], served)
 	}
-	capabilities, _ := descriptor["capabilities"].([]any)
-	if !slices.Contains(capabilities, any("session-authority-v1")) {
-		t.Fatalf("capabilities = %v", capabilities)
-	}
 	ordinaryHandshake(t, h, descriptor)
 	if got := peer.chatRequests(); got != 1 {
 		t.Fatalf("model requests = %d", got)

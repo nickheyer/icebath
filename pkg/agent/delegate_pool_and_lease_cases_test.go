@@ -119,7 +119,7 @@ func TestChildCredentialPoolResolutionFixedProxyChildDoesNotLeaseProviderDefault
 func TestChildCredentialPoolResolutionNamedCustomChildPoolFollowsRequestedProviderNotEndpointOrder(t *testing.T) {
 	parent := mockDelegateParent(t, 0)
 	url := "https://gateway.invalid/v1"
-	if err := os.WriteFile(filepath.Join(parent.env.Home, "config.yaml"), []byte("providers:\n  claude-ai:\n    api: "+url+"\n  open-ai:\n    api: "+url+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(parent.env.Home, "config.yaml"), []byte("providers:\n  claude-ai:\n    base_url: "+url+"\n  open-ai:\n    base_url: "+url+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	ctx := tools.WithToolEnv(context.Background(), parent.env)

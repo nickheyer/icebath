@@ -2,10 +2,11 @@ package mcp
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -25,7 +26,13 @@ func yoloSession(t *testing.T, sessionKey string) {
 	t.Cleanup(func() { tools.DisableSessionYolo(context.Background(), sessionKey) })
 }
 
-var approvalsOff = config.Tree{"approvals": map[string]any{"mode": "off"}}
+// Turns approvals off in the config.yaml of the home, the place a person sets approvals.mode
+func approvalsOff(t *testing.T, home string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("approvals:\n  mode: \"off\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestTrustYoloAndModeOffSkipPromptForCallingSessionOnly(t *testing.T) {
 	home := isolateHome(t)
@@ -43,7 +50,7 @@ func TestTrustYoloAndModeOffSkipPromptForCallingSessionOnly(t *testing.T) {
 		t.Fatalf("yolo cards %d other cards %d", len(yolo.seen()), len(other.seen()))
 	}
 	again := openScopeChat(t, home, "tg:other-off", "deny")
-	again.env.Config = approvalsOff
+	approvalsOff(t, home)
 	if got := again.gate(t, "write"); got != "" || len(again.seen()) != 0 {
 		t.Fatalf("approvals off gated %s cards %d", got, len(again.seen()))
 	}
@@ -69,7 +76,8 @@ func TestTrustYoloSpendLimitStillAsksAndRefusesUnattended(t *testing.T) {
 		t.Fatalf("refusal %s", refused)
 	}
 	cron := sessionEnv(map[string]any{"cron": true, "key": "cron:job"})
-	cron.Home, cron.Config = home, approvalsOff
+	cron.Home = home
+	approvalsOff(t, home)
 	gate := func(tool string) string {
 		var booked []*Charge
 		return trustGateCheck(envContext(cron), cron, "srv", tool, &booked, nil, "")

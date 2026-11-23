@@ -76,11 +76,11 @@ func TestNonconversationalFallbackRequiresSelfImprovementEmoji(t *testing.T) {
 	}
 }
 
-// One gated dispatch of a message in a channel, returning the thread creations and the events
-func gateRun(t *testing.T, env map[string]string, channelID, content string, setup func(*DiscordAdapter, *fakeDiscordAPI)) (*DiscordAdapter, *fakeDiscordAPI, *eventCapture) {
+// One gated dispatch of a message in a channel under the given discord settings, returning the thread creations and the events
+func gateRun(t *testing.T, block map[string]any, channelID, content string, setup func(*DiscordAdapter, *fakeDiscordAPI)) (*DiscordAdapter, *fakeDiscordAPI, *eventCapture) {
 	a, f, c := inboundAdapter(t)
-	for k, v := range env {
-		t.Setenv(k, v)
+	for k, v := range block {
+		setDiscord(t, k, v)
 	}
 	ch := textChannel(t, a, channelID)
 	if setup != nil {
@@ -103,7 +103,7 @@ func onlyEvent(t *testing.T, c *eventCapture) *gatewayEventView {
 type gatewayEventView struct{ text, chatID, chatType string }
 
 func TestDiscordFreeResponseInServerChannels(t *testing.T) {
-	_, _, c := gateRun(t, map[string]string{"DISCORD_REQUIRE_MENTION": "false", "DISCORD_AUTO_THREAD": "false"}, "123", "hello from channel", nil)
+	_, _, c := gateRun(t, map[string]any{"require_mention": false, "auto_thread": false}, "123", "hello from channel", nil)
 	if ev := onlyEvent(t, c); ev.text != "hello from channel" || ev.chatID != "123" || ev.chatType != "group" {
 		t.Fatalf("%+v", ev)
 	}
@@ -111,8 +111,8 @@ func TestDiscordFreeResponseInServerChannels(t *testing.T) {
 
 func TestDiscordAcceptsAndStripsBotMentionsWhenRequired(t *testing.T) {
 	a, _, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "true")
-	t.Setenv("DISCORD_AUTO_THREAD", "false")
+	setDiscord(t, "require_mention", true)
+	setDiscord(t, "auto_thread", false)
 	a.handleDiscordMessage(t.Context(), makeMessage(textChannel(t, a, "321"), "<@999> hello with mention", a.selfUser()), false, false)
 	if ev := onlyEvent(t, c); ev.text != "hello with mention" {
 		t.Fatalf("%+v", ev)
@@ -121,8 +121,8 @@ func TestDiscordAcceptsAndStripsBotMentionsWhenRequired(t *testing.T) {
 
 func TestDiscordReplyMessageSkipsAutoThread(t *testing.T) {
 	a, f, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "true")
-	t.Setenv("DISCORD_FREE_RESPONSE_CHANNELS", "123")
+	setDiscord(t, "require_mention", true)
+	setDiscord(t, "free_response_channels", "123")
 	m := makeMessage(textChannel(t, a, "123"), "reply without mention")
 	m.Type = discordgo.MessageTypeReply
 	a.handleDiscordMessage(t.Context(), m, false, false)
@@ -135,7 +135,7 @@ func TestDiscordReplyMessageSkipsAutoThread(t *testing.T) {
 }
 
 func TestDiscordVoiceLinkedChannelSkipsMentionRequirementAndAutoThread(t *testing.T) {
-	_, f, c := gateRun(t, map[string]string{"DISCORD_REQUIRE_MENTION": "true"}, "789", "follow-up from voice text chat",
+	_, f, c := gateRun(t, map[string]any{"require_mention": true}, "789", "follow-up from voice text chat",
 		func(a *DiscordAdapter, _ *fakeDiscordAPI) { a.voiceTextChannels[111] = 789 })
 	if len(threadPosts(f)) != 0 {
 		t.Fatal("voice linked channel auto-threaded")
@@ -146,7 +146,7 @@ func TestDiscordVoiceLinkedChannelSkipsMentionRequirementAndAutoThread(t *testin
 }
 
 func TestDiscordFreeResponseChannelSkipsAutoThread(t *testing.T) {
-	_, f, c := gateRun(t, map[string]string{"DISCORD_REQUIRE_MENTION": "true", "DISCORD_FREE_RESPONSE_CHANNELS": "789"}, "789", "casual chat in free-response channel", nil)
+	_, f, c := gateRun(t, map[string]any{"require_mention": true, "free_response_channels": "789"}, "789", "casual chat in free-response channel", nil)
 	if len(threadPosts(f)) != 0 {
 		t.Fatal("free response channel auto-threaded")
 	}
@@ -156,7 +156,7 @@ func TestDiscordFreeResponseChannelSkipsAutoThread(t *testing.T) {
 }
 
 func TestDiscordFreeResponseAutoThreadOptIn(t *testing.T) {
-	_, f, c := gateRun(t, map[string]string{"DISCORD_REQUIRE_MENTION": "true", "DISCORD_FREE_RESPONSE_CHANNELS": "789", "DISCORD_FREE_RESPONSE_AUTO_THREAD": "true"},
+	_, f, c := gateRun(t, map[string]any{"require_mention": true, "free_response_channels": "789", "free_response_auto_thread": true},
 		"789", "thread this one please", func(_ *DiscordAdapter, f *fakeDiscordAPI) {
 			f.thread = func(map[string]any) string { return `{"id":"456","type":11,"parent_id":"789","name":"auto-thread"}` }
 		})
@@ -169,14 +169,14 @@ func TestDiscordFreeResponseAutoThreadOptIn(t *testing.T) {
 }
 
 func TestDiscordNoThreadChannelsWinsOverFreeResponseAutoThread(t *testing.T) {
-	a, f, c := gateRun(t, map[string]string{"DISCORD_REQUIRE_MENTION": "true", "DISCORD_FREE_RESPONSE_CHANNELS": "789", "DISCORD_FREE_RESPONSE_AUTO_THREAD": "true"},
+	a, f, c := gateRun(t, map[string]any{"require_mention": true, "free_response_channels": "789", "free_response_auto_thread": true},
 		"789", "threaded by opt-in", func(_ *DiscordAdapter, f *fakeDiscordAPI) {
 			f.thread = func(map[string]any) string { return `{"id":"456","type":11,"parent_id":"789","name":"t"}` }
 		})
 	if len(threadPosts(f)) != 1 {
 		t.Fatal("opt-in did not thread")
 	}
-	t.Setenv("DISCORD_NO_THREAD_CHANNELS", "789")
+	setDiscord(t, "no_thread_channels", "789")
 	m := makeMessage(a.stateChannel("789"), "explicitly inline")
 	m.ID = "124"
 	a.handleDiscordMessage(t.Context(), m, false, false)
@@ -189,7 +189,7 @@ func TestDiscordNoThreadChannelsWinsOverFreeResponseAutoThread(t *testing.T) {
 }
 
 func TestDiscordVoiceLinkedChannelIgnoresFreeResponseAutoThread(t *testing.T) {
-	_, f, c := gateRun(t, map[string]string{"DISCORD_REQUIRE_MENTION": "true", "DISCORD_FREE_RESPONSE_AUTO_THREAD": "true"}, "789", "voice follow-up",
+	_, f, c := gateRun(t, map[string]any{"require_mention": true, "free_response_auto_thread": true}, "789", "voice follow-up",
 		func(a *DiscordAdapter, _ *fakeDiscordAPI) { a.voiceTextChannels[111] = 789 })
 	if len(threadPosts(f)) != 0 || onlyEvent(t, c).chatType != "group" {
 		t.Fatal("voice linked channel must stay unthreaded")
@@ -197,8 +197,8 @@ func TestDiscordVoiceLinkedChannelIgnoresFreeResponseAutoThread(t *testing.T) {
 }
 
 func TestDiscordFreeResponseAutoThreadRespectsGlobalDisable(t *testing.T) {
-	_, f, c := gateRun(t, map[string]string{"DISCORD_REQUIRE_MENTION": "true", "DISCORD_FREE_RESPONSE_CHANNELS": "789",
-		"DISCORD_FREE_RESPONSE_AUTO_THREAD": "true", "DISCORD_AUTO_THREAD": "false"}, "789", "no threads anywhere", nil)
+	_, f, c := gateRun(t, map[string]any{"require_mention": true, "free_response_channels": "789",
+		"free_response_auto_thread": true, "auto_thread": false}, "789", "no threads anywhere", nil)
 	if len(threadPosts(f)) != 0 || onlyEvent(t, c).chatType != "group" {
 		t.Fatal("global disable must win")
 	}
@@ -222,8 +222,8 @@ func TestFetchChannelContextStopsAtSelfMessageAndReversesToChronologicalOrder(t 
 	bob := &discordgo.User{ID: "57", Username: "Bob"}
 	a, ch, _ := historyAdapter(t, historyMessage(alice, "latest human note", "4"), historyMessage(geminiBt, "latest bot note", "3"),
 		historyMessage(botSelf, "our prior response", "2"), historyMessage(bob, "older than boundary", "1"))
-	t.Setenv("DISCORD_ALLOW_BOTS", "all")
-	a.Config.Extra["history_backfill_limit"] = 10
+	setDiscord(t, "allow_bots", "all")
+	setDiscord(t, "history_backfill_limit", 10)
 	got := a.fetchChannelContext(t.Context(), ch, makeMessage(ch, "trigger").Message, "")
 	if want := "[Recent channel messages]\n[Gemini [bot]] latest bot note\n[Alice] latest human note"; got != want {
 		t.Fatalf("got %q", got)
@@ -234,8 +234,8 @@ func TestFetchChannelContextHydratesAroundReplyTarget(t *testing.T) {
 	carol := &discordgo.User{ID: "58", Username: "Carol"}
 	a, ch, _ := historyAdapter(t, historyMessage(alice, "latest note", "6"), historyMessage(botSelf, "our prior response", "5"),
 		historyMessage(botSelf, "the bot answer being replied to", "3"), historyMessage(carol, "older question", "2"), historyMessage(alice, "even older", "1"))
-	t.Setenv("DISCORD_ALLOW_BOTS", "all")
-	a.Config.Extra["history_backfill_limit"] = 10
+	setDiscord(t, "allow_bots", "all")
+	setDiscord(t, "history_backfill_limit", 10)
 	got := a.fetchChannelContext(t.Context(), ch, makeMessage(ch, "follow-up about that").Message, "3")
 	for _, want := range []string{"[Context around the replied-to message]", "the bot answer being replied to", "older question", "[Recent channel messages]", "latest note"} {
 		if !strings.Contains(got, want) {
@@ -250,8 +250,8 @@ func TestFetchChannelContextHydratesAroundReplyTarget(t *testing.T) {
 func TestFetchChannelContextReplyTargetInPrimaryWindowNotDuplicated(t *testing.T) {
 	a, ch, _ := historyAdapter(t, historyMessage(alice, "recent reply target", "4"), historyMessage(alice, "another recent", "3"),
 		historyMessage(botSelf, "our prior response", "2"))
-	t.Setenv("DISCORD_ALLOW_BOTS", "all")
-	a.Config.Extra["history_backfill_limit"] = 10
+	setDiscord(t, "allow_bots", "all")
+	setDiscord(t, "history_backfill_limit", 10)
 	got := a.fetchChannelContext(t.Context(), ch, makeMessage(ch, "re: that").Message, "4")
 	if strings.Contains(got, "[Context around the replied-to message]") || strings.Count(got, "recent reply target") != 1 {
 		t.Fatalf("got %q", got)
@@ -260,9 +260,9 @@ func TestFetchChannelContextReplyTargetInPrimaryWindowNotDuplicated(t *testing.T
 
 func TestUnmentionedBotChunksJoinRecentTagBatch(t *testing.T) {
 	a, _, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "true")
-	t.Setenv("DISCORD_AUTO_THREAD", "false")
-	t.Setenv("DISCORD_ALLOW_BOTS", "mentions")
+	setDiscord(t, "require_mention", true)
+	setDiscord(t, "auto_thread", false)
+	setDiscord(t, "allow_bots", "mentions")
 	a.textBatchDelaySeconds, a.textBatchSplitDelaySeconds = 0.6, 2.0
 	a.SetTextBatchDelays(0.6, 2.0)
 	ch := textChannel(t, a, "321")
@@ -296,8 +296,8 @@ func TestUnmentionedBotChunksJoinRecentTagBatch(t *testing.T) {
 
 func TestShortTaggedBotChunkWaitsForFollowupWindow(t *testing.T) {
 	a, _, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "true")
-	t.Setenv("DISCORD_AUTO_THREAD", "false")
+	setDiscord(t, "require_mention", true)
+	setDiscord(t, "auto_thread", false)
 	a.textBatchDelaySeconds, a.textBatchSplitDelaySeconds = 0.01, 0.08
 	a.SetTextBatchDelays(0.01, 0.08)
 	tagged := makeMessage(textChannel(t, a, "321"), "<@999> short chunk", a.selfUser())

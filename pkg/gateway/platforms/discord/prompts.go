@@ -91,8 +91,9 @@ func (a *DiscordAdapter) ExecApprovalCmdBudget(ctx context.Context, description 
 	return max(0, discordMaxMessageLength-fixed)
 }
 
-// User and role allowlists the views authorise clicks against
-func (a *DiscordAdapter) allowlists() (strSet, strSet) {
+// User and role allowlists the views authorise clicks against, as the settings stand now
+func (a *DiscordAdapter) allowlists(ctx context.Context) (strSet, strSet) {
+	a.syncAllowlists(ctx)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.allowedUserIDs, a.allowedRoleIDs
@@ -169,7 +170,7 @@ func (a *DiscordAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gat
 	if prompt.RequestID != nil {
 		requestID = *prompt.RequestID
 	}
-	users, roles := a.allowlists()
+	users, roles := a.allowlists(ctx)
 	view, err := a.newExecApprovalView(ctx, prompt.SessionKey, users, roles, requireAdmin, adminUserIDs, choices.has("always"), choices.has("session"),
 		prompt.SmartDenied, requestID)
 	if err != nil {
@@ -225,7 +226,7 @@ func (a *DiscordAdapter) SendSlashConfirm(ctx context.Context, chatID, title, me
 		if header == "" {
 			header = i18n.T(ctx, "platform.discord.approval.confirm_title", "", nil)
 		}
-		users, roles := a.allowlists()
+		users, roles := a.allowlists(ctx)
 		view, err := a.newSlashConfirmView(ctx, sessionKey, confirmID, users, roles)
 		if err != nil {
 			return promptMessage{}, err
@@ -250,7 +251,7 @@ func (a *DiscordAdapter) SendClarify(ctx context.Context, chatID, question strin
 		hint := i18n.T(ctx, "platform.discord.prompt.clarify_hint_text", "", nil)
 		if len(clean) > 0 {
 			hint = i18n.T(ctx, "platform.discord.prompt.clarify_hint_buttons", "", nil)
-			users, roles := a.allowlists()
+			users, roles := a.allowlists(ctx)
 			view, err := a.newClarifyChoiceView(ctx, clean, clarifyID, users, roles)
 			if err != nil {
 				return promptMessage{}, err
@@ -270,7 +271,7 @@ func (a *DiscordAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, d
 			defaultHint = i18n.T(ctx, "platform.discord.prompt.default_hint", "", map[string]any{"default": def})
 		}
 		updateTitle := i18n.T(ctx, "platform.discord.prompt.update_title", "", nil)
-		users, roles := a.allowlists()
+		users, roles := a.allowlists(ctx)
 		view, err := a.newUpdatePromptView(ctx, sessionKey, users, roles)
 		if err != nil {
 			return promptMessage{}, err
@@ -288,7 +289,7 @@ func (a *DiscordAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, d
 func (a *DiscordAdapter) SendModelPicker(ctx context.Context, chatID string, providers []map[string]any, currentModel, currentProvider, sessionKey string,
 	onModelSelected func(ctx context.Context, chatID, modelID, providerSlug string) (string, error), metadata map[string]any) (gateway.SendResult, error) {
 	return a.sendPrompt(ctx, chatID, metadata, func(*discordgo.Channel) (promptMessage, error) {
-		users, roles := a.allowlists()
+		users, roles := a.allowlists(ctx)
 		view, err := a.newModelPickerView(ctx, providers, currentModel, currentProvider, sessionKey, onModelSelected, users, roles)
 		if err != nil {
 			return promptMessage{}, err
@@ -309,7 +310,7 @@ func (a *DiscordAdapter) SendChoicePicker(ctx context.Context, chatID, title str
 			heading = lines[0]
 			description = strings.Join(lines[1:], "\n")
 		}
-		users, roles := a.allowlists()
+		users, roles := a.allowlists(ctx)
 		view, err := a.newChoicePickerView(ctx, choices, onChoiceSelected, users, roles)
 		if err != nil {
 			return promptMessage{}, err

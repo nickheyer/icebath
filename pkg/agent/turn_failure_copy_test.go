@@ -248,7 +248,6 @@ func (launchRefusal) Error() string { return "launch_credentials_unavailable" }
 
 func TestLaunchCredentialsCopyNamesTheField(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("ICEBATH_LANGUAGE", "en")
 	ctx := context.Background()
 	got := LaunchCredentialsCopy(ctx, launchRefusal{Field: "api_key"})
 	if !strings.Contains(got, " (api_key: unavailable)") || !strings.HasSuffix(got, "\n\nDetails: launch_credentials_unavailable (api_key: unavailable)") {

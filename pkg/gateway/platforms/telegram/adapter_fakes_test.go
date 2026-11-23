@@ -15,6 +15,7 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // One Bot API request the loopback fake received, its method and flattened parameters
@@ -105,7 +106,23 @@ func botError(status int, description string) (int, string) {
 	return status, fmt.Sprintf(`{"ok":false,"error_code":%d,"description":%q}`, status, description)
 }
 
-// Adapter over a hermetic home with the given extra, not yet attached to a Bot API
+// Stores one setting in the home of the test, the way the settings screen writes it
+func setSetting(t *testing.T, key string, value any) {
+	t.Helper()
+	if _, err := settings.Set(context.Background(), key, value, settings.Global); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Stores Telegram settings named by their leaf under telegram in the home of the test
+func setTelegramSettings(t *testing.T, values map[string]any) {
+	t.Helper()
+	for leaf, value := range values {
+		setSetting(t, "telegram."+leaf, value)
+	}
+}
+
+// Adapter over a hermetic home with the given platform extra, not yet attached to a Bot API
 func newTestAdapter(t *testing.T, extra map[string]any) *TelegramAdapter {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
@@ -122,12 +139,12 @@ func attachScriptedBot(t *testing.T, a *TelegramAdapter, fake *scriptedBot) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(fake.handler))
 	t.Cleanup(srv.Close)
-	settings := requestSettings{connectTimeout: 5, readTimeout: 5, writeTimeout: 5, poolTimeout: 5, mediaWriteTimeout: 5}
-	general, err := newPTBRequest(context.Background(), settings)
+	timeouts := requestSettings{connectTimeout: 5, readTimeout: 5, writeTimeout: 5, poolTimeout: 5, mediaWriteTimeout: 5}
+	general, err := newPTBRequest(context.Background(), timeouts)
 	if err != nil {
 		t.Fatal(err)
 	}
-	polling, err := newPTBRequest(context.Background(), settings)
+	polling, err := newPTBRequest(context.Background(), timeouts)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -226,7 +226,7 @@ func pyDictOf(v any) (map[string]any, error) {
 	return nil, fmt.Errorf("expected a mapping or a list of key and value pairs, got %s", errchain.Kind(v))
 }
 
-// Defaults with the user document merged in, legacy root max_turns moved under agent first
+// Defaults with the user document merged in
 func mergeUserConfig(ctx context.Context, path string, cfg map[string]any) (map[string]any, error) {
 	doc, err := ReadConfigDoc(ctx, path)
 	if err != nil {
@@ -240,23 +240,6 @@ func mergeUserConfig(ctx context.Context, path string, cfg map[string]any) (map[
 		return nil, nonMappingRootError(doc)
 	}
 	forgetParseFailure(path)
-	if raw, has := user["max_turns"]; has {
-		agent, aerr := pyDictOf(user["agent"])
-		if aerr != nil {
-			return nil, aerr
-		}
-		if agent["max_turns"] == nil {
-			if _, present := agent["max_turns"]; !present {
-				AppendMappingKey(agent, "max_turns")
-			}
-			agent["max_turns"] = raw
-		}
-		if _, present := user["agent"]; !present {
-			AppendMappingKey(user, "agent")
-		}
-		user["agent"] = agent
-		delete(user, "max_turns")
-	}
 	merged := DeepMerge(cfg, user)
 	applyUserMoAPresets(merged, user)
 	if _, err := BackupConfig(ctx, path, "good", DefaultBackupKeep); err != nil {
@@ -541,53 +524,6 @@ func ReadUserConfigRaw(ctx context.Context, configPath string) (map[string]any, 
 		return m, nil
 	}
 	return map[string]any{}, nil
-}
-
-// Config option absent from the loaded config with the default it would take
-type MissingConfigField struct {
-	Key         string
-	Default     any
-	Description string
-}
-
-// Default options the loaded config lacks, recursing into sections both sides define
-func GetMissingConfigFields(ctx context.Context, h string, lookup Lookup) ([]MissingConfigField, error) {
-	current, err := LoadReadonly(ctx, h, lookup)
-	if err != nil {
-		return nil, err
-	}
-	return MissingConfigFields(current), nil
-}
-
-// Default options a loaded config lacks, never descending where the registered owner forbids it
-func MissingConfigFields(current map[string]any) []MissingConfigField {
-	skip := hooks().SkipDeepMerge
-	var missing []MissingConfigField
-	var check func(defaults, cur map[string]any, prefix string)
-	check = func(defaults, cur map[string]any, prefix string) {
-		for _, key := range MappingKeys(defaults) {
-			if len(key) > 0 && key[0] == '_' {
-				continue
-			}
-			full := key
-			if prefix != "" {
-				full = prefix + "." + key
-			}
-			value := defaults[key]
-			got, has := cur[key]
-			if !has {
-				missing = append(missing, MissingConfigField{Key: full, Default: value, Description: "New config option: " + full})
-				continue
-			}
-			dm, dok := value.(map[string]any)
-			cm, cok := got.(map[string]any)
-			if dok && cok && (skip == nil || !skip(prefix, key)) {
-				check(dm, cm, full)
-			}
-		}
-	}
-	check(Defaults(), current, "")
-	return missing
 }
 
 // Structure issues of the loaded config, a single load issue when the config cannot be loaded

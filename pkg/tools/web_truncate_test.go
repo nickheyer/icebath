@@ -21,7 +21,6 @@ func TestLocalBackendFooterKeepsTheHostPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("TERMINAL_ENV", "local")
 	ResetTerminalScopeCache()
 	t.Cleanup(ResetTerminalScopeCache)
 	env := &Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}}

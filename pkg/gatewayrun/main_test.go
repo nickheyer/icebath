@@ -3,6 +3,7 @@ package gatewayrun
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pluginservices"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -28,6 +30,25 @@ func gatewayPluginServices() *plugins.Services {
 	}
 	gateway.InstallPluginServices(s)
 	return s
+}
+
+// Stores settings in the home of the running case through the settings writer, the route the settings screen takes
+func setSettings(t *testing.T, values map[string]any) {
+	t.Helper()
+	for key, value := range values {
+		if _, err := settings.Set(context.Background(), key, value, settings.Global); err != nil {
+			t.Fatalf("setting %s: %v", key, err)
+		}
+	}
+}
+
+// Profile id of an authority over a store, the resolved home that store lives in, as a served profile is reserved
+func storeHome(t *testing.T, db *state.SessionDB) string {
+	t.Helper()
+	if db == nil {
+		t.Fatal("the session store of the case did not open")
+	}
+	return filepath.Dir(resolveHome(db.Path()))
 }
 
 // Gateway tasks started so far and not yet joined, in start order

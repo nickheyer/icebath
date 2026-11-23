@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -90,7 +89,11 @@ func TestRoomPolicyOverridesBroaderLiveApprovalConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	env := &tools.Env{Home: t.TempDir(), Config: config.Tree{"approvals": map[string]any{"mode": "off"}}, Values: &sync.Map{}}
+	envHome := t.TempDir()
+	if err := os.WriteFile(filepath.Join(envHome, "config.yaml"), []byte("approvals:\n  mode: \"off\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := &tools.Env{Home: envHome, Values: &sync.Map{}}
 	reset := BindRoomExecutionPolicyEnv(env, policy)
 	if mode := tools.GetApprovalMode(env); mode != "manual" {
 		reset()

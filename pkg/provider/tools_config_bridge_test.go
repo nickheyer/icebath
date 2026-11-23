@@ -11,20 +11,17 @@ import (
 
 func TestToolsConfigHooksReadTheRunHome(t *testing.T) {
 	h, _ := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openrouter", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	hooks := tools.ToolsConfigHooks
 	if hooks.CodexAuthStatus(context.Background(), h)["logged_in"] == true || hooks.XAIOAuthStatus(context.Background(), h)["logged_in"] == true {
 		t.Fatal("empty store read as logged in")
 	}
-	if err := hooks.SaveCodexTokens(context.Background(), h, map[string]any{"access_token": "codex-a", "refresh_token": "codex-r"}, "2026-01-01T00:00:00Z", false); err != nil {
+	if err := hooks.SaveCodexTokens(context.Background(), h, map[string]any{"access_token": "codex-a", "refresh_token": "codex-r"}, "2026-01-01T00:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
-	auth := readAuthStore(t, h)
-	providers, _ := auth["providers"].(map[string]any)
-	state, _ := providers["openai-codex"].(map[string]any)
-	tokens, _ := state["tokens"].(map[string]any)
-	if auth["active_provider"] != "openrouter" || tokens["access_token"] != "codex-a" || state["last_refresh"] != "2026-01-01T00:00:00Z" {
-		t.Fatalf("auth store %v", auth)
+	logins := poolRows(t, h, "openai-codex")
+	if len(logins) != 1 || logins[0]["access_token"] != "codex-a" || logins[0]["refresh_token"] != "codex-r" || logins[0]["last_refresh"] != "2026-01-01T00:00:00Z" {
+		t.Fatalf("codex logins %v", logins)
 	}
 	t.Setenv("ICEBATH_NONINTERACTIVE", "yes")
 	if !hooks.SetupIsNoninteractive() {

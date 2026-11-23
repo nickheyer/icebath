@@ -68,7 +68,7 @@ func writeGateAuthStore(t *testing.T, h, body string) {
 	}
 }
 
-const gateEmptyStore = `{"version": 2, "providers": {}, "active_provider": null}`
+const gateEmptyStore = `{"version": 2, "providers": {}}`
 
 func explicitIn(ctx context.Context, provider string) bool {
 	return IsProviderExplicitlyConfigured(modelsPoolEnv(ctx), provider)
@@ -79,7 +79,7 @@ func explicitlyConfigured(provider string) bool { return explicitIn(context.Back
 func TestAmbientPoolSourceDoesNotCountAsExplicit(t *testing.T) {
 	h := gateHome(t)
 	unsetEnvForTest(t, "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
-	writeGateAuthStore(t, h, `{"version": 2, "providers": {}, "active_provider": null, "credential_pool": {"copilot": [
+	writeGateAuthStore(t, h, `{"version": 2, "providers": {}, "credential_pool": {"copilot": [
 		{"id": "abc123", "source": "gh_cli", "auth_type": "api_key", "access_token": "ghu_sometoken"}]}}`)
 	if explicitlyConfigured("copilot") {
 		t.Fatal("gh_cli seeded pool entry counted as explicit")
@@ -155,7 +155,7 @@ func TestReturnsTrueWhenMoAReferenceSlotUsesProvider(t *testing.T) {
 	writeConfigYAML(t, h, "model:\n  provider: openai-codex\n  default: gpt-5.5\nmoa:\n  presets:\n    default:\n      reference_models:\n"+
 		"        - provider: anthropic\n          model: claude-opus-4-8\n        - provider: opencode-go\n          model: glm-5.2\n"+
 		"      aggregator:\n        provider: openai-codex\n        model: gpt-5.5\n")
-	writeGateAuthStore(t, h, `{"version": 2, "providers": {}, "active_provider": "openai-codex"}`)
+	writeGateAuthStore(t, h, `{"version": 2, "providers": {}}`)
 	if !explicitlyConfigured("anthropic") {
 		t.Fatal("moa reference slot provider did not count")
 	}
@@ -164,7 +164,7 @@ func TestReturnsTrueWhenMoAReferenceSlotUsesProvider(t *testing.T) {
 func TestStaleEnvPoolEntryDoesNotCountWhenVarUnset(t *testing.T) {
 	h := gateHome(t)
 	unsetEnvForTest(t, "DEEPSEEK_API_KEY")
-	writeGateAuthStore(t, h, `{"version": 2, "providers": {}, "active_provider": null, "credential_pool": {"deepseek": [
+	writeGateAuthStore(t, h, `{"version": 2, "providers": {}, "credential_pool": {"deepseek": [
 		{"id": "aaa111", "source": "env:DEEPSEEK_API_KEY", "auth_type": "api_key"}]}}`)
 	if explicitlyConfigured("deepseek") {
 		t.Fatal("stale env pool entry counted")

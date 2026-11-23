@@ -3,7 +3,6 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
@@ -75,8 +74,6 @@ func TestSendsAckWhenAgentRunning(t *testing.T) {
 }
 
 func TestSteerModeCallsAgentSteerNoInterruptNoQueue(t *testing.T) {
-	t.Setenv("ICEBATH_GATEWAY_BUSY_STEER_ACK_ENABLED", "")
-	os.Unsetenv("ICEBATH_GATEWAY_BUSY_STEER_ACK_ENABLED")
 	event := busyEvent("also check the tests")
 	r, adapter, sk := busyRunner(t, "steer", event)
 	a := quietAgent(t)

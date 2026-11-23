@@ -546,7 +546,7 @@ func (a *app) pasteBehindList(content string, live func() bool, next func() tea.
 		case err == nil && image != nil:
 			return land(a.attachImageToken(image))
 		}
-		return call(a.gw, tuigateway.InputDetectDrop, tuigateway.InputDetectDropParams{SessionID: destination.Sid, Text: cleaned}, func(r *tuigateway.InputDetectDropResult, err error) tea.Cmd {
+		return call(a.gw, tuigateway.InputDetectDrop, tuigateway.InputDetectDropParams{Text: cleaned, Cwd: a.store.typedPathBase()}, func(r *tuigateway.InputDetectDropResult, err error) tea.Cmd {
 			switch {
 			case !live():
 				return gone()

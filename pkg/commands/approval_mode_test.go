@@ -2,8 +2,6 @@ package commands
 
 import (
 	"context"
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -29,9 +27,12 @@ func TestRunApprovalModeCommandInspectsPersistsAndRefuses(t *testing.T) {
 	if err != nil || !got.OK || got.Mode != "off" || !got.Changed || got.Message != "Approval mode: off (persistent profile setting)." {
 		t.Fatalf("persist %+v %v", got, err)
 	}
-	raw, err := os.ReadFile(home.ConfigPath(h))
-	if err != nil || !strings.Contains(string(raw), "mode: \"off\"") {
-		t.Fatalf("config %q %v", raw, err)
+	doc, err := config.ReadDocument(home.ConfigPath(h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored, _ := config.CfgGet(doc, "approvals", "mode"); stored != "off" {
+		t.Fatalf("config stores %#v, want the text off", stored)
 	}
 	got, err = RunApprovalModeCommand(ctx, h, env, "off")
 	if err != nil || !got.OK || got.Changed || got.Mode != "off" {

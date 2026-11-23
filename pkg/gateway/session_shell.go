@@ -109,7 +109,7 @@ type shellLine struct {
 
 // File of the shell lines of a session in the profile's sessions folder
 func shellLinesPath(profileHome, sessionID string) string {
-	return filepath.Join(home.SessionsDir(profileHome), sessionID+".shell.jsonl")
+	return state.ShellLinesPath(home.SessionsDir(profileHome), sessionID)
 }
 
 // Appends a shell line to the session's file

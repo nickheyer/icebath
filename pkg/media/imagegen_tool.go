@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -119,21 +120,15 @@ func falKeyMissingError(env *tools.Env) error {
 	return &imageValueError{buildNoBackendSetupMessage()}
 }
 
-// Stripped image_gen key string from config, empty when unset
-func readImageGenKey(env *tools.Env, key string) string {
-	sec, _ := cfgOf(env)["image_gen"].(map[string]any)
-	if sec == nil {
-		return ""
-	}
-	s, _ := sec[key].(string)
-	return strings.TrimSpace(s)
+// Image model the profile chose, empty when unset
+func readConfiguredImageModel(env *tools.Env) string {
+	return strings.TrimSpace(settings.ImageGenModel.Get(tools.WithEnvHome(context.Background(), env)))
 }
 
-// Configured image_gen.model, empty when unset
-func readConfiguredImageModel(env *tools.Env) string { return readImageGenKey(env, "model") }
-
-// Configured image_gen.provider, empty when unset
-func readConfiguredImageProvider(env *tools.Env) string { return readImageGenKey(env, "provider") }
+// Image service the profile chose, empty when none was chosen
+func readConfiguredImageProvider(env *tools.Env) string {
+	return tools.StoredProvider(env, "image_gen")
+}
 
 // Configured provider that dispatches through the plugin registry, empty for unset and fal
 func pluginProviderName(env *tools.Env) string {
@@ -146,7 +141,7 @@ func pluginProviderName(env *tools.Env) string {
 
 // Configured FAL model, the default with a warning when unknown
 func resolveFalModel(env *tools.Env) (string, map[string]any) {
-	modelID := readImageGenKey(env, "model")
+	modelID := readConfiguredImageModel(env)
 	if _, ok := falModels[modelID]; modelID != "" && !ok {
 		logOf(env).Warn(fmt.Sprintf("Unknown FAL model '%s' in config; falling back to %s", modelID, falDefaultModel))
 		modelID = ""

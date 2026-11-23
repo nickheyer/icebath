@@ -23,7 +23,22 @@ func turnCap(n *big.Int) int {
 	return int(n.Int64())
 }
 
-// Iteration cap from a raw max_turns value, the fallback for null and unparseable values, a NaN or infinite float panicking as int() raises
+// Iteration cap of a float, the fallback for a NaN and no limit for an infinity
+func turnCapOfFloat(f float64, fallback int) int {
+	if math.IsNaN(f) {
+		return fallback
+	}
+	if math.IsInf(f, 0) {
+		return TurnLimitUnlimited
+	}
+	n, err := pyint.Of(f)
+	if err != nil {
+		return fallback
+	}
+	return turnCap(n)
+}
+
+// Iteration cap from a raw max_turns value, the fallback for null, a NaN and unparseable values
 func ResolveTurnLimit(raw any, fallback int) int {
 	if _, isBool := raw.(bool); raw == nil || isBool {
 		return fallback
@@ -32,12 +47,10 @@ func ResolveTurnLimit(raw any, fallback int) int {
 		return turnCap(n)
 	}
 	switch v := raw.(type) {
-	case float64, float32:
-		n, err := pyint.Of(v)
-		if err != nil {
-			panic(err)
-		}
-		return turnCap(n)
+	case float64:
+		return turnCapOfFloat(v, fallback)
+	case float32:
+		return turnCapOfFloat(float64(v), fallback)
 	case string:
 		s := pystr.Lower(pystr.Strip(v))
 		if s == "" {
@@ -53,14 +66,7 @@ func ResolveTurnLimit(raw any, fallback int) int {
 		if err != nil {
 			return fallback
 		}
-		n, err := pyint.Of(f)
-		if err != nil {
-			if pe, isPy := err.(*pyint.Error); isPy && pe.Kind == "ValueError" {
-				return fallback
-			}
-			panic(err)
-		}
-		return turnCap(n)
+		return turnCapOfFloat(f, fallback)
 	}
 	return fallback
 }

@@ -37,7 +37,6 @@ var (
 
 // Seams of the socket entry, the real functions swapped only where a test installs a fake
 var (
-	wsDispatchRequestFn         = wsDispatchRequest
 	wsNewAuthorityConnection    = newWSAuthorityConnection
 	wsCloseSessionsForTransport = closeSessionsForTransport
 	wsReleaseWakeForTransport   = releaseWakeForTransport
@@ -66,7 +65,7 @@ type SocketPeer struct {
 	Port *int
 }
 
-// Peer close a socket read reports, the starlette WebSocketDisconnect with its code and reason
+// Peer close a socket read reports, with its code and reason
 type SocketDisconnect struct {
 	Code   any
 	Reason any
@@ -254,7 +253,7 @@ func (c *wsConnection) reply(frame any, reason, msg string) error {
 	return errWSSendFailed
 }
 
-// JSON RPC error frame with its members in the order the Python literal writes them
+// JSON RPC error frame of a request id
 func wsError(code int, message string, reqID any) *pyjson.Object {
 	return pyjson.ObjectOf("jsonrpc", "2.0", "error", pyjson.ObjectOf("code", code, "message", message), "id", reqID)
 }
@@ -277,7 +276,7 @@ func requestMethodText(req any) string {
 	return "nothing"
 }
 
-// Fails like a set lookup of a list or dict method, which ends the Python read loop with a TypeError
+// Refuses a request whose method is a list or a mapping, which ends the read loop
 func requestMethodHashable(req any) error {
 	obj, isDict := req.(*pyjson.Object)
 	if !isDict || obj == nil {
@@ -305,7 +304,7 @@ func (c *wsConnection) dispatchOne(req any) error {
 			}
 		}()
 		var err error
-		resp, err = wsDispatchRequestFn(c.ctx, c.authority, req, c.transport)
+		resp, err = wsDispatchRequest(c.ctx, c.authority, req, c.transport)
 		if err != nil {
 			crash = err
 		}
@@ -667,7 +666,7 @@ func (c *wsConnection) receive() (string, error) {
 	}
 }
 
-// Runs one WebSocket session wire compatible with the stdio entry, the identity the upgrade verified owning its sessions
+// Runs one WebSocket connection of a client, its requests answered by the session authority under the identity the upgrade verified
 func HandleWS(ctx context.Context, ws ServedSocket, authIdentity map[string]any, subprotocol *string, operator bool) error {
 	if err := loadServerModule(); err != nil {
 		return err
@@ -716,8 +715,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 	}
 	c.authority = authority
 	skinPayload := wsResolveSkin(c.ctx)
-	readyPayload := map[string]any{"skin": skinPayload, "change_events": true, "heartbeat": true, "replay_epoch": tuihost.ReplayEpoch(),
-		"build": tuigateway.BuildID()}
+	readyPayload := map[string]any{"skin": skinPayload, "replay_epoch": tuihost.ReplayEpoch(), "build": tuigateway.BuildID()}
 	readyOK := c.transport.WriteAsync(pyjson.ObjectOf("jsonrpc", "2.0", "method", "event",
 		"params", pyjson.ObjectOf("type", "gateway.ready", "payload", tuigateway.SealPayload("gateway.ready", readyPayload))))
 	if readyOK {

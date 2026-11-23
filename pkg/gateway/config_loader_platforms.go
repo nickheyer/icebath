@@ -455,18 +455,6 @@ func ReadYAMLLayers(ctx context.Context, h string) (map[string]any, error) {
 	return config.ApplyManagedOverlay(m), nil
 }
 
-// Overlays the YAML layers onto gwData of any shape, a non mapping failing as the attribute lookup does
-func LoadYAMLLayerAny(ctx context.Context, h string, gwData any) error {
-	if m, ok := gwData.(map[string]any); ok {
-		return LoadYAMLLayer(ctx, h, m)
-	}
-	yamlCfg, err := ReadYAMLLayers(ctx, h)
-	if err != nil || len(yamlCfg) == 0 {
-		return err
-	}
-	return &PyError{"AttributeError", "the gateway section of the config layer is " + errchain.Kind(gwData) + ", expected a mapping"}
-}
-
 // Overlays the YAML layers onto gwData in place, bridging shared keys and plugin hooks for configured platforms
 func LoadYAMLLayer(ctx context.Context, h string, gwData map[string]any) error {
 	yamlCfg, err := ReadYAMLLayers(ctx, h)

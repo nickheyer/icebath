@@ -13,7 +13,7 @@ import (
 )
 
 func TestAllowlistWarningRequiresAnEnabledMessagingPlatform(t *testing.T) {
-	const warning = "No env user allowlists configured"
+	const warning = "No allowed users are set for any chat app"
 	cases := []struct {
 		name          string
 		platforms     map[gateway.Platform]*gateway.PlatformConfig

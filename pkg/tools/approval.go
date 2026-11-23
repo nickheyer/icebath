@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
-	"gopkg.in/yaml.v3"
 )
 
 // Process wide yolo flag frozen at start so a skill cannot flip it through the environment later
@@ -532,33 +531,18 @@ func setsEqual(a, b map[string]bool) bool {
 	return true
 }
 
-// IsApproved reports a session scoped or permanent approval, accepting legacy key aliases
+// IsApproved reports a session scoped or permanent approval of a pattern key
 func IsApproved(env *Env, sessionKey, patternKey string) bool {
-	aliases := ApprovalKeyAliases(patternKey)
 	approvalState.Lock()
 	defer approvalState.Unlock()
-	permanent := permanentSet(env)
-	session := approvalState.sessionApproved[sessionKey]
-	for alias := range aliases {
-		if permanent[alias] || session[alias] {
-			return true
-		}
-	}
-	return false
+	return permanentSet(env)[patternKey] || approvalState.sessionApproved[sessionKey][patternKey]
 }
 
-// Permanent approval only, with alias compatibility
+// Reports a permanent approval of a pattern key
 func isPermanentlyApproved(env *Env, patternKey string) bool {
-	aliases := ApprovalKeyAliases(patternKey)
 	approvalState.Lock()
 	defer approvalState.Unlock()
-	permanent := permanentSet(env)
-	for alias := range aliases {
-		if permanent[alias] {
-			return true
-		}
-	}
-	return false
+	return permanentSet(env)[patternKey]
 }
 
 // ApprovePermanent adds a pattern to the permanent allowlist in memory
@@ -612,7 +596,7 @@ func configLookup(env *Env) config.Lookup {
 	return func(string) (string, bool) { return "", false }
 }
 
-// Allowed commands of the active profile as a set, empty on malformed input
+// Allowed commands of the active profile as a set, empty when the stored value is not a list of strings
 func readPermanentAllowlist(env *Env) (map[string]bool, error) {
 	if env == nil || env.Home == "" {
 		return map[string]bool{}, nil
@@ -621,21 +605,10 @@ func readPermanentAllowlist(env *Env) (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw := stored.Value
-	legacy := false
-	if s, ok := raw.(string); ok {
-		legacy = true
-		var parsed any
-		if yaml.Unmarshal([]byte(s), &parsed) != nil {
-			raw = false
-		} else {
-			raw = parsed
-		}
+	if stored.Value == nil {
+		return map[string]bool{}, nil
 	}
-	if raw == nil && !legacy {
-		raw = []any{}
-	}
-	items, ok := raw.([]any)
+	items, ok := stored.Value.([]any)
 	if !ok {
 		envLog(env).Warn("Ignoring malformed allowed commands; configure a list of strings.")
 		return map[string]bool{}, nil
@@ -648,9 +621,6 @@ func readPermanentAllowlist(env *Env) (map[string]bool, error) {
 			return map[string]bool{}, nil
 		}
 		out[s] = true
-	}
-	if legacy {
-		envLog(env).Warn("Recovered allowed commands saved as one string; save them as a list of strings.")
 	}
 	return out, nil
 }

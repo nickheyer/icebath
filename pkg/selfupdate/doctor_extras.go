@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -16,15 +15,51 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Adds the Optional Python Features section of the package manager before the profiles check
+// Adds the Helper Programs and Optional Python Features sections of the package manager to the walk
 func init() {
-	for i, entry := range doctorChecks {
-		if reflect.ValueOf(entry.Check).Pointer() == reflect.ValueOf(doctorCheckFunc(checkProfiles)).Pointer() {
-			doctorChecks = append(doctorChecks[:i:i], append([]doctorCheckEntry{{"Optional Python Features", checkPythonExtras}}, doctorChecks[i:]...)...)
-			return
+	doctorTierChecks = append(doctorTierChecks,
+		doctorCheckEntry{"Helper Programs", checkHelperPrograms}, doctorCheckEntry{"Optional Python Features", checkPythonExtras})
+}
+
+// Installed helper programs and Python environment this version's pins have moved past, replaced by tests
+var doctorOutdatedPrograms = pm.Outdated
+
+// Reports each installed helper program behind this version's pins, bringing it current with fix, and a Python environment behind its lock
+func checkHelperPrograms(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
+	return doctorCheckGuarded(d.W, "Helper program check failed: {e}", "", func(f *Finding) error {
+		report, err := doctorOutdatedPrograms(ctx)
+		if err != nil {
+			return err
 		}
-	}
-	panic("doctor walk has no profiles check to place the Python features section before")
+		if len(report.Names) == 0 {
+			doctorCheckOK(d.W, "Installed helper programs match this version", "")
+			return nil
+		}
+		for _, name := range report.Names {
+			if name == "venv" {
+				doctorCheckWarn(d.W, "The Python environment is behind this version", "("+report.Reasons[name]+"; run: icebath pm install)")
+				f.ManualIssues = append(f.ManualIssues, "Run `icebath pm install` to bring the Python environment to this version.")
+				continue
+			}
+			command := "icebath pm install " + name
+			if !shouldFix {
+				doctorCheckWarn(d.W, name+" is behind this version", "(run: "+command+")")
+				f.Issues = append(f.Issues, "Run `"+command+"` to bring "+name+" to this version, or `icebath doctor --fix`.")
+				continue
+			}
+			if err := doctorPMEnsure(ctx, name); err != nil {
+				if !doctorPMErrorReported(err) {
+					return err
+				}
+				doctorCheckWarn(d.W, name+" could not be updated", "("+err.Error()+")")
+				f.ManualIssues = append(f.ManualIssues, "Run `"+command+"` once the cause is fixed.")
+				continue
+			}
+			doctorCheckOK(d.W, name+" updated to this version", "")
+			f.Fixed++
+		}
+		return nil
+	})
 }
 
 // One switched on feature of the user's config and the extra it runs on

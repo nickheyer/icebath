@@ -422,7 +422,7 @@ func TestOpenrouterQuotaCooldownStillReportsTheCooldown(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "")
 	os.Unsetenv("OPENROUTER_API_KEY")
 	now := float64(time.Now().UnixNano()) / 1e9
-	auth := map[string]any{"credential_pool": map[string]any{"openrouter": []any{map[string]any{"provider": "openrouter", "id": "or1", "label": "or1",
+	auth := map[string]any{"version": provider.AuthStoreVersion, "credential_pool": map[string]any{"openrouter": []any{map[string]any{"provider": "openrouter", "id": "or1", "label": "or1",
 		"auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-test-0000000000", "last_status": provider.StatusExhausted,
 		"last_status_at": now, "last_error_code": 429, "last_error_reset_at": now + 3*3600}}}}
 	raw, _ := json.Marshal(auth)
@@ -505,10 +505,10 @@ func configWarningAgent(t *testing.T) *AIAgent {
 }
 
 func TestConfigFailureWarnsWithoutExposingValuesAndPreservesDefaults(t *testing.T) {
-	const configured = "prompt_caching:\n  cache_ttl: 1h\nmodel:\n  reasoning_echo: true\ncompression:\n  enabled: false\nskills:\n  creation_nudge_interval: 99\n"
-	sections := map[string]string{"cache": "prompt_caching.cache_ttl", "reasoning": "model.reasoning_echo", "sections": "memory"}
+	const configured = "prompt_caching:\n  cache_ttl: 1h\nagent:\n  reasoning_echo: true\ncompression:\n  enabled: false\nskills:\n  creation_nudge_interval: 99\n"
+	sections := map[string]string{"cache": "prompt_caching.cache_ttl", "sections": "memory"}
 	for _, failureAt := range []string{"import", "load"} {
-		for _, reader := range []string{"cache", "reasoning", "sections", "all"} {
+		for _, reader := range []string{"cache", "sections", "all"} {
 			t.Run(failureAt+"_"+reader, func(t *testing.T) {
 				h := t.TempDir()
 				t.Setenv("ICEBATH_HOME", h)
@@ -525,7 +525,7 @@ func TestConfigFailureWarnsWithoutExposingValuesAndPreservesDefaults(t *testing.
 				}
 				affected := map[string]bool{reader: true}
 				if reader == "all" {
-					affected = map[string]bool{"cache": true, "reasoning": true, "sections": true}
+					affected = map[string]bool{"cache": true, "sections": true}
 				}
 				const secret = "private-config-value-do-not-log"
 				class := "RuntimeError"
@@ -533,18 +533,15 @@ func TestConfigFailureWarnsWithoutExposingValuesAndPreservesDefaults(t *testing.
 					class = "ModuleNotFoundError"
 				}
 				failure := pyClassError{class: class, msg: "Could not load config.yaml: api_key: " + secret}
-				prevCache, prevEcho, prevSections := promptCacheConfigLoader, reasoningEchoConfigLoader, agentConfigLoader
+				prevCache, prevSections := promptCacheConfigLoader, agentConfigLoader
 				if affected["cache"] {
 					promptCacheConfigLoader = func(context.Context) (map[string]any, error) { return nil, failure }
-				}
-				if affected["reasoning"] {
-					reasoningEchoConfigLoader = func(context.Context) (config.Tree, error) { return nil, failure }
 				}
 				if affected["sections"] {
 					agentConfigLoader = func(context.Context) (map[string]any, error) { return nil, failure }
 				}
 				fallback := configWarningAgent(t)
-				promptCacheConfigLoader, reasoningEchoConfigLoader, agentConfigLoader = prevCache, prevEcho, prevSections
+				promptCacheConfigLoader, agentConfigLoader = prevCache, prevSections
 				if raw, _ := os.ReadFile(configPath); string(raw) != configured {
 					t.Fatalf("config rewritten %q", raw)
 				}
@@ -592,7 +589,7 @@ func TestConfigFailureWarnsWithoutExposingValuesAndPreservesDefaults(t *testing.
 				if r := ref("cache"); fallback.cacheTTL != r.cacheTTL || fallback.cacheDisabled != r.cacheDisabled || fallback.usePromptCaching != r.usePromptCaching {
 					t.Fatal("cache settings")
 				}
-				if fallback.reasoningEchoFlag != ref("reasoning").reasoningEchoFlag {
+				if fallback.reasoningEchoFlag != healthy.reasoningEchoFlag {
 					t.Fatal("reasoning echo flag")
 				}
 				if r := ref("sections"); fallback.compressionEnabled != r.compressionEnabled || fallback.skillNudgeInterval != r.skillNudgeInterval {

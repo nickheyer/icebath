@@ -519,7 +519,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 		rawURL, _ := first.Vals["url"].(string)
 		var envelope map[string]any
 		imageRef, envelope = materializeImage(ctx, env, b64, rawURL, materializeOptions{Prefix: "xai_" + modelID, Label: "xAI", Provider: "xai",
-			Model: modelID, Prompt: req.Prompt, Aspect: aspect, Log: pkgLog()})
+			Model: modelID, Prompt: req.Prompt, Aspect: aspect, ProviderBase: baseURL, Log: pkgLog()})
 		if envelope != nil {
 			return envelope, nil
 		}

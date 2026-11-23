@@ -6,66 +6,54 @@ on:
       tag:
         description: Release tag to submit, the latest release when empty
         type: string
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
 
 permissions:
   contents: read
   actions: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   submit:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: pwsh
+    runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
     steps:
-      - name: Require the winget token
-        run: if (-not $env:WINGET_TOKEN) { Write-Host "::error::repository secret WINGET_TOKEN is not set"; exit 1 }
-      - name: Require a green release run for the tag
+      - name: Resolve the release tag
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
-          $tag = $env:INPUT_TAG
-          if (-not $tag) { $tag = gh release view -R $env:GITHUB_REPOSITORY --json tagName -q .tagName; if ($LASTEXITCODE -ne 0) { exit 1 } }
-          if ($tag -notmatch '^v\d') { throw "'$tag' is not a release tag" }
-          $green = gh run list -R $env:GITHUB_REPOSITORY -w release.yml -b $tag --json conclusion -q '[.[] | select(.conclusion == "success")] | length'
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          if ([int]$green -lt 1) { throw "no release workflow run for $tag has succeeded, rerun its failed jobs first" }
-          "TAG=$tag" >> $env:GITHUB_ENV
-          "VERSION=$($tag.TrimStart('v'))" >> $env:GITHUB_ENV
+          tag=${INPUT_TAG:-$(gh release view -R "$GITHUB_REPOSITORY" --json tagName -q .tagName)}
+          case $tag in
+            v[0-9]*) ;;
+            *) echo "::error::'$tag' is not a release tag"; exit 1 ;;
+          esac
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      - name: Require a green release run for the tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          green=$(gh run list -R "$GITHUB_REPOSITORY" -w release.yml -b "$TAG" --json conclusion -q '[.[] | select(.conclusion == "success")] | length')
+          [ "$green" -ge 1 ] || { echo "::error::no release workflow run for $TAG has succeeded, rerun its failed jobs first"; exit 1; }
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       - name: Render the manifests from the release checksums and publish date
-        shell: bash
         run: |
-          tmp=$(cygpath -u "$RUNNER_TEMP")
-          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p checksums.txt -D "$tmp" --clobber
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p checksums.txt -D "$RUNNER_TEMP" --clobber
           published=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json publishedAt -q .publishedAt)
-          sh packaging/winget/render.sh "$TAG" "$tmp/checksums.txt" "${published%%T*}" "$tmp/manifests"
-      - name: Open the pull request
+          packaging/winget/render.sh "$TAG" "$RUNNER_TEMP/checksums.txt" "${published%%T*}" "$RUNNER_TEMP/winget"
+      - name: Validate the manifests against the WinGet schemas of the version they declare
         run: |
-          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile "$env:RUNNER_TEMP/wingetcreate.exe"
-          $kind = 'New version'
-          try { Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:GH_TOKEN" } https://api.github.com/repos/microsoft/winget-pkgs/contents/manifests/n/nickheyer/icebath | Out-Null }
-          catch { if ($_.Exception.Response.StatusCode -ne 404) { throw }; $kind = 'New package' }
-          $out = & "$env:RUNNER_TEMP/wingetcreate.exe" submit --no-open --token $env:WINGET_TOKEN --prtitle "${kind}: nickheyer.icebath version $env:VERSION" "$env:RUNNER_TEMP/manifests" 2>&1 | ForEach-Object { "$_" }
-          $out | Write-Host
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          $url = [regex]::Matches(($out -join "`n"), 'https://github\.com/microsoft/winget-pkgs/pull/\d+') | Select-Object -Last 1 -ExpandProperty Value
-          if (-not $url) { throw 'wingetcreate did not report a pull request URL' }
-          "PR_URL=$url" >> $env:GITHUB_ENV
-          Write-Host "::notice::$url"
-      - name: Close the pull requests this one supersedes
+          pipx install check-jsonschema
+          packaging/winget/validate.sh "$RUNNER_TEMP/winget"
+      - name: Submit the manifests to microsoft/winget-pkgs
         env:
-          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        run: |
-          $number = ($env:PR_URL -split '/')[-1]
-          $open = gh pr list -R microsoft/winget-pkgs --author '@me' --state open --search 'nickheyer.icebath in:title' --json number | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          foreach ($pr in $open | Where-Object { "$($_.number)" -ne $number }) {
-            gh pr close $pr.number -R microsoft/winget-pkgs -c "Superseded by #$number"
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          }
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: packaging/winget/submit.sh "$RUNNER_TEMP/winget"

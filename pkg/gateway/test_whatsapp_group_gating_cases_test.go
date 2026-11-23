@@ -63,13 +63,4 @@ func TestConfigBridgesWhatsappDmAndGroupPolicy(t *testing.T) {
 	if !reflect.DeepEqual(wa.Extra["group_allow_from"], []any{"120363001234567890@g.us"}) {
 		t.Fatalf("group_allow_from %#v", wa.Extra["group_allow_from"])
 	}
-	if got := os.Getenv("WHATSAPP_DM_POLICY"); got != "disabled" {
-		t.Fatalf("WHATSAPP_DM_POLICY %q", got)
-	}
-	if got := os.Getenv("WHATSAPP_GROUP_POLICY"); got != "allowlist" {
-		t.Fatalf("WHATSAPP_GROUP_POLICY %q", got)
-	}
-	if got := os.Getenv("WHATSAPP_GROUP_ALLOWED_USERS"); got != "120363001234567890@g.us" {
-		t.Fatalf("WHATSAPP_GROUP_ALLOWED_USERS %q", got)
-	}
 }

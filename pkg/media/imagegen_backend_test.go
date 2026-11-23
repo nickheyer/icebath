@@ -69,10 +69,13 @@ mkdir -p "$(dirname "$dst")" && cp "${args[0]}" "$dst"
 		}
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("TERMINAL_ENV", "ssh")
-	t.Setenv("TERMINAL_SSH_HOST", "fakehost")
-	t.Setenv("TERMINAL_SSH_USER", "tester")
 	return h
+}
+
+// Environment whose terminal settings run commands over ssh on the host double
+func (h *fakeSSHHost) env(t *testing.T) *tools.Env {
+	t.Helper()
+	return imageEnv(t, config.Tree{"terminal": map[string]any{"backend": "ssh", "ssh_host": "fakehost", "ssh_user": "tester"}})
 }
 
 // Live ssh terminal environment of the task, torn down with the test
@@ -122,7 +125,7 @@ func assertRemoteFile(t *testing.T, path, want string) {
 
 func TestPostprocessAddsAgentVisibleImageForActiveSSHEnv(t *testing.T) {
 	host := newFakeSSHHost(t)
-	env := imageEnv(t, config.Tree{})
+	env := host.env(t)
 	host.start(t, env, "task-1")
 	image := writeCacheImage(t, env, "xai_grok-imagine-image_test.jpg", "jpg")
 	raw, err := postprocessImageGenerateResult(env, `{"success": true, "image": "`+image+`"}`, "task-1")
@@ -139,7 +142,7 @@ func TestPostprocessAddsAgentVisibleImageForActiveSSHEnv(t *testing.T) {
 
 func TestConcurrentImageResultsPreserveSharedRemoteSyncState(t *testing.T) {
 	host := newFakeSSHHost(t)
-	env := imageEnv(t, config.Tree{})
+	env := host.env(t)
 	e := host.start(t, env, "shared-task")
 	first := writeCacheImage(t, env, "first.png", "first")
 	if err := os.WriteFile(filepath.Join(host.ctl, "first_pending"), nil, 0o644); err != nil {
@@ -180,7 +183,7 @@ func TestConcurrentImageResultsPreserveSharedRemoteSyncState(t *testing.T) {
 
 func TestHandleImageGeneratePostprocessesPluginResult(t *testing.T) {
 	host := newFakeSSHHost(t)
-	env := imageEnv(t, config.Tree{})
+	env := host.env(t)
 	host.start(t, env, "plugin-task")
 	image := writeCacheImage(t, env, "plugin.png", "png")
 	var seen []string
@@ -204,14 +207,11 @@ var onePixelPNG, _ = base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAA
 
 // Ssh backend that cannot start because no host is configured
 func unreachableSandbox(t *testing.T) *tools.Env {
-	t.Setenv("TERMINAL_ENV", "ssh")
-	t.Setenv("TERMINAL_SSH_HOST", "")
-	t.Setenv("TERMINAL_SSH_USER", "")
-	return imageEnv(t, config.Tree{})
+	t.Helper()
+	return imageEnv(t, config.Tree{"terminal": map[string]any{"backend": "ssh"}})
 }
 
 func TestConfineSourceImagesLocalBackendIsPassthrough(t *testing.T) {
-	t.Setenv("TERMINAL_ENV", "local")
 	url, refs, msg, err := confineSourceImages(context.Background(), imageEnv(t, config.Tree{}), "/some/host/pic.png", []any{"/other/ref.png"}, "t1")
 	if err != nil || msg != "" || url != "/some/host/pic.png" || !jsonEqual(refs, []any{"/other/ref.png"}) {
 		t.Fatalf("%v %v %q %v", url, refs, msg, err)
@@ -228,7 +228,7 @@ func TestConfineSourceImagesURLsPassThroughUnderSandbox(t *testing.T) {
 
 func TestConfineSourceImagesPathResolvesThroughSSHSandbox(t *testing.T) {
 	host := newFakeSSHHost(t)
-	env := imageEnv(t, config.Tree{})
+	env := host.env(t)
 	host.start(t, env, "t1")
 	if err := os.WriteFile(filepath.Join(host.remote, "pic.png"), onePixelPNG, 0o644); err != nil {
 		t.Fatal(err)

@@ -861,50 +861,49 @@ func disableDroppedSecrets(ctx context.Context, config map[string]any, dropped [
 			owners[pathKey(path[:2])] = true
 		}
 	}
-	for _, section := range []string{"fallback_providers", "fallback_model"} {
-		var entries []any
-		single := false
-		switch raw := config[section].(type) {
-		case map[string]any:
-			entries, single = []any{raw}, true
-		case []any:
-			entries = append([]any{}, raw...)
-		default:
+	const section = "fallback_providers"
+	var entries []any
+	single := false
+	switch raw := config[section].(type) {
+	case map[string]any:
+		entries, single = []any{raw}, true
+	case []any:
+		entries = append([]any{}, raw...)
+	default:
+		return config
+	}
+	kept := []any{}
+	for index, entry := range entries {
+		prefix := []any{section}
+		if !single {
+			prefix = []any{section, index}
+		}
+		own := false
+		for _, path := range dropped {
+			if len(path) >= len(prefix) && pathEqual(path[:len(prefix)], prefix) {
+				own = true
+				break
+			}
+		}
+		var owner secretPath
+		if m, isMap := entry.(map[string]any); isMap && len(owners) > 0 {
+			owner = entryOwnerPath(ctx, m, config)
+		}
+		if own || (owner != nil && owners[pathKey(owner)]) {
+			pkgLog().Warn(fmt.Sprintf("Session %s: fallback %s/%s removed: its credential changed in config.yaml since this "+
+				"session started", pyrepr.Str(session), fallbackLabel(entry, "provider"), fallbackLabel(entry, "model")))
 			continue
 		}
-		kept := []any{}
-		for index, entry := range entries {
-			prefix := []any{section}
-			if !single {
-				prefix = []any{section, index}
-			}
-			own := false
-			for _, path := range dropped {
-				if len(path) >= len(prefix) && pathEqual(path[:len(prefix)], prefix) {
-					own = true
-					break
-				}
-			}
-			var owner secretPath
-			if m, isMap := entry.(map[string]any); isMap && len(owners) > 0 {
-				owner = entryOwnerPath(ctx, m, config)
-			}
-			if own || (owner != nil && owners[pathKey(owner)]) {
-				pkgLog().Warn(fmt.Sprintf("Session %s: fallback %s/%s removed: its credential changed in config.yaml since this "+
-					"session started", pyrepr.Str(session), fallbackLabel(entry, "provider"), fallbackLabel(entry, "model")))
-				continue
-			}
-			kept = append(kept, entry)
-		}
-		if single {
-			if len(kept) > 0 {
-				config[section] = kept[0]
-			} else {
-				delete(config, section)
-			}
+		kept = append(kept, entry)
+	}
+	if single {
+		if len(kept) > 0 {
+			config[section] = kept[0]
 		} else {
-			config[section] = kept
+			delete(config, section)
 		}
+	} else {
+		config[section] = kept
 	}
 	return config
 }

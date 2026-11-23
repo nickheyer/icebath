@@ -27,13 +27,13 @@ func TestFreshProfileInheritsAUsableModel(t *testing.T) {
 func TestFreshProfileInheritsItsCustomProviderGateway(t *testing.T) {
 	tmp := manageEnv(t)
 	writeFile(t, filepath.Join(tmp, ".icebath", "config.yaml"), "model:\n  provider: my-gateway\n  default: my-finetune\n"+
-		"providers:\n  my-gateway:\n    api: https://llm.internal.example.com/v1\n    key_env: GW_KEY\n"+
-		"  unrelated:\n    api: https://other.example.com/v1\n")
+		"providers:\n  my-gateway:\n    base_url: https://llm.internal.example.com/v1\n    key_env: GW_KEY\n"+
+		"  unrelated:\n    base_url: https://other.example.com/v1\n")
 	cfg := profileModelCfg(t, mustCreate(t, "coder", CreateOptions{}))
 	if !reflect.DeepEqual(cfg["model"], map[string]any{"provider": "my-gateway", "default": "my-finetune"}) {
 		t.Fatalf("model = %v", cfg["model"])
 	}
-	want := map[string]any{"my-gateway": map[string]any{"api": "https://llm.internal.example.com/v1", "key_env": "GW_KEY"}}
+	want := map[string]any{"my-gateway": map[string]any{"base_url": "https://llm.internal.example.com/v1", "key_env": "GW_KEY"}}
 	if !reflect.DeepEqual(cfg["providers"], want) {
 		t.Fatalf("providers = %v", cfg["providers"])
 	}

@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 // Environment variable enabling project local plugin discovery
@@ -19,40 +18,11 @@ const EnvEnableProjectPlugins = "ICEBATH_ENABLE_PROJECT_PLUGINS"
 // Environment variable that skips every plugin and user hook
 const EnvSafeMode = "ICEBATH_SAFE_MODE"
 
-// Environment variable naming the Relay plugins toml override the removed relay plugin pointed at
-
-// Keys of the removed relay plugin that core now owns
-var legacyRelayPluginKeys = map[string]bool{"nemo_relay": true, "observability/nemo_relay": true}
-
 // Bundled categories that have their own discovery and never load through the general manager
 var bundledSkipNames = map[string]bool{"memory": true, "context_engine": true, "model-providers": true, "cron_providers": true, "computer_use": true, "config_backends": true}
 
 // Per harness manifest directories other agent tools ship inside plugin repos
 var foreignHarnessDirs = map[string]bool{".claude-plugin": true, ".codex-plugin": true, ".cursor-plugin": true, ".devin-plugin": true, ".kimi-plugin": true}
-
-// Bundled key a plugin that left core shipped under, the catalog plugin it now names and the feature label
-var leftCoreBundledKeys = []struct{ Key, Plugin, Label string }{{"observability/langfuse", "langfuse", "Langfuse"}}
-
-// Catalog plugin an old bundled key selects, empty when none
-func legacyPluginAlias(name string) string {
-	for _, row := range leftCoreBundledKeys {
-		if row.Key == name {
-			return row.Plugin
-		}
-	}
-	return ""
-}
-
-// Old bundled keys that select the plugin
-func legacyPluginKeys(plugin string) []string {
-	var out []string
-	for _, row := range leftCoreBundledKeys {
-		if row.Plugin == plugin {
-			out = append(out, row.Key)
-		}
-	}
-	return out
-}
 
 // Reports whether a directory name is never a plugin
 func isSkippedPluginDir(name string) bool {
@@ -187,11 +157,7 @@ const InBothLists = "listed in both plugins.enabled and plugins.disabled — dis
 
 // Every spelling a config list may hold for a manifest
 func manifestNames(m *Manifest) map[string]bool {
-	names := map[string]bool{m.ID(): true, m.Name: true}
-	for _, k := range legacyPluginKeys(m.ID()) {
-		names[k] = true
-	}
-	return names
+	return map[string]bool{m.ID(): true, m.Name: true}
 }
 
 // Reports whether two string sets intersect
@@ -210,10 +176,6 @@ func GateManifest(h string, m *Manifest, disabled map[string]bool, enabled map[s
 	names := manifestNames(m)
 	placeholder := func(err, level, log string, enabledFlag bool) ManifestGate {
 		return ManifestGate{Action: "placeholder", Enabled: enabledFlag, Error: err, Log: log, Level: level}
-	}
-	if intersects(names, legacyRelayPluginKeys) {
-		err := "removed — Relay lifecycle is owned by Icebath core; configure a standard user or system Relay plugins.toml, or use " + tools.RelayPluginsConfigEnv + " for an explicit user-file override"
-		return placeholder(err, "warn", fmt.Sprintf("Refusing to load removed Icebath Relay plugin '%s'; %s", key, err), false)
 	}
 	if intersects(names, disabled) {
 		if enabledPresent && intersects(names, enabled) {

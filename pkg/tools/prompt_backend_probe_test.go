@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -37,7 +39,11 @@ func fakeProbeSandbox(t *testing.T, backend string, fake *probeFakeEnv) *[]probe
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("TERMINAL_ENV", backend)
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("terminal:\n  backend: "+backend+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ResetTerminalScopeCache()
+	t.Cleanup(ResetTerminalScopeCache)
 	ClearBackendProbeCache()
 	t.Cleanup(ClearBackendProbeCache)
 	calls := &[]probeCreateCall{}

@@ -101,19 +101,6 @@ func TestDefaultAcpDoesNotConstructAnEmbeddedSessionManager(t *testing.T) {
 	}
 }
 
-func TestUnadvertisedAcpCreationIsNotRelabelledAsCli(t *testing.T) {
-	a, link := bareGatewayAgent(t, nil)
-	link.set(fixedReply(t, `{"session_create": {"sources": ["cli", "tui", "gui"]}}`))
-	_, err := a.NewSession(context.Background(), &pyacp.NewSessionRequest{Cwd: t.TempDir(), MCPServers: []pyacp.McpServer{}})
-	if !refusedWith(err, "acp_policy_unavailable") {
-		t.Fatalf("err = %v", err)
-	}
-	calls := link.log()
-	if len(calls) != 1 || calls[0].method != "runtime.describe" || len(calls[0].params) != 0 {
-		t.Fatalf("calls = %v", calls)
-	}
-}
-
 func TestEffortPickAppliesThroughTheReasoningMutationAndReturnsThePickers(t *testing.T) {
 	swap(t, &gatewayModelState, func(context.Context, *pyjson.Object) *pyacp.SessionModelState {
 		return &pyacp.SessionModelState{AvailableModels: []pyacp.ModelInfo{{ModelID: "openrouter:fixture", Name: "fixture"}}, CurrentModelID: "openrouter:fixture"}

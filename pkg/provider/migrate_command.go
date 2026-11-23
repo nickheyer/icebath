@@ -9,10 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
-// Dispatches icebath migrate, with the xai, relay and agent subtypes
+// Dispatches icebath migrate, with the xai and agent subtypes
 func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io.Writer) (code int, err error) {
 	restore := WithSetupOutput(w)
 	defer restore()
@@ -24,11 +23,6 @@ func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io
 	switch {
 	case migrateType == "xai":
 		return cmdMigrateXai(ctx, h, ns, w, errw)
-	case migrateType == "relay":
-		if err := plugins.CmdMigrateRelay(ctx, w, nsFlag(ns, "all_profiles"), nsFlag(ns, "no_validate")); err != nil {
-			return 1, err
-		}
-		return 0, nil
 	case migrateType == "":
 		return MigrateFromAgents(ctx, h, "", AgentImportOptions{})
 	case IsImportSourceName(migrateType):

@@ -3,11 +3,11 @@ package tuiserver
 import (
 	"context"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 )
@@ -16,6 +16,7 @@ import (
 func wsTestRunDisconnect(t *testing.T, seed func(transport *tuihost.WSTransport)) {
 	t.Helper()
 	wsTestNoOrphanGrace(t)
+	wsTestFakeAuthority(t, nil)
 	sock := newWSTestSocket()
 	sock.onReceive = func() { seed(wsTestLiveTransport(t)) }
 	sock.inbound <- nil
@@ -53,8 +54,9 @@ func TestWsDisconnectReleasesWakeWordOwner(t *testing.T) {
 	}
 }
 
-func TestWsReadyAdvertisesHeartbeatAndPingIsInline(t *testing.T) {
+func TestWsReadyComesFirstAndPingIsInline(t *testing.T) {
 	wsTestNoOrphanGrace(t)
+	wsTestFakeAuthority(t, nil)
 	sock := newWSTestSocket()
 	sock.inbound <- wsTestRPC("heartbeat-1", "gateway.ping")
 	sock.inbound <- nil
@@ -67,7 +69,7 @@ func TestWsReadyAdvertisesHeartbeatAndPingIsInline(t *testing.T) {
 	}
 	ready, _ := sent[0]["params"].(map[string]any)
 	payload, _ := ready["payload"].(map[string]any)
-	if ready["type"] != "gateway.ready" || payload["heartbeat"] != true {
+	if ready["type"] != "gateway.ready" || payload["build"] == nil || payload["replay_epoch"] == nil {
 		t.Fatalf("ready frame %v", sent[0])
 	}
 	if want := map[string]any{"jsonrpc": "2.0", "result": map[string]any{"ok": true}, "id": "heartbeat-1"}; !reflect.DeepEqual(sent[1], want) {
@@ -83,10 +85,8 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 	t.Helper()
 	wsTestNoOrphanGrace(t)
 	log, release := &wsTestLog{}, make(chan struct{})
-	prevDispatch, prevClose := wsDispatchRequestFn, wsCloseSessionsForTransport
-	wsDispatchRequestFn = func(_ context.Context, _ authorityConn, req any, _ *tuihost.WSTransport) (any, error) {
-		frame, _ := plainRequest(req).(map[string]any)
-		method, _ := frame["method"].(string)
+	wsTestFakeAuthority(t, func(_ context.Context, request *pyjson.Object) (*pyjson.Object, error) {
+		method, _ := request.GetOr("method", nil).(string)
 		log.add("dispatch:" + method)
 		if method == "slow" || method == "session.context_breakdown" {
 			select {
@@ -95,13 +95,14 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 			}
 		}
 		log.add("done:" + method)
-		return map[string]any{"jsonrpc": "2.0", "id": frame["id"], "result": map[string]any{"method": method}}, nil
-	}
+		return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil), "result", pyjson.ObjectOf("method", method)), nil
+	})
+	prevClose := wsCloseSessionsForTransport
 	wsCloseSessionsForTransport = func(context.Context, tuihost.Transport, string) (int, int) {
 		log.add("teardown")
 		return 0, 0
 	}
-	t.Cleanup(func() { wsDispatchRequestFn, wsCloseSessionsForTransport = prevDispatch, prevClose })
+	t.Cleanup(func() { wsCloseSessionsForTransport = prevClose })
 	return newWSTestSocket(), log, release
 }
 
@@ -212,75 +213,23 @@ func TestWsFailedReplyFromDispatcherEndsTheConnection(t *testing.T) {
 	}
 }
 
-// Authority connection of the fallback cases, every request answered as an unknown method
-type wsTestConnection struct {
-	actor gateway.Principal
-}
-
-func (c *wsTestConnection) Dispatch(_ context.Context, request *pyjson.Object) (*pyjson.Object, error) {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil),
-		"error", pyjson.ObjectOf("code", -32601, "message", "unknown method")), nil
-}
-func (c *wsTestConnection) Close(context.Context) error { return nil }
-func (c *wsTestConnection) Actor() gateway.Principal    { return c.actor }
-func (c *wsTestConnection) AwaitsProfileStart(context.Context, map[string]any, []string) (string, <-chan struct{}, bool, error) {
-	return "", nil, false, nil
-}
-
-// Installs a fake authority connection with the capabilities and profile for one case
-func wsTestFakeAuthority(t *testing.T, capabilities []string, profileID string) {
-	t.Helper()
-	held := map[string]bool{}
-	for _, capability := range capabilities {
-		held[capability] = true
-	}
-	prev := wsNewAuthorityConnection
-	wsNewAuthorityConnection = func(*gateway.SessionAuthority, *tuihost.WSTransport, map[string]any, bool) (authorityConn, error) {
-		return &wsTestConnection{actor: gateway.Principal{Capabilities: held, ProfileID: profileID}}, nil
-	}
-	t.Cleanup(func() { wsNewAuthorityConnection = prev })
-}
-
-// Registers a method for one case and restores the registry after it
-func wsTestMethod(t *testing.T, name string, fn Handler) {
-	t.Helper()
-	prev := lookupMethod(name)
-	registerMethod(name, fn)
-	t.Cleanup(func() {
-		methodsMu.Lock()
-		defer methodsMu.Unlock()
-		if prev == nil {
-			delete(methods, name)
-			return
-		}
-		methods[name] = prev
-	})
-}
-
-func TestReadyFrameAdvertisesASessionAuthorityOnlyWhenOneIsBound(t *testing.T) {
-	wsTestFakeAuthority(t, nil, "p")
+func TestASocketWithoutASessionAuthorityIsRefused(t *testing.T) {
 	wsTestNoOrphanGrace(t)
-	ready := func(authority *gateway.SessionAuthority) map[string]any {
-		sock := newWSTestSocket()
-		sock.authority = authority
-		sock.inbound <- nil
-		if err := HandleWS(context.Background(), sock, map[string]any{"user_id": "u"}, nil, false); err != nil {
-			t.Fatal(err)
-		}
-		params, _ := sock.frames()[0]["params"].(map[string]any)
-		payload, _ := params["payload"].(map[string]any)
-		return payload
+	sock := newWSTestSocket()
+	sock.authority = nil
+	sock.inbound <- nil
+	err := HandleWS(context.Background(), sock, map[string]any{"user_id": "u"}, nil, false)
+	if err == nil || !strings.Contains(err.Error(), "without a session authority") {
+		t.Fatalf("a socket without a session authority was served: %v", err)
 	}
-	if ready(new(gateway.SessionAuthority))["session_authority"] != true {
-		t.Fatal("a bound authority was not advertised")
-	}
-	if _, advertised := ready(nil)["session_authority"]; advertised {
-		t.Fatal("a socket without an authority advertised one")
+	if sent := sock.frames(); len(sent) != 0 {
+		t.Fatalf("frames went out before the refusal: %v", sent)
 	}
 }
 
 func TestHandleWsStartsHeartbeatRefresher(t *testing.T) {
 	wsTestNoOrphanGrace(t)
+	wsTestFakeAuthority(t, nil)
 	started := 0
 	prev := wsStartHeartbeatRefresher
 	wsStartHeartbeatRefresher = func(context.Context) { started++ }
@@ -299,6 +248,7 @@ func TestHandleWsStartsHeartbeatRefresher(t *testing.T) {
 // A slow skin resolve of one peer holds only its own connection and its result still reaches the ready frame
 func TestHandleWsResolvesSkinOffTheLoopThread(t *testing.T) {
 	wsTestNoOrphanGrace(t)
+	wsTestFakeAuthority(t, nil)
 	gate, entered := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	prev := wsResolveSkin

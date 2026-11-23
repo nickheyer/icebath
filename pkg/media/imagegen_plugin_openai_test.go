@@ -210,7 +210,7 @@ func TestOpenAICustomModelIDPassesThroughWithoutQuality(t *testing.T) {
 }
 
 func TestOpenAINamedCustomEndpointSuppliesBaseURLAndKey(t *testing.T) {
-	providers := map[string]any{"my-gateway": map[string]any{"name": "My Gateway", "api": "https://gw.example/v1", "key_env": "MY_GW_KEY"}}
+	providers := map[string]any{"my-gateway": map[string]any{"name": "My Gateway", "base_url": "https://gw.example/v1", "key_env": "MY_GW_KEY"}}
 	env := openAIHomeEnv(t, config.Tree{"providers": providers, "image_gen": map[string]any{"openai": map[string]any{"provider": "my-gateway"}}})
 	t.Setenv("MY_GW_KEY", "gw-token")
 	t.Setenv("IMAGE_ONLY_KEY", "image-token")
@@ -436,7 +436,7 @@ func TestOpenAIAspectRatioMappingRevisedPromptAndURLCache(t *testing.T) {
 		w.Write(openAITestPNG)
 	}))
 	defer imgSrv.Close()
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "1")
+	setAllowPrivateURLs(t, env, true)
 	f.reply = func(*http.Request) (int, string) {
 		return 200, `{"data": [{"b64_json": null, "url": "` + imgSrv.URL + `/img.png"}]}`
 	}
@@ -523,12 +523,10 @@ func TestOpenAILoadImageBytesRefusesInternalTargetsBeforeConnect(t *testing.T) {
 	os.MkdirAll(h, 0o755)
 	t.Setenv("ICEBATH_HOME", h)
 	env := &tools.Env{Home: h}
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "")
-	os.Unsetenv("ICEBATH_ALLOW_PRIVATE_URLS")
 	if data, _, err := loadOpenAIImageBytes(context.Background(), env, srv.URL+"/img.png"); err == nil || data != nil || len(hits) != 0 {
 		t.Fatal("loopback fetched", err, hits)
 	}
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "1")
+	setAllowPrivateURLs(t, env, true)
 	if data, _, err := loadOpenAIImageBytes(context.Background(), env, srv.URL+"/to-metadata/img.png"); err == nil || data != nil {
 		t.Fatal("redirect to metadata followed", err)
 	}

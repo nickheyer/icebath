@@ -28,7 +28,7 @@ func TestPluginRegistersTheWhatsAppPlatform(t *testing.T) {
 	if entry == nil {
 		t.Fatal("whatsapp entry missing from the registry")
 	}
-	if entry.StandaloneSenderFn == nil || entry.ApplyYAMLConfigFn == nil || entry.SetupFn == nil || entry.IsConnected == nil ||
+	if entry.StandaloneSenderFn == nil || entry.SetupFn == nil || entry.IsConnected == nil ||
 		entry.MaxMessageLength != 4096 || entry.CronDeliverEnvVar != "WHATSAPP_HOME_CHANNEL" || entry.StandaloneSend == nil || !entry.StandaloneSend.Mentions {
 		t.Fatalf("entry = %+v", entry)
 	}

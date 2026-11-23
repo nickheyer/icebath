@@ -892,7 +892,7 @@ func (vercelSandboxBackend) IsAvailable() bool { return DescribeVercelAuth(nil).
 func (vercelSandboxBackend) CheckRequirements(env *Env, cfg map[string]any) error {
 	runtime := strings.TrimSpace(argS(cfg, "vercel_runtime"))
 	if !IsSupportedVercelRuntime(runtime) {
-		return fmt.Errorf("Vercel Sandbox runtime %s is not supported. Set TERMINAL_VERCEL_RUNTIME to one of: %s.", pyRepr(runtime), strings.Join(SupportedVercelRuntimes, ", "))
+		return fmt.Errorf("Vercel Sandbox runtime %s is not supported. Set terminal.vercel_runtime to one of: %s.", pyRepr(runtime), strings.Join(SupportedVercelRuntimes, ", "))
 	}
 	disk := vercelDefaultDiskMB
 	if v, ok := cfg["container_disk"]; ok && v != nil {
@@ -903,7 +903,7 @@ func (vercelSandboxBackend) CheckRequirements(env *Env, cfg map[string]any) erro
 		}
 	}
 	if disk != 0 && disk != vercelDefaultDiskMB {
-		return fmt.Errorf("Vercel Sandbox does not support custom TERMINAL_CONTAINER_DISK=%v. Use the default shared setting (51200 MB).", cfg["container_disk"])
+		return fmt.Errorf("Vercel Sandbox does not support a custom disk size (terminal.container_disk is %v). Reset it to the default of 51200 MB.", cfg["container_disk"])
 	}
 	if secretValue(env, "VERCEL_OIDC_TOKEN") != "" {
 		return nil

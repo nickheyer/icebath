@@ -261,7 +261,6 @@ func TestPostSetupOpenAICodexSignIn(t *testing.T) {
 	type saveCall struct {
 		tokens      map[string]any
 		lastRefresh string
-		setActive   bool
 	}
 	for _, c := range []struct {
 		choice   int
@@ -292,8 +291,8 @@ func TestPostSetupOpenAICodexSignIn(t *testing.T) {
 			return c.creds, c.loginErr
 		})
 		var saves []saveCall
-		swapHook(t, &ToolsConfigHooks.SaveCodexTokens, func(_ context.Context, _ string, tokens map[string]any, lastRefresh string, setActive bool) error {
-			saves = append(saves, saveCall{tokens, lastRefresh, setActive})
+		swapHook(t, &ToolsConfigHooks.SaveCodexTokens, func(_ context.Context, _ string, tokens map[string]any, lastRefresh string) error {
+			saves = append(saves, saveCall{tokens, lastRefresh})
 			return c.saveErr
 		})
 		if err := s.runPostSetup("openai_codex"); err != nil {
@@ -305,7 +304,7 @@ func TestPostSetupOpenAICodexSignIn(t *testing.T) {
 		if !slices.Equal(questions, []string{"    How do you want to sign in? Sign in with ChatGPT/Codex OAuth — browser login | Skip — configure later via `" + relogin + "`"}) {
 			t.Fatalf("questions %q", questions)
 		}
-		if len(saves) == 1 && (saves[0].setActive || !pyjson.Equal(saves[0].tokens, map[string]any{"access_token": "a"}) || saves[0].lastRefresh != pyOrStr(c.creds["last_refresh"])) {
+		if len(saves) == 1 && (!pyjson.Equal(saves[0].tokens, map[string]any{"access_token": "a"}) || saves[0].lastRefresh != pyOrStr(c.creds["last_refresh"])) {
 			t.Fatalf("save call %+v", saves[0])
 		}
 	}

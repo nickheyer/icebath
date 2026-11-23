@@ -10,12 +10,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
-// Adapter with a live fake client and the component gate env cleared
+// Adapter with a live fake client, no access settings and no shared allow list
 func parityAdapter(t *testing.T) (*DiscordAdapter, *fakeDiscordAPI) {
 	a, f := sendAdapter(t)
-	for _, v := range []string{"DISCORD_ALLOW_ALL_USERS", "GATEWAY_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"} {
-		t.Setenv(v, "")
-	}
+	t.Setenv("GATEWAY_ALLOWED_USERS", "")
 	return a, f
 }
 
@@ -125,7 +123,7 @@ func TestAnsweredViewIsReleased(t *testing.T) {
 	for _, c := range answers {
 		t.Run(c.name, func(t *testing.T) {
 			a, f := parityAdapter(t)
-			t.Setenv("DISCORD_ALLOW_ALL_USERS", "true")
+			setDiscord(t, "allow_all_users", true)
 			view := parityViews(t, a)[c.name]
 			i := parityClick()
 			if err := c.call(view.hooks, context.Background(), i); err != nil {

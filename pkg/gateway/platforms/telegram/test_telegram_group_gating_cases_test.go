@@ -12,18 +12,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
-// Adapter of the make adapter helper, bot id 999 with the given handle, empty allow lists unless set
-func gatingAdapter(t *testing.T, extra map[string]any, botUsername string) (*TelegramAdapter, *scriptedBot) {
+// Adapter with bot id 999 and the given handle in a fresh home holding the given Telegram settings, named by their leaf under telegram
+func gatingAdapter(t *testing.T, telegramSettings map[string]any, botUsername string) (*TelegramAdapter, *scriptedBot) {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
+	setTelegramSettings(t, telegramSettings)
 	cfg := gateway.NewPlatformConfig()
 	cfg.Enabled, cfg.Token = true, "999:test-token"
-	for _, key := range []string{"allowed_topics", "allowed_chats", "group_allowed_chats"} {
-		cfg.Extra[key] = []any{}
-	}
-	for k, v := range extra {
-		cfg.Extra[k] = v
-	}
 	if botUsername == "" {
 		botUsername = "icebath_bot"
 	}
@@ -296,7 +291,7 @@ func TestRawBotMentionFallbackDoesNotMatchEmailOrSubstring(t *testing.T) {
 	expectGate(t, a, groupMessage("hi @icebath_bot", groupMsgOpts{}), true)
 }
 
-func TestExclusiveBotMentionsCanBeDisabledForLegacyGroups(t *testing.T) {
+func TestExclusiveBotMentionsCanBeSwitchedOff(t *testing.T) {
 	a, _ := gatingAdapter(t, map[string]any{"require_mention": true, "exclusive_bot_mentions": false}, "default_bot")
 	expectGate(t, a, groupMessage("@research_bot hi", groupMsgOpts{replyToBot: true}), true)
 }

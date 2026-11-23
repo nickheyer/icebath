@@ -28,9 +28,6 @@ func TestMain(m *testing.M) {
 		}
 		return false
 	}
-	provider.GatewayHooks.LegacyJSON = func(string) map[string]any { return nil }
-	provider.GatewayHooks.MergePlatformSections = func(map[string]any, any, map[string]any, []string) map[string]any { return map[string]any{} }
-	provider.GatewayHooks.PlatformEnabled = func(map[string]any) (bool, string) { return false, "" }
 	provider.GatewayHooks.ServesHome = func(string) bool { return false }
 	provider.InstallPluginManagerHooks(provider.PluginManagerHooks{
 		CatalogEntry:    func(string) (string, bool) { return "", false },

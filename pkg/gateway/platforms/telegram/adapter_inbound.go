@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -30,32 +31,57 @@ import (
 // Image cache writer of inbound photos and stickers
 var cacheImageFromBytesAsync = gateway.CacheImageFromBytesAsync
 
+// Whether groups are answered only when the bot is mentioned
 func (a *TelegramAdapter) requireMention(ctx context.Context) bool {
 	return settings.TelegramRequireMention.Get(gateway.SettingsContext(ctx))
 }
 
+// Whether group messages that do not address the bot are kept as context
 func (a *TelegramAdapter) observeUnmentionedGroupMessages(ctx context.Context) bool {
 	return settings.TelegramObserveUnmentionedGroupMessages.Get(gateway.SettingsContext(ctx))
 }
 
+// Whether a mention answers in chats outside the allowed ones
 func (a *TelegramAdapter) guestMode(ctx context.Context) bool {
 	return settings.TelegramGuestMode.Get(gateway.SettingsContext(ctx))
 }
 
+// Whether a message naming only other bots is left to them
 func (a *TelegramAdapter) exclusiveBotMentions(ctx context.Context) bool {
 	return settings.TelegramExclusiveBotMentions.Get(gateway.SettingsContext(ctx))
 }
 
+// Whether other bots must mention this one to be answered
 func (a *TelegramAdapter) botsRequireMention(ctx context.Context) bool {
 	return settings.TelegramBotsRequireMention.Get(gateway.SettingsContext(ctx))
 }
 
+// Chats answered without a mention
 func (a *TelegramAdapter) freeResponseChats(ctx context.Context) map[string]bool {
 	return gateway.SettingSet(ctx, settings.TelegramFreeResponseChats)
 }
 
+// Forum topics answered without a mention, as chat:topic pairs
 func (a *TelegramAdapter) freeResponseTopics(ctx context.Context) map[string]bool {
-	return gateway.SettingSet(ctx, settings.TelegramFreeResponseTopics)
+	return topicSet(ctx, settings.TelegramFreeResponseTopics)
+}
+
+// Items of a topic list setting, each a topic number or a chat:topic pair
+func topicSet(ctx context.Context, e settings.Entry) map[string]bool {
+	out := map[string]bool{}
+	for _, item := range gateway.SettingList(ctx, e) {
+		out[chatTopicItem(item)] = true
+	}
+	return out
+}
+
+// A topic list item as written, undoing the base 60 number config.yaml reads an unquoted pair such as -100123:7 as
+func chatTopicItem(item string) string {
+	n, err := strconv.ParseInt(item, 10, 64)
+	if err != nil || n >= 0 || n == math.MinInt64 {
+		return item
+	}
+	return fmt.Sprintf("-%d:%d", -n/60, -n%60)
 }
 
 // Whether the message's chat and topic pair is a free response topic
@@ -71,10 +97,12 @@ func (a *TelegramAdapter) isFreeResponseTopic(ctx context.Context, m *models.Mes
 	return topics[chatID+":"+topicIDOrGeneral(effectiveMessageThreadID(m))]
 }
 
+// The only chats answered in, empty for every chat
 func (a *TelegramAdapter) allowedChats(ctx context.Context) map[string]bool {
 	return gateway.SettingSet(ctx, settings.TelegramAllowedChats)
 }
 
+// Group chats where everyone may talk to the bot
 func (a *TelegramAdapter) groupAllowedChats(ctx context.Context) map[string]bool {
 	return gateway.SettingSet(ctx, settings.TelegramGroupAllowedChats)
 }
@@ -98,8 +126,9 @@ func (a *TelegramAdapter) observeAllowedChats(ctx context.Context) map[string]bo
 	return out
 }
 
+// The only forum topics answered in, empty for every topic
 func (a *TelegramAdapter) allowedTopics(ctx context.Context) map[string]bool {
-	return gateway.SettingSet(ctx, settings.TelegramAllowedTopics)
+	return topicSet(ctx, settings.TelegramAllowedTopics)
 }
 
 // Forum topic ids the profile never reads
@@ -116,14 +145,24 @@ func (a *TelegramAdapter) ignoredThreads(ctx context.Context) map[int64]bool {
 	return out
 }
 
-// Mention word patterns of the profile, nil when it names none
-func (a *TelegramAdapter) compileMentionPatterns(ctx context.Context) []*regexp2.Regexp {
-	patterns := settings.TelegramMentionPatterns.Get(gateway.SettingsContext(ctx))
-	if len(patterns) == 0 {
-		return nil
+// Mention word patterns of the adapter's profile as set right now, compiled again only when the setting changed
+func (a *TelegramAdapter) currentMentionPatterns() []*regexp2.Regexp {
+	var raw any
+	if v, err := settings.Resolve(a.settingsCtx, settings.TelegramMentionPatterns.Key); err == nil {
+		raw = v.Value
 	}
-	label := "telegram"
-	return gateway.CompileMentionPatterns(patterns, gateway.MentionPatternOptions{LogPrefix: a.Name(), PlatformLabel: &label, DisplayLabel: "Telegram"})
+	if text, isText := raw.(string); isText && pystr.Strip(text) == "" {
+		raw = nil
+	}
+	source := pyrepr.Repr(raw)
+	a.mentionPatterns.mu.Lock()
+	defer a.mentionPatterns.mu.Unlock()
+	if a.mentionPatterns.source != source {
+		label := "telegram"
+		a.mentionPatterns.compiled = gateway.CompileMentionPatterns(raw, gateway.MentionPatternOptions{LogPrefix: a.Name(), PlatformLabel: &label, DisplayLabel: "Telegram"})
+		a.mentionPatterns.source = source
+	}
+	return a.mentionPatterns.compiled
 }
 
 // Bare lowercase chat type name
@@ -443,11 +482,12 @@ func (a *TelegramAdapter) explicitBotMentionsExcludeSelf(ctx context.Context, m 
 
 // Whether the text or caption matches a wake word pattern
 func (a *TelegramAdapter) messageMatchesMentionPatterns(m *models.Message) bool {
+	patterns := a.currentMentionPatterns()
 	for _, candidate := range []string{m.Text, m.Caption} {
 		if candidate == "" {
 			continue
 		}
-		for _, p := range a.mentionPatterns {
+		for _, p := range patterns {
 			if regexp2Search(p, candidate) {
 				return true
 			}
@@ -478,11 +518,13 @@ func (a *TelegramAdapter) cleanBotTriggerText(text *string) *string {
 	return text
 }
 
-// Allowed topic and ignored thread gates, false when blocked and nil when undecided
-func (a *TelegramAdapter) topicGatesPass(ctx context.Context, threadID *string, warnNonNumeric bool) *bool {
+// Allowed topic and ignored thread gates of a chat, false when blocked and nil when undecided; an allowed topic is a number for any chat or a chat:topic pair
+func (a *TelegramAdapter) topicGatesPass(ctx context.Context, chatID string, threadID *string, warnNonNumeric bool) *bool {
 	blocked := false
-	if allowed := a.allowedTopics(ctx); len(allowed) > 0 && !allowed[topicIDOrGeneral(threadID)] {
-		return &blocked
+	if allowed := a.allowedTopics(ctx); len(allowed) > 0 {
+		if topic := topicIDOrGeneral(threadID); !allowed[topic] && !allowed[chatID+":"+topic] {
+			return &blocked
+		}
 	}
 	if threadID != nil {
 		n, err := strconv.ParseInt(pystr.Strip(*threadID), 10, 64)
@@ -517,10 +559,10 @@ func (a *TelegramAdapter) shouldObserveUnmentionedGroupMessage(ctx context.Conte
 	if a.isOwnMessage(m) || !a.observeUnmentionedGroupMessages(ctx) || !isGroupChat(m) {
 		return false
 	}
-	if pass := a.topicGatesPass(ctx, rawThreadID(m), false); pass != nil && !*pass {
+	chatID := chatIDStr(m)
+	if pass := a.topicGatesPass(ctx, chatID, rawThreadID(m), false); pass != nil && !*pass {
 		return false
 	}
-	chatID := chatIDStr(m)
 	if a.exclusiveBotMentions(ctx) && a.explicitBotMentionsExcludeSelf(ctx, m) {
 		return false
 	}
@@ -864,10 +906,10 @@ func (a *TelegramAdapter) shouldProcessMessage(ctx context.Context, m *models.Me
 	if !isGroupChat(m) {
 		return true
 	}
-	if pass := a.topicGatesPass(ctx, effectiveMessageThreadID(m), true); pass != nil && !*pass {
+	chatID := chatIDStr(m)
+	if pass := a.topicGatesPass(ctx, chatID, effectiveMessageThreadID(m), true); pass != nil && !*pass {
 		return false
 	}
-	chatID := chatIDStr(m)
 	if a.exclusiveBotMentions(ctx) && a.explicitBotMentionsExcludeSelf(ctx, m) {
 		return false
 	}

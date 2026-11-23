@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/tools"
 )
 
 func TestPluginInBothListsWarnsInsteadOfSilentDebugSkip(t *testing.T) {
@@ -53,16 +51,12 @@ func TestGateManifestLogsTheIcebathMessages(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	relayErr := "removed — Relay lifecycle is owned by Icebath core; configure a standard user or system Relay plugins.toml, or use " +
-		tools.RelayPluginsConfigEnv + " for an explicit user-file override"
 	none := map[string]bool{}
 	for _, tc := range []struct {
 		m                  *Manifest
 		disabled, enabled  map[string]bool
 		level, log, errMsg string
 	}{
-		{&Manifest{Name: "nemo_relay", Key: "observability/nemo_relay", Source: "user"}, none, none, "warn",
-			"Refusing to load removed Icebath Relay plugin 'observability/nemo_relay'; " + relayErr, relayErr},
 		{&Manifest{Name: "quiet", Key: "quiet", Source: "user"}, map[string]bool{"quiet": true}, none, "debug", "Skipping disabled plugin 'quiet'", "disabled via config"},
 		{&Manifest{Name: "mem", Key: "memory/mem", Source: "user", Kind: "exclusive"}, none, none, "debug",
 			"Skipping 'memory/mem' (exclusive, handled by category discovery)", "exclusive plugin — activate via <category>.provider config"},

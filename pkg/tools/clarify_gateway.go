@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Outcomes for typed clarify replies
@@ -393,44 +393,7 @@ func ClearClarifySession(sessionKey string) int {
 	return cancelled
 }
 
-// ResolveClarifyTimeout reads clarify.timeout when set, else agent.clarify_timeout, else 3600, non numeric gives 3600
-func ResolveClarifyTimeout(cfg config.Tree) int {
-	var raw any
-	if clarify, ok := cfg["clarify"].(map[string]any); ok {
-		raw = clarify["timeout"]
-	}
-	if raw == nil {
-		raw = 3600
-		if agent, ok := cfg["agent"].(map[string]any); ok {
-			if v, present := agent["clarify_timeout"]; present {
-				raw = v
-			}
-		}
-	}
-	switch v := raw.(type) {
-	case bool:
-		if v {
-			return 1
-		}
-		return 0
-	case string:
-		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil {
-			return 3600
-		}
-		return n
-	}
-	if n, ok := pyIntValue(raw); ok {
-		return n
-	}
-	return 3600
-}
-
-// GetClarifyTimeout is the clarify timeout from config.yaml, zero or negative meaning unlimited
+// GetClarifyTimeout is how long a question waits for an answer in seconds, zero or negative meaning unlimited
 func GetClarifyTimeout(env *Env) int {
-	doc, err := readRawConfig(env)
-	if err != nil {
-		return 3600
-	}
-	return ResolveClarifyTimeout(doc)
+	return int(settings.AgentClarifyTimeout.Get(envHomeCtx(context.Background(), env)) / time.Second)
 }

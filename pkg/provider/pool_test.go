@@ -391,7 +391,7 @@ func TestWriteCredentialPoolPreservesKnownProviderOwnedOAuthState(t *testing.T) 
 	h := newTestHome(t)
 	sentinel := "PROVIDER_OWNED_DEVICE_CODE_STAYS_PERSISTABLE"
 	if _, err := NewStore(h).WriteCredentialPool("xai-oauth", []map[string]any{{"id": "xai-device", "label": "device-code", "auth_type": "oauth", "priority": 0,
-		"source": "device_code", "access_token": sentinel, "refresh_token": "refresh-" + sentinel}}, nil, nil, nil); err != nil {
+		"source": "manual:device_code", "access_token": sentinel, "refresh_token": "refresh-" + sentinel}}, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	persisted := poolRows(t, h, "xai-oauth")[0]
@@ -452,7 +452,7 @@ func TestLeastUsedStrategySelectsLowestCount(t *testing.T) {
 func TestCustomEndpointPoolSeedsFromConfig(t *testing.T) {
 	h := newTestHome(t)
 	writeAuthStore(t, h, map[string]any{"version": 2})
-	writeConfigYAML(t, h, "custom_providers:\n  - name: Together.ai\n    base_url: https://api.together.ai/v1\n    api_key: sk-config-seeded\n")
+	writeConfigYAML(t, h, "providers:\n  together.ai:\n    name: Together.ai\n    base_url: https://api.together.ai/v1\n    api_key: sk-config-seeded\n")
 	pool := LoadPool(testEnv(t, h), "custom:together.ai")
 	entries := pool.Entries()
 	if !pool.HasCredentials() || len(entries) != 1 || entries[0].AccessToken != "sk-config-seeded" || entries[0].Source != "config:Together.ai" {
@@ -463,7 +463,7 @@ func TestCustomEndpointPoolSeedsFromConfig(t *testing.T) {
 func TestCustomEndpointPoolSeedsFromModelConfig(t *testing.T) {
 	h := newTestHome(t)
 	writeAuthStore(t, h, map[string]any{"version": 2})
-	writeConfigYAML(t, h, "custom_providers:\n  - name: Together.ai\n    base_url: https://api.together.ai/v1\nmodel:\n  provider: custom\n  base_url: https://api.together.ai/v1\n  api_key: sk-model-key\n")
+	writeConfigYAML(t, h, "providers:\n  together.ai:\n    name: Together.ai\n    base_url: https://api.together.ai/v1\nmodel:\n  provider: custom\n  base_url: https://api.together.ai/v1\n  api_key: sk-model-key\n")
 	pool := LoadPool(testEnv(t, h), "custom:together.ai")
 	var modelEntries []PooledCredential
 	for _, e := range pool.Entries() {
@@ -550,7 +550,7 @@ func TestPersistPreservesConcurrentDiskOnlyEntry(t *testing.T) {
 
 func makeAnthropicClaudeCodePool(t *testing.T, h, access, refresh string, expiresAtMS int64) (*Pool, PooledCredential) {
 	t.Helper()
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic", "credential_pool": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "credential_pool": map[string]any{}})
 	writeClaudeCodeCredentials(t, access, refresh, expiresAtMS)
 	pool := LoadPool(testEnv(t, h), "anthropic")
 	entry := mustSelect(t, pool, "")
@@ -1226,7 +1226,7 @@ func TestNumberedEnvSiblingsSeedRotationWithoutConfig(t *testing.T) {
 	}
 }
 
-// ---- test_credential_pool_codex_singleton_isolation.py ----
+// ---- each login refreshes with its own pair ----
 
 func codexPoolJWT(account, sub string, exp float64) string {
 	return jwtWithClaims(map[string]any{"exp": int(exp), "sub": sub, "https://api.openai.com/auth": map[string]any{"chatgpt_account_id": account}})
@@ -1234,19 +1234,19 @@ func codexPoolJWT(account, sub string, exp float64) string {
 
 func isoAt(ts float64) string { return time.Unix(int64(ts), 0).UTC().Format("2006-01-02T15:04:05Z") }
 
-func writeCodexStore(t *testing.T, h string, singletonTokens map[string]any, lastRefresh string, manual map[string]any) {
+// auth.json holding two ChatGPT logins of openai-codex, first and manual, each with its own tokens
+func writeCodexStore(t *testing.T, h string, firstTokens map[string]any, lastRefresh string, manual map[string]any) {
 	t.Helper()
-	seeded := map[string]any{"id": "seeded", "label": "device_code", "auth_type": "oauth", "priority": 0, "source": "device_code", "last_refresh": lastRefresh}
-	for k, v := range singletonTokens {
-		seeded[k] = v
+	first := map[string]any{"id": "first", "label": "first", "auth_type": "oauth", "priority": 0, "source": "manual:device_code", "last_refresh": lastRefresh}
+	for k, v := range firstTokens {
+		first[k] = v
 	}
 	manualRow := map[string]any{"id": "manual", "label": "second", "auth_type": "oauth", "priority": 1, "source": "manual:device_code"}
 	for k, v := range manual {
 		manualRow[k] = v
 	}
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openai-codex",
-		"providers":       map[string]any{"openai-codex": map[string]any{"tokens": singletonTokens, "last_refresh": lastRefresh, "auth_mode": "chatgpt"}},
-		"credential_pool": map[string]any{"openai-codex": []any{seeded, manualRow}}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{},
+		"credential_pool": map[string]any{"openai-codex": []any{first, manualRow}}})
 }
 
 func scriptCodexRefresh(t *testing.T, minted, mintedRT string, posted *[]string) {
@@ -1279,21 +1279,19 @@ func TestIndependentManualAccountRefreshesWithItsOwnPair(t *testing.T) {
 	if !ok || refreshed.RefreshToken != "rt-B2" {
 		t.Fatalf("rotation expected: %+v", refreshed)
 	}
-	onDisk := readAuthStore(t, h)
 	manualRow := rowByID(poolRows(t, h, "openai-codex"), "manual")
 	if manualRow["access_token"] != bNew || manualRow["refresh_token"] != "rt-B2" {
 		t.Fatalf("manual row must hold the rotated pair: %v", manualRow)
 	}
-	tokens := onDisk["providers"].(map[string]any)["openai-codex"].(map[string]any)["tokens"].(map[string]any)
-	if tokens["access_token"] != aAT || tokens["refresh_token"] != "rt-A" {
-		t.Fatalf("the singleton must be untouched: %v", tokens)
+	if first := rowByID(poolRows(t, h, "openai-codex"), "first"); first["access_token"] != aAT || first["refresh_token"] != "rt-A" {
+		t.Fatalf("the other login must be untouched: %v", first)
 	}
 }
 
 // ---- test_credential_pool_sole_rotate_recovery.py ----
 
 func codexDeviceEntry(idx int, token, refresh string) map[string]any {
-	return row(map[string]any{"id": "codex-" + string(rune('0'+idx)), "label": "codex-login", "auth_type": "oauth", "priority": idx, "source": "device_code", "access_token": token, "refresh_token": refresh})
+	return row(map[string]any{"id": "codex-" + string(rune('0'+idx)), "label": "codex-login", "auth_type": "oauth", "priority": idx, "source": "manual:device_code", "access_token": token, "refresh_token": refresh})
 }
 
 func TestRevivedSoleEntryIsNoRecovery(t *testing.T) {

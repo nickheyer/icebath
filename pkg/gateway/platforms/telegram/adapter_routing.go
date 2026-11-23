@@ -1,7 +1,6 @@
 package telegram
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"math/big"
@@ -15,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 const (
@@ -90,16 +88,6 @@ func normalizeChatType(chatType any, isForum bool) string {
 	return normalized
 }
 
-// Allowed people decision for the user, nil when the profile allows nobody by list
-func envAllowlistDecision(ctx context.Context, userID string) *bool {
-	allowed := gateway.SettingSet(ctx, settings.TelegramAllowFrom)
-	if len(allowed) == 0 {
-		return nil
-	}
-	decision := allowed["*"] || allowed[userID]
-	return &decision
-}
-
 // Full name of a Telegram user or private chat, first and last name joined by a space
 func fullName(first, last string) string {
 	if last == "" {
@@ -114,24 +102,6 @@ func nonEmpty(text string) *string {
 		return nil
 	}
 	return &text
-}
-
-// Whether the profile's access lists make an early intake decision safe
-func telegramAuthEnvConfigured(ctx context.Context) bool {
-	for _, e := range []settings.Entry{settings.TelegramAllowFrom, settings.TelegramGroupAllowFrom, settings.TelegramGroupAllowedChats} {
-		if len(gateway.SettingList(ctx, e)) > 0 {
-			return true
-		}
-	}
-	if gateway.SettingText(ctx, settings.GatewayAllowAllUsers) != "" {
-		return true
-	}
-	for _, key := range []string{"TELEGRAM_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"} {
-		if pystr.Strip(gateway.PlatformGateEnv(ctx, key, "")) != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // Text of a metadata id as Python str, nil when absent or falsy

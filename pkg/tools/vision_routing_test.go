@@ -208,17 +208,17 @@ func TestCoerceCapabilityBool(t *testing.T) {
 
 func TestSupportsVisionOverridePrecedence(t *testing.T) {
 	cfg := map[string]any{
-		"model":     map[string]any{"provider": "my-local"},
-		"providers": map[string]any{"my-local": map[string]any{"models": map[string]any{"llava": map[string]any{"vision": "true"}}}},
-		"custom_providers": []any{
-			map[string]any{"name": "Other", "models": map[string]any{"qwen-vl": map[string]any{"supports_vision": "false"}}},
+		"model": map[string]any{"provider": "my-local"},
+		"providers": map[string]any{
+			"my-local": map[string]any{"models": map[string]any{"llava": map[string]any{"vision": "true"}}},
+			"other":    map[string]any{"name": "Other", "models": map[string]any{"qwen-vl": map[string]any{"supports_vision": "false"}}},
 		},
 	}
 	if v, ok := supportsVisionOverride(cfg, "custom", "llava", ""); !ok || !v {
 		t.Fatal("providers block through model.provider")
 	}
 	if v, ok := supportsVisionOverride(cfg, "custom", "qwen-vl", "custom:other"); !ok || v {
-		t.Fatal("quoted false must disable through custom_providers")
+		t.Fatal("quoted false must disable through the requested provider's entry")
 	}
 	if _, ok := supportsVisionOverride(cfg, "custom", "unknown", ""); ok {
 		t.Fatal("unset model has no verdict")
@@ -266,9 +266,8 @@ func TestLookupSupportsVisionProbes(t *testing.T) {
 
 func TestResolveInferenceValues(t *testing.T) {
 	cfg := map[string]any{
-		"model":            map[string]any{"provider": "custom:box"},
-		"providers":        map[string]any{"box": map[string]any{"base_url": "http://box:8000/v1", "api_key": "box-key"}},
-		"custom_providers": []any{map[string]any{"name": "Box", "base_url": "http://ignored"}},
+		"model":     map[string]any{"provider": "custom:box"},
+		"providers": map[string]any{"box": map[string]any{"base_url": "http://box:8000/v1", "api_key": "box-key"}},
 	}
 	env := routingEnv(t, nil, map[string]any{"provider": "openrouter", "base_url": "https://openrouter.ai/api/v1", "api_key": func() string { return " minted " }})
 	if got := resolveInferenceBaseURL(env, cfg, "custom"); got != "http://box:8000/v1" {

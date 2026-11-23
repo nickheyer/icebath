@@ -34,7 +34,7 @@ func TestToolKindMapUnknownToolReturnsOtherKind(t *testing.T) {
 
 func TestBuildToolTitleTerminalTitleTruncatesLongCommand(t *testing.T) {
 	title := BuildToolTitle("terminal", obj("command", strings.Repeat("x", 200)))
-	if runeLen(title) >= 120 || !strings.Contains(title, "...") {
+	if runeLen(title) >= 120 || !strings.Contains(title, "…") {
 		t.Fatalf("title %q", title)
 	}
 }

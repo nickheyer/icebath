@@ -16,7 +16,7 @@ func TestManagedOverlayPinsValuesOverUserConfig(t *testing.T) {
 	t.Setenv("PINNED_MODEL", "org/pinned")
 	InvalidateManagedCache()
 	t.Cleanup(InvalidateManagedCache)
-	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("model: ${PINNED_MODEL}\nterminal:\n  backend: docker\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("model:\n  default: ${PINNED_MODEL}\nterminal:\n  backend: docker\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("OPENAI_API_KEY=managed\n"), 0o644); err != nil {
@@ -34,14 +34,14 @@ func TestManagedOverlayPinsValuesOverUserConfig(t *testing.T) {
 	if terminal["backend"] != "docker" || terminal["timeout"] != 5 {
 		t.Fatalf("%v", terminal)
 	}
-	if !IsKeyManaged("model") || IsKeyManaged("model.default") || IsKeyManaged("terminal.timeout") || !IsEnvManaged("OPENAI_API_KEY") || IsEnvManaged("OTHER") {
+	if !IsKeyManaged("model.default") || IsKeyManaged("model") || IsKeyManaged("terminal.timeout") || !IsEnvManaged("OPENAI_API_KEY") || IsEnvManaged("OTHER") {
 		t.Fatal("key queries")
 	}
 	if PinnedTerminalBackend() != "docker" {
 		t.Fatal("pinned backend")
 	}
 	keys := ManagedConfigKeys()
-	if len(keys) != 2 || keys[0] != "model" || keys[1] != "terminal.backend" {
+	if len(keys) != 2 || keys[0] != "model.default" || keys[1] != "terminal.backend" {
 		t.Fatal(keys)
 	}
 	prevHonored := ManagedConfigHonored

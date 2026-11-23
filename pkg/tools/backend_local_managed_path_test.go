@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -230,7 +231,11 @@ func managedLoginSetup(t *testing.T, tmp, profileBody string) (*Env, string) {
 	stubManagedRuntime(t, managed)
 	env := newTestToolEnv(t)
 	env.Config = config.Defaults()
-	env.Config.Set("terminal.shell_init_files", []any{profile})
+	initFile, err := json.Marshal(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeHomeConfig(t, env, "terminal:\n  shell_init_files: ["+string(initFile)+"]\n")
 	return env, managed
 }
 

@@ -362,7 +362,7 @@ func stagedAttachment(t *testing.T, tmp, backend, subdir, name string) (context.
 	payload := filepath.Join(icebathHome, subdir, name)
 	os.MkdirAll(filepath.Dir(payload), 0o755)
 	t.Setenv("ICEBATH_HOME", icebathHome)
-	t.Setenv("TERMINAL_ENV", backend)
+	setSettingsForTest(t, map[string]any{"terminal.backend": backend})
 	ClearContextReferenceProvidersForTests()
 	return context.Background(), payload
 }
@@ -403,21 +403,21 @@ func TestBinaryReferenceBlockKeepsHostPathOnLocalBackend(t *testing.T) {
 
 const sshWorkspace = "/srv/repos"
 
-// Stages a file under a gateway data home outside the workspace, the ssh topology
-func stageOutsideWorkspace(t *testing.T, tmp, subdir, name string) (context.Context, string) {
+// Stages a file under a gateway data home outside the workspace, the ssh topology, for the given backend
+func stageOutsideWorkspace(t *testing.T, tmp, backend, subdir, name string) (context.Context, string) {
 	t.Helper()
 	gatewayHome := filepath.Join(tmp, "gateway-data")
 	payload := filepath.Join(gatewayHome, subdir, name)
 	os.MkdirAll(filepath.Dir(payload), 0o755)
 	t.Setenv("ICEBATH_HOME", gatewayHome)
-	t.Setenv("TERMINAL_ENV", "ssh")
+	setSettingsForTest(t, map[string]any{"terminal.backend": backend})
 	ClearContextReferenceProvidersForTests()
 	return context.Background(), payload
 }
 
 func TestSshBackendStagedTextAttachmentStillExpands(t *testing.T) {
 	tmp := t.TempDir()
-	ctx, payload := stageOutsideWorkspace(t, tmp, "composer-pastes", "Pasted content (3-5.4 KB).txt")
+	ctx, payload := stageOutsideWorkspace(t, tmp, "ssh", "composer-pastes", "Pasted content (3-5.4 KB).txt")
 	writeText(t, payload, "pasted body\n")
 	result := preprocessRooted(t, ctx, "Summarize @file:"+state.FormatReferenceValue(payload), sshWorkspace, sshWorkspace, 100_000)
 	if !result.Expanded || len(result.Warnings) != 0 || !strings.Contains(result.Message, "pasted body") {
@@ -427,7 +427,7 @@ func TestSshBackendStagedTextAttachmentStillExpands(t *testing.T) {
 
 func TestSshBackendStagedBinaryAttachmentPointsAtTheSyncedRemotePath(t *testing.T) {
 	tmp := t.TempDir()
-	ctx, payload := stageOutsideWorkspace(t, tmp, "attachments", "archive.zip")
+	ctx, payload := stageOutsideWorkspace(t, tmp, "ssh", "attachments", "archive.zip")
 	os.WriteFile(payload, []byte("PK\x03\x04binary-zip-bytes"), 0o644)
 	result := preprocessRooted(t, ctx, "Read the attachment @file:"+payload, sshWorkspace, sshWorkspace, 100_000)
 	if !result.Expanded || !strings.Contains(result.Message, "binary file, not inlined") || !strings.Contains(result.Message, "~/.icebath/attachments/archive.zip") {
@@ -438,7 +438,7 @@ func TestSshBackendStagedBinaryAttachmentPointsAtTheSyncedRemotePath(t *testing.
 func TestRefOutsideWorkspaceAndStagingDirsIsStillRefused(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(tmp, "gateway-data"))
-	t.Setenv("TERMINAL_ENV", "ssh")
+	setSettingsForTest(t, map[string]any{"terminal.backend": "ssh"})
 	ClearContextReferenceProvidersForTests()
 	secret := filepath.Join(tmp, "elsewhere", "notes.txt")
 	writeText(t, secret, "not-for-the-agent\n")
@@ -456,9 +456,8 @@ func TestRefOutsideWorkspaceAndStagingDirsIsStillRefused(t *testing.T) {
 
 func TestLocalBackendStagedAttachmentKeepsTheHostPath(t *testing.T) {
 	tmp := t.TempDir()
-	ctx, payload := stageOutsideWorkspace(t, tmp, "attachments", "archive.zip")
+	ctx, payload := stageOutsideWorkspace(t, tmp, "local", "attachments", "archive.zip")
 	os.WriteFile(payload, []byte("PK\x03\x04binary-zip-bytes"), 0o644)
-	t.Setenv("TERMINAL_ENV", "local")
 	workspace := filepath.Join(tmp, "workspace")
 	os.MkdirAll(workspace, 0o755)
 	result := preprocessRooted(t, ctx, "Read the attachment @file:"+payload, workspace, workspace, 100_000)

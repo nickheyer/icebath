@@ -783,12 +783,8 @@ func (a *TelegramAdapter) handleInlineQuery(ctx context.Context, update *Update)
 	if iq.From != nil && iq.From.ID != 0 {
 		userID = pystr.Strip(strconv.FormatInt(iq.From.ID, 10))
 	}
-	var userName *string
-	if iq.From != nil && iq.From.Username != "" {
-		userName = &iq.From.Username
-	}
 	private := "private"
-	authorized := userID != "" && a.core.isCallbackUserAuthorized(ctx, userID, &userID, &private, nil, userName)
+	authorized := userID != "" && a.core.isCallbackUserAuthorized(userID, &userID, &private, nil)
 	if !authorized {
 		a.AcceptUpdate(ctx)
 		if b == nil {
@@ -821,12 +817,11 @@ func (a *TelegramAdapter) handleInlineQuery(ctx context.Context, update *Update)
 	return nil
 }
 
-// Chat, thread and user context of a button tap for the callback auth gate
+// Chat and thread context of a button tap for the callback auth gate
 type callbackCtx struct {
 	chatID   *string
 	chatType *string
 	threadID *string
-	userName *string
 }
 
 // Callback auth context of a tap
@@ -845,15 +840,12 @@ func newCallbackCtx(q callbackQuery) callbackCtx {
 		chatType := string(q.q.Message.InaccessibleMessage.Chat.Type)
 		cb.chatID, cb.chatType = &chatID, &chatType
 	}
-	if name := q.firstName(); name != "" {
-		cb.userName = &name
-	}
 	return cb
 }
 
-// Gates a tap on the callback allowlist, answering the denial text when refused
+// Gates a tap on the background service's access check, answering the denial text when refused
 func (a *TelegramAdapter) callbackAuthorized(ctx context.Context, q callbackQuery, cb callbackCtx, denial string) (bool, error) {
-	if a.core.isCallbackUserAuthorized(ctx, strconv.FormatInt(q.q.From.ID, 10), cb.chatID, cb.chatType, cb.threadID, cb.userName) {
+	if a.core.isCallbackUserAuthorized(strconv.FormatInt(q.q.From.ID, 10), cb.chatID, cb.chatType, cb.threadID) {
 		return true, nil
 	}
 	return false, q.answer(ctx, denial)

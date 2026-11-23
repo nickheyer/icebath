@@ -72,7 +72,7 @@ func newConfigLoadersOwner(t *testing.T) *configLoadersOwner {
 		t.Fatal(err)
 	}
 	runner.providerRouting = map[string]any{"only": []any{"DaemonStart"}}
-	authority, err := gateway.InitializeSessionAuthority(o.ctx, runner, "default", "owner", nil, true)
+	authority, err := gateway.InitializeSessionAuthority(o.ctx, runner, storeHome(t, runner.SessionDB(o.ctx)), "owner", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}

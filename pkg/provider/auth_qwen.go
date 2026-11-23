@@ -153,27 +153,6 @@ func tokensOr(tokens map[string]any, key string, fallback any) any {
 	return fallback
 }
 
-// Makes qwen-oauth the active provider with a minimal state, the tokens staying in the Qwen CLI file
-func markQwenOAuthActive(env PoolEnv, creds map[string]any) error {
-	unlock, err := env.Store.Lock(AuthLockTimeout)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	data, err := env.Store.Load()
-	if err != nil {
-		return err
-	}
-	state := map[string]any{}
-	if pyTruthy(creds["base_url"]) {
-		state["base_url"] = pyStr(creds["base_url"])
-	}
-	if err := env.Store.StoreProviderState(data, "qwen-oauth", state, true); err != nil {
-		return err
-	}
-	return env.Store.Save(data)
-}
-
 // Qwen runtime credentials from the Qwen CLI file, refreshed when forced or within the skew of expiry
 func resolveQwenRuntimeCredentialsWith(env PoolEnv, forceRefresh, refreshIfExpiring bool, skew time.Duration) (map[string]any, error) {
 	tokens, err := readQwenCLITokens()

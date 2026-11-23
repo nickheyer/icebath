@@ -176,6 +176,15 @@ var PluginsHostLauncher = Register(&List{Meta: Meta{Key: "plugins.host.launcher"
 // Longest a single plugin may take to load
 var PluginsLoadTimeoutSeconds = Register(&Duration{Meta: Meta{Key: "plugins.load_timeout_seconds", Label: "Plugin load limit", Short: "Longest a single plugin may take to load.", Help: "Zero loads plugins inline with no limit. Capped at 10 minutes.", Group: GroupTools, Order: 1560, Advanced: true}, Default: 10 * time.Second, Min: at(time.Duration(0)), Max: at(10 * time.Minute)})
 
+// Plugins switched on by name
+var PluginsEnabled = Register(&List{Meta: Meta{Key: "plugins.enabled", Label: "Enabled plugins", Short: "Plugins you switched on, by name.", Help: "The plugins commands and /plugins keep this list.", Group: GroupTools, Order: 1560, Advanced: true, Apply: Restart}})
+
+// Plugins switched off by name
+var PluginsDisabled = Register(&List{Meta: Meta{Key: "plugins.disabled", Label: "Disabled plugins", Short: "Plugins you switched off, by name.", Help: "The plugins commands and /plugins keep this list.", Group: GroupTools, Order: 1570, Advanced: true, Apply: Restart}})
+
+// Each plugin's own state and settings, by plugin
+var PluginsEntries = Register(&Map{Meta: Meta{Key: "plugins.entries", Label: "Plugin entries", Short: "Each plugin's own state and settings, by plugin name.", Group: GroupTools, Order: 1580, Advanced: true, Apply: Restart}})
+
 // Your own slash commands, each running a shell command or alias
 var QuickCommands = Register(&Map{Meta: Meta{Key: "quick_commands", Label: "Quick commands", Short: "Your own slash commands, each running a shell command or alias.", Help: "A mapping of command name to its definition.", Group: GroupTools, Order: 1570, Advanced: true}})
 

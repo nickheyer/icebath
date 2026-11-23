@@ -66,20 +66,6 @@ func denyConfigReads(t *testing.T, path string) {
 	t.Cleanup(func() { os.Chmod(path, 0o600) })
 }
 
-func TestMissingConfigFieldsIgnoreUserNamedPresetsButCheckSchemaOptions(t *testing.T) {
-	facadeHome(t, "")
-	missing := map[string]bool{}
-	for _, f := range MissingConfigFields(map[string]any{"moa": map[string]any{"presets": map[string]any{"keep_a": map[string]any{}}}, "terminal": map[string]any{}}) {
-		missing[f.Key] = true
-		if strings.HasPrefix(f.Key, "moa.presets.") {
-			t.Fatalf("named preset compared against the schema: %s", f.Key)
-		}
-	}
-	if !missing["terminal.backend"] {
-		t.Fatal("terminal.backend should be reported missing")
-	}
-}
-
 func TestUserConfigOverridesDefaultAndEnvRefsExpand(t *testing.T) {
 	h, _ := facadeHome(t, "display:\n  skin: taro\nmodel:\n  default: ${FACADE_MODEL}\n")
 	t.Setenv("FACADE_MODEL", "org/expanded")
@@ -311,7 +297,7 @@ func TestValidateLoadedConfigStructureReportsStorageFailures(t *testing.T) {
 	if issue := ConfigLoadIssue(io.ErrUnexpectedEOF); issue.Message != "Could not load config.yaml" {
 		t.Fatalf("issue %+v", issue)
 	}
-	h, _ := facadeHome(t, "custom_providers: nope\n")
+	h, _ := facadeHome(t, "base_url: https://lab.example/v1\n")
 	if issues := ValidateLoadedConfigStructure(context.Background(), h, facadeLookup, nil); len(issues) == 0 {
 		t.Fatal("structure issues of the loaded config were not reported")
 	}

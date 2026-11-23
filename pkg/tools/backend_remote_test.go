@@ -346,7 +346,7 @@ func TestVercelBackendRequirements(t *testing.T) {
 	if err := b.CheckRequirements(env, map[string]any{"vercel_runtime": "node18"}); err == nil || !strings.Contains(err.Error(), "runtime 'node18' is not supported") {
 		t.Fatal(err)
 	}
-	if err := b.CheckRequirements(env, map[string]any{"container_disk": 1024}); err == nil || !strings.Contains(err.Error(), "custom TERMINAL_CONTAINER_DISK=1024") {
+	if err := b.CheckRequirements(env, map[string]any{"container_disk": 1024}); err == nil || !strings.Contains(err.Error(), "terminal.container_disk is 1024") {
 		t.Fatal(err)
 	}
 	if err := b.CheckRequirements(env, map[string]any{}); err == nil || !strings.Contains(err.Error(), "no supported auth configuration was found") {

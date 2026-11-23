@@ -4,26 +4,28 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
+	"reflect"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Home with a default profile and a routed profile b, each with its own .env, under an active multiplexer
-func multiplexAllowlistWorld(t *testing.T, profileEnv string) (root, prof string) {
+// Home with a default profile allowing default-admin on discord and a routed profile b with its own config.yaml, under an active multiplexer
+func multiplexAllowlistWorld(t *testing.T, profileConfig string) (root, prof string) {
 	t.Helper()
 	root = filepath.Join(t.TempDir(), ".icebath")
 	prof = filepath.Join(root, "profiles", "b")
 	if err := os.MkdirAll(prof, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(prof, ".env"), []byte(profileEnv), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(prof, "config.yaml"), []byte(profileConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "config.yaml"), []byte("discord:\n  allow_from: [default-admin]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", root)
-	t.Setenv("DISCORD_ALLOWED_USERS", "default-admin")
 	bundled := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(bundled, "platforms", "discord"), 0o755); err != nil {
 		t.Fatal(err)
@@ -60,47 +62,46 @@ func swapBundledEnv(t *testing.T, directory, prefix string, rows BundledEnvRows)
 	})
 }
 
-func readTrimmed(t *testing.T, path string) string {
+// Discord allow list a home's config.yaml holds
+func storedDiscordAllowlist(t *testing.T, h string) []string {
 	t.Helper()
-	raw, err := os.ReadFile(path)
+	doc, err := config.ReadDocument(filepath.Join(h, "config.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.TrimSpace(string(raw))
+	value, _ := config.CfgGet(doc, "discord", "allow_from")
+	return config.AsStrings(value)
 }
 
 func TestRoutedPairingGrantMirrorStaysInProfileScope(t *testing.T) {
-	root, prof := multiplexAllowlistWorld(t, "DISCORD_ALLOWED_USERS=b-admin\n")
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("DISCORD_ALLOWED_USERS=default-admin\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	root, prof := multiplexAllowlistWorld(t, "discord:\n  allow_from: [b-admin]\n")
 	scoped := ProfileRuntimeScope(context.Background(), prof, true)
 	if err := syncAllowlistAdd(scoped, "discord", "111"); err != nil {
 		t.Fatal(err)
 	}
-	if value, _, err := provider.GetSecret(scoped, "DISCORD_ALLOWED_USERS"); err != nil || value != "b-admin,111" {
+	if value, err := readAllowlistEnv(scoped, "DISCORD_ALLOWED_USERS"); err != nil || value != "b-admin,111" {
 		t.Fatalf("scoped allowlist = %q %v", value, err)
 	}
-	if got := readTrimmed(t, filepath.Join(prof, ".env")); got != "DISCORD_ALLOWED_USERS=b-admin,111" {
-		t.Fatalf("profile .env = %q", got)
+	if got := storedDiscordAllowlist(t, prof); !reflect.DeepEqual(got, []string{"b-admin", "111"}) {
+		t.Fatalf("profile allow list = %v", got)
 	}
-	if got := readTrimmed(t, filepath.Join(root, ".env")); got != "DISCORD_ALLOWED_USERS=default-admin" {
-		t.Fatalf("default .env = %q", got)
-	}
-	if got := os.Getenv("DISCORD_ALLOWED_USERS"); got != "default-admin" {
-		t.Fatalf("process env = %q", got)
+	if got := storedDiscordAllowlist(t, root); !reflect.DeepEqual(got, []string{"default-admin"}) {
+		t.Fatalf("default allow list = %v", got)
 	}
 	provider.SetMultiplexActive(false)
-	if err := config.SaveEnvValueContext(context.Background(), root, "DISCORD_ALLOWED_USERS", "default-admin,222"); err != nil {
+	if err := syncAllowlistAdd(context.Background(), "discord", "222"); err != nil {
 		t.Fatal(err)
 	}
-	if got := os.Getenv("DISCORD_ALLOWED_USERS"); got != "default-admin,222" {
-		t.Fatalf("process env after a single profile save = %q", got)
+	if got := storedDiscordAllowlist(t, root); !reflect.DeepEqual(got, []string{"default-admin", "222"}) {
+		t.Fatalf("default allow list after a single profile grant = %v", got)
+	}
+	if got := storedDiscordAllowlist(t, prof); !reflect.DeepEqual(got, []string{"b-admin", "111"}) {
+		t.Fatalf("profile allow list after the default profile's grant = %v", got)
 	}
 }
 
-func TestAllowlistScopedMissConfiguresNothing(t *testing.T) {
-	_, prof := multiplexAllowlistWorld(t, "OTHER_KEY=x\n")
+func TestAllowlistUnsetInTheProfileConfiguresNothing(t *testing.T) {
+	root, prof := multiplexAllowlistWorld(t, "display:\n  personality: kawaii\n")
 	scoped := ProfileRuntimeScope(context.Background(), prof, true)
 	if value, err := readAllowlistEnv(scoped, "DISCORD_ALLOWED_USERS"); err != nil || value != "" {
 		t.Fatalf("scoped read = %q %v", value, err)
@@ -108,39 +109,23 @@ func TestAllowlistScopedMissConfiguresNothing(t *testing.T) {
 	if err := syncAllowlistAdd(scoped, "discord", "111"); err != nil {
 		t.Fatal(err)
 	}
-	if got := readTrimmed(t, filepath.Join(prof, ".env")); got != "OTHER_KEY=x" {
-		t.Fatalf("profile .env = %q", got)
+	if got := storedDiscordAllowlist(t, prof); len(got) != 0 {
+		t.Fatalf("profile allow list = %v", got)
 	}
-	if got := os.Getenv("DISCORD_ALLOWED_USERS"); got != "default-admin" {
-		t.Fatalf("process env = %q", got)
+	if got := storedDiscordAllowlist(t, root); !reflect.DeepEqual(got, []string{"default-admin"}) {
+		t.Fatalf("default allow list = %v", got)
 	}
 }
 
-func TestPairingAllowlistRead(t *testing.T) {
-	multiplexed := func(t *testing.T, envValue string) context.Context {
-		t.Helper()
-		t.Setenv("ICEBATH_HOME", t.TempDir())
-		t.Setenv("TELEGRAM_ALLOWED_USERS", envValue)
-		wasActive := provider.MultiplexProcess()
-		provider.SetMultiplexActive(true)
-		t.Cleanup(func() { provider.SetMultiplexActive(wasActive) })
-		return context.Background()
+func TestPairingAllowlistReadsTheProfileOfTheScope(t *testing.T) {
+	root, prof := multiplexAllowlistWorld(t, "discord:\n  allow_from: [b-admin]\n")
+	if value, err := readAllowlistEnv(ProfileRuntimeScope(context.Background(), prof, true), "DISCORD_ALLOWED_USERS"); err != nil || value != "b-admin" {
+		t.Fatalf("scoped read = %q %v", value, err)
 	}
-	t.Run("test_scoped_value_wins", func(t *testing.T) {
-		ctx := provider.WithSecretScope(multiplexed(t, "111"), map[string]string{"TELEGRAM_ALLOWED_USERS": "222"}, "")
-		if value, err := readAllowlistEnv(ctx, "TELEGRAM_ALLOWED_USERS"); err != nil || value != "222" {
-			t.Fatalf("scoped read = %q %v", value, err)
-		}
-	})
-	t.Run("test_scoped_miss_no_borrow", func(t *testing.T) {
-		ctx := provider.WithSecretScope(multiplexed(t, "other-profile"), map[string]string{"UNRELATED": "x"}, "")
-		if value, err := readAllowlistEnv(ctx, "TELEGRAM_ALLOWED_USERS"); err != nil || value != "" {
-			t.Fatalf("scoped miss = %q %v", value, err)
-		}
-	})
-	t.Run("test_unscoped_multiplex_falls_back_to_env", func(t *testing.T) {
-		if value, err := readAllowlistEnv(multiplexed(t, "own-env"), "TELEGRAM_ALLOWED_USERS"); err != nil || value != "own-env" {
-			t.Fatalf("unscoped read = %q %v", value, err)
-		}
-	})
+	if value, err := readAllowlistEnv(ProfileRuntimeScope(context.Background(), root, true), "DISCORD_ALLOWED_USERS"); err != nil || value != "default-admin" {
+		t.Fatalf("default profile read = %q %v", value, err)
+	}
+	if value, err := readAllowlistEnv(context.Background(), "DISCORD_ALLOWED_USERS"); err != nil || value != "default-admin" {
+		t.Fatalf("unscoped read = %q %v", value, err)
+	}
 }

@@ -260,7 +260,7 @@ func TestRestorePrimaryRuntimeRestoreClearsFallbackPoolWhenPrimaryPoolReloadFail
 }
 
 func TestRestorePrimaryRuntimeRestoreSwapsMatchingCustomPoolEntry(t *testing.T) {
-	a := newRestoreAgent(t, "custom_providers:\n  - name: myllm\n    base_url: https://my-llm.example.com/v1\n", nil, "custom", restoreBaseURL, nil)
+	a := newRestoreAgent(t, "providers:\n  myllm:\n    base_url: "+restoreBaseURL+"\n", nil, "custom", restoreBaseURL, nil)
 	a.fallbackActivated = true
 	a.credentialPool = restorePool(a, "custom:myllm", provider.PooledCredential{Provider: "custom:myllm", ID: "custom-entry", Label: "myllm",
 		AccessToken: "custom-key", BaseURL: restoreBaseURL})
@@ -274,8 +274,8 @@ func TestRestorePrimaryRuntimeRestoreSwapsMatchingCustomPoolEntry(t *testing.T) 
 }
 
 func TestRestorePrimaryRuntimeRestoreReloadsNamedCustomPoolByScopedKey(t *testing.T) {
-	cfg := "custom_providers:\n  - name: Legacy Provider\n    base_url: https://legacy.example/v1\n" +
-		"providers:\n  gemini-no-filter:\n    name: Gemini Display\n    api: https://generativelanguage.googleapis.com/v1beta\n"
+	cfg := "providers:\n  another-provider:\n    base_url: https://another.example/v1\n" +
+		"  gemini-no-filter:\n    name: Gemini Display\n    base_url: https://generativelanguage.googleapis.com/v1beta\n"
 	a := newRestoreAgent(t, cfg, nil, "custom:gemini-no-filter", "https://generativelanguage.googleapis.com/v1beta", nil)
 	a.fallbackActivated = true
 	a.credentialPool = restorePool(a, "openrouter")
@@ -298,7 +298,7 @@ func TestRestorePrimaryRuntimeRestoreReloadsNamedCustomPoolByScopedKey(t *testin
 
 func TestRestorePrimaryRuntimeRestoreNamedCustomPoolWrongEndpointFailsClosed(t *testing.T) {
 	a := newRestoreAgent(t, "", nil, "gemini-no-filter", "https://fallback.example/v1", nil)
-	cfg := "providers:\n  gemini-no-filter:\n    name: Gemini No Filter\n    provider_key: gemini-no-filter\n    base_url: https://generativelanguage.googleapis.com/v1beta\n"
+	cfg := "providers:\n  gemini-no-filter:\n    name: Gemini No Filter\n    base_url: https://generativelanguage.googleapis.com/v1beta\n"
 	if err := os.WriteFile(filepath.Join(a.env.Home, "config.yaml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}

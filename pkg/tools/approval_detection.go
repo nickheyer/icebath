@@ -215,13 +215,6 @@ var ContentRuleDescriptions = setOf(
 	InvisibleUnicodeDescription,
 )
 
-var removedPatternKeyAliases = [][2]string{
-	{"script execution via -e/-c flag", `(python[23]?|perl|ruby|node)\s+-[ec]\s+`},
-	{"script execution via heredoc", `(python[23]?|perl|ruby|node)\s+<<`},
-}
-
-const oldBranchKey = `git\s+branch\s+-D`
-
 type compiledPattern struct {
 	re          *regexp2.Regexp
 	description string
@@ -231,7 +224,6 @@ type compiledPattern struct {
 var (
 	hardlineCompiled  []compiledPattern
 	dangerousCompiled []compiledPattern
-	patternKeyAliases = map[string]map[string]bool{}
 )
 
 var unicodeEscapeRe = regexp.MustCompile(`\\U[0-9a-fA-F]{8}|\\u[0-9a-fA-F]{4}`)
@@ -255,54 +247,13 @@ func pyRegexp2(src string) *regexp2.Regexp {
 	return regexp2.MustCompile(pyPatternToRegexp2(src), regexp2.IgnoreCase|regexp2.Singleline)
 }
 
-// Legacy approval key derived from the pattern text
-func legacyPatternKey(p string) string {
-	if strings.Contains(p, `\b`) {
-		return strings.Split(p, `\b`)[1]
-	}
-	r := []rune(p)
-	if len(r) > 20 {
-		r = r[:20]
-	}
-	return string(r)
-}
-
-func addKeyAlias(a, b string) {
-	if patternKeyAliases[a] == nil {
-		patternKeyAliases[a] = map[string]bool{}
-	}
-	patternKeyAliases[a][a] = true
-	patternKeyAliases[a][b] = true
-}
-
 func init() {
 	for _, p := range HardlinePatterns {
 		hardlineCompiled = append(hardlineCompiled, compiledPattern{pyRegexp2(p.Pattern), p.Description, quoteMaskedHardlineDescriptions[p.Description]})
 	}
 	for _, p := range DangerousPatterns {
 		dangerousCompiled = append(dangerousCompiled, compiledPattern{pyRegexp2(p.Pattern), p.Description, false})
-		legacy := legacyPatternKey(p.Pattern)
-		addKeyAlias(p.Description, legacy)
-		addKeyAlias(legacy, p.Description)
 	}
-	for _, pair := range removedPatternKeyAliases {
-		addKeyAlias(pair[0], pair[1])
-		addKeyAlias(pair[1], pair[0])
-	}
-	addKeyAlias("git branch force delete", oldBranchKey)
-	addKeyAlias(oldBranchKey, "git branch force delete")
-}
-
-// ApprovalKeyAliases lists every approval key a pattern may be stored under
-func ApprovalKeyAliases(patternKey string) map[string]bool {
-	if set, ok := patternKeyAliases[patternKey]; ok {
-		out := make(map[string]bool, len(set))
-		for k := range set {
-			out[k] = true
-		}
-		return out
-	}
-	return map[string]bool{patternKey: true}
 }
 
 var hiddenVariationSelectorRe = regexp2.MustCompile(pyPatternToRegexp2(`(?<![` + emojiPresentBases + `])(?!(?<=[0-9#*])️⃣)[︀-️\U000e0100-\U000e01ef]`))

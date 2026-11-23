@@ -467,11 +467,12 @@ func TestSaveCustomProviderUsesProvidedName(t *testing.T) {
 	if err := saveCustomProvider(pickerCaseRun(t, ctx, h, out), "http://localhost:11434/v1", "", "", 0, "Ollama", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	entries, _ := readConfig(t, h)["custom_providers"].([]any)
-	if len(entries) != 1 || entries[0].(map[string]any)["name"] != "Ollama" {
+	entries, _ := readConfig(t, h)["providers"].(map[string]any)
+	entry, _ := entries["ollama"].(map[string]any)
+	if len(entries) != 1 || entry["name"] != "Ollama" || entry["base_url"] != "http://localhost:11434/v1" {
 		t.Fatalf("entries %v", entries)
 	}
-	if out.String() != "  💾 Saved to custom providers as \"Ollama\" (edit in config.yaml)\n" {
+	if out.String() != "  💾 Saved to providers as \"ollama\" (edit in config.yaml)\n" {
 		t.Fatalf("out %q", out.String())
 	}
 }
@@ -482,7 +483,8 @@ func TestSaveCustomProviderReferencesTheKeyInsteadOfInliningIt(t *testing.T) {
 	if err := saveCustomProvider(pickerCaseRun(t, ctx, h, out), "http://localhost:11434/v1", "sk-secret", "", 0, "Ollama", "", "ICEBATH_CUSTOM_LOCALHOST_11434_API_KEY"); err != nil {
 		t.Fatal(err)
 	}
-	entry := readConfig(t, h)["custom_providers"].([]any)[0].(map[string]any)
+	entries, _ := readConfig(t, h)["providers"].(map[string]any)
+	entry, _ := entries["ollama"].(map[string]any)
 	if entry["key_env"] != "ICEBATH_CUSTOM_LOCALHOST_11434_API_KEY" {
 		t.Fatalf("entry %v", entry)
 	}

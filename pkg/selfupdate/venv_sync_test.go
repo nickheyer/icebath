@@ -537,20 +537,6 @@ func TestSealedStampReaderHonorsExternalInstallRoot(t *testing.T) {
 	}
 }
 
-func TestDeveloperCheckoutSkipsManagedRuntimeWarning(t *testing.T) {
-	checkout := filepath.Join(t.TempDir(), "checkout")
-	if err := os.MkdirAll(filepath.Join(checkout, ".git"), 0o777); err != nil {
-		t.Fatal(err)
-	}
-	vsSwap(t, &checkRuntimeActivate, func(context.Context, bool) ([]string, error) {
-		t.Fatal("dev checkout activated managed runtime")
-		return nil, nil
-	})
-	if problem, err := CheckRuntime(context.Background(), checkout); problem != "" || err != nil {
-		t.Fatalf("dev checkout %q %v", problem, err)
-	}
-}
-
 func TestCompletionRetryBackoffAndCap(t *testing.T) {
 	tmp := t.TempDir()
 	vsSwap(t, &completionPendingPath, func(context.Context, string) string { return filepath.Join(tmp, "source-completion-pending") })

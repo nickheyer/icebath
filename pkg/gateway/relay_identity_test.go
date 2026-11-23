@@ -86,29 +86,6 @@ func TestRelayURLOnlyActivationFrontsTheEnvPlatforms(t *testing.T) {
 	}
 }
 
-func TestLegacyJSONDisableIsAdvisoryLikeOtherPlatforms(t *testing.T) {
-	h := relayProfile(t)
-	if err := os.WriteFile(filepath.Join(h, "gateway.json"), []byte(`{"platforms": {"relay": {"enabled": false}, "telegram": {"enabled": false}}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("TELEGRAM_BOT_TOKEN", "native-telegram-test-token")
-	t.Setenv("GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS", "true")
-	ctx := context.Background()
-	cfg, err := LoadGatewayConfig(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if disabled, err := RelayExplicitlyDisabled(ctx); err != nil || disabled {
-		t.Fatalf("legacy json must stay advisory %v %v", disabled, err)
-	}
-	if relay := cfg.Platforms[PlatformRelay]; relay == nil || !relay.Enabled {
-		t.Fatalf("loader must keep relay enabled %+v", relay)
-	}
-	if telegram := cfg.Platforms[PlatformTelegram]; telegram == nil || !telegram.Enabled {
-		t.Fatalf("loader must keep telegram enabled %+v", telegram)
-	}
-}
-
 func TestMalformedUserYAMLDropsTheYAMLLayerForBothReaders(t *testing.T) {
 	h := relayProfile(t)
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("platforms: [\n"), 0o644); err != nil {

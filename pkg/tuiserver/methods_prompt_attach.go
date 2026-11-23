@@ -40,34 +40,23 @@ func ptrInt64(n int) *int64 {
 	return &v
 }
 
-// Detects a dropped path in typed text, queuing an image or describing a file
-func inputDetectDrop(ctx context.Context, rid any, params map[string]any) map[string]any {
-	session, errResp := sessNowait(ctx, params, rid)
-	if errResp != nil {
-		return errResp
+// Detects a dropped path in typed text and describes its file as a mention the model can open by path, an image with its size
+func inputDetectDrop(_ context.Context, rid any, params map[string]any) map[string]any {
+	p, err := tuigateway.InputDetectDrop.Params(params)
+	if err != nil {
+		return rpcErr(rid, 4000, err.Error(), nil)
 	}
-	text := ""
-	if truthy(params["text"]) {
-		text = strOr(params["text"])
-	}
-	dropped := filedrop.DetectFileDrop(text)
+	dropped := filedrop.DetectFileDrop(p.Text, p.Cwd)
 	if dropped == nil {
 		return ok(rid, tuigateway.Plain(tuigateway.InputDetectDropResult{}))
-	}
-	if dropped.IsImage {
-		session.Set("attached_images", append(stringList(session.Get("attached_images")), dropped.Path))
-		shown := dropped.Remainder
-		if shown == "" {
-			shown = "[User attached image: " + pypath.Name(dropped.Path) + "]"
-		}
-		count := int64(len(stringList(session.Get("attached_images"))))
-		name, width, height, tokens := imageSize(dropped.Path)
-		return ok(rid, tuigateway.Plain(tuigateway.InputDetectDropResult{Matched: true, IsImage: true, Path: dropped.Path, Count: &count, Text: shown,
-			Name: name, Width: width, Height: height, TokenEstimate: tokens}))
 	}
 	shown := "[User attached file: " + dropped.Path + "]"
 	if dropped.Remainder != "" {
 		shown += "\n" + dropped.Remainder
 	}
-	return ok(rid, tuigateway.Plain(tuigateway.InputDetectDropResult{Matched: true, Path: dropped.Path, Name: pypath.Name(dropped.Path), Text: shown}))
+	result := tuigateway.InputDetectDropResult{Matched: true, IsImage: dropped.IsImage, Path: dropped.Path, Name: pypath.Name(dropped.Path), Text: shown}
+	if dropped.IsImage {
+		_, result.Width, result.Height, result.TokenEstimate = imageSize(dropped.Path)
+	}
+	return ok(rid, tuigateway.Plain(result))
 }

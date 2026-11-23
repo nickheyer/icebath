@@ -158,15 +158,15 @@ func cancelBackgroundReviewForLiveTurn(a *AIAgent) {
 // Cancels the running review with the given reason and waits a bounded time, then lets the caller proceed
 func (a *AIAgent) CancelBackgroundReview(message, toolReason string) {
 	var run *backgroundReviewRun
-	var legacy *AIAgent
+	var tracked *AIAgent
 	withOptionalLock(a.backgroundReviewLock, func() {
 		run = currentBackgroundReviewRun(a)
-		legacy = a.backgroundReviewAgent
+		tracked = a.backgroundReviewAgent
 	})
 	var reviewAgent any
 	if run == nil {
-		if legacy != nil {
-			reviewAgent = legacy
+		if tracked != nil {
+			reviewAgent = tracked
 		}
 	} else {
 		reviewAgent = run.cancel()

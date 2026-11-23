@@ -95,7 +95,6 @@ func TestNoneCommandReturnsCleanError(t *testing.T) {
 func TestGenericExceptionResultRedactsErrorAndTraceback(t *testing.T) {
 	secret := "sk-proj-AbCdEf1234567890SecretValue999"
 	env := newTerminalTestEnv(t, "")
-	env.Secrets.Set("ICEBATH_REDACT_SECRETS", "1")
 	envConfigFn = func(*Env) (map[string]any, error) { return nil, errors.New("connect failed OPENAI_API_KEY=" + secret) }
 	r := runTerminal(t, env, TerminalRequest{Command: "echo hi"})
 	if r["status"] != "error" || strings.Contains(resultString(r, "error"), secret) || strings.Contains(resultString(r, "traceback"), secret) {
@@ -107,8 +106,7 @@ func TestGenericExceptionResultRedactsErrorAndTraceback(t *testing.T) {
 func TestDegradedFailModeResultRedactsErrorAndTraceback(t *testing.T) {
 	secret := "sk-proj-AbCdEf1234567890SecretValue999"
 	env := newTerminalTestEnv(t, "")
-	env.Secrets.Set("ICEBATH_REDACT_SECRETS", "1")
-	t.Setenv("TERMINAL_DEGRADED_MODE", "fail")
+	writeHomeConfig(t, env, "terminal:\n  degraded_mode: fail\n")
 	ResetTerminalScopeCache()
 	envConfigFn = func(*Env) (map[string]any, error) {
 		return nil, NewEnvironmentConnectionError("ssh auth failed TOKEN="+secret, "retry later")
@@ -186,7 +184,7 @@ func TestNonzeroExitAndCommandNotFoundAreNotDegraded(t *testing.T) {
 
 func TestFailModeReturnsErrorWithRetryHintAndNoStack(t *testing.T) {
 	env := degradedEnv(t)
-	t.Setenv("TERMINAL_DEGRADED_MODE", "fail")
+	writeHomeConfig(t, env, "terminal:\n  degraded_mode: fail\n")
 	ResetTerminalScopeCache()
 	r := runTerminal(t, env, TerminalRequest{Command: "echo hi", TaskID: "t-fail"})
 	if r["status"] != "error" || resultHas(r, "traceback") || resultString(r, "retry_hint") == "" {
@@ -197,7 +195,7 @@ func TestFailModeReturnsErrorWithRetryHintAndNoStack(t *testing.T) {
 
 func TestInvalidDegradedModeFallsBackToWarn(t *testing.T) {
 	env := degradedEnv(t)
-	t.Setenv("TERMINAL_DEGRADED_MODE", "bogus-value")
+	writeHomeConfig(t, env, "terminal:\n  degraded_mode: bogus-value\n")
 	ResetTerminalScopeCache()
 	if r := runTerminal(t, env, TerminalRequest{Command: "echo hi", TaskID: "t-bogus"}); r["status"] != "degraded" {
 		t.Fatalf("%v", r)
@@ -398,7 +396,6 @@ func assertSecretRedacted(t *testing.T, r map[string]any, field string) {
 func redactingEnv(t *testing.T) *Env {
 	t.Helper()
 	env := newTerminalTestEnv(t, "/tmp")
-	env.Secrets.Set("ICEBATH_REDACT_SECRETS", "1")
 	cfg := localTestConfig("/tmp", map[string]any{"timeout": 1})
 	envConfigFn = func(*Env) (map[string]any, error) { return cfg, nil }
 	return env
@@ -424,7 +421,7 @@ func TestForegroundRetryErrorRedactsExceptionText(t *testing.T) {
 
 func TestSuccessfulOutputPreservesRedactionOptOut(t *testing.T) {
 	env := newTerminalTestEnv(t, "/tmp")
-	env.Secrets.Set("ICEBATH_REDACT_SECRETS", "0")
+	writeHomeConfig(t, env, "security:\n  redact_secrets: false\n")
 	cacheFakeEnv("default", newFakeTermEnv("/tmp", func(context.Context, string, ExecOptions) (*ExecResult, error) {
 		return &ExecResult{Output: redactionSecret + "\n"}, nil
 	}))
@@ -709,13 +706,12 @@ func TestUnknownTerminalEnvLogsErrorAndReturnsFalse(t *testing.T) {
 	if CheckTerminalRequirements(env) {
 		t.Fatal("unknown backend passed")
 	}
-	mustContain(t, TerminalBackendUnavailableReason(), "Unknown TERMINAL_ENV 'unknown-backend'")
+	mustContain(t, TerminalBackendUnavailableReason(), "Unknown terminal backend 'unknown-backend'")
 }
 
 func TestLocalTerminalRequirementsFromPolicy(t *testing.T) {
 	resetTerminalState(t)
 	env := newTestToolEnv(t)
-	t.Setenv("TERMINAL_ENV", "local")
 	ResetTerminalScopeCache()
 	if !CheckTerminalRequirements(env) {
 		t.Fatalf("local requirements failed: %s", TerminalBackendUnavailableReason())

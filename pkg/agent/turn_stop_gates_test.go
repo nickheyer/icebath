@@ -11,7 +11,7 @@ import (
 )
 
 func TestLateVerdictReachesTheModelBeforeTheTurnEnds(t *testing.T) {
-	t.Setenv("ICEBATH_VERIFY_ON_STOP", "0")
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	token := tools.LSPDeferredTrackPending("S-end")
 	go func() {
 		time.Sleep(50 * time.Millisecond)

@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -54,7 +52,7 @@ func TestRegisteredDeadlineSurvivesSequentialExecutionAndBridge(t *testing.T) {
 		}
 	}()
 	host := &fakeExecutorHost{env: newTestToolEnv(t), enabled: []string{"deadline-probe"}}
-	host.env.Config = config.Tree{"timeouts": map[string]any{"tools": map[string]any{"sequential_call": 1}}}
+	writeHomeConfig(t, host.env, "timeouts:\n  tools:\n    sequential_call: 1\n")
 	e := NewExecutor(host, NewDispatcher(Default))
 	cases := []struct {
 		name     string

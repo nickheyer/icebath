@@ -10,7 +10,7 @@ import (
 
 func TestXAIOAuthSectionLoginSavesTokensWithoutSwitchingProvider(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openrouter", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	prevLogin, prevGetenv := xaiOAuthDeviceCodeLoginFn, oauthGetenv
 	t.Cleanup(func() { xaiOAuthDeviceCodeLoginFn, oauthGetenv = prevLogin, prevGetenv })
 	oauthGetenv = func(string) string { return "" }
@@ -31,8 +31,8 @@ func TestXAIOAuthSectionLoginSavesTokensWithoutSwitchingProvider(t *testing.T) {
 	if out.String() != "Signing in to xAI Grok OAuth (SuperGrok / Premium+)...\nvisit the device page\n" {
 		t.Fatalf("output %q", out.String())
 	}
-	if auth := readAuthStore(t, h); auth["active_provider"] != "openrouter" {
-		t.Fatalf("active_provider %v", auth["active_provider"])
+	if logins := poolRows(t, h, "xai-oauth"); len(logins) != 1 || logins[0]["access_token"] != "section-access" || logins[0]["refresh_token"] != "section-refresh" {
+		t.Fatalf("xai logins %v", logins)
 	}
 	xaiOAuthDeviceCodeLoginFn = func(PoolEnv, io.Writer, time.Duration, bool) (map[string]any, error) {
 		return nil, errors.New("authorization_pending timed out")

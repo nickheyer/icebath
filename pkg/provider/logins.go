@@ -17,9 +17,9 @@ import (
 
 // Pool row keys of a named login
 const (
-	loginNameKey         = "name"
-	loginAccountKey      = "account"
-	loginRotateKey       = "rotate"
+	loginNameKey    = "name"
+	loginAccountKey = "account"
+	loginRotateKey  = "rotate"
 )
 
 // Origins of a login: Icebath holds the secret, or the login points at an outside source
@@ -65,7 +65,7 @@ func (e PooledCredential) LoginAccount() string {
 
 // LoginOrigin is owned when Icebath holds the secret and linked when the row points at an outside source
 func (e PooledCredential) LoginOrigin() string {
-	if IsBorrowedCredentialSource(e.Source, e.Provider) {
+	if IsBorrowedCredentialSource(e.Source) {
 		return LoginOriginLinked
 	}
 	return LoginOriginOwned
@@ -286,6 +286,27 @@ func DefaultLoginID(env PoolEnv, provider string) string {
 		return row.ID
 	}
 	return currentLoginID(profileLoginEnv(env), provider)
+}
+
+// SignedInProvider is the first registry provider, in picker order, that holds stored logins and reports signed in, among those keep accepts when set
+func SignedInProvider(env PoolEnv, keep func(*Profile) bool) string {
+	if env.Store == nil {
+		return ""
+	}
+	pools, err := env.Store.ReadCredentialPools()
+	if err != nil {
+		env.log().Debug(fmt.Sprintf("Could not read the stored logins: %v", err))
+		return ""
+	}
+	for _, row := range canonicalRegistryRows(env.ctx()) {
+		if row == nil || len(pools[row.Name]) == 0 || (keep != nil && !keep(row)) {
+			continue
+		}
+		if truthy(GetAuthStatus(env, row.Name)["logged_in"]) {
+			return row.Name
+		}
+	}
+	return ""
 }
 
 // ---- owning store ----

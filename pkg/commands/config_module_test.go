@@ -37,9 +37,9 @@ func (c *configHome) refused(err error, match string) {
 
 func TestSaveAndLoadRoundtripConfigSetRefusesToOverwriteUnparseableExistingConfig(t *testing.T) {
 	c := newConfigHome(t)
-	original := "model:\n  default: claude-opus\n  provider: anthropic\ngateway:\n  platforms:\n    telegram:\n      enabled: true\nbroken: [unterminated\n"
+	original := "model:\n  default: claude-opus\n  provider: anthropic\nplatforms:\n  telegram:\n    enabled: true\nbroken: [unterminated\n"
 	c.write(original)
-	c.refused(c.set("model.default", "gpt-4o", false), "formatting error")
+	c.refused(c.set("model.default", "gpt-4o"), "formatting error")
 	if got := c.readConfig(); got != original {
 		t.Fatalf("config changed: %q", got)
 	}
@@ -71,7 +71,7 @@ func TestSaveAndLoadRoundtripConfigSetRefusesNonMappingRoot(t *testing.T) {
 	c := newConfigHome(t)
 	original := "- just\n- a\n- list\n"
 	c.write(original)
-	c.refused(c.set("model.default", "gpt-4o", false), "must be a mapping")
+	c.refused(c.set("model.default", "gpt-4o"), "must be a mapping")
 	if got := c.readConfig(); got != original {
 		t.Fatalf("config changed: %q", got)
 	}
@@ -96,7 +96,7 @@ func TestSaveAndLoadRoundtripConfigUnsetRefusesNonMappingRoot(t *testing.T) {
 func TestSaveAndLoadRoundtripConfigSetAllowsValidEmptyMapping(t *testing.T) {
 	c := newConfigHome(t)
 	c.write("{}\n")
-	c.mustSet("model.default", "gpt-4o", false)
+	c.mustSet("model.default", "gpt-4o")
 	if saved := c.parsed(); !reflect.DeepEqual(saved, map[string]any{"model": map[string]any{"default": "gpt-4o"}}) {
 		t.Fatalf("saved %v", saved)
 	}

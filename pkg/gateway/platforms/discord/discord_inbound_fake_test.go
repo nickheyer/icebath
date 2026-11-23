@@ -2,7 +2,6 @@ package discord
 
 import (
 	"context"
-	"os"
 	"sync"
 	"testing"
 
@@ -26,12 +25,6 @@ func (c *eventCapture) all() []*gateway.MessageEvent {
 // Adapter of the free response fixture, bot user 999, batching off and handle_message recorded
 func inboundAdapter(t *testing.T) (*DiscordAdapter, *fakeDiscordAPI, *eventCapture) {
 	t.Helper()
-	for _, v := range []string{"DISCORD_REQUIRE_MENTION", "DISCORD_THREAD_REQUIRE_MENTION", "DISCORD_FREE_RESPONSE_CHANNELS",
-		"DISCORD_FREE_RESPONSE_AUTO_THREAD", "DISCORD_AUTO_THREAD", "DISCORD_NO_THREAD_CHANNELS", "DISCORD_ALLOWED_CHANNELS",
-		"DISCORD_IGNORED_CHANNELS", "DISCORD_HISTORY_BACKFILL", "DISCORD_HISTORY_BACKFILL_LIMIT", "DISCORD_ALLOW_BOTS"} {
-		t.Setenv(v, "")
-		os.Unsetenv(v)
-	}
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a := newTestAdapter(t, nil)
 	s := attachClient(t, a, "999", []string{"g1"})

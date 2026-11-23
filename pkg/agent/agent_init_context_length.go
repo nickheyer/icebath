@@ -67,43 +67,11 @@ func stripURLQuery(raw string) string {
 	return pre
 }
 
-// Normalized base URL of the configured custom provider, disabled providers masking their custom twin
-func customProviderConfiguredBaseURL(configuredProvider string, agentCfg map[string]any, customProviders []map[string]any) string {
+// Normalized base URL of the enabled providers entry the configured provider names by key or by name, empty when none does
+func customProviderConfiguredBaseURL(configuredProvider string, customProviders []map[string]any) string {
 	wanted := normalizeCustomProviderName(configuredProvider)
-	disabled := map[string]bool{}
-	if userProviders, ok := agentCfg["providers"].(map[string]any); ok {
-		for key, raw := range userProviders {
-			entry, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			ids := customProviderRuntimeIDs(key)
-			for id := range customProviderRuntimeIDs(entry["name"]) {
-				ids[id] = true
-			}
-			if !provider.IsProviderEnabled(entry) {
-				for id := range ids {
-					disabled[id] = true
-				}
-				continue
-			}
-			if ids[wanted] {
-				if u := provider.NormalizeRouteBaseURL(cfgText(firstTruthy(entry["api"], entry["url"], entry["base_url"]))); u != "" {
-					return u
-				}
-			}
-		}
-	}
 	for _, entry := range customProviders {
-		keyIDs := customProviderRuntimeIDs(entry["provider_key"])
-		masked := false
-		for id := range keyIDs {
-			masked = masked || disabled[id]
-		}
-		if masked {
-			continue
-		}
-		if keyIDs[wanted] || customProviderRuntimeIDs(entry["name"])[wanted] {
+		if customProviderRuntimeIDs(entry["provider_key"])[wanted] || customProviderRuntimeIDs(entry["name"])[wanted] {
 			if u := provider.NormalizeRouteBaseURL(cfgText(entry["base_url"])); u != "" {
 				return u
 			}
@@ -113,7 +81,7 @@ func customProviderConfiguredBaseURL(configuredProvider string, agentCfg map[str
 }
 
 // Configured default route URL, the custom provider URL when model.provider is not an auth provider
-func configuredDefaultBaseURL(ctx context.Context, agentCfg, modelCfg map[string]any, customProviders []map[string]any) string {
+func configuredDefaultBaseURL(ctx context.Context, modelCfg map[string]any, customProviders []map[string]any) string {
 	configured := provider.NormalizeRouteBaseURL(cfgText(modelCfg["base_url"]))
 	configuredProvider := strings.TrimSpace(cfgText(firstTruthy(modelCfg["provider"])))
 	norm := normalizeCustomProviderName(configuredProvider)
@@ -126,7 +94,7 @@ func configuredDefaultBaseURL(ctx context.Context, agentCfg, modelCfg map[string
 		}
 	}
 	if configured == "" && candidate {
-		configured = customProviderConfiguredBaseURL(configuredProvider, agentCfg, customProviders)
+		configured = customProviderConfiguredBaseURL(configuredProvider, customProviders)
 	}
 	return configured
 }
@@ -153,7 +121,7 @@ func normalizeModelSafely(ctx context.Context, model, providerName string) (out 
 }
 
 // The configured context length only when the startup runtime is the configured default model and route
-func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, agentCfg, modelCfg map[string]any, customProviders []map[string]any, configContextLength *int, baseURL string) *int {
+func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, modelCfg map[string]any, customProviders []map[string]any, configContextLength *int, baseURL string) *int {
 	def := modelCfg["default"]
 	if _, ok := def.(map[string]any); ok {
 		m, _ := config.SplitModelDefault(def)
@@ -169,7 +137,7 @@ func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, agentCf
 			}
 		}
 	}
-	configuredBaseURL := configuredDefaultBaseURL(ctx, agentCfg, modelCfg, customProviders)
+	configuredBaseURL := configuredDefaultBaseURL(ctx, modelCfg, customProviders)
 	activeBaseURL := activeRouteURL(a, baseURL)
 	routeMismatch := contextRouteMismatch(ctx, configuredBaseURL, activeBaseURL, strings.TrimSpace(cfgText(firstTruthy(modelCfg["provider"]))), a.provider, true)
 	modelMismatch := configuredRuntimeModel != "" && configuredRuntimeModel != activeRuntimeModel
@@ -247,7 +215,7 @@ func configContextLengthForRuntime(ctx context.Context, a *AIAgent, cfg map[stri
 	if pin <= 0 {
 		return nil
 	}
-	return scopeContextLengthToDefaultRuntime(ctx, a, agentCfg, modelSection, provider.ProviderEntries(agentCfg), &pin, a.baseURL)
+	return scopeContextLengthToDefaultRuntime(ctx, a, modelSection, provider.ProviderEntries(agentCfg), &pin, a.baseURL)
 }
 
 // Warns once when the matching custom provider model carries a context length that is not a positive integer
@@ -317,7 +285,7 @@ func resolveContextLength(ctx context.Context, a *AIAgent, agentCfg map[string]a
 	}
 	customProviders := provider.ProviderEntries(agentCfg)
 	if configContextLength != nil {
-		configContextLength = scopeContextLengthToDefaultRuntime(ctx, a, agentCfg, modelSection, customProviders, configContextLength, baseURL)
+		configContextLength = scopeContextLengthToDefaultRuntime(ctx, a, modelSection, customProviders, configContextLength, baseURL)
 	}
 	a.customProviderEntries = customProviders
 	a.customProviders = make([]any, len(customProviders))

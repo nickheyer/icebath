@@ -44,7 +44,7 @@ func guardInteractiveHooks(t *testing.T) {
 		fail("CodexDeviceCodeLogin")
 		return nil, nil
 	})
-	swapHook(t, &ToolsConfigHooks.SaveCodexTokens, func(context.Context, string, map[string]any, string, bool) error { fail("SaveCodexTokens"); return nil })
+	swapHook(t, &ToolsConfigHooks.SaveCodexTokens, func(context.Context, string, map[string]any, string) error { fail("SaveCodexTokens"); return nil })
 	swapHook(t, &ToolsConfigHooks.InstallCuaDriver, func(context.Context, *Env, *cliui.Console) (bool, error) { fail("InstallCuaDriver"); return false, nil })
 	swapHook(t, &postSetupSyncVenv, func(context.Context, pm.SyncVenvOptions) error { fail("pm.SyncVenv"); return nil })
 	swapHook(t, &postSetupEnsure, func(context.Context, string, pm.EnsureOptions) error { fail("pm.Ensure"); return nil })

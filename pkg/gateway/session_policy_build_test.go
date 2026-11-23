@@ -171,23 +171,16 @@ func TestBarePickOfAShadowedCustomEntryKeepsTheProfilesRoute(t *testing.T) {
 	ctx := policyBuildHome(t)
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
-	newStyle := map[string]any{"providers": map[string]any{"deepseek": map[string]any{"name": "deepseek",
-		"api": "https://api.deepseek.com", "key_env": "DEEPSEEK_ENTRY_KEY", "transport": "chat_completions",
-		"default_model": "deepseek-flash"}}}
-	legacy := map[string]any{"custom_providers": []any{map[string]any{"name": "deepseek", "base_url": "https://api.deepseek.com",
-		"key_env": "DEEPSEEK_ENTRY_KEY", "model": "deepseek-flash"}}}
-	for _, extra := range []map[string]any{newStyle, legacy} {
-		cfg := map[string]any{"model": map[string]any{"default": "deepseek-flash", "provider": "custom:deepseek",
-			"base_url": "https://api.deepseek.com", "key_env": "DEEPSEEK_ENTRY_KEY"}}
-		for k, v := range extra {
-			cfg[k] = v
-		}
-		model := policyModel(t, ctx, mustBuildPolicy(t, ctx, map[string]any{"cwd": t.TempDir(), "model": "deepseek-flash",
-			"provider": "deepseek"}, cfg))
-		if model["provider"] != "custom:deepseek" || model["base_url"] != "https://api.deepseek.com" ||
-			model["key_env"] != "DEEPSEEK_ENTRY_KEY" {
-			t.Fatalf("shadowed entry pick %v under %v", model, extra)
-		}
+	cfg := map[string]any{
+		"model": map[string]any{"default": "deepseek-flash", "provider": "custom:deepseek",
+			"base_url": "https://api.deepseek.com", "key_env": "DEEPSEEK_ENTRY_KEY"},
+		"providers": map[string]any{"deepseek": map[string]any{"name": "deepseek", "base_url": "https://api.deepseek.com",
+			"key_env": "DEEPSEEK_ENTRY_KEY", "api_mode": "chat_completions", "default_model": "deepseek-flash"}}}
+	model := policyModel(t, ctx, mustBuildPolicy(t, ctx, map[string]any{"cwd": t.TempDir(), "model": "deepseek-flash",
+		"provider": "deepseek"}, cfg))
+	if model["provider"] != "custom:deepseek" || model["base_url"] != "https://api.deepseek.com" ||
+		model["key_env"] != "DEEPSEEK_ENTRY_KEY" {
+		t.Fatalf("shadowed entry pick %v", model)
 	}
 }
 

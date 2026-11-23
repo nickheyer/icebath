@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -352,7 +353,7 @@ func initAgent(ctx context.Context, a *AIAgent, o AIAgentOptions) error {
 	if err := setupAgentLogging(ctx, a); err != nil {
 		return err
 	}
-	a.reasoningEchoFlag = readReasoningEchoFromConfig(ctx)
+	a.reasoningEchoFlag = settings.AgentReasoningEcho.Get(ctx)
 	a.requestOverrides = map[string]any{}
 	for k, v := range o.RequestOverrides {
 		a.requestOverrides[k] = v

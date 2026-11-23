@@ -361,7 +361,7 @@ func (s *ToolsSetup) postSetupOpenAICodex() error {
 
 // Device code login then token save, any failure or interrupt returned as the error
 func (s *ToolsSetup) codexSignIn(login func(context.Context, string, io.Writer) (map[string]any, error),
-	save func(context.Context, string, map[string]any, string, bool) error) (err error) {
+	save func(context.Context, string, map[string]any, string) error) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
@@ -380,7 +380,7 @@ func (s *ToolsSetup) codexSignIn(login func(context.Context, string, io.Writer) 
 	if v, ok := creds["last_refresh"]; ok && v != nil {
 		lastRefresh = pyrepr.Str(v)
 	}
-	return save(s.ctx(), s.home(), tokens, lastRefresh, false)
+	return save(s.ctx(), s.home(), tokens, lastRefresh)
 }
 
 // Post setup key to its hook, unknown keys a silent no op since callers validate against the visible rows

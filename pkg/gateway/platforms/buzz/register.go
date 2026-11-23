@@ -458,7 +458,7 @@ func (buzzPlatformPlugin) Register(ctx *plugins.Context) error {
 			"is_connected":           validateConfig,
 			"setup_fn":               InteractiveSetup,
 			"env_enablement_fn":      envEnablement,
-				"cron_deliver_env_var":   "BUZZ_HOME_CHANNEL",
+			"cron_deliver_env_var":   "BUZZ_HOME_CHANNEL",
 			"standalone_sender_fn":   standaloneSend,
 			"allowed_users_env":      "BUZZ_ALLOWED_USERS",
 			"allow_all_env":          "BUZZ_ALLOW_ALL_USERS",

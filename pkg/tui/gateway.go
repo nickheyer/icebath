@@ -296,12 +296,6 @@ func (c *gatewayClient) deliver() {
 	c.mu.Unlock()
 }
 
-// Ready payload of a gateway.ready frame, a misfit left for the event handler to report
-func readyOf(ev gatewayEventMsg) tuigateway.GatewayReadyPayload {
-	ready, _ := tuigateway.GatewayReadyEvent.Payload(ev.Payload)
-	return ready
-}
-
 // Queues an event for the subscriber, buffering the newest two thousand before it subscribed
 func (c *gatewayClient) publishLocked(ev gatewayEventMsg) {
 	if ev.Type == "gateway.ready" {
@@ -309,7 +303,7 @@ func (c *gatewayClient) publishLocked(ev gatewayEventMsg) {
 		c.clearReconnectLocked()
 		c.reconnects = 0
 		c.clearReadyTimerLocked()
-		if val(readyOf(ev).Heartbeat) && c.conn != nil && c.conn.open {
+		if c.conn != nil && c.conn.open {
 			c.startHeartbeatLocked()
 		}
 	}

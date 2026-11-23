@@ -14,8 +14,6 @@ import (
 func threadExemptionAdapter(t *testing.T, threadRequireMention bool) *DiscordAdapter {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	t.Setenv("DISCORD_IGNORE_NO_MENTION", "")
-	t.Setenv("DISCORD_FREE_RESPONSE_CHANNELS", "")
-	t.Setenv("DISCORD_THREAD_REQUIRE_MENTION", "")
 	a := newTestAdapter(t, map[string]any{"thread_require_mention": threadRequireMention})
 	a.allowedUserIDs = newStrSet("*")
 	attachClient(t, a, "99", nil)

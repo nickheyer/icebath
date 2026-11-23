@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -191,26 +190,25 @@ func mustSelectToken(t *testing.T, env PoolEnv, provider, want string) PooledCre
 	return sel
 }
 
-func TestOAuthGrantsStripDropsDeviceCodeBlocksAndReports(t *testing.T) {
+func TestOAuthGrantsStripDropsOAuthRowsAndReports(t *testing.T) {
 	newTestHome(t)
 	pdir := filepath.Join(t.TempDir(), "p")
 	os.MkdirAll(pdir, 0o700)
 	writeJSONPath(t, filepath.Join(pdir, "auth.json"), map[string]any{
-		"version":   1,
-		"providers": map[string]any{"openai-codex": map[string]any{"access_token": "a", "refresh_token": "r"}},
+		"version":   2,
+		"providers": map[string]any{"zai": map[string]any{"detected_endpoint": map[string]any{"id": "global"}}},
 		"credential_pool": map[string]any{
 			"xai-oauth": []any{map[string]any{"id": "x", "auth_type": "oauth", "access_token": "t", "refresh_token": "r"}},
 			"anthropic": []any{
-				map[string]any{"id": "legacy", "access_token": "sk-ant-oat01-legacy"},
+				map[string]any{"id": "bare", "access_token": "sk-ant-oat01-bare"},
 				map[string]any{"id": "key", "auth_type": "api_key", "access_token": "sk-ant-api03-x"},
 			},
 		},
 	})
-	summary := StripClonedSingleUseOAuthGrants(pdir)
+	stripped := StripClonedSingleUseOAuthGrants(pdir)
 	store := readJSONPath(t, filepath.Join(pdir, "auth.json"))
-	pool := sortedCopy(summary.Pool)
-	if !reflect.DeepEqual(pool, []string{"anthropic", "xai-oauth"}) || !reflect.DeepEqual(summary.Providers, []string{"openai-codex"}) {
-		t.Fatalf("summary %+v", summary)
+	if !reflect.DeepEqual(stripped, []string{"anthropic", "xai-oauth"}) {
+		t.Fatalf("stripped %v", stripped)
 	}
 	cp := store["credential_pool"].(map[string]any)
 	if _, ok := cp["xai-oauth"]; ok {
@@ -219,16 +217,9 @@ func TestOAuthGrantsStripDropsDeviceCodeBlocksAndReports(t *testing.T) {
 	if ids := idsOf(cp["anthropic"].([]any)); !reflect.DeepEqual(ids, []string{"key"}) {
 		t.Fatalf("anthropic rows %v", ids)
 	}
-	providers := store["providers"].(map[string]any)
-	if _, ok := providers["openai-codex"]; ok {
-		t.Fatal("codex block survived")
+	if _, ok := store["providers"].(map[string]any)["zai"]; !ok {
+		t.Fatal("provider state that is no login was dropped")
 	}
-}
-
-func sortedCopy(in []string) []string {
-	out := append([]string{}, in...)
-	sort.Strings(out)
-	return out
 }
 
 func idsOf(rows []any) []string {
@@ -241,24 +232,18 @@ func idsOf(rows []any) []string {
 
 func TestOAuthGrantsStripIsANoopWithoutCredentials(t *testing.T) {
 	newTestHome(t)
-	got := StripClonedSingleUseOAuthGrants(t.TempDir())
-	if !reflect.DeepEqual(got, ClonedGrantStrip{Pool: []string{}, Providers: []string{}, Files: []string{}}) {
-		t.Fatalf("summary %+v", got)
+	if got := StripClonedSingleUseOAuthGrants(t.TempDir()); len(got) != 0 {
+		t.Fatalf("stripped %v", got)
 	}
 }
 
-// Gives the root store an openai-codex pool row and a providers block
+// Gives the root store an openai-codex login
 func seedCodexGrant(t *testing.T, root string) {
-	fresh := msFromNow(3600)
 	store := readJSONPath(t, filepath.Join(root, "auth.json"))
 	store["credential_pool"].(map[string]any)["openai-codex"] = []any{map[string]any{
 		"id": "cdx001", "label": "codex", "auth_type": "oauth", "priority": 0, "source": "manual:device_code",
-		"access_token": "cdx-AT0", "refresh_token": "cdx-RT0", "expires_at_ms": fresh,
+		"access_token": "cdx-AT0", "refresh_token": "cdx-RT0", "expires_at_ms": msFromNow(3600),
 	}}
-	store["providers"].(map[string]any)["openai-codex"] = map[string]any{
-		"tokens":       map[string]any{"access_token": "cdx-AT0", "refresh_token": "cdx-RT0", "expires_at_ms": fresh},
-		"last_refresh": float64(fresh) / 1000.0,
-	}
 	writeJSONPath(t, filepath.Join(root, "auth.json"), store)
 }
 
@@ -275,10 +260,6 @@ func (f *grantFleet) sharedProfile(name string, link func(target, alias string) 
 	return dir
 }
 
-func emptyStrip() ClonedGrantStrip {
-	return ClonedGrantStrip{Pool: []string{}, Providers: []string{}, Files: []string{}}
-}
-
 func TestOAuthGrantsStripLeavesSharedRootAuthStoreUnchanged(t *testing.T) {
 	for name, link := range map[string]func(string, string) error{"symlink": symlinkStore, "hardlink": os.Link} {
 		t.Run(name, func(t *testing.T) {
@@ -286,8 +267,8 @@ func TestOAuthGrantsStripLeavesSharedRootAuthStoreUnchanged(t *testing.T) {
 			seedCodexGrant(t, f.root)
 			before := readText(t, filepath.Join(f.root, "auth.json"))
 			shared := f.sharedProfile("shared", link)
-			if got := StripClonedSingleUseOAuthGrants(shared); !reflect.DeepEqual(got, emptyStrip()) {
-				t.Fatalf("summary %+v", got)
+			if got := StripClonedSingleUseOAuthGrants(shared); len(got) != 0 {
+				t.Fatalf("stripped %v", got)
 			}
 			if readText(t, filepath.Join(f.root, "auth.json")) != before {
 				t.Fatal("shared root store was rewritten")
@@ -304,8 +285,8 @@ func TestOAuthGrantsStripFailsClosedWhenRootStoreCannotBeResolved(t *testing.T) 
 	orig := stripDefaultRootFn
 	stripDefaultRootFn = func() (string, error) { return "", errors.New("root unavailable") }
 	t.Cleanup(func() { stripDefaultRootFn = orig })
-	if got := StripClonedSingleUseOAuthGrants(shared); !reflect.DeepEqual(got, emptyStrip()) {
-		t.Fatalf("summary %+v", got)
+	if got := StripClonedSingleUseOAuthGrants(shared); len(got) != 0 {
+		t.Fatalf("stripped %v", got)
 	}
 	if readText(t, filepath.Join(f.root, "auth.json")) != before {
 		t.Fatal("root store mutated while its identity was unknown")
@@ -321,8 +302,8 @@ func TestOAuthGrantsStripFailsClosedWhenStoreIdentityCheckErrors(t *testing.T) {
 	orig := stripSameFileFn
 	stripSameFileFn = func(a, b string) (bool, error) { return false, errors.New("stat unavailable") }
 	t.Cleanup(func() { stripSameFileFn = orig })
-	if got := StripClonedSingleUseOAuthGrants(copied); !reflect.DeepEqual(got, emptyStrip()) {
-		t.Fatalf("summary %+v", got)
+	if got := StripClonedSingleUseOAuthGrants(copied); len(got) != 0 {
+		t.Fatalf("stripped %v", got)
 	}
 	if readText(t, filepath.Join(copied, "auth.json")) != before {
 		t.Fatal("copied store mutated after a failed identity check")
@@ -379,52 +360,6 @@ func entryIDsOf(pool *Pool) []string {
 	return out
 }
 
-func entrySourcesOf(pool *Pool) []string {
-	out := []string{}
-	for _, e := range pool.Entries() {
-		out = append(out, e.Source)
-	}
-	return out
-}
-
-func writeAnthropicSingleton(t *testing.T, path, access, refresh string, expiresAt int64) {
-	writeJSONPath(t, path, map[string]any{"accessToken": access, "refreshToken": refresh, "expiresAt": expiresAt})
-}
-
-// Root whose only anthropic grant is its PKCE singleton with anthropic as the active provider
-func (f *grantFleet) rootSingletonOnly() {
-	writeAnthropicSingleton(f.t, filepath.Join(f.root, ".anthropic_oauth.json"), "sk-ant-oat01-AT0", "sk-ant-ort-RT0", msFromNow(-3600))
-	store := f.store(f.root)
-	store["active_provider"] = "anthropic"
-	delete(store["credential_pool"].(map[string]any), "anthropic")
-	writeJSONPath(f.t, filepath.Join(f.root, "auth.json"), store)
-}
-
-func TestOAuthGrantsBorrowerPruneNeverDeletesRootSingletonGrant(t *testing.T) {
-	f := newGrantFleet(t)
-	f.rootSingletonOnly()
-	if got := entrySourcesOf(LoadPool(f.use(f.root), "anthropic")); !reflect.DeepEqual(got, []string{"icebath_pkce"}) {
-		t.Fatalf("root sources %v", got)
-	}
-	kid := f.profile("kid")
-	pool := LoadPool(f.use(kid), "anthropic")
-	if got := entrySourcesOf(pool); !reflect.DeepEqual(got, []string{"icebath_pkce"}) {
-		t.Fatalf("borrowed root grant was pruned %v", got)
-	}
-	if rows := f.rows(f.root); len(rows) == 0 || rowField(rows, 0, "source") != "icebath_pkce" || f.rows(kid) != nil {
-		t.Fatalf("root rows %v kid rows %v", rows, f.rows(kid))
-	}
-	if sel, ok := pool.Select(""); !ok || sel.AccessToken != "sk-ant-oat01-AT1" {
-		t.Fatalf("selected %+v", sel)
-	}
-	if got := readJSONPath(t, filepath.Join(f.root, ".anthropic_oauth.json"))["refreshToken"]; got != "sk-ant-ort-RT1" {
-		t.Fatalf("root singleton refresh %v", got)
-	}
-	if pathExists(filepath.Join(kid, ".anthropic_oauth.json")) || rowField(f.rows(f.root), 0, "refresh_token") != "sk-ant-ort-RT1" {
-		t.Fatal("rotation did not commit at root")
-	}
-}
-
 func TestOAuthGrantsProfileAuthAddOwnsOnlyItsOwnRows(t *testing.T) {
 	f := newGrantFleet(t)
 	kid := f.profile("kid")
@@ -467,7 +402,7 @@ func TestOAuthGrantsProfileFreshAddWithNoLoginAnywhereLandsInTheProfile(t *testi
 	}
 }
 
-func TestOAuthGrantsAnthropicAuthAddSurvivesTheNextLoadBesideARootSingleton(t *testing.T) {
+func TestOAuthGrantsAnthropicAuthAddSurvivesTheNextLoad(t *testing.T) {
 	cases := map[string][]any{
 		"root_pool_empty":  {},
 		"root_api_key_row": {map[string]any{"id": "rootkey", "label": "root-key", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "root-api-key"}},
@@ -478,9 +413,6 @@ func TestOAuthGrantsAnthropicAuthAddSurvivesTheNextLoadBesideARootSingleton(t *t
 			store := f.store(f.root)
 			store["credential_pool"].(map[string]any)["anthropic"] = rootRows
 			writeJSONPath(t, filepath.Join(f.root, "auth.json"), store)
-			singleton := filepath.Join(f.root, ".anthropic_oauth.json")
-			writeAnthropicSingleton(t, singleton, "at-root", "rt-root", msFromNow(-3600))
-			singletonBefore := readText(t, singleton)
 			kid := f.profile("kid")
 			if _, err := LoadPool(f.use(kid), "anthropic").AddEntry(PooledCredential{Provider: "anthropic", ID: "kid001", Label: "mine", AuthType: AuthTypeOAuth,
 				Source: "manual:icebath_pkce", AccessToken: "at-kid", RefreshToken: "rt-kid", ExpiresAtMS: msFromNow(8 * 3600), Extra: map[string]any{}}); err != nil {
@@ -494,42 +426,6 @@ func TestOAuthGrantsAnthropicAuthAddSurvivesTheNextLoadBesideARootSingleton(t *t
 			}
 			if got := idsOf(f.rows(kid)); !reflect.DeepEqual(got, []string{"kid001"}) {
 				t.Fatalf("kid rows after reload %v", got)
-			}
-			if readText(t, singleton) != singletonBefore {
-				t.Fatal("root singleton changed")
-			}
-		})
-	}
-}
-
-func TestOAuthGrantsProfileAuthAddNeverCopiesRootsProviderLogin(t *testing.T) {
-	cases := []struct {
-		provider string
-		login    map[string]any
-	}{
-		{"openai-codex", map[string]any{"tokens": map[string]any{"access_token": "at-root", "refresh_token": "rt-root"}}},
-		{"xai-oauth", map[string]any{"tokens": map[string]any{"access_token": "at-root", "refresh_token": "rt-root"}}},
-	}
-	for _, tc := range cases {
-		t.Run(tc.provider, func(t *testing.T) {
-			f := newGrantFleet(t)
-			store := f.store(f.root)
-			delete(store["credential_pool"].(map[string]any), tc.provider)
-			store["providers"].(map[string]any)[tc.provider] = tc.login
-			writeJSONPath(t, filepath.Join(f.root, "auth.json"), store)
-			kid := f.profile("kid")
-			if _, err := LoadPool(f.use(kid), tc.provider).AddEntry(PooledCredential{Provider: tc.provider, ID: "mine01", Label: "mine", AuthType: AuthTypeOAuth,
-				Source: "manual:device_code", AccessToken: "at-mine", RefreshToken: "rt-mine", Extra: map[string]any{}}); err != nil {
-				t.Fatal(err)
-			}
-			if strings.Contains(readText(t, filepath.Join(kid, "auth.json")), "rt-root") {
-				t.Fatal("root refresh token copied by the add")
-			}
-			if !containsString(entryIDsOf(LoadPool(f.use(kid), tc.provider)), "mine01") {
-				t.Fatal("added row lost on the next load")
-			}
-			if strings.Contains(readText(t, filepath.Join(kid, "auth.json")), "rt-root") {
-				t.Fatal("root refresh token copied by the reload")
 			}
 		})
 	}
@@ -677,54 +573,42 @@ func TestHealNeverDeletesTheOnlySurvivingCopy(t *testing.T) {
 }
 
 func TestHealPreservesIndependentGrantsForSameAccount(t *testing.T) {
-	for _, shape := range []string{"pool", "provider"} {
-		for _, claims := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s-claims=%v", shape, claims), func(t *testing.T) {
-				f := newGrantFleet(t)
-				pair := func(tag string) map[string]any {
-					access := tag
-					if claims {
-						access = jwtWithClaims(map[string]any{"sub": "same-account", "exp": time.Now().Unix() + 3600, "jti": tag})
-					}
-					return map[string]any{"access_token": access, "refresh_token": "independent-" + tag}
-				}
-				store := func(tag string) map[string]any {
-					tokens := pair(tag)
-					if shape == "provider" {
-						return map[string]any{"version": 2, "providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens}}}
-					}
-					rowMap := map[string]any{"id": tag, "auth_type": "oauth", "source": "manual:device_code"}
-					for k, v := range tokens {
-						rowMap[k] = v
-					}
-					return map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{"openai-codex": []any{rowMap}}}
-				}
-				rootFile := filepath.Join(f.root, "auth.json")
-				kid := f.profile("independent")
-				profileFile := filepath.Join(kid, "auth.json")
-				writeJSONPath(t, rootFile, store("root-grant"))
-				writeJSONPath(t, profileFile, store("profile-grant"))
-				beforeRoot, beforeProfile := readText(t, rootFile), readText(t, profileFile)
-				env := f.use(kid)
-				if got := healForkedSingleUseOAuthGrants(env, "openai-codex"); got != nil {
-					t.Fatalf("heal %+v", got)
-				}
-				if readText(t, rootFile) != beforeRoot || readText(t, profileFile) != beforeProfile {
-					t.Fatal("an independent grant was rewritten")
-				}
+	for _, claims := range []bool{true, false} {
+		t.Run(fmt.Sprintf("claims=%v", claims), func(t *testing.T) {
+			f := newGrantFleet(t)
+			store := func(tag string) map[string]any {
+				access := tag
 				if claims {
-					for i := 0; i < 3; i++ {
-						sel, ok := LoadPool(env, "openai-codex").Select("")
-						if !ok || sel.RefreshToken != "independent-profile-grant" {
-							t.Fatalf("selected %+v", sel)
-						}
-					}
-					if readText(t, rootFile) != beforeRoot {
-						t.Fatal("root changed")
+					access = jwtWithClaims(map[string]any{"sub": "same-account", "exp": time.Now().Unix() + 3600, "jti": tag})
+				}
+				row := map[string]any{"id": tag, "auth_type": "oauth", "source": "manual:device_code", "access_token": access, "refresh_token": "independent-" + tag}
+				return map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{"openai-codex": []any{row}}}
+			}
+			rootFile := filepath.Join(f.root, "auth.json")
+			kid := f.profile("independent")
+			profileFile := filepath.Join(kid, "auth.json")
+			writeJSONPath(t, rootFile, store("root-grant"))
+			writeJSONPath(t, profileFile, store("profile-grant"))
+			beforeRoot, beforeProfile := readText(t, rootFile), readText(t, profileFile)
+			env := f.use(kid)
+			if got := healForkedSingleUseOAuthGrants(env, "openai-codex"); got != nil {
+				t.Fatalf("heal %+v", got)
+			}
+			if readText(t, rootFile) != beforeRoot || readText(t, profileFile) != beforeProfile {
+				t.Fatal("an independent grant was rewritten")
+			}
+			if claims {
+				for i := 0; i < 3; i++ {
+					sel, ok := LoadPool(env, "openai-codex").Select("")
+					if !ok || sel.RefreshToken != "independent-profile-grant" {
+						t.Fatalf("selected %+v", sel)
 					}
 				}
-			})
-		}
+				if readText(t, rootFile) != beforeRoot {
+					t.Fatal("root changed")
+				}
+			}
+		})
 	}
 }
 
@@ -732,14 +616,12 @@ func utcStamp(offsetSeconds float64) string {
 	return time.Now().Add(time.Duration(offsetSeconds * float64(time.Second))).UTC().Format("2006-01-02T15:04:05Z")
 }
 
-func TestHealRotatedForkMovesProviderBlockWithThePoolRow(t *testing.T) {
+func TestHealRotatedForkMovesTheLivePairToTheRootRow(t *testing.T) {
 	f := newGrantFleet(t)
 	store := func(tag string, expOff float64) map[string]any {
-		tokens := map[string]any{"access_token": "at-" + tag, "refresh_token": "rt-" + tag}
-		return map[string]any{"version": 2,
-			"providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens, "last_refresh": utcStamp(expOff - 3600)}},
-			"credential_pool": map[string]any{"openai-codex": []any{map[string]any{"id": "shared-id", "auth_type": "oauth", "source": "device_code",
-				"access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"], "expires_at_ms": msFromNow(expOff)}}}}
+		return map[string]any{"version": 2, "providers": map[string]any{},
+			"credential_pool": map[string]any{"openai-codex": []any{map[string]any{"id": "shared-id", "auth_type": "oauth", "source": "manual:device_code",
+				"access_token": "at-" + tag, "refresh_token": "rt-" + tag, "last_refresh": utcStamp(expOff - 3600), "expires_at_ms": msFromNow(expOff)}}}}
 	}
 	rootFile := filepath.Join(f.root, "auth.json")
 	kid := f.profile("rotated")
@@ -752,12 +634,6 @@ func TestHealRotatedForkMovesProviderBlockWithThePoolRow(t *testing.T) {
 	r, p := f.store(f.root), f.store(kid)
 	if r["credential_pool"].(map[string]any)["openai-codex"].([]any)[0].(map[string]any)["refresh_token"] != "rt-new" {
 		t.Fatal("root pool row kept the spent pair")
-	}
-	if r["providers"].(map[string]any)["openai-codex"].(map[string]any)["tokens"].(map[string]any)["refresh_token"] != "rt-new" {
-		t.Fatal("root providers block kept the spent pair")
-	}
-	if _, ok := p["providers"].(map[string]any)["openai-codex"]; ok {
-		t.Fatal("profile block survived")
 	}
 	if cp, ok := p["credential_pool"].(map[string]any); ok {
 		if _, ok := cp["openai-codex"]; ok {
@@ -774,12 +650,9 @@ func TestHealRotatedForkMovesProviderBlockWithThePoolRow(t *testing.T) {
 func TestHealKeepsTheLaterIssuedForkEvenWhenItExpiresSooner(t *testing.T) {
 	f := newGrantFleet(t)
 	store := func(tag string, issuedOff, ttl float64) map[string]any {
-		tokens := map[string]any{"access_token": "at-" + tag, "refresh_token": "rt-" + tag}
-		issued := utcStamp(issuedOff)
-		return map[string]any{"version": 2,
-			"providers": map[string]any{"openai-codex": map[string]any{"tokens": tokens, "last_refresh": issued}},
-			"credential_pool": map[string]any{"openai-codex": []any{map[string]any{"id": "shared-id", "auth_type": "oauth", "source": "device_code",
-				"access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"], "last_refresh": issued, "expires_at_ms": msFromNow(issuedOff + ttl)}}}}
+		return map[string]any{"version": 2, "providers": map[string]any{},
+			"credential_pool": map[string]any{"openai-codex": []any{map[string]any{"id": "shared-id", "auth_type": "oauth", "source": "manual:device_code",
+				"access_token": "at-" + tag, "refresh_token": "rt-" + tag, "last_refresh": utcStamp(issuedOff), "expires_at_ms": msFromNow(issuedOff + ttl)}}}}
 	}
 	kid := f.profile("short-ttl")
 	writeJSONPath(t, filepath.Join(f.root, "auth.json"), store("old", -600, 3600))
@@ -789,8 +662,7 @@ func TestHealKeepsTheLaterIssuedForkEvenWhenItExpiresSooner(t *testing.T) {
 		t.Fatalf("heal %+v", healed)
 	}
 	r := f.store(f.root)
-	if r["credential_pool"].(map[string]any)["openai-codex"].([]any)[0].(map[string]any)["refresh_token"] != "rt-new" ||
-		r["providers"].(map[string]any)["openai-codex"].(map[string]any)["tokens"].(map[string]any)["refresh_token"] != "rt-new" {
+	if r["credential_pool"].(map[string]any)["openai-codex"].([]any)[0].(map[string]any)["refresh_token"] != "rt-new" {
 		t.Fatalf("root %v", r)
 	}
 }
@@ -816,39 +688,6 @@ func TestHealLeavesADifferentAccountAlone(t *testing.T) {
 	}
 	if f.store(f.root)["credential_pool"].(map[string]any)["xai-oauth"].([]any)[0].(map[string]any)["refresh_token"] != "xr-alice" {
 		t.Fatal("root grant changed")
-	}
-}
-
-func TestHealPKCESingletonShapeCommitsLivePairToRootSingleton(t *testing.T) {
-	f := newGrantFleet(t)
-	f.rootSingletonOnly()
-	LoadPool(f.use(f.root), "anthropic")
-	kid := f.profile("kid")
-	rootAuth := filepath.Join(f.root, "auth.json")
-	st, _ := os.Stat(rootAuth)
-	os.WriteFile(filepath.Join(kid, "auth.json"), []byte(readText(t, rootAuth)), 0o600)
-	os.Chtimes(filepath.Join(kid, "auth.json"), st.ModTime(), st.ModTime())
-	writeAnthropicSingleton(t, filepath.Join(kid, ".anthropic_oauth.json"), "sk-ant-oat01-AT1", "sk-ant-ort-RT1", msFromNow(-60))
-	kstore := f.store(kid)
-	krow := kstore["credential_pool"].(map[string]any)["anthropic"].([]any)[0].(map[string]any)
-	krow["access_token"], krow["refresh_token"], krow["expires_at_ms"] = "sk-ant-oat01-AT1", "sk-ant-ort-RT1", msFromNow(-60)
-	writeJSONPath(t, filepath.Join(kid, "auth.json"), kstore)
-	f.mu.Lock()
-	f.spent["sk-ant-ort-RT0"] = true
-	f.valid = map[string]bool{"sk-ant-ort-RT1": true}
-	f.n = 1
-	f.mu.Unlock()
-
-	mustSelectToken(t, f.use(kid), "anthropic", "sk-ant-oat01-AT2")
-	if pathExists(filepath.Join(kid, ".anthropic_oauth.json")) || f.rows(kid) != nil {
-		t.Fatal("profile copy survived")
-	}
-	if got := readJSONPath(t, filepath.Join(f.root, ".anthropic_oauth.json"))["refreshToken"]; got != "sk-ant-ort-RT2" {
-		t.Fatalf("root singleton refresh %v", got)
-	}
-	mustSelectToken(t, f.use(f.root), "anthropic", "sk-ant-oat01-AT2")
-	if got := f.serverLog(); !reflect.DeepEqual(got, []string{"ROTATE"}) {
-		t.Fatalf("server log %v", got)
 	}
 }
 
@@ -885,9 +724,6 @@ func TestHealSkipsProfileAuthJSONSymlinkedToTheRootStore(t *testing.T) {
 	if got := idsOf(store["credential_pool"].(map[string]any)["openai-codex"].([]any)); !reflect.DeepEqual(got, []string{"cdx001"}) {
 		t.Fatalf("codex rows %v", got)
 	}
-	if store["providers"].(map[string]any)["openai-codex"].(map[string]any)["tokens"].(map[string]any)["refresh_token"] != "cdx-RT0" {
-		t.Fatal("codex block changed")
-	}
 }
 
 func TestHealSkipsProfileAuthJSONHardlinkedToTheRootStore(t *testing.T) {
@@ -903,25 +739,6 @@ func TestHealSkipsProfileAuthJSONHardlinkedToTheRootStore(t *testing.T) {
 	}
 	if !SameAuthStore(filepath.Join(shared, "auth.json"), filepath.Join(f.root, "auth.json")) {
 		t.Fatal("hardlink broken")
-	}
-}
-
-func TestHealLeavesAnAliasedAnthropicSingletonAlone(t *testing.T) {
-	f := newGrantFleet(t)
-	rootSingleton := filepath.Join(f.root, ".anthropic_oauth.json")
-	writeAnthropicSingleton(t, rootSingleton, "AT-shared", "RT-shared", msFromNow(3600))
-	kid := f.profile("kid")
-	writeJSONPath(t, filepath.Join(kid, "auth.json"), map[string]any{"providers": map[string]any{}, "credential_pool": map[string]any{}})
-	os.Symlink(rootSingleton, filepath.Join(kid, ".anthropic_oauth.json"))
-	before := readText(t, rootSingleton)
-	if got := healForkedSingleUseOAuthGrants(f.use(kid), "anthropic"); got != nil {
-		t.Fatalf("heal %+v", got)
-	}
-	if st, err := os.Lstat(filepath.Join(kid, ".anthropic_oauth.json")); err != nil || st.Mode()&os.ModeSymlink == 0 {
-		t.Fatal("aliased singleton unlinked")
-	}
-	if readText(t, rootSingleton) != before {
-		t.Fatal("root singleton rewritten")
 	}
 }
 
@@ -978,7 +795,7 @@ func TestOAuthGrantsMergeSnapshotKeepsLiveGenerations(t *testing.T) {
 			},
 			"openrouter": []any{map[string]any{"id": "or", "auth_type": "api_key", "access_token": "or-snap"}},
 		},
-		"providers": map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{"refresh_token": "old-x"}}, "zai": map[string]any{"api_key": "k"}},
+		"providers": map[string]any{"zai": map[string]any{"detected_endpoint": map[string]any{"id": "global"}}},
 	}
 	live := map[string]any{
 		"credential_pool": map[string]any{"openai-codex": []any{
@@ -986,7 +803,6 @@ func TestOAuthGrantsMergeSnapshotKeepsLiveGenerations(t *testing.T) {
 			map[string]any{"id": "fresh", "auth_type": "oauth", "access_token": "f-at", "refresh_token": "f-rt"},
 			map[string]any{"auth_type": "oauth", "access_token": "noid-at", "refresh_token": "noid-rt"},
 		}},
-		"providers": map[string]any{"openai-codex": map[string]any{"tokens": map[string]any{"access_token": "c", "refresh_token": "live-c"}}},
 	}
 	got := MergeSnapshotAuthPreservingLiveSingleUseGrants(snapshot, live)
 	rows := got["credential_pool"].(map[string]any)["openai-codex"].([]any)
@@ -1000,12 +816,8 @@ func TestOAuthGrantsMergeSnapshotKeepsLiveGenerations(t *testing.T) {
 	if got["credential_pool"].(map[string]any)["openrouter"].([]any)[0].(map[string]any)["access_token"] != "or-snap" {
 		t.Fatal("ordinary credentials not restored from the snapshot")
 	}
-	providers := got["providers"].(map[string]any)
-	if _, ok := providers["xai-oauth"]; ok {
-		t.Fatal("snapshot only refresh grant revived")
-	}
-	if providers["openai-codex"].(map[string]any)["tokens"].(map[string]any)["refresh_token"] != "live-c" || providers["zai"] == nil {
-		t.Fatalf("providers %v", providers)
+	if got["providers"].(map[string]any)["zai"] == nil {
+		t.Fatalf("provider state not restored from the snapshot: %v", got["providers"])
 	}
 	if snapshot["credential_pool"].(map[string]any)["openai-codex"].([]any)[0].(map[string]any)["refresh_token"] != "old-rt" {
 		t.Fatal("snapshot input mutated")

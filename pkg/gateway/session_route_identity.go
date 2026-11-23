@@ -13,7 +13,7 @@ import (
 
 // Every model key that belongs to one endpoint, all dropped together on a route change
 var RouteBoundKeys = []string{"provider", "base_url", "api_mode", "context_length",
-	"api_key", "api", "api_key_from", "key_env", "api_key_env"}
+	"api_key", "api", "api_key_from", "key_env"}
 
 // Text of a config value as str(value or "") spells it
 func routeStr(value any) string {

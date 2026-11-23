@@ -2,7 +2,6 @@ package remote
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -15,43 +14,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-const legacySoul = "# Beta identity\n\n## Messaging other agents\nKEEP THIS PROFILE SECTION\n"
-
-type migratorKey struct{}
-
-func setProfile(p *configplane.Plane, name string, values map[string]any, version int, writer any) {
+func setProfile(p *configplane.Plane, name string, values map[string]any, version int) {
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
 	prof := p.Profile(name)
-	prof.Values, prof.Version, prof.Writer = values, version, writer
+	prof.Values, prof.Version = values, version
 }
 
 func profileValues(p *configplane.Plane, name string) map[string]any {
 	p.Mu.Lock()
 	defer p.Mu.Unlock()
 	return config.Clone(p.Profile(name).Values).(map[string]any)
-}
-
-func siblingWithLegacySoul(t *testing.T, h string) string {
-	t.Helper()
-	beta := filepath.Join(h, "profiles", "beta")
-	if err := os.MkdirAll(beta, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	soul := filepath.Join(beta, "SOUL.md")
-	if err := os.WriteFile(soul, []byte(legacySoul), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return soul
-}
-
-func mustRead(t *testing.T, path string) string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data)
 }
 
 // A first read of another profile while the poll loop walks the roster leaves the only poller running
@@ -95,7 +68,7 @@ func TestProfileAddedWhileThePollerIteratesDoesNotKillIt(t *testing.T) {
 // Another writer adds terminal.persistent between our read and our first PATCH, which then gets a 409
 func absentSectionRace(t *testing.T, p *configplane.Plane) {
 	t.Helper()
-	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise"}}, 1, nil)
+	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise"}}, 1)
 	if _, err := testBackend().ReadUserDoc(context.Background(), p.Home); err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +133,7 @@ func TestCASRetryOfANewEmptySectionKeepsAConcurrentOne(t *testing.T) {
 // Unsetting a present section is still sent whole
 func TestExplicitSectionReplacementStaysAReplacement(t *testing.T) {
 	p := setupPlane(t)
-	setProfile(p, "default", map[string]any{"terminal": map[string]any{"persistent": true, "timeout": 3}}, 1, nil)
+	setProfile(p, "default", map[string]any{"terminal": map[string]any{"persistent": true, "timeout": 3}}, 1)
 	if err := testBackend().WriteChanges(context.Background(), p.Home, config.Changes{Unset: []string{"terminal"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -168,23 +141,6 @@ func TestExplicitSectionReplacementStaysAReplacement(t *testing.T) {
 	mustEqualJSON(t, "unset", patches[len(patches)-1].Body["unset"], []any{"terminal"})
 	if _, has := profileValues(p, "default")["terminal"]; has {
 		t.Fatal("terminal kept")
-	}
-}
-
-// The migration conflict check of a refused edit leaves every local file as it was
-func TestRefusedWriteValidationChangesNoLocalFile(t *testing.T) {
-	p := setupPlane(t)
-	setProfile(p, "default", map[string]any{}, 1, 40)
-	if _, err := config.ReadRawConfig(context.Background(), p.Home); err != nil {
-		t.Fatal(err)
-	}
-	soul := siblingWithLegacySoul(t, p.Home)
-	var valueErr *config.ConfigValueError
-	if err := writeKey(p, "compression.threshold_tokens", 256000); !errors.As(err, &valueErr) || valueErr.Code != "config_migration_conflict" {
-		t.Fatalf("write %v", err)
-	}
-	if mustRead(t, soul) != legacySoul || len(p.Patches()) != 0 {
-		t.Fatal("local file rewritten or sent")
 	}
 }
 
@@ -218,7 +174,7 @@ func pollBeforeWrite(t *testing.T, p *configplane.Plane, change func(prof *confi
 // A poll between the read of config set and its save never turns the polled keys into edits
 func TestPollBetweenReadAndSaveSendsOnlyTheCallersEdit(t *testing.T) {
 	p := setupPlane(t)
-	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1, nil)
+	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1)
 	pollBeforeWrite(t, p, func(prof *configplane.Profile) {
 		prof.Values["display"].(map[string]any)["compact"] = true
 		prof.Values["terminal"] = map[string]any{"timeout": 321}
@@ -241,7 +197,7 @@ func TestPollBetweenReadAndSaveSendsOnlyTheCallersEdit(t *testing.T) {
 // The no omission guard read of an atomic config write never becomes the base of the stale caller doc
 func TestPollBetweenReadAndAtomicConfigWriteSendsOnlyTheCallersEdit(t *testing.T) {
 	p := setupPlane(t)
-	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1, nil)
+	setProfile(p, "default", map[string]any{"display": map[string]any{"personality": "concise", "compact": false}}, 1)
 	ctx := context.Background()
 	path := filepath.Join(p.Home, "config.yaml")
 	raw, err := config.ReadUserConfigRaw(ctx, path)
@@ -268,27 +224,4 @@ func TestPollBetweenReadAndAtomicConfigWriteSendsOnlyTheCallersEdit(t *testing.T
 	}
 	mustEqualJSON(t, "set", patches[0].Body["set"], map[string]any{"display.personality": "pirate"})
 	mustEqualJSON(t, "display", profileValues(p, "default")["display"], map[string]any{"personality": "pirate", "compact": true})
-}
-
-// Runs read in its own goroutine marked as the migrator
-func startMigrator(read func(ctx context.Context) (any, error)) (done chan struct{}, result *any, failure *error) {
-	done, result, failure = make(chan struct{}), new(any), new(error)
-	go func() {
-		defer close(done)
-		*result, *failure = read(context.WithValue(context.Background(), migratorKey{}, true))
-	}()
-	return done, result, failure
-}
-
-func assertMigrated(t *testing.T, doc any, latest int) {
-	t.Helper()
-	m := doc.(map[string]any)
-	if v, _ := pyInt(m["_config_version"]); v != latest {
-		t.Fatalf("version %v", m["_config_version"])
-	}
-	if c, ok := m["compression"].(map[string]any); ok {
-		if _, has := c["threshold_tokens"]; has {
-			t.Fatal("unmigrated doc returned")
-		}
-	}
 }

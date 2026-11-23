@@ -618,13 +618,13 @@ func orChatImages(body any) []string {
 	return out
 }
 
-// Saved path of one Image API data entry, empty when it carries neither b64_json nor url
-func orSaveImageAPIEntry(ctx context.Context, env *tools.Env, entry map[string]any, prefix string) (string, error) {
+// Saved path of one Image API data entry of the endpoint at baseURL, empty when it carries neither b64_json nor url
+func orSaveImageAPIEntry(ctx context.Context, env *tools.Env, entry map[string]any, prefix, baseURL string) (string, error) {
 	if b64 := stripAt(entry, "b64_json"); b64 != "" {
 		return saveB64Image(env, b64, prefix, orExtensionFor(entry["media_type"], "png"))
 	}
 	if u := stripAt(entry, "url"); u != "" {
-		return saveURLImage(ctx, env, u, prefix, orImageSaveTimeout, orImageSaveMaxBytes)
+		return saveURLImage(ctx, env, u, prefix, orImageSaveTimeout, orImageSaveMaxBytes, baseURL)
 	}
 	return "", nil
 }
@@ -830,7 +830,7 @@ func (p *openRouterImageGenProvider) viaImageAPI(ctx context.Context, env *tools
 	prefix := orImageProvider + "_" + orModelSlug(a.modelID)
 	var saved []string
 	for _, entry := range entries {
-		path, err := orSaveImageAPIEntry(ctx, env, entry, prefix)
+		path, err := orSaveImageAPIEntry(ctx, env, entry, prefix, a.baseURL)
 		if err != nil {
 			return fail(fmt.Sprintf("Could not save generated image: %v", err), "io_error"), false
 		}
@@ -924,7 +924,7 @@ func (p *openRouterImageGenProvider) viaChat(ctx context.Context, env *tools.Env
 		}
 		path, err = saveB64Image(env, b64, prefix, orExtensionFor(strings.TrimPrefix(header, "data:"), "png"))
 	} else {
-		path, err = saveURLImage(ctx, env, first, prefix, orImageSaveTimeout, orImageSaveMaxBytes)
+		path, err = saveURLImage(ctx, env, first, prefix, orImageSaveTimeout, orImageSaveMaxBytes, a.baseURL)
 	}
 	if err != nil {
 		return fail(fmt.Sprintf("Could not save generated image: %v", err), "io_error"), ""

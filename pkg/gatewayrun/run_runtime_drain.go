@@ -19,7 +19,6 @@ func (r *GatewayRunner) drainGatewayRuntime(ctx context.Context) {
 	r.draining.Store(true)
 	r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
 		descriptor["state"] = "draining"
-		descriptor["capabilities"] = []any{}
 		if reason, ok := descriptor["drain_reason"].(string); ok && reason == gateway.RestartWaitReason {
 			delete(descriptor, "drain_reason")
 		}

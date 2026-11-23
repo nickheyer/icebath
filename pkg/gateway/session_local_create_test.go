@@ -87,9 +87,12 @@ func TestExactCreateRetryAfterAnEnvRotationReturnsTheOriginalSession(t *testing.
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("CFG4_BASE_URL", "http://boot.invalid/v1")
 			ctx, a, home := envRefsOwner(t, "platform_toolsets: {cli: []}\n"+
-				"model: {provider: custom, default: m, base_url: \"${CFG4_BASE_URL}\"}\n"+
-				"model_aliases:\n"+
-				"  alias-env: {model: model-alias, provider: custom, base_url: \"${CFG4_BASE_URL}\"}\n",
+				"model:\n"+
+				"  provider: custom\n"+
+				"  default: m\n"+
+				"  base_url: \"${CFG4_BASE_URL}\"\n"+
+				"  aliases:\n"+
+				"    alias-env: {model: model-alias, provider: custom, base_url: \"${CFG4_BASE_URL}\"}\n",
 				"CFG4_BASE_URL=http://boot.invalid/v1\n")
 			params := func() map[string]any {
 				out := map[string]any{"request_id": "retry", "source": "cli", "cwd": home, "toolsets": []any{}}
@@ -119,9 +122,11 @@ func TestExactCreateRetryAfterAnEnvRotationReturnsTheOriginalSession(t *testing.
 func TestNewAliasSessionUsesTheCurrentProfileEnv(t *testing.T) {
 	t.Setenv("CFG4_BASE_URL", "http://boot.invalid/v1")
 	ctx, a, home := envRefsOwner(t, "platform_toolsets: {cli: []}\n"+
-		"model: {provider: custom, default: m}\n"+
-		"model_aliases:\n"+
-		"  alias-env: {model: model-alias, provider: custom, base_url: \"${CFG4_BASE_URL}\"}\n",
+		"model:\n"+
+		"  provider: custom\n"+
+		"  default: m\n"+
+		"  aliases:\n"+
+		"    alias-env: {model: model-alias, provider: custom, base_url: \"${CFG4_BASE_URL}\"}\n",
 		"CFG4_BASE_URL=http://rotated.invalid/v1\n")
 	created := func(requestID string) [2]any {
 		_, policy := envRefsCreated(t, ctx, a, map[string]any{

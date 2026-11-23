@@ -14,8 +14,6 @@ import (
 func quickTestContext(t *testing.T) context.Context {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("ICEBATH_LANGUAGE", "")
-	os.Unsetenv("ICEBATH_LANGUAGE")
 	i18n.ResetLanguageCache()
 	t.Cleanup(i18n.ResetLanguageCache)
 	return context.Background()

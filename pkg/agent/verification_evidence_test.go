@@ -24,8 +24,8 @@ import (
 func verifyLedgerWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("ICEBATH_VERIFY_ON_STOP", "1")
 	t.Setenv("ICEBATH_HOME", filepath.Join(dir, ".icebath"))
+	setSettingsForTest(t, map[string]any{"agent.verify_on_stop": true})
 	return dir
 }
 
@@ -532,13 +532,11 @@ func TestWindowsBackslashAdHocScriptPathIsMatched(t *testing.T) {
 	}
 }
 
-// Project root with a vitest package for the disabled guard tests
+// Project root with a vitest package in a home that leaves verify on stop at its default, off
 func disabledGuardProject(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(dir, ".icebath"))
-	t.Setenv("ICEBATH_VERIFY_ON_STOP", "")
-	os.Unsetenv("ICEBATH_VERIFY_ON_STOP")
 	root := filepath.Join(dir, "project")
 	writeFile(t, filepath.Join(root, "package.json"), `{"scripts": {"test": "vitest"}}`)
 	return dir, root
@@ -566,7 +564,7 @@ func TestDisabledGuardNeverTouchesTheLedger(t *testing.T) {
 
 func TestEnabledGuardRecordsIntoTheLedger(t *testing.T) {
 	dir, root := disabledGuardProject(t)
-	t.Setenv("ICEBATH_VERIFY_ON_STOP", "1")
+	setSettingsForTest(t, map[string]any{"agent.verify_on_stop": true})
 	if ev := recordTerminal(t, "npm test", root, "s1", 0, ""); len(ev) == 0 {
 		t.Fatal("nothing recorded")
 	}

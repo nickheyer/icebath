@@ -2,20 +2,19 @@ package gatewayrun
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Bare runner whose pairing store holds the user approved or not
 func pairingUnionRunner(t *testing.T, paired bool, userID string) *GatewayRunner {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, name := range []string{"TELEGRAM_ALLOWED_USERS", "TELEGRAM_ALLOW_ALL_USERS", "TELEGRAM_GROUP_ALLOWED_USERS",
-		"TELEGRAM_GROUP_ALLOWED_CHATS", "GATEWAY_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"} {
+	for _, name := range []string{"TELEGRAM_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"} {
 		t.Setenv(name, "")
 	}
 	registerGuardPlatformEntries(t)
@@ -46,7 +45,7 @@ func pairingSource(userID string) *gateway.SessionSource {
 
 func TestPairedUserAuthorizedEvenWhenNotInAllowlist(t *testing.T) {
 	r := pairingUnionRunner(t, true, "pairme")
-	t.Setenv("TELEGRAM_ALLOWED_USERS", "owner1,owner2")
+	setSettings(t, map[string]any{"telegram.allow_from": []any{"owner1", "owner2"}})
 	if !authorized(t, r, pairingSource("pairme")) {
 		t.Fatal("a paired user must be authorized alongside the allowlist")
 	}
@@ -73,11 +72,10 @@ func (a *liveWhatsAppAdapter) GetChatInfo(_ context.Context, chatID string) (map
 
 func TestRevokeWhatsappSoleEntryDeniesLiveAdapterWithoutRestart(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, name := range []string{"WHATSAPP_ALLOW_ALL_USERS", "WHATSAPP_GROUP_ALLOWED_USERS", "WHATSAPP_GROUP_ALLOWED_CHATS",
-		"GATEWAY_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"} {
+	for _, name := range []string{"WHATSAPP_ALLOW_ALL_USERS", "WHATSAPP_GROUP_ALLOWED_CHATS", "GATEWAY_ALLOWED_USERS"} {
 		t.Setenv(name, "")
 	}
-	t.Setenv("WHATSAPP_ALLOWED_USERS", "15551234567")
+	setSettings(t, map[string]any{"whatsapp.allow_from": []any{"15551234567"}})
 	withoutPlatformPlugins(t)
 	ctx := context.Background()
 	entry := &gateway.PlatformEntry{Name: "whatsapp", Label: "WhatsApp", AllowedUsersEnv: "WHATSAPP_ALLOWED_USERS", AllowAllEnv: "WHATSAPP_ALLOW_ALL_USERS"}
@@ -136,8 +134,8 @@ func TestRevokeWhatsappSoleEntryDeniesLiveAdapterWithoutRestart(t *testing.T) {
 	if approved, err := store.IsApproved(ctx, "whatsapp", "15551234567@s.whatsapp.net"); err != nil || approved {
 		t.Fatalf("is approved after revoke = %v %v", approved, err)
 	}
-	if value := os.Getenv("WHATSAPP_ALLOWED_USERS"); value != "" {
-		t.Fatalf("WHATSAPP_ALLOWED_USERS = %q", value)
+	if left := gateway.SettingList(ctx, settings.WhatsappAllowFrom); len(left) != 0 {
+		t.Fatalf("whatsapp.allow_from = %q", left)
 	}
 	if adapter.AllowFromSnapshot()["15551234567"] {
 		t.Fatal("the revoked number stays in the live adapter allowlist")
@@ -155,7 +153,7 @@ func TestRevokeWhatsappSoleEntryDeniesLiveAdapterWithoutRestart(t *testing.T) {
 
 func TestUnpairedUserInAllowlistStillAuthorized(t *testing.T) {
 	r := pairingUnionRunner(t, false, "")
-	t.Setenv("TELEGRAM_ALLOWED_USERS", "owner1")
+	setSettings(t, map[string]any{"telegram.allow_from": []any{"owner1"}})
 	if !authorized(t, r, pairingSource("owner1")) {
 		t.Fatal("an allowlisted user must stay authorized")
 	}

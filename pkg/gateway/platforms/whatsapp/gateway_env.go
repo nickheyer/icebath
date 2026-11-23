@@ -31,12 +31,9 @@ var envOverrides = []gateway.EnvStep{
 var authz = map[string]any{"allowed_users_env": "WHATSAPP_ALLOWED_USERS", "allow_all_env": "WHATSAPP_ALLOW_ALL_USERS",
 	"own_policy_env": []string{"WHATSAPP_DM_POLICY", "WHATSAPP_GROUP_POLICY"}, "allowlist_suppresses_pairing": true}
 
-// Registers the env declarations of the bundled whatsapp directory with the gateway config bridge, and the settings its names moved to
+// Registers the env declarations of the bundled whatsapp directory with the gateway config bridge, and the settings its access names moved to
 func init() {
 	gateway.RegisterBundledEnv("whatsapp", "", gateway.BundledEnvRows{Overrides: envOverrides, EnableCredentials: envEnableCredentials, Authz: authz})
 	gateway.RegisterEnvSettings(map[string]settings.Entry{"WHATSAPP_ALLOWED_USERS": settings.WhatsappAllowFrom,
-		"WHATSAPP_ALLOW_FROM": settings.WhatsappAllowFrom, "WHATSAPP_GROUP_ALLOWED_USERS": settings.WhatsappGroupAllowFrom,
-		"WHATSAPP_GROUP_ALLOW_FROM": settings.WhatsappGroupAllowFrom, "WHATSAPP_DM_POLICY": settings.WhatsappDmPolicy,
-		"WHATSAPP_GROUP_POLICY": settings.WhatsappGroupPolicy, "WHATSAPP_REQUIRE_MENTION": settings.WhatsappRequireMention,
-		"WHATSAPP_MENTION_PATTERNS": settings.WhatsappMentionPatterns, "WHATSAPP_FREE_RESPONSE_CHATS": settings.WhatsappFreeResponseChats})
+		"WHATSAPP_DM_POLICY": settings.WhatsappDmPolicy, "WHATSAPP_GROUP_POLICY": settings.WhatsappGroupPolicy})
 }

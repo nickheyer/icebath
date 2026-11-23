@@ -196,15 +196,29 @@ func tinyImageServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
+// Environment of a fresh home whose settings allow or refuse private and loopback addresses
 func privateURLEnv(t *testing.T, allow bool) *tools.Env {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", map[bool]string{true: "1", false: ""}[allow])
-	return &tools.Env{Home: t.TempDir(), Config: config.Tree{}}
+	t.Helper()
+	env := imageEnv(t, config.Tree{})
+	setAllowPrivateURLs(t, env, allow)
+	return env
+}
+
+// Turns the allow private URLs setting of the env's home on or off, its other settings kept
+func setAllowPrivateURLs(t *testing.T, env *tools.Env, allow bool) {
+	t.Helper()
+	cfg := config.Tree{}
+	for k, v := range env.Config {
+		cfg[k] = v
+	}
+	cfg["security"] = map[string]any{"allow_private_urls": allow}
+	setImageConfig(t, env, cfg)
 }
 
 func TestSaveURLImageWritesRealBytesToHomeCache(t *testing.T) {
 	srv := tinyImageServer(t)
 	env := privateURLEnv(t, true)
-	path, err := saveURLImage(context.Background(), env, srv.URL+"/img.png", "test", 5e9, 0)
+	path, err := saveURLImage(context.Background(), env, srv.URL+"/img.png", "test", 5e9, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +233,7 @@ func TestSaveURLImageWritesRealBytesToHomeCache(t *testing.T) {
 func TestSaveURLImage404Raises(t *testing.T) {
 	srv := tinyImageServer(t)
 	env := privateURLEnv(t, true)
-	if _, err := saveURLImage(context.Background(), env, srv.URL+"/missing.png", "", 5e9, 0); err == nil || !strings.Contains(err.Error(), "404") {
+	if _, err := saveURLImage(context.Background(), env, srv.URL+"/missing.png", "", 5e9, 0, ""); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -227,7 +241,7 @@ func TestSaveURLImage404Raises(t *testing.T) {
 func TestSaveURLImageOversizeRaisesAndCleansUp(t *testing.T) {
 	srv := tinyImageServer(t)
 	env := privateURLEnv(t, true)
-	_, err := saveURLImage(context.Background(), env, srv.URL+"/huge.png", "", 5e9, 1024*1024)
+	_, err := saveURLImage(context.Background(), env, srv.URL+"/huge.png", "", 5e9, 1024*1024, "")
 	if err == nil || !strings.Contains(err.Error(), "exceeds 1MB cap") {
 		t.Fatalf("got %v", err)
 	}
@@ -246,11 +260,11 @@ func TestSaveURLImageRefusesInternalTargetsBeforeConnect(t *testing.T) {
 	}))
 	t.Cleanup(counted.Close)
 	env := privateURLEnv(t, false)
-	if _, err := saveURLImage(context.Background(), env, counted.URL+"/img.png", "", 5e9, 0); err == nil || hits != 0 {
+	if _, err := saveURLImage(context.Background(), env, counted.URL+"/img.png", "", 5e9, 0, ""); err == nil || hits != 0 {
 		t.Fatalf("loopback fetched: %v hits %d", err, hits)
 	}
 	env = privateURLEnv(t, true)
-	if _, err := saveURLImage(context.Background(), env, counted.URL+"/to-metadata/img.png", "", 5e9, 0); err == nil || hits != 1 {
+	if _, err := saveURLImage(context.Background(), env, counted.URL+"/to-metadata/img.png", "", 5e9, 0, ""); err == nil || hits != 1 {
 		t.Fatalf("metadata redirect followed: %v hits %d", err, hits)
 	}
 	files, _ := filepath.Glob(filepath.Join(env.Home, "cache", "generated", "images", "*"))

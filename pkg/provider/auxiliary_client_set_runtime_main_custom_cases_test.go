@@ -27,7 +27,7 @@ func TestResolveAutoCustomEndToEndConfigLessCustomEndpointRoutesViaGlobal(t *tes
 }
 
 func TestResolveAutoCustomEndToEndNamedCustomWithConfigEntryStillRoutes(t *testing.T) {
-	ctx := auxResolveAutoCustomHome(t, "model:\n  default: glm-5.1\n  provider: 'custom:openclaw'\n  base_url: ''\ncustom_providers:\n  - name: openclaw\n    base_url: 'https://withcfg.example/v1'\n    model: glm-5.1\n    api_key: cfg-key\n")
+	ctx := auxResolveAutoCustomHome(t, "model:\n  default: glm-5.1\n  provider: 'custom:openclaw'\n  base_url: ''\nproviders:\n  openclaw:\n    base_url: 'https://withcfg.example/v1'\n    default_model: glm-5.1\n    api_key: cfg-key\n")
 	ctx = SetRuntimeMain(ctx, "custom:openclaw", "glm-5.1", RuntimeMainOptions{})
 	client, _, err := ResolveProviderClient(ctx, "auto", "", ProviderClientOptions{})
 	if err != nil || client == nil {
@@ -40,7 +40,7 @@ func TestResolveAutoCustomEndToEndNamedCustomWithConfigEntryStillRoutes(t *testi
 
 func TestResolveAutoCustomEndToEndNamedCustomAnthropicMessagesKeepsFullNameAndUrl(t *testing.T) {
 	proxyBase := "https://acme.palantirfoundry.com/api/v2/llm/proxy/anthropic"
-	ctx := auxResolveAutoCustomHome(t, "model:\n  default: claude-4-6-opus\n  provider: 'custom:palantir'\n  base_url: ''\ncustom_providers:\n  - name: palantir\n    base_url: '"+proxyBase+"'\n    model: claude-4-6-opus\n    api_key: foundry-token\n    api_mode: anthropic_messages\n")
+	ctx := auxResolveAutoCustomHome(t, "model:\n  default: claude-4-6-opus\n  provider: 'custom:palantir'\n  base_url: ''\nproviders:\n  palantir:\n    base_url: '"+proxyBase+"'\n    default_model: claude-4-6-opus\n    api_key: foundry-token\n    api_mode: anthropic_messages\n")
 	auxFakeAnthropicBuild(t, auxNoAnthropicPool, "")
 	ctx = SetRuntimeMain(ctx, "custom:palantir", "claude-4-6-opus", RuntimeMainOptions{BaseURL: proxyBase, APIKey: "foundry-token", APIMode: "anthropic_messages"})
 	client, resolved, err := ResolveProviderClient(ctx, "auto", "", ProviderClientOptions{})

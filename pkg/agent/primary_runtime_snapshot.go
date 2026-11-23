@@ -2,14 +2,10 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"math/big"
-	"os"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -121,36 +117,6 @@ func buildPrimaryRuntimeSnapshot(ctx context.Context, a *AIAgent, apiMode string
 		rt["anthropic_api_key"], rt["anthropic_base_url"], rt["is_anthropic_oauth"] = a.anthropicKeyValue(), a.anthropicBaseURL, a.isAnthropicOAuth
 	}
 	return rt
-}
-
-// Readonly config the reasoning echo flag reads, the load_config_readonly reasoning_params imports
-var reasoningEchoConfigLoader = func(ctx context.Context) (config.Tree, error) {
-	return config.LoadReadonly(ctx, home.Dir(ctx), os.LookupEnv)
-}
-
-// Configured model.reasoning_echo, false with a class only warning when the config cannot be read
-func readReasoningEchoFromConfig(ctx context.Context) bool {
-	warn := func(class string) bool {
-		pkgLog().Warn(fmt.Sprintf("Agent configuration for model.reasoning_echo could not be loaded (%s); "+
-			"using the default reasoning echo setting. Run 'icebath config check' "+
-			"and correct the reported configuration.", class))
-		return false
-	}
-	cfg, err := reasoningEchoConfigLoader(ctx)
-	if err != nil {
-		return warn(pyErrorClass(err))
-	}
-	model := cfg["model"]
-	if !pyrepr.Truthy(model) {
-		return false
-	}
-	switch m := model.(type) {
-	case map[string]any:
-		return pyrepr.Truthy(m["reasoning_echo"])
-	case config.Tree:
-		return pyrepr.Truthy(m["reasoning_echo"])
-	}
-	return warn("AttributeError")
 }
 
 // Anthropic credential as the agent holds it, the per request token source when the route installed one

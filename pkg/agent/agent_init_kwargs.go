@@ -172,8 +172,6 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 		o.Model, o.ModelNone = agentKwargText(value), value == nil
 	case "max_iterations":
 		o.MaxIterations, err = agentKwargOptInt(name, value)
-	case "tool_delay":
-		o.ToolDelay, err = agentKwargFloat(name, value)
 	case "enabled_toolsets":
 		o.EnabledToolsets, err = agentKwargTexts(name, value)
 	case "disabled_toolsets":

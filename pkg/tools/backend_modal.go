@@ -434,7 +434,7 @@ func (modalBackend) SupportsStreams() bool                  { return false }
 
 // Log message and error message when no Modal credentials are configured
 func modalUnavailableReason() (string, string) {
-	return "Modal backend selected but no direct Modal credentials/config was found. Configure Modal or choose a different TERMINAL_ENV.",
+	return "Modal backend selected but no direct Modal credentials/config was found. Configure Modal or pick another place to run commands in /setup terminal.",
 		"Modal backend selected but no direct Modal credentials/config was found."
 }
 

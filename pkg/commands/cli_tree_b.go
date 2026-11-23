@@ -136,8 +136,7 @@ func (c *CLI) addTreeB(root *cobra.Command) {
 	c.pos(cfgUnset, pOpt("key"))
 	c.newCmd(config, "path", "Print config file path", "")
 	c.newCmd(config, "env-path", "Print .env file path", "")
-	c.newCmd(config, "check", "Check for missing/outdated config", "")
-	c.newCmd(config, "migrate", "Update config with new options", "")
+	c.newCmd(config, "check", "Check which keys are set and what the saved config leaves inactive", "")
 
 	skin := c.newCmd(root, "skin", "List, switch, and tweak skins", "Manage Icebath skins. `set` tweaks one color of the active skin in place.")
 	c.newCmd(skin, "list", "List available skins", "")

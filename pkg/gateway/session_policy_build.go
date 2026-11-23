@@ -427,14 +427,9 @@ func applyLaunchOverrides(ctx context.Context, params, cfg map[string]any) error
 	}
 	if pyrepr.Truthy(params["checkpoints"]) {
 		section := map[string]any{}
-		switch held := cfg["checkpoints"].(type) {
-		case map[string]any:
+		if held, isMap := cfg["checkpoints"].(map[string]any); isMap {
 			for k, v := range held {
 				section[k] = v
-			}
-		default:
-			if pyrepr.Truthy(held) {
-				section["enabled"] = true
 			}
 		}
 		section["enabled"] = true

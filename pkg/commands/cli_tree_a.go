@@ -155,16 +155,12 @@ func (c *CLI) addTreeA(root *cobra.Command) {
 	c.newCmd(egress, "disable", "Turn off the proxy integration", "")
 	c.newCmd(egress, "config", "Print the generated proxy.yaml path", "")
 
-	migrate := c.newCmd(root, "migrate", "Move over from another agent, or migrate retired models and deprecated settings",
-		"With no type: find another agent's setup on this computer (OpenClaw, Claude Code, Codex CLI, Cursor, Grok Bot, OpenBot) and offer to import it. Name an agent to import from it; xai and relay rewrite deprecated settings in the active config.yaml.")
+	migrate := c.newCmd(root, "migrate", "Move over from another agent, or replace retiring xAI models",
+		"With no type: find another agent's setup on this computer (OpenClaw, Claude Code, Codex CLI, Cursor, Grok Bot, OpenBot) and offer to import it. Name an agent to import from it; xai replaces the xAI models that retire in the active config.yaml.")
 	mXai := c.newCmd(migrate, "xai", "Migrate xAI models scheduled for retirement on May 15, 2026",
 		"Scan config.yaml for references to xAI models retiring on May 15, 2026 and, with --apply, rewrite them in-place to the official replacements per the xAI migration guide. The original config.yaml is backed up before any rewrite.")
 	bf(mXai, "apply", "", "Rewrite config.yaml in-place (default: dry-run, no writes)")
 	bf(mXai, "no-backup", "", "Skip the timestamped backup of config.yaml when applying")
-	mRelay := c.newCmd(migrate, "relay", "Convert legacy ICEBATH_NEMO_RELAY_ATIF_*/ATOF_* exporter vars into relay-plugins.toml",
-		"The NeMo Relay cutover stopped reading the legacy exporter variables. Generate <icebath home>/relay-plugins.toml from them, point ICEBATH_NEMO_RELAY_PLUGINS_TOML at it, and comment the legacy lines out. Before validating it provisions the NeMo Relay runtime those plugins need, showing its progress. `icebath update` runs this for every profile automatically and validates only through a runtime already provisioned.")
-	bf(mRelay, "all-profiles", "", "Migrate the default home and every named profile (what `icebath update` does)")
-	bf(mRelay, "no-validate", "", "Skip provisioning Relay and activating the generated file through its validator before writing it")
 	for _, src := range ImportSources {
 		sub := c.newCmd(migrate, src.Name, "Import your "+src.Label+" setup into Icebath",
 			"Import your "+src.Label+" setup into the active profile (same as `icebath import-agent "+src.Name+"`). Always previews first and asks before changing anything.")

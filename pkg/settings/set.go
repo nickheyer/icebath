@@ -152,7 +152,7 @@ func write(ctx context.Context, e Entry, value any, scope Scope, reset bool) (Ch
 		if sid == "" {
 			return Change{}, ErrNoSession
 		}
-		if v, ok := layersOf(ctx, h).managed[m.Key]; ok {
+		if v, whole, pinned := managedPin(layersOf(ctx, h), e); pinned && whole {
 			return Change{}, fmt.Errorf("%w: %s is pinned to %v", ErrLocked, m.Key, v)
 		}
 		change.SessionID = sid

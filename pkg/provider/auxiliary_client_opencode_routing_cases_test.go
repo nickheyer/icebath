@@ -13,8 +13,8 @@ func auxOpencodeHome(t *testing.T) context.Context {
 	auxIsolateClientCache(t)
 	t.Setenv("OPENCODE_GO_API_KEY", "sk-go-test")
 	t.Setenv("OPENCODE_ZEN_API_KEY", "sk-zen-test")
-	return auxMainTestHome(t, "custom_providers:\n  - name: opencode-go-bridge\n    base_url: https://opencode.ai/zen/go/v1\n    api_key: sk-bridge\n"+
-		"  - name: opencode-go-pinned\n    base_url: https://opencode.ai/zen/go/v1\n    api_key: sk-pinned\n    api_mode: chat_completions\n")
+	return auxMainTestHome(t, "providers:\n  opencode-go-bridge:\n    base_url: https://opencode.ai/zen/go/v1\n    api_key: sk-bridge\n"+
+		"  opencode-go-pinned:\n    base_url: https://opencode.ai/zen/go/v1\n    api_key: sk-pinned\n    api_mode: chat_completions\n")
 }
 
 var auxOpencodeWireByModel = []struct {

@@ -2,55 +2,15 @@ package gateway
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/big"
-	"os"
-	"path/filepath"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
-
-// Legacy gateway.json base layer under the home, an empty mapping when absent and on a malformed file
-func LoadLegacyGatewayJSON(h string) any {
-	path := filepath.Join(h, "gateway.json")
-	if _, err := os.Stat(path); err != nil {
-		return map[string]any{}
-	}
-	data, err := readLegacyJSON(path)
-	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to load %s: %s", path, err))
-		return map[string]any{}
-	}
-	pkgLog().Info(fmt.Sprintf("Loaded legacy %s — consider moving settings to config.yaml", path))
-	return data
-}
-
-func readLegacyJSON(path string) (any, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	if !utf8.Valid(raw) {
-		return nil, errors.New("the file is not valid UTF-8")
-	}
-	v, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
-	if err != nil {
-		return nil, err
-	}
-	v = plainJSON(v)
-	if !pyrepr.Truthy(v) {
-		return map[string]any{}, nil
-	}
-	return v, nil
-}
 
 // Ordered JSON objects turned into plain mappings, recursively through lists
 func plainJSON(v any) any {

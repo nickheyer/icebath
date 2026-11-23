@@ -49,8 +49,7 @@ func testArt(t *testing.T) *art {
 }
 
 func TestWriteStatusIncludesEveryTarget(t *testing.T) {
-	good := []byte("package app\n")
-	textShape := shape{format: "TEXT"}
+	good := []byte("package theme\n")
 	for _, failure := range []string{"", "render", "directory", "verify"} {
 		out := t.TempDir()
 		first := "first.go"
@@ -67,8 +66,8 @@ func TestWriteStatusIncludesEveryTarget(t *testing.T) {
 					return []byte{}, nil
 				}
 				return good, nil
-			}, textShape},
-			{"last.go", func(*art) ([]byte, error) { return good, nil }, textShape},
+			}},
+			{"last.go", func(*art) ([]byte, error) { return good, nil }},
 		}
 		var log bytes.Buffer
 		code := cmdWrite(&log, targets, nil, out)
@@ -78,7 +77,7 @@ func TestWriteStatusIncludesEveryTarget(t *testing.T) {
 		if data, _ := os.ReadFile(filepath.Join(out, "last.go")); !bytes.Equal(data, good) {
 			t.Errorf("%q: the target after a failure was not written", failure)
 		}
-		if !strings.Contains(log.String(), "last.go: 12 bytes TEXT") || strings.Contains(log.String(), "FAILED") != (failure != "") {
+		if !strings.Contains(log.String(), "last.go: 14 bytes") || strings.Contains(log.String(), "FAILED") != (failure != "") {
 			t.Errorf("%q: report\n%s", failure, log.String())
 		}
 	}
@@ -96,20 +95,20 @@ func TestCheckAcceptsWrittenOutputsAndReportsMissingOnes(t *testing.T) {
 	if code := cmdCheck(&log, targets, a, out); code != 0 {
 		t.Fatalf("check failed:\n%s", log.String())
 	}
-	banner := filepath.Join(out, "pkg/app/banner_art.go")
-	os.WriteFile(banner, []byte("package app\n"), 0o644)
+	generated := filepath.Join(out, "pkg/ui/theme/art.go")
+	os.WriteFile(generated, []byte("package theme\n"), 0o644)
 	log.Reset()
-	if code := cmdCheck(&log, targets, a, out); code == 0 || !strings.Contains(log.String(), "banner_art.go: STALE") {
+	if code := cmdCheck(&log, targets, a, out); code == 0 || !strings.Contains(log.String(), "art.go: STALE") {
 		t.Fatalf("check passed a stale file:\n%s", log.String())
 	}
-	os.Remove(banner)
+	os.Remove(generated)
 	log.Reset()
-	if code := cmdCheck(&log, targets, a, out); code == 0 || !strings.Contains(log.String(), "banner_art.go: MISSING") {
+	if code := cmdCheck(&log, targets, a, out); code == 0 || !strings.Contains(log.String(), "art.go: MISSING") {
 		t.Fatalf("check passed a missing file:\n%s", log.String())
 	}
 }
 
-func TestBannerArtKeepsTheShapeTheBannersExpect(t *testing.T) {
+func TestArtKeepsTheShapeTheTerminalUIExpects(t *testing.T) {
 	src, err := loadSources(sourceRoot(t))
 	if err != nil {
 		t.Fatal(err)
@@ -146,8 +145,8 @@ func TestBannerArtKeepsTheShapeTheBannersExpect(t *testing.T) {
 	if !strings.Contains(strings.Join(src.markupLines(src.logoCells()), ""), "["+hexOf(src.red)+"]") {
 		t.Fatal("the logo lost its red accent")
 	}
-	code := src.bannerGo()
+	code := src.artGo()
 	if formatted, err := format.Source(code); err != nil || !bytes.Equal(formatted, code) {
-		t.Fatalf("banner Go source is not gofmt clean: %v", err)
+		t.Fatalf("art Go source is not gofmt clean: %v", err)
 	}
 }

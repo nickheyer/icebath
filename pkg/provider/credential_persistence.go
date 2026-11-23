@@ -11,15 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
-type providerSource struct{ provider, source string }
-
-var persistableProviderSources = map[providerSource]bool{
-	{"anthropic", IcebathPKCESource}: true,
-	{"minimax-oauth", "oauth"}:       true,
-	{"openai-codex", "device_code"}:  true,
-	{"xai-oauth", "device_code"}:     true,
-}
-
 var safeSecretishMetadataKeys = map[string]bool{
 	"secret_fingerprint": true, "secret_source": true, "token_type": true, "scope": true, "client_id": true,
 	"agent_key_id": true, "agent_key_expires_at": true, "agent_key_expires_in": true,
@@ -58,13 +49,10 @@ func normalizeSecretKey(key string) string {
 	return strings.NewReplacer("-", "_", ".", "_").Replace(out)
 }
 
-// IsBorrowedCredentialSource reports whether a pool source is reference only and must never persist secrets
-func IsBorrowedCredentialSource(source, providerID string) bool {
+// IsBorrowedCredentialSource reports whether a pool source is reference only and must never persist secrets, every source but an owned manual one
+func IsBorrowedCredentialSource(source string) bool {
 	normalized := pystr.Lower(pystr.Strip(source))
-	if normalized == "" || normalized == "manual" || strings.HasPrefix(normalized, "manual:") {
-		return false
-	}
-	return !persistableProviderSources[providerSource{pystr.Lower(pystr.Strip(providerID)), normalized}]
+	return normalized != "" && normalized != SourceManual && !strings.HasPrefix(normalized, SourceManual+":")
 }
 
 func isSecretPayloadKey(key string) bool {
@@ -138,7 +126,7 @@ func credentialSecretFingerprint(payload map[string]any) string {
 }
 
 // SanitizeBorrowedCredentialPayload strips raw secret fields from borrowed pool rows and leaves owned rows unchanged
-func SanitizeBorrowedCredentialPayload(payload map[string]any, providerID string) map[string]any {
+func SanitizeBorrowedCredentialPayload(payload map[string]any) map[string]any {
 	result := make(map[string]any, len(payload))
 	for k, v := range payload {
 		result[k] = v
@@ -147,7 +135,7 @@ func SanitizeBorrowedCredentialPayload(payload map[string]any, providerID string
 	if raw := result["source"]; pyrepr.Truthy(raw) {
 		source = pyrepr.Str(raw)
 	}
-	if !IsBorrowedCredentialSource(source, providerID) {
+	if !IsBorrowedCredentialSource(source) {
 		return result
 	}
 	fingerprint := credentialSecretFingerprint(result)

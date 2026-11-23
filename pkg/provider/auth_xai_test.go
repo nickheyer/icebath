@@ -140,11 +140,10 @@ func TestXAIDeviceCodeLoginSavesTokensAndSelectsProvider(t *testing.T) {
 	if err := LoginXAIOAuth(env, &out, XAILoginArgs{NoBrowser: true}, true); err != nil {
 		t.Fatal(err)
 	}
-	data := readAuthStore(t, h)
-	state := data["providers"].(map[string]any)["xai-oauth"].(map[string]any)
-	if data["active_provider"] != "xai-oauth" || state["tokens"].(map[string]any)["access_token"] != "acc" ||
-		state["discovery"].(map[string]any)["token_endpoint"] != "https://auth.x.ai/oauth2/token" {
-		t.Fatalf("%v", data)
+	logins := poolRows(t, h, "xai-oauth")
+	if len(logins) != 1 || logins[0]["access_token"] != "acc" || logins[0]["refresh_token"] != "ref" || logins[0]["source"] != SourceManualDeviceCode ||
+		logins[0]["base_url"] != DefaultXAIOAuthBaseURL {
+		t.Fatalf("%v", logins)
 	}
 	for _, want := range []string{"Signing in to xAI Grok OAuth (SuperGrok / Premium+)...", "https://x.ai/d?c=UC-1", "UC-1", "polling every 1s", "Login successful!"} {
 		if !strings.Contains(out.String(), want) {

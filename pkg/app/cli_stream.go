@@ -885,12 +885,6 @@ func (c *CLI) onToolCompletedProgress(functionName string, extra map[string]any,
 	c.streamMu.Lock()
 	c.forgetToolLabel(functionName)
 	c.streamMu.Unlock()
-	if c.focusViewEnabled {
-		func() {
-			defer func() { _ = recover() }()
-			c.noteFocusHiddenLine(functionName)
-		}()
-	}
 	if functionName != "" && (c.toolProgressMode == "new" || c.toolProgressMode == "all" || c.toolProgressMode == "verbose") {
 		durationValue, hasDuration := extra["duration"]
 		duration, numeric := progressNumber(durationValue)

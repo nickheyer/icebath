@@ -48,13 +48,13 @@ type ImageDetachResult struct {
 	Count    int64 `json:"count"`
 }
 
+// Typed or pasted text that may start with a file path, cwd the folder a relative path is read against
 type InputDetectDropParams struct {
-	SessionID string  `json:"session_id"`
-	Profile   *string `json:"profile,omitzero"`
-	Text      string  `json:"text,omitzero"`
+	Text string `json:"text,omitzero"`
+	Cwd  string `json:"cwd,omitzero"`
 }
 
-// A dropped path recognized in typed text, an image queued with its size or a file described in text
+// A dropped path recognized in typed text and the mention of its file to put in the prompt, an image with its size
 type InputDetectDropResult struct {
 	Matched       bool   `json:"matched"`
 	IsImage       bool   `json:"is_image,omitzero"`
@@ -63,7 +63,6 @@ type InputDetectDropResult struct {
 	Height        *int64 `json:"height,omitzero"`
 	TokenEstimate *int64 `json:"token_estimate,omitzero"`
 	Path          string `json:"path,omitzero"`
-	Count         *int64 `json:"count,omitzero"`
 	Text          string `json:"text,omitzero"`
 }
 
@@ -93,7 +92,7 @@ var CanonicalImageAttachBytes = NewCanonicalMethod[ImageAttachBytesParams, Canon
 // Drops a queued image before the turn is sent
 var ImageDetach = NewMethod[ImageDetachParams, ImageDetachResult]("image.detach")
 
-// Turns a terminal file drop pasted into the composer into an attachment
+// Turns a file path dropped or pasted into the composer into a mention of that file
 var InputDetectDrop = NewMethod[InputDetectDropParams, InputDetectDropResult]("input.detect_drop")
 
 // Spills a large paste to a file and answers the inline placeholder

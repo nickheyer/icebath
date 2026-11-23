@@ -30,13 +30,13 @@ func swap[T any](t *testing.T, p *T, v T) {
 	t.Cleanup(func() { *p = old })
 }
 
-// Private home and lock dir with every Yuanbao and allow all env var cleared
+// Private home and lock dir with every Yuanbao env var cleared
 func isolatedHome(t *testing.T) string {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("ICEBATH_GATEWAY_LOCK_DIR", t.TempDir())
-	keys := []string{"YUANBAO_HOME_CHANNEL", "YUANBAO_ALLOW_ALL_USERS", "GATEWAY_ALLOW_ALL_USERS"}
+	keys := []string{"YUANBAO_HOME_CHANNEL", "YUANBAO_ALLOW_ALL_USERS"}
 	for _, kv := range os.Environ() {
 		if key, _, _ := strings.Cut(kv, "="); strings.HasPrefix(key, "YUANBAO_") {
 			keys = append(keys, key)
@@ -75,6 +75,25 @@ func makeAdapter(t *testing.T, extra map[string]any) *YuanbaoAdapter {
 	}
 	adapter.setBotID("bot_123")
 	return adapter
+}
+
+// Turns on the allow all users setting in the home of the test, the opt in an open policy needs
+func allowAllUsers(t *testing.T) {
+	t.Helper()
+	if _, err := settings.Set(context.Background(), settings.GatewayAllowAllUsers.Key, true, settings.Global); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Chat the config.yaml of the test home stores as the Yuanbao home channel, empty when it stores none
+func storedHomeChannel(t *testing.T) string {
+	t.Helper()
+	stored, err := settings.Resolve(context.Background(), settings.Platforms.EntryKey(string(gateway.PlatformYuanbao))+".home_channel.chat_id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chat, _ := stored.Value.(string)
+	return chat
 }
 
 // Context of a secondary profile secret scope while the process multiplexes profiles

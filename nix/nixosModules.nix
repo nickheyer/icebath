@@ -1,4 +1,4 @@
-# NixOS module running the icebath gateway as a system service or in an OCI container
+# NixOS module running the icebath background service as a system service or in an OCI container
 { inputs, ... }:
 {
   flake.nixosModules.default =
@@ -73,16 +73,9 @@
         fi
 
         if [ ! -f /var/lib/icebath-tools-provisioned ] && command -v apt-get >/dev/null 2>&1; then
-          echo "First boot: provisioning agent tools..."
+          echo "First boot: installing the system packages icebath needs..."
           apt-get update -qq
-          apt-get install -y -qq sudo curl ca-certificates gnupg
-          mkdir -p /etc/apt/keyrings
-          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
-            > /etc/apt/sources.list.d/nodesource.list
-          apt-get update -qq
-          apt-get install -y -qq nodejs
+          apt-get install -y -qq sudo curl ca-certificates git
           touch /var/lib/icebath-tools-provisioned
         fi
 
@@ -90,23 +83,6 @@
           mkdir -p /etc/sudoers.d
           echo "$TARGET_USER ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/icebath
           chmod 0440 /etc/sudoers.d/icebath
-        fi
-
-        if ! command -v uv >/dev/null 2>&1 && [ ! -x "$TARGET_HOME/.local/bin/uv" ] && command -v curl >/dev/null 2>&1; then
-          su -s /bin/sh "$TARGET_USER" -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || true
-        fi
-
-        _UV_BIN="$TARGET_HOME/.local/bin/uv"
-        if [ ! -d "$TARGET_HOME/.venv" ] && [ -x "$_UV_BIN" ]; then
-          su -s /bin/sh "$TARGET_USER" -c "
-            export PATH=\"\$HOME/.local/bin:\$PATH\"
-            uv python install 3.12
-            uv venv --python 3.12 --seed \"\$HOME/.venv\"
-          " || true
-        fi
-
-        if [ -d "$TARGET_HOME/.venv/bin" ]; then
-          export PATH="$TARGET_HOME/.venv/bin:$PATH"
         fi
 
         if command -v setpriv >/dev/null 2>&1; then
@@ -187,13 +163,13 @@
             user = mkOption {
               type = types.str;
               default = "icebath";
-              description = "System user running the gateway.";
+              description = "System user running the background service.";
             };
 
             group = mkOption {
               type = types.str;
               default = "icebath";
-              description = "System group running the gateway.";
+              description = "System group running the background service.";
             };
 
             createUser = mkOption {
@@ -214,12 +190,12 @@
               description = ''
                 Add the icebath CLI to environment.systemPackages and export
                 ICEBATH_HOME system-wide (via environment.variables) so interactive
-                shells share state with the gateway service.
+                shells share state with the background service.
               '';
             };
 
             container = {
-              enable = mkEnableOption "OCI container mode (Ubuntu base, full self-modification support)";
+              enable = mkEnableOption "OCI container mode: the background service runs in a container (Ubuntu by default) where the agent may install system packages";
 
               backend = mkOption {
                 type = types.enum [
@@ -428,7 +404,7 @@
 
           (lib.mkIf (!cfg.container.enable) {
             systemd.services.icebath-agent = {
-              description = "Icebath Agent Gateway";
+              description = "Icebath background service";
               wantedBy = [ "multi-user.target" ];
               after = [
                 "network-online.target"
@@ -453,7 +429,7 @@
               '';
 
               serviceConfig = commonServiceConfig // {
-                ExecStart = lib.escapeShellArgs (common.gatewayArgv cfg);
+                ExecStart = lib.escapeShellArgs (common.serviceArgv cfg);
               };
 
               path = unitPath;
@@ -464,7 +440,7 @@
             virtualisation.docker.enable = lib.mkDefault (cfg.container.backend == "docker");
 
             systemd.services.icebath-agent = {
-              description = "Icebath Agent Gateway (container)";
+              description = "Icebath background service (container)";
               wantedBy = [ "multi-user.target" ];
               after = [
                 "network-online.target"

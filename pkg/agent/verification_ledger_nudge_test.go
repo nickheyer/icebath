@@ -15,8 +15,8 @@ import (
 func ledgerNudgeWorkspace(t *testing.T, scripts map[string]any, manifestRecipe map[string]any) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("ICEBATH_VERIFY_ON_STOP", "1")
 	t.Setenv("ICEBATH_HOME", filepath.Join(dir, ".icebath-home"))
+	setSettingsForTest(t, map[string]any{"agent.verify_on_stop": true})
 	t.Setenv("ICEBATH_SESSION_ID", "")
 	os.Unsetenv("ICEBATH_SESSION_ID")
 	project := filepath.Join(dir, "project")

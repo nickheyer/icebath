@@ -36,7 +36,7 @@ func newCompressedPicksChat(t *testing.T) *compressedPicksChat {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authority, err := gateway.InitializeSessionAuthority(ctx, runner, "default", "owner", nil, true)
+	authority, err := gateway.InitializeSessionAuthority(ctx, runner, storeHome(t, runner.SessionDB(ctx)), "owner", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func newCompressedPicksChat(t *testing.T) *compressedPicksChat {
 		t.Fatal(err)
 	}
 	viewer, err := gateway.NewAuthorityConnection(authority, picksTransport{}, map[string]any{
-		"provider": "local", "user_id": "viewer", "profile_id": "default", "instance_id": "owner",
+		"provider": "local", "user_id": "viewer", "profile_id": authority.ProfileID, "instance_id": "owner",
 		"capabilities": []any{"session:read", "session:control"}}, false)
 	if err != nil {
 		t.Fatal(err)

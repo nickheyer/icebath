@@ -17,7 +17,7 @@ import (
 func armedClarify(t *testing.T, clarifyID string, timeout int) *tools.Env {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
-	body := []byte("clarify:\n  timeout: " + strconv.Itoa(timeout) + "\n")
+	body := []byte("agent:\n  clarify_timeout: " + strconv.Itoa(timeout) + "\n")
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), body, 0o600); err != nil {
 		t.Fatal(err)
 	}

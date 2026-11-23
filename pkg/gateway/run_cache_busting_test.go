@@ -52,38 +52,14 @@ func TestExplicitCapDiffersFromAbsent(t *testing.T) {
 	}
 }
 
-// Checkpoint prefixed entries of an extracted signature
-func checkpointEntries(out map[string]any) map[string]any {
-	kept := map[string]any{}
-	for k, v := range out {
-		if strings.HasPrefix(k, "checkpoints.") {
-			kept[k] = v
-		}
-	}
-	return kept
-}
-
-// test_agent_cache.py TestExtractCacheBustingConfig test_legacy_checkpoints_bool_carries_defaults_for_the_other_keys
-func TestLegacyCheckpointsBoolCarriesDefaultsForTheOtherKeys(t *testing.T) {
-	ctx := context.Background()
-	legacy := ExtractCacheBustingConfig(ctx, map[string]any{"checkpoints": true})
-	explicit := ExtractCacheBustingConfig(ctx, map[string]any{"checkpoints": map[string]any{"enabled": true}})
-	if legacy["checkpoints.enabled"] != true {
-		t.Fatalf("checkpoints.enabled = %#v", legacy["checkpoints.enabled"])
-	}
-	if !reflect.DeepEqual(checkpointEntries(legacy), checkpointEntries(explicit)) {
-		t.Fatalf("legacy %#v explicit %#v", checkpointEntries(legacy), checkpointEntries(explicit))
-	}
-}
-
 func TestCheckpointOptionsFromConfig(t *testing.T) {
 	options := func(cfg map[string]any) (tools.CheckpointManagerOptions, error) {
 		kwargs := CheckpointAgentKwargs(cfg)
 		return tools.CheckpointManagerOptionsFromKwargs(pyrepr.Truthy(kwargs["checkpoints_enabled"]), kwargs)
 	}
-	o, err := options(map[string]any{"checkpoints": true})
+	o, err := options(map[string]any{"checkpoints": map[string]any{"enabled": true}})
 	if err != nil || !o.Enabled || o.MaxSnapshots != 20 || o.MaxTotalSizeMB != 500 || o.MaxFileSizeMB != 10 {
-		t.Fatalf("legacy bool wrong: %+v %v", o, err)
+		t.Fatalf("enabled section with defaults wrong: %+v %v", o, err)
 	}
 	o, err = options(map[string]any{"checkpoints": map[string]any{"enabled": false, "max_snapshots": 3, "max_file_size_mb": "4"}})
 	if err != nil || o.Enabled || o.MaxSnapshots != 3 || o.MaxFileSizeMB != 4 || o.MaxTotalSizeMB != 500 {

@@ -61,21 +61,15 @@ func TestCanonicalAPIModeStripsAndFoldsLikePythonStr(t *testing.T) {
 
 func TestNormalizedEntryCanonicalizes(t *testing.T) {
 	entry := func(apiMode string) map[string]any {
-		return map[string]any{"name": "relay", "api": "https://relay.example.invalid/v1", "api_mode": apiMode}
+		return map[string]any{"name": "relay", "base_url": "https://relay.example.invalid/v1", "api_mode": apiMode}
 	}
-	t.Run("test_legacy_openai_becomes_chat_completions", func(t *testing.T) {
+	t.Run("test_openai_becomes_chat_completions", func(t *testing.T) {
 		if got := NormalizeCustomProviderEntry(entry("openai"), "relay")["api_mode"]; got != "chat_completions" {
 			t.Fatalf("api_mode %v", got)
 		}
 	})
 	t.Run("test_canonical_value_unchanged", func(t *testing.T) {
 		if got := NormalizeCustomProviderEntry(entry("codex_responses"), "relay")["api_mode"]; got != "codex_responses" {
-			t.Fatalf("api_mode %v", got)
-		}
-	})
-	t.Run("test_transport_key_also_canonicalized", func(t *testing.T) {
-		e := map[string]any{"name": "relay", "api": "https://relay.example.invalid/v1", "transport": "openai"}
-		if got := NormalizeCustomProviderEntry(e, "relay")["api_mode"]; got != "chat_completions" {
 			t.Fatalf("api_mode %v", got)
 		}
 	})

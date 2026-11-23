@@ -42,7 +42,7 @@ var ToolsConfigHooks struct {
 	XAIOAuthStatus         func(ctx context.Context, h string) map[string]any
 	CodexAuthStatus        func(ctx context.Context, h string) map[string]any
 	CodexDeviceCodeLogin   func(ctx context.Context, h string, out io.Writer) (map[string]any, error)
-	SaveCodexTokens        func(ctx context.Context, h string, tokens map[string]any, lastRefresh string, setActive bool) error
+	SaveCodexTokens        func(ctx context.Context, h string, tokens map[string]any, lastRefresh string) error
 	XAIOAuthLoginFromSetup func(ctx context.Context, h string) bool
 	SetupPromptChoice      func(question string, choices []string, def int) int
 	SetupPrompt            func(question, def string, password bool) string

@@ -2,91 +2,79 @@ package discord
 
 import (
 	"context"
-	"errors"
-	"math"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-func patchRawConfig(t *testing.T, cfg map[string]any, err error) {
+// Adapter in a fresh home whose config.yaml holds the given text
+func configAdapter(t *testing.T, yaml string) *DiscordAdapter {
 	t.Helper()
-	orig := readRawConfig
-	readRawConfig = func(context.Context) (map[string]any, error) { return cfg, err }
-	t.Cleanup(func() { readRawConfig = orig })
-}
-
-func promptTimeout(t *testing.T) int {
-	t.Helper()
-	got, err := ReadDiscordPromptTimeout(context.Background())
-	if err != nil {
-		t.Fatalf("ReadDiscordPromptTimeout: %v", err)
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	return got
+	return newTestAdapter(t, nil)
 }
 
 func TestDiscordPromptTimeoutReadsAndClamps(t *testing.T) {
+	def := settings.ApprovalsDiscordPromptTimeout.Default.Seconds()
 	cases := []struct {
-		raw  any
-		want int
+		raw  string
+		want float64
 	}{
-		{int64(600), 600},
-		{"450", 450},
-		{"five minutes", DiscordPromptTimeoutDefault},
-		{int64(5), DiscordPromptTimeoutMin},
-		{int64(3600), 3600},
-		{int64(DiscordPromptTimeoutMax) + 1, DiscordPromptTimeoutMax},
-		{"", DiscordPromptTimeoutDefault},
-		{nil, DiscordPromptTimeoutDefault},
-		{90.9, 90},
-		{true, DiscordPromptTimeoutMin},
-		{math.NaN(), DiscordPromptTimeoutDefault},
-		{[]any{1}, DiscordPromptTimeoutDefault},
+		{"600", 600},
+		{"'450'", 450},
+		{"five minutes", def},
+		{"5", DiscordPromptTimeoutMin},
+		{"3600", 3600},
+		{strconv.Itoa(DiscordPromptTimeoutMax + 1), float64(DiscordPromptTimeoutMax)},
+		{"''", def},
+		{"", def},
+		{"90.5", 90.5},
+		{"true", def},
+		{"[1]", def},
 	}
 	for _, c := range cases {
-		patchRawConfig(t, map[string]any{"approvals": map[string]any{"discord_prompt_timeout": c.raw}}, nil)
-		if got := promptTimeout(t); got != c.want {
-			t.Fatalf("discord_prompt_timeout %v = %d want %d", c.raw, got, c.want)
+		a := configAdapter(t, "approvals:\n  discord_prompt_timeout: "+c.raw+"\n")
+		if got := a.promptTimeoutSeconds(context.Background()); got != c.want {
+			t.Fatalf("discord_prompt_timeout %q = %v want %v", c.raw, got, c.want)
 		}
 	}
 	if DiscordPromptTimeoutMax != 31536000 {
 		t.Fatalf("max = %d", DiscordPromptTimeoutMax)
 	}
-	for _, cfg := range []map[string]any{nil, {"approvals": nil}, {"approvals": "flat"}, {"approvals": []any{1}}} {
-		patchRawConfig(t, cfg, nil)
-		if got := promptTimeout(t); got != DiscordPromptTimeoutDefault {
-			t.Fatalf("config %v = %d", cfg, got)
+	for _, yaml := range []string{"", "approvals:\n", "approvals: flat\n", "approvals: [1]\n"} {
+		if got := configAdapter(t, yaml).promptTimeoutSeconds(context.Background()); got != def {
+			t.Fatalf("config %q = %v", yaml, got)
 		}
-	}
-	patchRawConfig(t, nil, errors.New("unreadable"))
-	if got := promptTimeout(t); got != DiscordPromptTimeoutDefault {
-		t.Fatalf("read failure = %d", got)
-	}
-	patchRawConfig(t, map[string]any{"approvals": map[string]any{"discord_prompt_timeout": math.Inf(1)}}, nil)
-	if _, err := ReadDiscordPromptTimeout(context.Background()); err == nil || err.Error() != "OverflowError: cannot convert float infinity to integer" {
-		t.Fatalf("infinity = %v", err)
 	}
 }
 
 func TestDiscordPromptTimeoutConfiguredThroughTheProfilesConfigYAML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
+	a := newTestAdapter(t, nil)
+	def := int(settings.ApprovalsDiscordPromptTimeout.Default.Seconds())
 	tree, err := config.Load(dir, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := tree.Int("approvals.discord_prompt_timeout", -1); got != DiscordPromptTimeoutDefault {
+	if got := tree.Int("approvals.discord_prompt_timeout", -1); got != def || a.promptTimeoutSeconds(context.Background()) != float64(def) {
 		t.Fatalf("registered default = %d", got)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("approvals:\n  discord_prompt_timeout: 1800\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	config.ResetCache()
-	if got := promptTimeout(t); got != 1800 {
-		t.Fatalf("config.yaml timeout = %d", got)
+	if got := a.promptTimeoutSeconds(context.Background()); got != 1800 {
+		t.Fatalf("config.yaml timeout = %v", got)
 	}
 	tree, err = config.Load(dir, nil)
 	if err != nil || tree.Int("approvals.discord_prompt_timeout", -1) != 1800 {
@@ -95,33 +83,23 @@ func TestDiscordPromptTimeoutConfiguredThroughTheProfilesConfigYAML(t *testing.T
 }
 
 func TestDMRoleAuthGuildIsOptIn(t *testing.T) {
-	cases := []struct {
-		discord any
-		want    string
-	}{
-		{map[string]any{"dm_role_auth_guild": int64(123456789012345678)}, "123456789012345678"},
-		{map[string]any{"dm_role_auth_guild": " 42 "}, "42"},
-		{map[string]any{"dm_role_auth_guild": ""}, ""},
-		{map[string]any{"dm_role_auth_guild": int64(0)}, ""},
-		{map[string]any{"dm_role_auth_guild": int64(-5)}, ""},
-		{map[string]any{"dm_role_auth_guild": "guild"}, ""},
-		{map[string]any{}, ""},
-		{nil, ""},
-		{"flat", ""},
+	cases := []struct{ yaml, want string }{
+		{"discord:\n  dm_role_auth_guild: 123456789012345678\n", "123456789012345678"},
+		{"discord:\n  dm_role_auth_guild: ' 42 '\n", "42"},
+		{"discord:\n  dm_role_auth_guild: ''\n", ""},
+		{"discord:\n  dm_role_auth_guild: 0\n", ""},
+		{"discord:\n  dm_role_auth_guild: -5\n", ""},
+		{"discord:\n  dm_role_auth_guild: guild\n", ""},
+		{"discord: {}\n", ""},
+		{"discord:\n", ""},
+		{"discord: flat\n", ""},
+		{"", ""},
 	}
 	for _, c := range cases {
-		patchRawConfig(t, map[string]any{"discord": c.discord}, nil)
-		got, err := ReadDMRoleAuthGuild(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
+		got := configAdapter(t, c.yaml).dmRoleAuthGuild(context.Background())
 		if (c.want == "" && got != nil) || (c.want != "" && (got == nil || got.String() != c.want)) {
-			t.Fatalf("discord %v = %v", c.discord, got)
+			t.Fatalf("config %q = %v", c.yaml, got)
 		}
-	}
-	patchRawConfig(t, nil, errors.New("unreadable"))
-	if got, err := ReadDMRoleAuthGuild(context.Background()); got != nil || err != nil {
-		t.Fatalf("read failure = %v %v", got, err)
 	}
 }
 

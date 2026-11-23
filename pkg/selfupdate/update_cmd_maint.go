@@ -868,14 +868,9 @@ func printPostUpdateNoticesAndSelfHeals(ctx context.Context, w io.Writer) error 
 		{"Curator recent-run notice failed: %s", quiet(printCuratorRecentRunNotice)},
 		{"FHS PATH guard check failed: %s", func() error { return ensureFHSPathGuard(ctx, w) }},
 		{"CLI launcher exposure failed: %s", func() error { return ensureACPLauncher(ctx) }},
-		{"Windows bin launcher migration failed: %s", func() error {
-			migrateWindowsBinPath(fleetProjectRoot())
-			return nil
-		}},
 		{"cua-driver refresh failed: %s", func() error { return refreshCuaDriverAfterUpdate(ctx, w) }},
 		{"Default PM tool install failed: %s", func() error { return installDefaultToolsAfterUpdate(ctx, w) }},
 		{"Checkpoint footprint notice failed: %s", func() error { return printCheckpointFootprintNotice(ctx, w) }},
-		{"Relay exporter migration failed: %s", func() error { return migrateRelayExporterEnv(ctx, w) }},
 	}
 	for _, step := range steps {
 		if err := bestEffort(ctx, step.message, step.run); err != nil {
@@ -883,10 +878,6 @@ func printPostUpdateNoticesAndSelfHeals(ctx context.Context, w io.Writer) error 
 		}
 	}
 	return nil
-}
-
-func migrateRelayExporterEnv(ctx context.Context, w io.Writer) error {
-	return plugins.RunRelayMigrationAfterUpdate(ctx, w)
 }
 
 // Post build housekeeping and the completion line, the SQLite runtime verdict of the next process

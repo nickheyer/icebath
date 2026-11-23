@@ -28,7 +28,6 @@ func wedgedExecutor(t *testing.T, wedged string, gateS float64, batchTimeout str
 		startOrderGateTimeoutS = gateS
 	}
 	t.Cleanup(func() { startOrderGateTimeoutS = old })
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", batchTimeout)
 	var mu sync.Mutex
 	var stamps []dispatchStamp
 	r := NewRegistry()
@@ -52,6 +51,7 @@ func wedgedExecutor(t *testing.T, wedged string, gateS float64, batchTimeout str
 		return PreToolDirective{}
 	}}
 	host := &fakeExecutorHost{env: newTestToolEnv(t)}
+	setToolBatchLimit(t, host.env, batchTimeout)
 	host.guardHook = func() {
 		if wedgedWorker.Load() == goroutineID() && fired.CompareAndSwap(false, true) {
 			select {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Channel of an interaction from the client cache, a bare DM or guild channel when uncached
@@ -58,19 +59,20 @@ func (a *DiscordAdapter) evaluateSlashAuthorization(ctx context.Context, i *disc
 		channelKeys = a.discordChannelKeysFromChannel(ch, parentID)
 		if allowed := a.getAllowedChannels(ctx); len(allowed) > 0 && !allowed.has("*") {
 			if len(channelIDs) == 0 {
-				return false, "channel id missing with DISCORD_ALLOWED_CHANNELS configured"
+				return false, "channel id missing with " + settings.DiscordAllowedChannels.Key + " set"
 			}
 			if !channelKeys.intersects(allowed) {
-				return false, "channel not in DISCORD_ALLOWED_CHANNELS"
+				return false, "channel not in " + settings.DiscordAllowedChannels.Key
 			}
 		}
 		if ignored := a.getIgnoredChannels(ctx); len(ignored) > 0 && len(channelIDs) > 0 {
 			if ignored.has("*") || channelKeys.intersects(ignored) {
-				return false, "channel in DISCORD_IGNORED_CHANNELS"
+				return false, "channel in " + settings.DiscordIgnoredChannels.Key
 			}
 		}
 	}
 	user := interactionUser(i)
+	a.syncAllowlists(ctx)
 	a.mu.Lock()
 	hasLists := len(a.allowedUserIDs) > 0 || len(a.allowedRoleIDs) > 0
 	a.mu.Unlock()
@@ -89,13 +91,14 @@ func (a *DiscordAdapter) evaluateSlashAuthorization(ctx context.Context, i *disc
 		keys = channelKeys
 	}
 	if !a.isAllowedUser(ctx, user.ID, roles, i.GuildID, inDM, keys) {
-		return false, "user not in DISCORD_ALLOWED_USERS / DISCORD_ALLOWED_ROLES"
+		return false, "user not in " + settings.DiscordAllowFrom.Key + " / " + settings.DiscordAllowedRoles.Key
 	}
 	return true, ""
 }
 
 // Role grant of an event built from the interaction, set only when a role list exists and the actor passes
 func (a *DiscordAdapter) slashRoleGrant(ctx context.Context, i *discordgo.Interaction) bool {
+	a.syncAllowlists(ctx)
 	a.mu.Lock()
 	hasRoles := len(a.allowedRoleIDs) > 0
 	a.mu.Unlock()

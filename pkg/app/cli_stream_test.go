@@ -78,14 +78,22 @@ func bareCLI() *CLI {
 	return c
 }
 
-// A CLI built by its constructor over a clean config with the given display section
+// A CLI built by its constructor over a home of its own whose config.yaml holds the given display section
 func configuredCLI(t *testing.T, display map[string]any, o CLIOptions) *CLI {
 	t.Helper()
 	t.Setenv("LLM_MODEL", "")
-	t.Setenv("ICEBATH_MAX_ITERATIONS", "")
 	full := map[string]any{"compact": false}
 	for k, v := range display {
 		full[k] = v
+	}
+	section, err := json.Marshal(map[string]any{"display": full})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := t.TempDir()
+	t.Setenv("ICEBATH_HOME", h)
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), append(section, '\n'), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	SetCLIConfig(map[string]any{
 		"model":    map[string]any{"default": "anthropic/claude-opus-4.6", "base_url": "https://openrouter.ai/api/v1", "provider": "auto"},

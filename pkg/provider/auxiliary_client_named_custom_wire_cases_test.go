@@ -183,9 +183,9 @@ func auxRecordCreateKwargs(t *testing.T) *[]map[string]any {
 // Config of the proxy entry carrying extra_body beside a second named entry and the auxiliary section
 func auxProxyExtraBodyConfigYAML(auxiliary string) string {
 	return "model:\n  default: some-model\n  provider: custom:my-proxy\n" +
-		"custom_providers:\n  - name: my-proxy\n    base_url: " + auxProxyExtraBodyBaseURL + "\n    model: some-model\n    api_key: sk-x\n" +
+		"providers:\n  my-proxy:\n    base_url: " + auxProxyExtraBodyBaseURL + "\n    default_model: some-model\n    api_key: sk-x\n" +
 		"    extra_body:\n      user: proxy-user\n      metadata:\n        tier: entry\n" +
-		"  - name: other-proxy\n    base_url: https://other.example/v1\n    api_key: sk-y\n    extra_body:\n      user: other-user\n" +
+		"  other-proxy:\n    base_url: https://other.example/v1\n    api_key: sk-y\n    extra_body:\n      user: other-user\n" +
 		"auxiliary:" + auxiliary
 }
 

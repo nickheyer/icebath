@@ -193,9 +193,8 @@ func (r *GatewayRunner) startSecondaryProfiles(ctx context.Context, connected in
 
 // Room worker, heartbeat, startup hook, channel directory and the pending update notice
 func (r *GatewayRunner) startPostConnectServices(ctx context.Context, connected int) error {
-	if _, err := r.ensureHostedRoomWorker(ctx); err != nil {
-		pkgLog().Error("Group Chat worker failed to start; mutating Group Chat commands "+
-			"will fail closed until supervision recovers it", "exc_info", err)
+	if _, err := r.ensureHostedRoomWorker(ctx); err != nil && !errors.Is(err, errRoomWorkerAwaitsAuthority) {
+		pkgLog().Error("The room worker failed to start; commands that change a room fail until it runs again", "exc_info", err)
 	}
 	r.spawnSupervised(func(c context.Context) error { return r.hostedRoomWorkerWatcher(c, 1.0) }, "hosted_room_worker", true, 0, supervisedHooks{})
 	r.startLoopHeartbeatTask(ctx)
@@ -615,18 +614,21 @@ func (r *GatewayRunner) onRelayProvisioned() {
 	}
 }
 
-// Ensures the room worker of the session authority runs and returns its service, an error until the authority is bound
+// The room worker cannot start before the session authority is bound, the ordinary state of a starting service
+var errRoomWorkerAwaitsAuthority = errors.New("the room worker waits for the session authority")
+
+// Ensures the room worker of the session authority runs and returns its service, errRoomWorkerAwaitsAuthority until the authority is bound
 func (r *GatewayRunner) ensureHostedRoomWorker(ctx context.Context) (any, error) {
 	if r.SessionAuthority() == nil {
-		return nil, errors.New("Group Chat worker waits for the session authority")
+		return nil, errRoomWorkerAwaitsAuthority
 	}
 	return gateway.EnsureHostedService(ctx, r)
 }
 
-// Keeps the room worker alive for the messaging gateway lifetime
+// Keeps the room worker alive for the lifetime of the service, waiting quietly while the session authority is not bound yet
 func (r *GatewayRunner) hostedRoomWorkerWatcher(ctx context.Context, interval float64) error {
 	for r.running.Load() {
-		if _, err := r.ensureHostedRoomWorker(ctx); err != nil {
+		if _, err := r.ensureHostedRoomWorker(ctx); err != nil && !errors.Is(err, errRoomWorkerAwaitsAuthority) {
 			return err
 		}
 		if err := sleepCtx(ctx, interval); err != nil {

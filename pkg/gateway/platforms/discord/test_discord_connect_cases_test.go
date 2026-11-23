@@ -62,7 +62,6 @@ func TestResolveAllowedUsernamesIgnoresDisplayNames(t *testing.T) {
 		a := usernameAdapter(t, []string{"alice"},
 			&discordgo.Guild{ID: "1", Name: "g1", Members: []*discordgo.Member{impostor}, MemberCount: 1},
 			&discordgo.Guild{ID: "2", Name: "g2", Members: []*discordgo.Member{owner}, MemberCount: 1})
-		t.Setenv("DISCORD_ALLOWED_USERS", "alice")
 		out := captureStdout(t, func() { a.resolveAllowedUsernames(context.Background()) })
 		if !maps.Equal(a.allowedUserIDs, newStrSet("222")) || strings.Contains(out, "display name") {
 			t.Fatalf("allowed %v out %q", a.allowedUserIDs, out)
@@ -73,15 +72,12 @@ func TestResolveAllowedUsernamesIgnoresDisplayNames(t *testing.T) {
 func TestResolveAllowedUsernamesPreservesWildcard(t *testing.T) {
 	for _, initial := range [][]string{{"*"}, {"769524422783664158", "*"}} {
 		a := usernameAdapter(t, initial)
-		sorted := append([]string(nil), initial...)
-		slices.Sort(sorted)
-		t.Setenv("DISCORD_ALLOWED_USERS", strings.Join(sorted, ","))
 		a.resolveAllowedUsernames(context.Background())
-		if !a.allowedUserIDs.has("*") {
-			t.Fatal("wildcard must survive username resolution")
+		if !a.allowedUserIDs.has("*") || len(a.allowedUserIDs) != len(initial) {
+			t.Fatalf("wildcard must survive username resolution, allowed %v", a.allowedUserIDs)
 		}
-		if !slices.Contains(strings.Split(os.Getenv("DISCORD_ALLOWED_USERS"), ","), "*") {
-			t.Fatal("env lost the wildcard")
+		if resolved, err := a.ResolvedAllowlistUserIDs(); err != nil || len(resolved.([]string)) != 0 {
+			t.Fatalf("resolved ids %v %v", resolved, err)
 		}
 	}
 }

@@ -17,7 +17,7 @@ import (
 
 // Steps of packages above this one that the module entry runs, assigned by cmd/icebath, the update steps nil without the updater
 var (
-	CheckRuntime          func(ctx context.Context, projectRoot string) (string, error)
+	ActivateRuntime       func(ctx context.Context) error
 	MaybeRunBootBootstrap func(ctx context.Context, projectRoot string)
 	ConfigureWindowsStdio func() bool
 )
@@ -68,11 +68,9 @@ func Main(ctx context.Context, argv []string, stdout, stderr io.Writer) int {
 	bestEffort(func() (bool, error) { tools.RegisterSelf(ctx, "gateway", ""); return true, nil }, "")
 	bestEffort(func() (bool, error) { gateway.ArmStartupWatchdog(ctx); return true, nil }, "")
 	bestEffort(func() (bool, error) { return ConfigureWindowsStdio(), nil }, "")
-	if CheckRuntime != nil {
-		if problem, ok := bestEffort(func() (string, error) { return CheckRuntime(ctx, pm.InstallRoot()) }, ""); !ok {
-			pkgLog().Debug("pm startup check failed")
-		} else if problem != "" {
-			pkgLog().Warn(problem)
+	if ActivateRuntime != nil {
+		if _, ok := bestEffort(func() (bool, error) { return true, ActivateRuntime(ctx) }, ""); !ok {
+			pkgLog().Debug("store activation failed")
 		}
 	}
 	if MaybeRunBootBootstrap != nil {

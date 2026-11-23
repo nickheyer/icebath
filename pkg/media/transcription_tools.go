@@ -35,9 +35,9 @@ func registerTranscriptionAPI() {
 	provider.FasterWhisperImportable = func() bool { return hasFasterWhisper() }
 }
 
-// STT API key through the shared voice key resolver, resolved per call
+// STT API key of the context profile through the shared voice key resolver, resolved per call
 var resolveSTTProviderKey = func(ctx context.Context, envVar, providerID string) string {
-	return tools.ResolveProviderSecret(nil, envVar, providerID, "", nil)
+	return tools.ResolveProviderSecret(sttCredentialEnv(ctx), envVar, providerID, "", nil)
 }
 
 // Reference counted cached model so an unload never closes a model a transcription still holds

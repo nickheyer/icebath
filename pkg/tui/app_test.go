@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -67,6 +68,9 @@ func drain(a *app, cmd tea.Cmd) {
 	}
 }
 
+// Text of the whole window as the terminal shows it
+func frame(a *app) string { return ansi.Strip(a.View().Content) }
+
 // Every row of the transcript as plain text, the rows scrolled out of view included
 func screen(a *app) string {
 	a.card.View(104, 30)
@@ -118,23 +122,41 @@ func TestLocalSlashCommandsChangeTheView(t *testing.T) {
 }
 
 func TestApprovalDialogAnswersTheServerRequest(t *testing.T) {
+	t.Setenv("ICEBATH_TUI_REDUCED_MOTION", "1")
 	a := testApp(t)
-	a.store.overlay.Approval = &approvalReq{RequestID: "req-1", Command: "rm -rf build", Description: "delete a folder", AllowPermanent: true}
-	a.Update(struct{}{})
-	d, isDialog := a.wm.Overlay().(*dialogCard)
+	g := attachScripted(t, a, nil)
+	req := &serverRequest{ID: "req-1", Method: tuigateway.ApprovalRequest.Name(), Params: map[string]any{"command": "rm -rf build", "description": "delete a folder"}, client: a.gw}
+	a.Update(serverRequestMsg{Request: req})
+	d, isDialog := a.wm.Sheet(a.card).(*dialogCard)
 	if !isDialog || d.kind != "approval" {
-		t.Fatalf("overlay %T", a.wm.Overlay())
+		t.Fatalf("sheet of the session card %T", a.wm.Sheet(a.card))
 	}
-	view := ansi.Strip(d.View(80, 12))
-	for _, want := range []string{"rm -rf build", "Allow once", "Deny", "Always allow"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("dialog lacks %q:\n%s", want, view)
+	shown := frame(a)
+	for _, want := range []string{"rm -rf build", "delete a folder", "Allow once", "Deny", "Always allow"} {
+		if !strings.Contains(shown, want) {
+			t.Fatalf("screen lacks %q:\n%s", want, shown)
 		}
 	}
-	drain(a, d.pick("deny"))
+	a.Update(keys.Press("y"))
+	if a.store.overlay.Approval == nil || a.card.composer.Value() != "y" {
+		t.Fatalf("a key typed as the approval appeared did not go to the prompt: approval %v draft %q", a.store.overlay.Approval, a.card.composer.Value())
+	}
+	time.Sleep(wm.SheetArmDelay + 50*time.Millisecond)
+	a.Update(keys.Press("n"))
 	if a.store.overlay.Approval != nil || a.store.turn.Outcome != tr(txt.SessionApprovalDenied) {
 		t.Fatalf("approval %v outcome %q", a.store.overlay.Approval, a.store.turn.Outcome)
 	}
+	if a.wm.Sheet(a.card) != nil || strings.Contains(frame(a), "rm -rf build") {
+		t.Fatalf("the answered approval stayed on screen:\n%s", frame(a))
+	}
+	eventually(t, "the verdict on the wire", func() bool {
+		for _, sent := range g.s.sentFrames() {
+			if result, answered := sent["result"].(map[string]any); answered && sent["id"] == "req-1" {
+				return result["choice"] == "deny"
+			}
+		}
+		return false
+	})
 }
 
 func TestPasteCollapsesIntoATokenThatExpandsOnSubmit(t *testing.T) {
@@ -198,38 +220,60 @@ func TestDropLastExchangeKeepsNotesAndEarlierTurns(t *testing.T) {
 }
 
 func TestConnectionCardWalksTheTargets(t *testing.T) {
+	t.Setenv("ICEBATH_TUI_REDUCED_MOTION", "1")
 	a := testApp(t)
-	a.store.applyConnectionRequest(tuigateway.ConnectionRequestPayload{OpID: "op-1", Seq: 1, Targets: []tuigateway.ConnectionOperationTarget{
+	g := attachScripted(t, a, map[string]func(map[string]any) map[string]any{
+		"connection.respond": fixed(map[string]any{"status": "ok", "settled": false}),
+	})
+	a.store.ui.Sid = "s1"
+	opened := tuigateway.ConnectionRequestPayload{OpID: "op-1", Seq: 1, Targets: []tuigateway.ConnectionOperationTarget{
 		{Name: "github", Kind: "mcp", State: "connected", Action: "authorize"},
 		{Name: "linear", Kind: "mcp", State: "pending", Action: "install", Description: ptr("Issue tracker"),
 			RequiredEnv: []tuigateway.ConnectionTargetEnvField{{Name: "LINEAR_API_KEY", Secret: true, Required: true}}},
-	}})
-	a.Update(struct{}{})
-	d, isDialog := a.wm.Overlay().(*dialogCard)
+	}}
+	a.Update(gatewayEventMsg{Type: tuigateway.ConnectionRequestEvent.Name(), SessionID: "s1", Payload: tuigateway.ConnectionRequestEvent.Wire(opened)})
+	d, isDialog := a.wm.Sheet(a.card).(*dialogCard)
 	if !isDialog || d.kind != "connection" {
-		t.Fatalf("overlay %T", a.wm.Overlay())
+		t.Fatalf("sheet of the session card %T", a.wm.Sheet(a.card))
 	}
-	view := ansi.Strip(d.View(80, 14))
+	shown := frame(a)
 	for _, want := range []string{"● github · connected", "○ linear · pending", "Issue tracker", "Install linear", "Skip", "LINEAR_API_KEY"} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("card lacks %q:\n%s", want, view)
+		if !strings.Contains(shown, want) {
+			t.Fatalf("screen lacks %q:\n%s", want, shown)
 		}
 	}
 	target := a.activeConnectionTarget()
-	approved := connectionAnswer(target, "approved", []string{"lin_key"})
-	if row := approved.Targets[0]; row.Name != "linear" || row.Status != "approved" || row.Env["LINEAR_API_KEY"] != "lin_key" {
-		t.Fatalf("answer %+v", approved)
-	}
-	if skipped := connectionAnswer(target, "skipped", nil).Targets[0]; skipped.Status != "skipped" || skipped.Env != nil {
+	if skipped := connectionAnswer(target, "skipped", nil).Targets[0]; skipped.Name != "linear" || skipped.Status != "skipped" || skipped.Env != nil {
 		t.Fatalf("skip %+v", skipped)
 	}
-	a.store.applyConnectionUpdate(tuigateway.ConnectionUpdatePayload{ConnectionOperationSnapshot: tuigateway.ConnectionOperationSnapshot{OpID: "op-1", Seq: 2,
+	time.Sleep(wm.SheetArmDelay + 50*time.Millisecond)
+	for _, key := range []string{"l", "i", "n", "_", "k", "e", "y"} {
+		a.Update(keys.Press(key))
+	}
+	_, answered := a.Update(keys.Press("enter"))
+	settle(a, answered)
+	sent := g.sent("connection.respond")
+	if len(sent) != 1 || sent[0]["op_id"] != "op-1" {
+		t.Fatalf("answers on the wire %v", sent)
+	}
+	owner, _ := sent[0]["owner"].(map[string]any)
+	result, _ := sent[0]["result"].(map[string]any)
+	rows, _ := result["targets"].([]any)
+	if owner["session_id"] != "s1" || len(rows) != 1 {
+		t.Fatalf("answer %v", sent[0])
+	}
+	row, _ := rows[0].(map[string]any)
+	env, _ := row["env"].(map[string]any)
+	if row["name"] != "linear" || row["status"] != "approved" || env["LINEAR_API_KEY"] != "lin_key" {
+		t.Fatalf("answer %v", sent[0])
+	}
+	moved := tuigateway.ConnectionUpdatePayload{Owner: tuigateway.SessionOwner{Type: "session", SessionID: "s1"}, ConnectionOperationSnapshot: tuigateway.ConnectionOperationSnapshot{OpID: "op-1", Seq: 2,
 		Targets: []tuigateway.ConnectionOperationTarget{{Name: "github", Kind: "mcp", Action: "authorize", State: "connected"},
-			{Name: "linear", Kind: "mcp", Action: "install", State: "initiated", ConnectURL: ptr("https://linear.app/oauth")}}}})
-	a.Update(struct{}{})
-	next, _ := a.wm.Overlay().(*dialogCard)
-	if next == nil || next == d || !strings.Contains(ansi.Strip(next.View(80, 14)), "https://linear.app/oauth") {
-		t.Fatalf("card did not follow the update: %v", next)
+			{Name: "linear", Kind: "mcp", Action: "install", State: "initiated", ConnectURL: ptr("https://linear.app/oauth")}}}}
+	a.Update(gatewayEventMsg{Type: tuigateway.ConnectionUpdateEvent.Name(), SessionID: "s1", Payload: tuigateway.ConnectionUpdateEvent.Wire(moved)})
+	next, _ := a.wm.Sheet(a.card).(*dialogCard)
+	if next == nil || next == d || !strings.Contains(frame(a), "https://linear.app/oauth") {
+		t.Fatalf("card did not follow the update: %v\n%s", next, frame(a))
 	}
 	if done := connectionAnswer(nil, "", nil); val(done.SettledBy) != "continue" {
 		t.Fatalf("continue %+v", done)

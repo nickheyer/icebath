@@ -188,15 +188,6 @@ func TestSaveConfigExplicitPathAuthoritySaveSurvivesCachedRawReadReturningEmpty(
 	}
 }
 
-func TestUnquotedNumericProviderLoadsAsString(t *testing.T) {
-	for _, scalar := range []string{"2", "0", "2.0"} {
-		h, _, _ := moduleHome(t, "model:\n  default: deepseek-flash\n  provider: "+scalar+"\n")
-		if got := moduleLoad(t, h).Get("model.provider"); got != scalar {
-			t.Fatalf("provider %#v, want the string %q", got, scalar)
-		}
-	}
-}
-
 func TestAbsentProviderKeyIsNotInjected(t *testing.T) {
 	h, _, _ := moduleHome(t, "model:\n  default: deepseek-flash\n")
 	if _, has := moduleLoad(t, h).Map("model")["provider"]; has {

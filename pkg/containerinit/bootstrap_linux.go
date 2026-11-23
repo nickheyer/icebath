@@ -434,7 +434,6 @@ func runBootstrap(exe string) error {
 			say("[stage2] Warning: could not grant group access to /.fly/api — scale-to-zero self-suspend will fail EACCES (fail-awake)")
 		}
 	}
-	b.step("", "config-migrate")
 	b.step("[stage2] Warning: dependency refresh failed; continuing", "dependencies")
 	if err := b.authBootstrap(); err != nil {
 		return err

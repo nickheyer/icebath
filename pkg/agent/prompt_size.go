@@ -150,8 +150,6 @@ func buildInspectionAgent(ctx context.Context, env *tools.Env, platform string) 
 	model := ""
 	if v := modelCfg["default"]; pyrepr.Truthy(v) {
 		model = pyrepr.Str(v)
-	} else if v := modelCfg["model"]; pyrepr.Truthy(v) {
-		model = pyrepr.Str(v)
 	}
 	platformTools := tools.Default.PlatformTools(ctx, tools.ScopeKey(home.Dir(ctx)), cfg, platform, tools.PlatformToolsOptions{IncludeDefaultMCPServers: true})
 	enabled := make([]string, 0, len(platformTools))

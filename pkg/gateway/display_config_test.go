@@ -49,8 +49,11 @@ func TestWarningNotificationPolicy(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("display:\n  suppress_warning_notifications: true\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if config.WarningNotificationsEnabled(ctx, "telegram") {
-		t.Fatal("the profile setting must hide warnings")
+	if config.WarningNotificationsEnabled(ctx, "telegram") || config.WarningNotificationsEnabled(ctx, "slack") {
+		t.Fatal("the profile setting must hide warnings on every platform")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("display:\n  platforms:\n    telegram:\n      suppress_warning_notifications: true\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	if !config.IsWarningStatus("warn", "x") || !config.IsWarningStatus("status", config.DiagnosticText("x")) || config.IsWarningStatus("status", "x") {
 		t.Fatal("warning status")

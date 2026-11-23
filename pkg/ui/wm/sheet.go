@@ -15,11 +15,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
-// Quiet time after a sheet comes into view and the gap a burst of typing must leave before keys reach it instead of its card
-const (
-	sheetArmDelay = 600 * time.Millisecond
-	sheetBurstGap = 300 * time.Millisecond
-)
+// Quiet time after a sheet or a guarded overlay comes into view before keys and clicks reach it
+const SheetArmDelay = 600 * time.Millisecond
+
+// Gap a burst of typing must leave before keys reach a sheet instead of its card
+const sheetBurstGap = 300 * time.Millisecond
 
 // Card that gives the sheets it holds a part of its content, such as the rows above its prompt, in content coordinates
 type SheetHolder interface {
@@ -85,7 +85,7 @@ func (m *Model) showSheet(host *entry) tea.Cmd {
 	s := host.sheets[0]
 	s.shownAt, s.lastKey = m.now(), time.Time{}
 	s.dirty = true
-	return sheetTick(sheetArmDelay)
+	return sheetTick(SheetArmDelay)
 }
 
 // Takes the sheet out of the card it sits in, the next one waiting there coming into view
@@ -174,7 +174,7 @@ func showing(e *entry) *entry {
 // Whether keys reach the sheet now: not right after it came into view, nor amid a burst of typing that went to its card
 func (m *Model) armed(s *entry) bool {
 	now := m.now()
-	return now.Sub(s.shownAt) >= sheetArmDelay && now.Sub(s.lastKey) >= sheetBurstGap
+	return now.Sub(s.shownAt) >= SheetArmDelay && now.Sub(s.lastKey) >= sheetBurstGap
 }
 
 // Whether the card of an overlay asks for the guard
@@ -322,7 +322,7 @@ func (m *Model) sheetPress(e *entry, msg tea.MouseClickMsg, sx, sy int) (tea.Cmd
 	}
 	s := showing(e)
 	focus := m.focusEntry(e)
-	if m.now().Sub(s.shownAt) < sheetArmDelay {
+	if m.now().Sub(s.shownAt) < SheetArmDelay {
 		return focus, true
 	}
 	if sy == b.Y+b.H-1 && msg.Button == tea.MouseLeft {

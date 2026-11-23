@@ -23,7 +23,7 @@ func quickHome(t *testing.T) string {
 	h := filepath.Join(t.TempDir(), ".icebath")
 	writeTree(t, h, map[string]string{
 		"config.yaml": "model:\n  provider: openrouter\n", ".env": "OPENROUTER_API_KEY=test-key-123\n",
-		"auth.json": "{\"providers\": {}}\n", "channel_aliases.json": "{\"whatsapp\": {\"120363408391911677@g.us\": \"general\"}}\n",
+		"auth.json": "{\"version\": 2, \"providers\": {}}\n", "channel_aliases.json": "{\"whatsapp\": {\"120363408391911677@g.us\": \"general\"}}\n",
 		"cron/jobs.json": "{\"jobs\": []}\n",
 	})
 	c := testConn(t, filepath.Join(h, "state.db"), "")

@@ -166,61 +166,6 @@ func leftCoreYAMLLayers(h string) (map[string]any, error) {
 	return config.ApplyManagedOverlay(expanded), nil
 }
 
-// PlatformConfiguredOn reports a platform switched on, or holding a token without an enabled key, in the merged gateway config
-func PlatformConfiguredOn(h, name string) bool {
-	gwData := gatewayLegacyJSON(h)
-	if gwData == nil {
-		gwData = map[string]any{}
-	}
-	yamlCfg, err := leftCoreYAMLLayers(h)
-	if err != nil {
-		yamlCfg = map[string]any{}
-	}
-	block, ok := gatewayMergePlatformSections(yamlCfg, yamlCfg["gateway"], gwData, []string{name})[name].(map[string]any)
-	if !ok {
-		return false
-	}
-	enabled, token := gatewayPlatformEnabled(block)
-	_, explicit := block["enabled"]
-	return enabled || (!explicit && strings.TrimSpace(token) != "")
-}
-
-// Reports a toolset of names selected for another platform or in the top level toolsets list
-func toolsetListed(cfg map[string]any, names map[string]bool, ownPlatform string) bool {
-	var selections []any
-	if rows, ok := cfg["platform_toolsets"].(map[string]any); ok {
-		for platform, sel := range rows {
-			if platform != ownPlatform {
-				selections = append(selections, sel)
-			}
-		}
-	}
-	selections = append(selections, cfg["toolsets"])
-	for _, sel := range selections {
-		if list, ok := sel.([]any); ok {
-			for _, item := range list {
-				if names[pyStr(item)] {
-					return true
-				}
-			}
-		}
-	}
-	return false
-}
-
-// auth.json of a home, empty when missing, unreadable or invalid
-func leftCoreAuthStore(h string) map[string]any {
-	data, err := os.ReadFile(home.AuthPath(h))
-	if err != nil {
-		return map[string]any{}
-	}
-	var store any
-	if json.Unmarshal(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")), &store) != nil {
-		return map[string]any{}
-	}
-	return anyMap(store)
-}
-
 // Whether the plugin key or name sits in plugins.enabled and plugins.disabled with the managed overlay applied
 func leftCorePluginLists(h, plugin string) (bool, bool) {
 	feature := leftCoreFeatureByPlugin(plugin)
@@ -246,15 +191,6 @@ func leftCorePluginLists(h, plugin string) (bool, bool) {
 }
 
 func isLaunchHome(h string) bool { return home.Key(h) == home.Key(home.Process()) }
-
-// Env name from the home dotenv layers, else the launch home process env when asked
-func leftCoreHomeEnv(h, name string, processEnv bool) string {
-	value := strings.TrimSpace(resolveHomeDotenv(h)[name])
-	if value == "" && processEnv && isLaunchHome(h) {
-		value = strings.TrimSpace(os.Getenv(name))
-	}
-	return value
-}
 
 func leftCoreInstallSentence(ctx context.Context, f *LeftCoreFeature) string {
 	return fmt.Sprintf("%s moved out of core into the '%s' plugin: install it with `%s`", f.Label, f.Plugin,

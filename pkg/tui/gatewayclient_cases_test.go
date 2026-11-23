@@ -16,7 +16,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/ui/txt"
 )
 
-const readyPayload = `{"heartbeat":true,"change_events":true,"replay_epoch":"e1","build":"b1"}`
+const readyPayload = `{"replay_epoch":"e1","build":"b1"}`
+
+// Answer of the service to the launch pin of the tool progress mode on a session
+var toolProgressPinned = map[string]any{"result": map[string]any{"row": map[string]any{"key": "display.tool_progress", "value": "verbose", "source": "session"}, "apply": "live"}}
 
 // Local grant client started and subscribed, its first socket open
 func startLocal(t *testing.T, boot *fakeBootstrap) (*gatewayClient, *fakeDialer, *fakeClock, *recorder, *fakeSocket) {
@@ -116,15 +119,15 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		created := goRequest(c, "session.create", map[string]any{})
 		eventually(t, "the create", func() bool { return s.last("session.create") != nil })
 		s.answer("session.create", map[string]any{"result": map[string]any{"session_id": "fresh", "info": map[string]any{}}})
-		eventually(t, "the pin", func() bool { return s.last("config.set") != nil })
+		eventually(t, "the pin", func() bool { return s.last("settings.set") != nil })
 		if created.settled() {
 			t.Fatal("create settled before its pin")
 		}
-		pin := s.last("config.set")["params"].(map[string]any)
-		if pin["key"] != "verbose" || pin["session_id"] != "fresh" || pin["value"] != "verbose" {
+		pin := s.last("settings.set")["params"].(map[string]any)
+		if pin["key"] != "display.tool_progress" || pin["session_id"] != "fresh" || pin["value"] != "verbose" || pin["scope"] != "session" {
 			t.Fatalf("pin %v", pin)
 		}
-		s.answer("config.set", map[string]any{"result": map[string]any{"key": "verbose", "value": "verbose", "scope": "session"}})
+		s.answer("settings.set", toolProgressPinned)
 		value, err := created.wait(t)
 		if err != nil || value.(map[string]any)["session_id"] != "fresh" {
 			t.Fatalf("created %v %v", value, err)
@@ -147,8 +150,8 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		first := goRequest(c, "session.create", map[string]any{"request_id": "attempt-1", "model": "m"})
 		eventually(t, "the first create", func() bool { return s.last("session.create") != nil })
 		ack()
-		eventually(t, "the first pin", func() bool { return s.last("config.set") != nil })
-		s.answer("config.set", map[string]any{"error": map[string]any{"code": -32000, "message": "config refused"}})
+		eventually(t, "the first pin", func() bool { return s.last("settings.set") != nil })
+		s.answer("settings.set", map[string]any{"error": map[string]any{"code": -32000, "message": "config refused"}})
 		if _, err := first.wait(t); err == nil || err.Error() != "config refused" {
 			t.Fatalf("first %v", err)
 		}
@@ -158,13 +161,13 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		})
 		ack()
 		eventually(t, "the second pin", func() bool {
-			return len(slices.DeleteFunc(s.methods(), func(m string) bool { return m != "config.set" })) == 2
+			return len(slices.DeleteFunc(s.methods(), func(m string) bool { return m != "settings.set" })) == 2
 		})
-		pin := s.last("config.set")["params"].(map[string]any)
-		if pin["key"] != "verbose" || pin["session_id"] != "orphan-1" || pin["value"] != "verbose" {
+		pin := s.last("settings.set")["params"].(map[string]any)
+		if pin["key"] != "display.tool_progress" || pin["session_id"] != "orphan-1" || pin["value"] != "verbose" || pin["scope"] != "session" {
 			t.Fatalf("pin %v", pin)
 		}
-		s.answer("config.set", map[string]any{"result": map[string]any{"key": "verbose", "value": "verbose", "scope": "session"}})
+		s.answer("settings.set", toolProgressPinned)
 		value, err := retry.wait(t)
 		if err != nil || value.(map[string]any)["session_id"] != "orphan-1" || !reflect.DeepEqual(order, []string{"orphan-1"}) {
 			t.Fatalf("retry %v %v minted %v", value, err, order)
@@ -359,7 +362,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 	t.Run("keeps a healthy idle websocket open when heartbeat acknowledgements arrive (issue #32997)", func(t *testing.T) {
 		c, d, k, s := openExplicit(t, "ws://gateway.test/api/ws?token=abc")
 		c.attach((&recorder{}).send)
-		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"heartbeat":true}}}`)
+		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}`)
 		eventually(t, "the heartbeat", func() bool { return k.dueIn(heartbeatInterval) && s.last("client.capabilities") != nil })
 		var acked []string
 		ackPings := func() {
@@ -387,7 +390,7 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 	t.Run("auto-reconnects after a missing heartbeat acknowledgement (issue #32997)", func(t *testing.T) {
 		c, d, k, s := openExplicit(t, "ws://gateway.test/api/ws?token=abc")
 		c.attach((&recorder{}).send)
-		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"heartbeat":true}}}`)
+		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}`)
 		eventually(t, "the heartbeat", func() bool { return k.dueIn(heartbeatInterval) && s.last("client.capabilities") != nil })
 		k.advance(heartbeatInterval)
 		if frames := s.sentFrames(); frames[len(frames)-1]["method"] != "gateway.ping" {
@@ -397,16 +400,6 @@ func TestGatewayClientWebsocketAttachMode(t *testing.T) {
 		eventually(t, "the dropped socket", s.isClosed)
 		k.advance(reconnectBase)
 		eventually(t, "the redial", func() bool { return d.count() >= 2 })
-	})
-	t.Run("does not heartbeat an older backend that omits the capability", func(t *testing.T) {
-		c, d, k, s := openExplicit(t, "ws://gateway.test/api/ws?token=abc")
-		c.attach((&recorder{}).send)
-		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}`)
-		eventually(t, "the ready", s.drained)
-		k.advance(heartbeatDeadline + heartbeatInterval)
-		if s.isClosed() || slices.Contains(s.methods(), "gateway.ping") || d.count() != 1 {
-			t.Fatalf("closed %v methods %v sockets %d", s.isClosed(), s.methods(), d.count())
-		}
 	})
 	t.Run("does not double-reconnect when the exit subscriber restarts immediately", func(t *testing.T) {
 		c, d, k, first := openExplicit(t, "ws://gateway.test/api/ws?token=abc")
@@ -476,7 +469,7 @@ func TestGatewayClientHeartbeatLiveness(t *testing.T) {
 	t.Run("constructs the channel with heartbeatLiveness any-inbound", func(t *testing.T) {
 		c, _, k, s := openExplicit(t, "ws://gateway.test/api/ws?token=abc")
 		c.attach((&recorder{}).send)
-		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"heartbeat":true}}}`)
+		s.message(`{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{}}}`)
 		eventually(t, "the heartbeat", func() bool { return k.dueIn(heartbeatInterval) })
 		for i := 0; i < 6; i++ {
 			k.advance(heartbeatInterval)

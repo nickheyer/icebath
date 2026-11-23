@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -50,16 +49,7 @@ func resolveGatewayModel(ctx context.Context, cfg map[string]any) string {
 	if cfg == nil {
 		return settings.Model.Get(ctx)
 	}
-	modelCfg, ok := cfg["model"]
-	if !ok {
-		modelCfg = map[string]any{}
-	}
-	if m, isDict := modelCfg.(map[string]any); isDict {
-		modelCfg = m["default"]
-		if !pyrepr.Truthy(modelCfg) {
-			modelCfg = m["model"]
-		}
-	}
-	s, _ := modelCfg.(string)
-	return s
+	block, _ := cfg["model"].(map[string]any)
+	name, _ := block["default"].(string)
+	return name
 }

@@ -98,10 +98,9 @@ func cloneAllInto(sourceDir, profileDir, canon string) (map[string]any, error) {
 			return nil, err
 		}
 	}
-	stripped := provider.StripClonedSingleUseOAuthGrants(profileDir)
-	if len(stripped.Pool)+len(stripped.Providers)+len(stripped.Files) > 0 {
-		pkgLog().Info(fmt.Sprintf("profile %s: dropped cloned single-use OAuth grants {'pool': %s, 'providers': %s, 'files': %s} (inherits the root grant instead)",
-			canon, pyrepr.Repr(stripped.Pool), pyrepr.Repr(stripped.Providers), pyrepr.Repr(stripped.Files)))
+	if stripped := provider.StripClonedSingleUseOAuthGrants(profileDir); len(stripped) > 0 {
+		pkgLog().Info(fmt.Sprintf("profile %s: dropped the cloned single-use OAuth logins of %s (it uses the root logins instead)",
+			canon, pyrepr.Repr(stripped)))
 	}
 	ownerDir, err := profiles.GetProfileDir(canon)
 	if err != nil {

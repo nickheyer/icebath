@@ -339,14 +339,11 @@ func NewWhatsAppCloudAdapter(ctx context.Context, config *gateway.PlatformConfig
 	if a.GroupPolicy, err = firstPolicy(ctx, extra["group_policy"], []string{"WHATSAPP_CLOUD_GROUP_POLICY", "WHATSAPP_GROUP_POLICY"}, "open"); err != nil {
 		return nil, err
 	}
-	_, rawGroups, err := whatsapp.SelectAllowlist(extra, []string{"group_allow_from", "groupAllowFrom"}, []string{"WHATSAPP_CLOUD_GROUP_ALLOW_FROM"}, readEnv)
+	_, rawGroups, err := whatsapp.SelectAllowlist(extra, []string{"group_allow_from"}, []string{"WHATSAPP_CLOUD_GROUP_ALLOW_FROM"}, readEnv)
 	if err != nil {
 		return nil, err
 	}
 	a.GroupAllowFrom = normalizeAllowIDs(whatsapp.CoerceAllowList(rawGroups))
-	if a.MentionPatterns, err = a.CompileMentionPatterns(ctx); err != nil {
-		return nil, err
-	}
 	return a, nil
 }
 

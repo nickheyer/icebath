@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Role allowlist and guild a recovered grant is checked against
@@ -31,15 +30,15 @@ func (p rolePolicy) equal(o rolePolicy) bool {
 
 // Current role policy of the profile the request serves, read like ingress reads it
 func (a *DiscordAdapter) nativeRolePolicy(ctx context.Context, source *gateway.SessionSource) (rolePolicy, error) {
-	roles, err := canonicalRoleIDs(a.settingSet(gateway.SettingsContext(ctx), settings.DiscordAllowedRoles))
+	roles, err := a.getAllowedRoles(ctx)
 	if err != nil {
 		return rolePolicy{}, err
 	}
 	var p rolePolicy
 	p.roles = slices.Sorted(maps.Keys(roles))
 	if source.ChatType == "dm" {
-		p.guildID, err = ReadDMRoleAuthGuild(ctx)
-		return p, err
+		p.guildID = a.dmRoleAuthGuild(ctx)
+		return p, nil
 	}
 	if source.ScopeID != nil {
 		if n, ok := pyint.Parse(pystr.Strip(*source.ScopeID)); ok {

@@ -108,21 +108,25 @@ func compressionCodexSettings(cfg map[string]any) (string, bool, *int) {
 		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_app_server_auto=%s; using 'native'. Valid values are: native, icebath, off.", errchain.Show(strings.ToLower(pyrepr.Str(raw)))))
 	}
 	responsesNative := isTruthyValue(cfgValue(cfg, "codex_responses_native", false), false)
-	var compactThreshold *int
-	if rawThreshold := cfg["codex_responses_compact_threshold"]; rawThreshold != nil {
-		if compactThreshold = configPositiveInt(rawThreshold, true); compactThreshold == nil {
-			pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", errchain.Show(rawThreshold)))
-		}
-	}
-	return appServerAuto, responsesNative, compactThreshold
+	return appServerAuto, responsesNative, codexCompactThreshold(cfg)
 }
 
-// Codex app server compaction mode in lower case, the older name of icebath mode read as icebath, native and false when unknown
+// Native Responses compact threshold of a compression section, nil for the automatic one, an unusable value warned about and read as automatic
+func codexCompactThreshold(cfg map[string]any) *int {
+	raw := cfg["codex_responses_compact_threshold"]
+	if raw == nil {
+		return nil
+	}
+	threshold := configPositiveInt(raw, true)
+	if threshold == nil {
+		pkgLog().Warn(fmt.Sprintf("Invalid compression.codex_responses_compact_threshold=%s; using the automatic threshold derived from local compression.", errchain.Show(raw)))
+	}
+	return threshold
+}
+
+// Codex app server compaction mode in lower case, native and false when unknown
 func CodexAppServerAutoMode(raw string) (string, bool) {
 	mode := strings.ToLower(raw)
-	if mode == "hermes" {
-		mode = "icebath"
-	}
 	switch mode {
 	case "native", "icebath", "off":
 		return mode, true

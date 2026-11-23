@@ -36,7 +36,7 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: [LICENSE, THIRD_PARTY_NOTICES, README.md, cli-config.yaml.example, .env.example]
+    files: [LICENSE, THIRD_PARTY_NOTICES, README.md, SETTINGS.md, cli-config.yaml.example, .env.example]
   - id: binary
     ids: [icebath]
     formats: [binary]
@@ -93,14 +93,10 @@ nfpms:
         dst: /usr/share/licenses/icebath/LICENSE
       - src: THIRD_PARTY_NOTICES
         dst: /usr/share/licenses/icebath/THIRD_PARTY_NOTICES
-    scripts:
-      postinstall: packaging/scripts/postinstall.sh
     rpm:
       signature:
         key_file: "{{ .Env.REPO_GPG_KEY_FILE }}"
     apk:
-      scripts:
-        postupgrade: packaging/scripts/postinstall.sh
       signature:
         key_file: "{{ .Env.APK_RSA_KEY_FILE }}"
         key_name: icebath
@@ -114,7 +110,7 @@ dockers_v2:
     images: [ghcr.io/nickheyer/icebath]
     tags: ["{{ .Version }}", latest]
     platforms: [linux/amd64, linux/arm64]
-    extra_files: [LICENSE, THIRD_PARTY_NOTICES, README.md, cli-config.yaml.example, .env.example, docker/SOUL.md, docker/profile-icebath-path.sh]
+    extra_files: [LICENSE, THIRD_PARTY_NOTICES, README.md, SETTINGS.md, cli-config.yaml.example, .env.example, docker/SOUL.md, docker/profile-icebath-path.sh]
     build_args:
       BINARY_SOURCE: release
       VERSION: "{{ .Version }}"
@@ -124,21 +120,6 @@ dockers_v2:
       org.opencontainers.image.description: Tiling agentic harness and netrunner toolkit
       org.opencontainers.image.licenses: MIT
       org.opencontainers.image.version: "{{ .Version }}"
-
-# snapcrafts:
-#   - ids: [icebath]
-#     name: icebath
-#     title: icebath
-#     summary: Tiling agentic harness and netrunner toolkit
-#     description: A tiling agentic harness and netrunner toolkit for a deep dive beyond the blackwall.
-#     license: MIT
-#     base: core24
-#     grade: stable
-#     confinement: classic
-#     publish: false
-#     apps:
-#       icebath:
-#         command: icebath
 
 homebrew_casks:
   - name: icebath
@@ -193,7 +174,7 @@ aurs:
     maintainers: ["Nicholas W. Heyer <nick at heyer dot app>"]
     provides: [icebath]
     conflicts: [icebath]
-    install: packaging/aur/icebath.install
+    depends: [glibc]
     private_key: "{{ .Env.AUR_KEY }}"
     git_url: ssh://aur@aur.archlinux.org/icebath-bin.git
     commit_author:
@@ -219,7 +200,6 @@ aur_sources:
     conflicts: [icebath-bin]
     depends: [glibc]
     makedepends: [go]
-    install: packaging/aur/icebath.install
     private_key: "{{ .Env.AUR_KEY }}"
     git_url: ssh://aur@aur.archlinux.org/icebath.git
     commit_author:

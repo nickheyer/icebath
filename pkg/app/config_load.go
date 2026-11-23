@@ -159,44 +159,22 @@ func cliConfigDefaults() map[string]any {
 	return config.Clone(map[string]any(config.Defaults())).(map[string]any)
 }
 
-// Overlays a parsed config file onto the defaults in place with model normalization, deep merge and legacy keys
+// Overlays a parsed config file onto the defaults in place, a section of the defaults merging key by key and the model section staying a mapping
 func mergeFileConfig(defaults, fileConfig map[string]any) {
-	modelDefaults := sectionOf(defaults, "model")
-	defaults["model"] = modelDefaults
-	if fileModel, ok := fileConfig["model"]; ok {
-		switch m := fileModel.(type) {
-		case string:
-			modelDefaults["default"] = m
-		case map[string]any:
-			for k, v := range m {
-				modelDefaults[k] = v
-			}
-			_, hasModel := m["model"]
-			_, hasDefault := m["default"]
-			if hasModel && !hasDefault {
-				modelDefaults["default"] = m["model"]
-			}
-		}
-	}
+	defaults["model"] = sectionOf(defaults, "model")
 	for key, value := range fileConfig {
-		if key == "model" {
+		existing, isSection := defaults[key].(map[string]any)
+		if !isSection {
+			defaults[key] = value
 			continue
 		}
-		if existing, ok := defaults[key].(map[string]any); ok {
-			if section, isMap := value.(map[string]any); isMap {
-				for k, v := range section {
-					existing[k] = v
-				}
-			} else if value != nil {
-				defaults[key] = value
+		if section, isMap := value.(map[string]any); isMap {
+			for k, v := range section {
+				existing[k] = v
 			}
-			continue
+		} else if value != nil && key != "model" {
+			defaults[key] = value
 		}
-		defaults[key] = value
-	}
-	agentFile, agentIsMap := fileConfig["agent"].(map[string]any)
-	if rootTurns, ok := fileConfig["max_turns"]; ok && !(agentIsMap && agentFile["max_turns"] != nil) {
-		sectionOf(defaults, "agent")["max_turns"] = rootTurns
 	}
 }
 

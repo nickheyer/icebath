@@ -11,14 +11,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-// Environment with an in memory image_gen section and a private home
+// Environment of a private home whose config holds the image_gen section
 func imageGenEnv(t *testing.T, imageGen map[string]any) *tools.Env {
 	t.Helper()
 	cfg := config.Tree{}
 	if imageGen != nil {
 		cfg["image_gen"] = imageGen
 	}
-	return &tools.Env{Home: t.TempDir(), Config: cfg}
+	return imageEnv(t, cfg)
 }
 
 // Decoded JSON object of a tool result

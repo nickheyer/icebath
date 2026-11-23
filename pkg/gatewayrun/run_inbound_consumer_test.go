@@ -26,12 +26,8 @@ func registerGatewayHook(ctx context.Context, hookName string, fn plugins.HookFu
 // Whatsapp runner with every user authorized and a real session store, the _runner of the cases
 func admissionRunner(t *testing.T, server *fakellm.Server) *GatewayRunner {
 	t.Helper()
-	installTurnFakes(t, server, "")
-	for _, k := range []string{"WHATSAPP_ALLOWED_USERS", "GATEWAY_ALLOWED_USERS", "GATEWAY_ALLOW_ALL_USERS"} {
-		t.Setenv(k, "")
-	}
-	t.Setenv("WHATSAPP_ALLOWED_USERS", "*")
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
+	installTurnFakes(t, server, "gateway:\n  allow_all_users: true\nwhatsapp:\n  allow_from: [\"*\"]\n")
+	t.Setenv("GATEWAY_ALLOWED_USERS", "")
 	home.ResetKeyCache()
 	config.ResetCache()
 	t.Cleanup(config.ResetCache)

@@ -298,7 +298,6 @@ func beginIdleExit(r *GatewayRunner, window float64) {
 	r.draining.Store(true)
 	r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
 		descriptor["state"] = "draining"
-		descriptor["capabilities"] = []any{}
 		descriptor["drain_reason"] = IdleExitReason
 	})
 	reason := fmt.Sprintf("%s for %.0fs (gateway.unmanaged_idle_exit_seconds)", IdleExitStopPrefix, window)

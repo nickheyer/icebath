@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/plugintree"
 	"github.com/nickheyer/icebath/pkg/pm"
-	"github.com/nickheyer/icebath/pkg/profiles"
 )
 
 var (
@@ -402,26 +401,6 @@ func installBuiltinPortCommand(ctx context.Context, h string, console *Console, 
 		return err
 	}
 	return finishInstall(ctx, h, console, opts, opts.Identifier, target, manifest, name)
-}
-
-// Install command of a plugin for a home, the profile flag added for any home but the sticky default
-func pluginInstallCommand(name, h string) string {
-	profile := home.ProfileNameFor(h)
-	if profile == "" || (profile == "default" && profiles.GetActiveProfile("") == "default") {
-		return "icebath plugins install " + name
-	}
-	return fmt.Sprintf("icebath -p %s plugins install %s", profile, name)
-}
-
-// Install sentence for the bundled key or catalog name of a plugin that left core, empty for any other name
-func movedPluginHint(name string) string {
-	for _, row := range leftCoreBundledKeys {
-		if name == row.Key || name == row.Plugin {
-			return fmt.Sprintf("%s moved out of core into the '%s' plugin: install it with `%s`.", row.Label, row.Plugin,
-				pluginInstallCommand(row.Plugin, home.Dir(context.Background())))
-		}
-	}
-	return ""
 }
 
 // Whether an install record names a port no catalog lists

@@ -20,7 +20,7 @@ func doctorHermeticEnv(t *testing.T) {
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
 		if strings.HasSuffix(name, "_API_KEY") || strings.HasSuffix(name, "_TOKEN") || strings.HasSuffix(name, "_BASE_URL") ||
-			strings.HasPrefix(name, "AWS_") || strings.HasPrefix(name, "AZURE_") || name == "FAL_KEY" || name == "ICEBATH_MAX_ITERATIONS" {
+			strings.HasPrefix(name, "AWS_") || strings.HasPrefix(name, "AZURE_") || name == "FAL_KEY" {
 			doctorUnsetEnv(t, name)
 		}
 	}
@@ -158,7 +158,7 @@ func TestRunDoctorAcceptsIcebathProviderIdsThatCatalogAliases(t *testing.T) {
 
 func TestRunDoctorAcceptsVendorSlugsForNamedCustomProvider(t *testing.T) {
 	d, buf := doctorRawHome(t, "model:\n  provider: custom:hpc-ai\n  default: deepseek/deepseek-v4-flash\n"+
-		"custom_providers:\n  - name: hpc-ai\n    base_url: https://hpc-ai.example/v1\n    api_key: test-key\n", "")
+		"providers:\n  hpc-ai:\n    name: hpc-ai\n    base_url: https://hpc-ai.example/v1\n    api_key: test-key\n", "")
 	out, _ := doctorWalk(t, d, buf, map[string]any{"fix": false}, doctorConfigFileEntry)
 	for _, unwanted := range []string{
 		"model.provider 'custom:hpc-ai' is not a recognised provider", "model.provider 'custom:hpc-ai' is unknown",
@@ -192,60 +192,6 @@ func TestRunDoctorAcceptsKimiCodingCnProvider(t *testing.T) {
 	out, _ := doctorWalk(t, d, buf, map[string]any{"fix": false}, doctorConfigFileEntry)
 	if !strings.Contains(out, "/config.yaml exists") || strings.Contains(out, "model.provider 'kimi-coding-cn' is not a recognised provider") {
 		t.Fatalf("out = %q", out)
-	}
-}
-
-// Runs the configuration checks over a home whose .env may carry a stale iteration budget
-func doctorRunConfigSection(t *testing.T, fix bool, ghost, cfgTurns, processValue string) (string, string) {
-	t.Helper()
-	envText := "OPENAI_API_KEY=sk-test\n"
-	if ghost != "" {
-		envText += "ICEBATH_MAX_ITERATIONS=" + ghost + "\n"
-	}
-	d, buf := doctorRawHome(t, "agent:\n  max_turns: "+cfgTurns+"\n", envText)
-	if processValue != "" {
-		t.Setenv("ICEBATH_MAX_ITERATIONS", processValue)
-	}
-	out, _ := doctorWalk(t, d, buf, map[string]any{"fix": fix},
-		doctorCheckEntry{"Configuration Files", checkEnvFile}, doctorConfigFileEntry, doctorCheckEntry{"", checkConfigDrift})
-	return out, d.Home
-}
-
-func TestDoctorStaleMaxIterationsDriftDetectsDriftWarnOnly(t *testing.T) {
-	out, h := doctorRunConfigSection(t, false, "90", "400", "400")
-	if !strings.Contains(out, "ICEBATH_MAX_ITERATIONS=90") || !strings.Contains(out, "shadows") {
-		t.Fatalf("out = %q", out)
-	}
-	if env, err := os.ReadFile(filepath.Join(h, ".env")); err != nil || !strings.Contains(string(env), "ICEBATH_MAX_ITERATIONS=90") {
-		t.Fatalf(".env = %q %v", env, err)
-	}
-}
-
-func TestDoctorStaleMaxIterationsDriftFixRemovesGhost(t *testing.T) {
-	out, h := doctorRunConfigSection(t, true, "90", "400", "400")
-	if !strings.Contains(out, "Removed stale ICEBATH_MAX_ITERATIONS") {
-		t.Fatalf("out = %q", out)
-	}
-	env, err := os.ReadFile(filepath.Join(h, ".env"))
-	if err != nil || strings.Contains(string(env), "ICEBATH_MAX_ITERATIONS") || !strings.Contains(string(env), "OPENAI_API_KEY=sk-test") {
-		t.Fatalf(".env = %q %v", env, err)
-	}
-}
-
-func TestDoctorStaleMaxIterationsDriftNoDriftWhenGhostAbsent(t *testing.T) {
-	if out, _ := doctorRunConfigSection(t, false, "", "400", ""); strings.Contains(out, "shadows") {
-		t.Fatalf("out = %q", out)
-	}
-}
-
-func TestDoctorDeprecatedConfigAndEnvCollectDeprecatedEnvVarsIgnoresEmpty(t *testing.T) {
-	for _, env := range []map[string]any{{"TERMINAL_CWD": "  "}, {}, nil} {
-		if got := doctorCollectDeprecatedEnvVars(env); len(got) != 0 {
-			t.Fatalf("env %v gave %v", env, got)
-		}
-	}
-	if got := doctorCollectDeprecatedEnvVars(map[string]any{"TERMINAL_CWD": "/srv"}); len(got) != 1 || got[0][0] != "TERMINAL_CWD" {
-		t.Fatalf("got %v", got)
 	}
 }
 
@@ -329,43 +275,6 @@ func TestDoctorSilentWithNoManagedScope(t *testing.T) {
 	doctorManagedScopeCheck(out)
 	if strings.TrimSpace(out.String()) != "" {
 		t.Fatalf("out = %q", out.String())
-	}
-}
-
-func doctorFindingsMap(findings [][2]string) map[string]string {
-	out := map[string]string{}
-	for _, f := range findings {
-		out[f[0]] = f[1]
-	}
-	return out
-}
-
-func TestDoctorReportsStaleRelayPluginKey(t *testing.T) {
-	findings := doctorFindingsMap(doctorCollectRelayPluginCutoverFindings(
-		map[string]any{"plugins": map[string]any{"enabled": []any{"observability/nemo_relay"}}}, map[string]any{}))
-	replacement := findings["plugins.enabled: observability/nemo_relay"]
-	if !strings.Contains(replacement, "remove it") || !strings.Contains(replacement, tools.RelayPluginsConfigEnv) {
-		t.Fatalf("findings = %v", findings)
-	}
-}
-
-func TestDoctorReportsLegacyExporterEnvWithoutNewConfig(t *testing.T) {
-	doctorUnsetEnv(t, tools.RelayPluginsConfigEnv)
-	findings := doctorFindingsMap(doctorCollectRelayPluginCutoverFindings(map[string]any{}, map[string]any{
-		"ICEBATH_NEMO_RELAY_ATIF_ENABLED": "true", "ICEBATH_NEMO_RELAY_ATIF_EXPORT_TIMEOUT_S": "30"}))
-	for _, name := range []string{"ICEBATH_NEMO_RELAY_ATIF_ENABLED", "ICEBATH_NEMO_RELAY_ATIF_EXPORT_TIMEOUT_S"} {
-		if !strings.Contains(findings[name], "now ignored") || !strings.Contains(findings[name], tools.RelayPluginsConfigEnv) {
-			t.Fatalf("findings = %v", findings)
-		}
-	}
-}
-
-func TestDoctorDoesNotWarnForLegacyEnvAfterNewConfigIsSelected(t *testing.T) {
-	doctorUnsetEnv(t, tools.RelayPluginsConfigEnv)
-	findings := doctorCollectRelayPluginCutoverFindings(map[string]any{}, map[string]any{
-		tools.RelayPluginsConfigEnv: "/tmp/plugins.toml", "ICEBATH_NEMO_RELAY_ATIF_ENABLED": "true"})
-	if len(findings) != 0 {
-		t.Fatalf("findings = %v", findings)
 	}
 }
 

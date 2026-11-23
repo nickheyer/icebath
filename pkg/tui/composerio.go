@@ -310,7 +310,7 @@ func (a *app) pasted(content string) tea.Cmd {
 		if err == nil && image != nil {
 			return tea.Batch(a.dropImageCommand(), a.attachImageToken(image))
 		}
-		return call(a.gw, tuigateway.InputDetectDrop, tuigateway.InputDetectDropParams{SessionID: sid, Text: cleaned}, func(r *tuigateway.InputDetectDropResult, err error) tea.Cmd {
+		return call(a.gw, tuigateway.InputDetectDrop, tuigateway.InputDetectDropParams{Text: cleaned, Cwd: a.store.typedPathBase()}, func(r *tuigateway.InputDetectDropResult, err error) tea.Cmd {
 			if !current() {
 				return nil
 			}

@@ -65,7 +65,7 @@ func sessionConfiguredContextLength(ctx context.Context, cfg map[string]any, mod
 	}
 	if configured != nil {
 		route := &AIAgent{model: model, provider: providerName, baseURL: baseURL}
-		configured = scopeContextLengthToDefaultRuntime(ctx, route, cfg, modelCfg, providers, configured, baseURL)
+		configured = scopeContextLengthToDefaultRuntime(ctx, route, modelCfg, providers, configured, baseURL)
 	}
 	if configured == nil && len(providers) > 0 {
 		if n := provider.CustomProviderContextLength(model, baseURL, providers, cfg); n != 0 {

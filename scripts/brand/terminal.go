@@ -190,10 +190,12 @@ func (s *sources) tag(accent bool, text string) string {
 	return fmt.Sprintf("[%s]%s[/]", hexOf(c), text)
 }
 
-// Go source holding the CLI banner logo and hero as rich markup constants
-func (s *sources) bannerGo() []byte {
+// Go source of pkg/ui/theme/art.go, the two inks and the logo and hero as rich markup constants
+func (s *sources) artGo() []byte {
 	var b strings.Builder
-	b.WriteString("package app\n\n")
+	b.WriteString("package theme\n\n")
+	b.WriteString("// Inks the art is authored in, a surface repaints them with the text and accent tones of its theme\n")
+	fmt.Fprintf(&b, "const (\n\tLogoInk = %q\n\tLogoBar = %q\n)\n\n", hexOf(s.letter), hexOf(s.red))
 	writeConst := func(name string, lines []string) {
 		fmt.Fprintf(&b, "const %s = ", name)
 		for i, line := range lines {
@@ -207,8 +209,11 @@ func (s *sources) bannerGo() []byte {
 			}
 		}
 	}
-	writeConst("icebathAgentLogo", s.markupLines(s.logoCells()))
+	logo := s.logoCells()
+	fmt.Fprintf(&b, "// Logo is the ICE | BATH wordmark, %d cells by %d rows, the letters in LogoInk and the bar in LogoBar\n", len(logo[0]), len(logo))
+	writeConst("Logo", s.markupLines(logo))
 	b.WriteString("\n")
-	writeConst("icebathHero", s.markupLines(s.heroCells()))
+	fmt.Fprintf(&b, "// Hero is the stacked ICE over BATH mark in braille, %d cells by %d rows, in the same two inks\n", heroCols, heroRows)
+	writeConst("Hero", s.markupLines(s.heroCells()))
 	return []byte(b.String())
 }

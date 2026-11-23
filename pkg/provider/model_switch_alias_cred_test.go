@@ -274,7 +274,7 @@ func TestExplicitProviderAliasOwnership(t *testing.T) {
 	})
 	corpAlias := NamedDirectAlias{"corp-alias", DirectAlias{Model: "shared-model", Provider: "corp-llm", BaseURL: "https://corp.example.com/v2", APIKey: "sk-corp-alias"}}
 	providerAAlias := NamedDirectAlias{"a-alias", DirectAlias{Model: "shared-model", Provider: "provider-a", BaseURL: "https://alias-host.example.com/v1", APIKey: "sk-alias-host"}}
-	corpEntry := "custom_providers:\n  - name: corp-llm\n    base_url: https://corp.example.com/v1\n    api_key: sk-corp\n"
+	corpEntry := "providers:\n  corp-llm:\n    base_url: https://corp.example.com/v1\n    api_key: sk-corp\n"
 	t.Run("test_explicit_provider_keeps_alias_owned_by_legacy_custom_provider", func(t *testing.T) {
 		res := explicitSwitchToProviderB(t, "corp-llm", corpEntry, providerAAlias, corpAlias)
 		if !res.Success || res.TargetProvider != "custom:corp-llm" || res.ResolvedViaAlias != "corp-alias" || res.BaseURL != "https://corp.example.com/v2" || res.APIKey != "sk-corp-alias" {

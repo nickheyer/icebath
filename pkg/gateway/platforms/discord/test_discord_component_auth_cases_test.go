@@ -12,6 +12,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Guild click by the user carrying the given roles
@@ -19,21 +20,19 @@ func componentInteraction(userID string, roles ...string) *discordgo.Interaction
 	return &discordgo.Interaction{ChannelID: "555", GuildID: "999", Member: &discordgo.Member{User: &discordgo.User{ID: userID}, Roles: roles}}
 }
 
-// Adapter with every component gate env cleared
+// Adapter in a fresh home with no access settings and no shared allow list
 func componentAdapter(t *testing.T) *DiscordAdapter {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, v := range []string{"DISCORD_ALLOW_ALL_USERS", "GATEWAY_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS", "DISCORD_ALLOWED_USERS"} {
-		t.Setenv(v, "")
-	}
+	t.Setenv("GATEWAY_ALLOWED_USERS", "")
 	return newTestAdapter(t, nil)
 }
 
 func TestComponentCheckExplicitAllowAllPasses(t *testing.T) {
-	for _, env := range [][2]string{{"DISCORD_ALLOW_ALL_USERS", "true"}, {"GATEWAY_ALLOW_ALL_USERS", "yes"}} {
+	for _, set := range [][2]string{{settings.DiscordAllowAllUsers.Key, "true"}, {settings.GatewayAllowAllUsers.Key, "yes"}} {
 		a := componentAdapter(t)
-		t.Setenv(env[0], env[1])
+		setSetting(t, set[0], set[1])
 		if !a.componentCheckAuth(context.Background(), componentInteraction("11111"), strSet{}, strSet{}, nil) {
-			t.Fatalf("%s=%s rejected", env[0], env[1])
+			t.Fatalf("%s=%s rejected", set[0], set[1])
 		}
 	}
 }
@@ -193,7 +192,7 @@ func TestModelPickerViewEmptyAllowlistsRejectByDefault(t *testing.T) {
 
 func TestViewEmptyAllowlistsAllowWithExplicitAllowAll(t *testing.T) {
 	a := componentAdapter(t)
-	t.Setenv("DISCORD_ALLOW_ALL_USERS", "true")
+	setDiscord(t, "allow_all_users", true)
 	if !roleViews(t, a, strSet{}, nil)["exec"].checkAuth(context.Background(), componentInteraction("99999")) {
 		t.Fatal("explicit allow all rejected")
 	}

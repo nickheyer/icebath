@@ -47,16 +47,7 @@ func ExtractCacheBustingConfig(ctx context.Context, userConfig map[string]any) m
 	defaults := map[string]any(config.Defaults())
 	for _, pair := range cacheBustingConfigKeys {
 		section, key := pair[0], pair[1]
-		def := cacheCfgGetDefault(defaults, nil, section, key)
-		if b, ok := cfg[section].(bool); ok && section == "checkpoints" {
-			if key == "enabled" {
-				out[section+"."+key] = b
-			} else {
-				out[section+"."+key] = def
-			}
-			continue
-		}
-		out[section+"."+key] = cacheCfgGetDefault(cfg, def, section, key)
+		out[section+"."+key] = cacheCfgGetDefault(cfg, cacheCfgGetDefault(defaults, nil, section, key), section, key)
 	}
 	out["tools.registry_generation"] = tools.Default.Generation()
 	for key, value := range memoryProviderIdentitySignature(ctx, cacheCfgGetDefault(cfg, nil, "memory", "provider")) {

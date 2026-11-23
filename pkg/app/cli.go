@@ -123,10 +123,6 @@ type CLI struct {
 	config  map[string]any
 
 	toolProgressMode       string
-	focusViewEnabled       bool
-	focusSavedToolProgress string
-	focusLastCountedTool   string
-	focusHiddenLines       int
 	bellOnComplete         bool
 	showReasoning          bool
 	reasoningFull          bool

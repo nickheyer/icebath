@@ -285,7 +285,7 @@ func (e PooledCredential) ToMap() map[string]any {
 			out[k] = v
 		}
 	}
-	return SanitizeBorrowedCredentialPayload(out, e.Provider)
+	return SanitizeBorrowedCredentialPayload(out)
 }
 
 func nilIfEmpty(s string) any {

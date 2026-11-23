@@ -172,7 +172,7 @@ func (e *UnscopedSecretError) Error() string {
 }
 
 var globalEnvNames = map[string]bool{
-	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true, "ICEBATH_MAX_ITERATIONS": true,
+	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true,
 	"ICEBATH_API_TIMEOUT": true, "ICEBATH_REDACT_SECRETS": true, "_ICEBATH_GATEWAY": true,
 	"PATH": true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
 	"VIRTUAL_ENV": true, "PYTHONPATH": true, "SSL_CERT_FILE": true,

@@ -21,10 +21,13 @@ func passthroughEnv(t *testing.T, cfg config.Tree) *Env {
 		ClearEnvPassthrough()
 		ResetEnvPassthroughConfigCache()
 	})
+	env := &Env{Home: t.TempDir(), Config: cfg}
 	if cfg == nil {
-		cfg = config.Defaults()
+		env.Config = config.Defaults()
+	} else {
+		writeHomeConfigDoc(t, env, map[string]any(cfg))
 	}
-	return &Env{Home: t.TempDir(), Config: cfg}
+	return env
 }
 
 func TestPassthroughSkipsEmpty(t *testing.T) {

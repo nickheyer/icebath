@@ -116,7 +116,7 @@ func TestEveryTaggedMinterKeepsItsSourceOnTheRoute(t *testing.T) {
 		t.Fatalf("vertex minter tag %q label %q calls %d", CredentialSourceOf(src), CredentialLabel(src), calls)
 	}
 
-	keyCmd := map[string]any{"providers": map[string]any{"gw": map[string]any{"api": "https://gw.example/v1", "key_cmd": printTokenCmd("minted-token")}}}
+	keyCmd := map[string]any{"providers": map[string]any{"gw": map[string]any{"base_url": "https://gw.example/v1", "key_cmd": printTokenCmd("minted-token")}}}
 	rt = mustResolve(t, testResolver(t, keyCmd, &fakeCreds{}, ""), "custom:gw", "", "", "")
 	if route := rt.Route(); CredentialSourceOf(route.TokenSource) != CredentialSourceKeyCmd || CredentialLabel(route.TokenSource) != "key_cmd token (command)" {
 		t.Fatalf("key_cmd route tag %q", CredentialSourceOf(route.TokenSource))

@@ -1,7 +1,7 @@
-# Gateway on Docker Desktop for Windows, sharing %USERPROFILE%\.icebath as the data volume.
+# Background service on Docker Desktop for Windows, sharing %USERPROFILE%\.icebath as the data volume.
 #   docker compose -f docker-compose.windows.yml up -d
 services:
-  gateway:
+  icebath:
     image: ghcr.io/nickheyer/icebath:latest
     container_name: icebath
     restart: unless-stopped

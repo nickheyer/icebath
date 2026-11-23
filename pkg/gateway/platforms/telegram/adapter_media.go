@@ -207,7 +207,7 @@ func (a *TelegramAdapter) sendVoiceBubble(ctx context.Context, audioPath, chatID
 			}
 			m, sendErr := b.SendVoice(mediaCtx(c, kw, true), params)
 			return m, ptbError(sendErr)
-		}, chatID, replyTo, metadata, a.replyToMode, a.notificationsMode, "voice", nil)
+		}, chatID, replyTo, metadata, a.replyToMode, a.notificationsMode(), "voice", nil)
 		if err == nil {
 			return msg, nil
 		}
@@ -277,7 +277,7 @@ func (a *TelegramAdapter) SendVoice(ctx context.Context, chatID, audioPath, capt
 			}
 			m, sendErr := b.SendAudio(mediaCtx(c, kw, true), params)
 			return m, ptbError(sendErr)
-		}, chatID, optional(replyTo), metadata, a.replyToMode, a.notificationsMode, "audio", nil)
+		}, chatID, optional(replyTo), metadata, a.replyToMode, a.notificationsMode(), "audio", nil)
 	default:
 		return a.SendDocument(ctx, chatID, path, caption, "", replyTo, metadata, nil)
 	}
@@ -393,7 +393,7 @@ func (a *TelegramAdapter) sendMediaGroupChunk(ctx context.Context, chatID string
 		return false, nil
 	}
 	pkgLog().Info(fmt.Sprintf("[%s] Sending media group of %d photo(s) (chunk %d/%d)", a.Name(), len(media), idx+1, total))
-	replyToID, kw, err := buildMediaSendKwargs(chatID, nil, metadata, a.replyToMode, a.notificationsMode)
+	replyToID, kw, err := buildMediaSendKwargs(chatID, nil, metadata, a.replyToMode, a.notificationsMode())
 	if err != nil {
 		return false, err
 	}
@@ -473,7 +473,7 @@ func (a *TelegramAdapter) sendLocalFile(ctx context.Context, label, path, chatID
 		}
 		m, sendErr := send(mediaCtx(c, kw, true), b, routingOf(kw), file)
 		return m, ptbError(sendErr)
-	}, chatID, optional(replyTo), metadata, a.replyToMode, a.notificationsMode, mediaKey, nil)
+	}, chatID, optional(replyTo), metadata, a.replyToMode, a.notificationsMode(), mediaKey, nil)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 			return gateway.SendResult{}, err
@@ -575,7 +575,7 @@ func (a *TelegramAdapter) SendImage(ctx context.Context, chatID, imageURL, capti
 			}
 			m, sendErr := b.SendPhoto(mediaCtx(c, kw, upload), params)
 			return m, ptbError(sendErr)
-		}, chatID, optional(replyTo), metadata, a.replyToMode, a.notificationsMode, label, nil)
+		}, chatID, optional(replyTo), metadata, a.replyToMode, a.notificationsMode(), label, nil)
 	}
 	msg, err := sendPhoto(func() models.InputFile { return &models.InputFileString{Data: imageURL} }, "URL photo", false)
 	if err == nil {
@@ -647,7 +647,7 @@ func (a *TelegramAdapter) SendAnimation(ctx context.Context, chatID, animationUR
 		}
 		m, sendErr := b.SendAnimation(mediaCtx(c, kw, false), params)
 		return m, ptbError(sendErr)
-	}, chatID, optional(replyTo), metadata, a.replyToMode, a.notificationsMode, "animation", nil)
+	}, chatID, optional(replyTo), metadata, a.replyToMode, a.notificationsMode(), "animation", nil)
 	if err != nil {
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 			return gateway.SendResult{}, err

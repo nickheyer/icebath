@@ -178,8 +178,8 @@ func TestSecretMissingFromTargetProfileNeverFallsBackToTheLaunchEnv(t *testing.T
 func TestProfileWhoseDefaultIsAnAliasTakesTheAliasRoute(t *testing.T) {
 	launch, coder := twoRouteProfiles(t)
 	setProfileConfig(t, coder, map[string]any{
-		"model":         map[string]any{"default": "localqwen"},
-		"model_aliases": map[string]any{"localqwen": map[string]any{"model": "qwen3-27b", "base_url": "http://127.0.0.1:8099/v1"}},
+		"model": map[string]any{"default": "localqwen",
+			"aliases": map[string]any{"localqwen": map[string]any{"model": "qwen3-27b", "base_url": "http://127.0.0.1:8099/v1"}}},
 	})
 	route := coderRoute(t, routeProfileParent(launch), map[string]any{"profile": "coder"}, nil)
 	if route.Creds["model"] != "qwen3-27b" || route.Creds["base_url"] != "http://127.0.0.1:8099/v1" {
@@ -192,7 +192,7 @@ func TestNamedCustomProfileChildLeasesItsOwnAccountOnASharedUrl(t *testing.T) {
 	url := "https://gateway.invalid/v1"
 	setProfileConfig(t, coder, map[string]any{
 		"model":     map[string]any{"provider": "open-ai", "default": "coder-model"},
-		"providers": map[string]any{"claude-ai": map[string]any{"api": url, "api_key": "key-a"}, "open-ai": map[string]any{"api": url, "api_key": "key-b"}},
+		"providers": map[string]any{"claude-ai": map[string]any{"base_url": url, "api_key": "key-a"}, "open-ai": map[string]any{"base_url": url, "api_key": "key-b"}},
 	})
 	entry := func(cid, key string) map[string]any {
 		return map[string]any{"id": cid, "label": cid, "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": key, "base_url": url}

@@ -129,7 +129,7 @@ func TestExecuteCommandRunsTheRegistryExecutor(t *testing.T) {
 	BannerVersionLabel = func(context.Context) string { return "Icebath Agent v1" }
 	t.Cleanup(func() { BannerVersionLabel = prev })
 	ctx := context.Background()
-	reply, err := ExecuteCommand(ctx, "v", CommandContext{Surface: "gateway"})
+	reply, err := ExecuteCommand(ctx, "version", CommandContext{Surface: "gateway"})
 	if err != nil || reply.Text != "Icebath Agent v1" || reply.Format != "plain" {
 		t.Fatalf("version %q %v", reply.Text, err)
 	}

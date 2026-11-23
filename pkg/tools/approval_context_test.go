@@ -62,7 +62,7 @@ func TestApprovalTimeoutAndWindow(t *testing.T) {
 }
 
 func TestBinaryModesAndTransport(t *testing.T) {
-	for raw, want := range map[string]string{`"approve"`: "approve", `"off"`: "approve", `"ALLOW "`: "approve", `"yes"`: "approve", `"deny"`: "deny", "null": "deny", "true": "deny", `"nonsense"`: "deny"} {
+	for raw, want := range map[string]string{`"approve"`: "approve", `" APPROVE "`: "approve", `"deny"`: "deny", `"off"`: "deny", `"allow"`: "deny", "yes": "deny", "null": "deny", "true": "deny", `"nonsense"`: "deny"} {
 		if got := getCronApprovalMode(approvalYAMLEnv(t, "approvals:\n  cron_mode: "+raw+"\n")); got != want {
 			t.Errorf("cron_mode %v = %q want %q", raw, got, want)
 		}

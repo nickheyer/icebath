@@ -23,12 +23,11 @@ type guardClock struct{ t float64 }
 func (c *guardClock) now() float64         { return c.t }
 func (c *guardClock) advance(secs float64) { c.t += secs }
 
-// Bare runner with an empty pairing store and a guard on the test clock and settings holder
+// Bare runner with an empty pairing store and a guard on the test clock and settings holder, in a home that sets no access setting
 func guardRunner(t *testing.T, clock *guardClock, settings *gateway.BotLoopGuardSettings) *GatewayRunner {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	for _, name := range []string{"TELEGRAM_ALLOW_BOTS", "TELEGRAM_ALLOWED_USERS", "TELEGRAM_ALLOW_ALL_USERS", "TELEGRAM_GROUP_ALLOWED_USERS",
-		"TELEGRAM_GROUP_ALLOWED_CHATS", "GATEWAY_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"} {
+	for _, name := range []string{"TELEGRAM_ALLOW_ALL_USERS", "GATEWAY_ALLOWED_USERS"} {
 		t.Setenv(name, "")
 	}
 	registerGuardPlatformEntries(t)
@@ -79,11 +78,10 @@ func guardHumanSource(chatID, chatType string) *gateway.SessionSource {
 	return &gateway.SessionSource{Platform: gateway.PlatformTelegram, ChatID: chatID, ChatType: chatType, UserID: &userID, UserName: &name}
 }
 
-// ALLOW_BOTS on, a human allowlist and the group chat allowlist that short circuits authorization
+// Answer bots on mention, a human allowlist and the open groups that short circuit authorization
 func incidentConfig(t *testing.T) {
-	t.Setenv("TELEGRAM_ALLOW_BOTS", "mentions")
-	t.Setenv("TELEGRAM_ALLOWED_USERS", guardHuman)
-	t.Setenv("TELEGRAM_GROUP_ALLOWED_CHATS", guardGroupChat+","+guardOtherGroup)
+	setSettings(t, map[string]any{"telegram.allow_bots": "mentions", "telegram.allow_from": []any{guardHuman},
+		"telegram.group_allowed_chats": []any{guardGroupChat, guardOtherGroup}})
 }
 
 // Verdict and one count for an admitted bot, what the ingress gate does per message
@@ -155,14 +153,14 @@ func TestAdmittedBotTrafficIsCutAtTheBudget(t *testing.T) {
 	}{
 		{"ping-pong of 40 turns", []string{guardBotA, guardBotB}, guardGroupChat, "group", true},
 		{"three bots share one budget", []string{guardBotA, guardBotB, guardBotC}, guardGroupChat, "group", true},
-		{"plain ALLOW_BOTS dm without a chat allowlist", []string{guardBotA}, "123", "dm", false},
+		{"answered bots in a dm without open groups", []string{guardBotA}, "123", "dm", false},
 	}
 	for _, tc := range cases {
 		hermetic.Run(t, tc.name, func(t *testing.T) {
 			r := guardRunner(t, &guardClock{1_000_000}, guardSettings())
 			incidentConfig(t)
 			if !tc.groupAllowlist {
-				t.Setenv("TELEGRAM_GROUP_ALLOWED_CHATS", "")
+				setSettings(t, map[string]any{"telegram.group_allowed_chats": []any{}})
 			}
 			for i := range 40 {
 				verdict := guardInbound(t, r, guardBot(tc.senders[i%len(tc.senders)], tc.chatID, tc.chatType))
@@ -209,7 +207,7 @@ func TestBudgetIsScopedByChatAndPlatform(t *testing.T) {
 	if !guardInbound(t, r, guardBot(guardBotA, guardOtherGroup, "group")) || !guardInbound(t, r, guardBot(guardBotB, guardOtherGroup, "group")) {
 		t.Fatal("other chat keeps its own budget")
 	}
-	t.Setenv("DISCORD_ALLOW_BOTS", "all")
+	setSettings(t, map[string]any{"discord.allow_bots": "all"})
 	userID := guardBotA
 	discordBot := &gateway.SessionSource{Platform: gateway.PlatformDiscord, ChatID: guardGroupChat, ChatType: "group", UserID: &userID, IsBot: true}
 	if !guardInbound(t, r, discordBot) {
@@ -251,7 +249,7 @@ func TestDisabledViaConfigAdmitsEverything(t *testing.T) {
 
 func TestRejectedBotMessagesDoNotConsumeBudget(t *testing.T) {
 	r := guardRunner(t, &guardClock{1_000_000}, guardSettings())
-	t.Setenv("TELEGRAM_ALLOWED_USERS", guardHuman)
+	setSettings(t, map[string]any{"telegram.allow_from": []any{guardHuman}})
 	for range 30 {
 		if guardInbound(t, r, guardBot(guardBotA, "123", "dm")) {
 			t.Fatal("unauthorized bot admitted")

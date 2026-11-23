@@ -27,11 +27,7 @@ func createFromLaunch(t *testing.T, source map[string]any) map[string]any {
 	config.ResetCache()
 	t.Cleanup(config.ResetCache)
 	ctx := context.Background()
-	doc := map[string]any{"_config_version": config.Defaults()["_config_version"]}
-	for k, v := range source {
-		doc[k] = v
-	}
-	if err := config.AtomicConfigWrite(ctx, h, filepath.Join(h, "config.yaml"), doc, ""); err != nil {
+	if err := config.AtomicConfigWrite(ctx, h, filepath.Join(h, "config.yaml"), source, ""); err != nil {
 		t.Fatal(err)
 	}
 	profile, err := manage.CreateProfile(ctx, "sample-bot", manage.CreateOptions{NoSkills: true})
@@ -46,18 +42,12 @@ func createFromLaunch(t *testing.T, source map[string]any) map[string]any {
 }
 
 func TestFreshProfileRetainsResolvableCustomEndpoint(t *testing.T) {
-	for _, c := range []struct{ schema, provider, urlKey string }{
-		{"providers", "lab", "base_url"}, {"providers", "custom:lab", "baseUrl"}, {"custom_providers", "custom:display-name", "base_url"},
-	} {
-		t.Run(c.schema+"-"+c.provider, func(t *testing.T) {
-			endpoint := map[string]any{"name": "Display Name", c.urlKey: seedCaseURL, "api_key": "${LAB_TOKEN}"}
+	for _, selected := range []string{"lab", "custom:lab", "custom:display-name"} {
+		t.Run(selected, func(t *testing.T) {
+			endpoint := map[string]any{"name": "Display Name", "base_url": seedCaseURL, "api_key": "${LAB_TOKEN}"}
 			unrelated := map[string]any{"name": "Unrelated", "base_url": "http://127.0.0.1:11435/v1"}
-			var catalog any = []any{endpoint, unrelated}
-			if c.schema == "providers" {
-				catalog = map[string]any{"lab": endpoint, "other": unrelated}
-			}
-			model := map[string]any{"provider": c.provider, "default": "synthetic-model"}
-			created := createFromLaunch(t, map[string]any{"model": model, c.schema: catalog})
+			model := map[string]any{"provider": selected, "default": "synthetic-model"}
+			created := createFromLaunch(t, map[string]any{"model": model, "providers": map[string]any{"lab": endpoint, "other": unrelated}})
 			if !reflect.DeepEqual(created["model"], model) {
 				t.Fatalf("model = %#v", created["model"])
 			}
@@ -65,7 +55,7 @@ func TestFreshProfileRetainsResolvableCustomEndpoint(t *testing.T) {
 			if len(copied) != 1 || copied[0]["base_url"] != seedCaseURL || copied[0]["api_key"] != "${LAB_TOKEN}" {
 				t.Fatalf("copied = %#v", copied)
 			}
-			resolved := provider.NamedCustomProviderEntry(context.Background(), c.provider, created)
+			resolved := provider.NamedCustomProviderEntry(context.Background(), selected, created)
 			if resolved == nil || resolved["base_url"] != seedCaseURL {
 				t.Fatalf("resolved = %#v", resolved)
 			}
@@ -76,16 +66,12 @@ func TestFreshProfileRetainsResolvableCustomEndpoint(t *testing.T) {
 func TestBuiltinNameCollisionOnlyCopiesExplicitCustomSelection(t *testing.T) {
 	endpoint := map[string]any{"name": "OpenRouter", "base_url": seedCaseURL}
 	for _, c := range []struct {
-		schema, provider string
-		catalog          any
-		copied           bool
-	}{
-		{"providers", "openrouter", map[string]any{"other-endpoint": endpoint}, false},
-		{"custom_providers", "custom:openrouter", []any{endpoint}, true},
-	} {
+		provider string
+		copied   bool
+	}{{"openrouter", false}, {"custom:openrouter", true}} {
 		t.Run(c.provider, func(t *testing.T) {
 			created := createFromLaunch(t, map[string]any{
-				"model": map[string]any{"provider": c.provider, "default": "synthetic-model"}, c.schema: c.catalog})
+				"model": map[string]any{"provider": c.provider, "default": "synthetic-model"}, "providers": map[string]any{"other-endpoint": endpoint}})
 			if got := len(provider.ProviderEntries(created)) > 0; got != c.copied {
 				t.Fatalf("copied = %v", got)
 			}

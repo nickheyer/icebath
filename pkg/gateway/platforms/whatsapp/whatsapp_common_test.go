@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Context under multiplexing with the secret scope built from the profile .env text
@@ -34,12 +36,17 @@ func TestEffectiveReplyPrefixUsesScope(t *testing.T) {
 	}
 }
 
-func TestWhatsappRequireMentionUsesScope(t *testing.T) {
-	t.Setenv("WHATSAPP_REQUIRE_MENTION", "")
-	os.Unsetenv("WHATSAPP_REQUIRE_MENTION")
-	ctx := profileScope(t, "WHATSAPP_REQUIRE_MENTION=true\n")
+func TestWhatsappRequireMentionReadsTheProfileInScope(t *testing.T) {
+	ctx := profileScope(t, "")
+	profile := home.WithOverride(context.Background(), provider.CurrentSecretScopeHome(ctx))
+	if _, err := settings.Set(profile, settings.WhatsappRequireMention.Key, true, settings.Global); err != nil {
+		t.Fatal(err)
+	}
 	mixin := NewWhatsAppBehaviorMixin("test", &gateway.PlatformConfig{Extra: map[string]any{}})
-	if required, err := mixin.WhatsAppRequireMention(ctx); err != nil || !required {
-		t.Fatalf("required %v err %v", required, err)
+	if !mixin.WhatsAppRequireMention(ctx) {
+		t.Fatal("the setting of the profile in scope was ignored")
+	}
+	if mixin.WhatsAppRequireMention(home.WithOverride(context.Background(), t.TempDir())) {
+		t.Fatal("another profile read this profile's setting")
 	}
 }

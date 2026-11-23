@@ -23,6 +23,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Running bridge as the adapter sees it, the Popen surface of the bridge.js child
@@ -58,12 +59,9 @@ var (
 	}
 )
 
-// Env keys the bridge consumes, re-resolved from the profile scope for multiplexed profiles
+// Env keys the bridge consumes from the profile .env, re-resolved from the profile scope for multiplexed profiles
 var bridgePassthroughEnv = []string{
-	"WHATSAPP_ALLOWED_USERS", "WHATSAPP_ALLOW_FROM", "WHATSAPP_DM_POLICY", "WHATSAPP_GROUP_POLICY",
-	"WHATSAPP_GROUP_ALLOWED_USERS", "WHATSAPP_GROUP_ALLOW_FROM", "WHATSAPP_REQUIRE_MENTION",
-	"WHATSAPP_MENTION_PATTERNS", "WHATSAPP_FREE_RESPONSE_CHATS", "WHATSAPP_DEBUG",
-	"WHATSAPP_FORWARD_OWNER_MESSAGES", "WHATSAPP_MAX_MESSAGE_LENGTH",
+	"WHATSAPP_DEBUG", "WHATSAPP_FORWARD_OWNER_MESSAGES", "WHATSAPP_MAX_MESSAGE_LENGTH",
 	"WHATSAPP_CHUNK_DELAY_MS", "WHATSAPP_SEND_TIMEOUT_MS",
 }
 
@@ -140,7 +138,7 @@ func sessionDir(ctx context.Context, extra map[string]any) string {
 	return abs
 }
 
-// WhatsApp value of the profile with a default through the scoped reader, the setting a folded name moved to included
+// WhatsApp value of the profile .env with a default, read through the profile scope
 func wenv(ctx context.Context, name, def string) (string, error) {
 	return gateway.GetScopedSecret(ctx, name, def, false)
 }
@@ -174,27 +172,10 @@ func NewWhatsAppAdapter(ctx context.Context, config *gateway.PlatformConfig) (*W
 		s := pyrepr.Str(rp)
 		a.ReplyPrefix = &s
 	}
-	dmPolicy, err := gateway.ExtraOrSecret(ctx, extra, "dm_policy", "WHATSAPP_DM_POLICY", "pairing", true)
-	if err != nil {
-		return nil, err
-	}
-	a.DMPolicy = pystr.Lower(pystr.Strip(pyrepr.Str(dmPolicy)))
-	rawAllow, err := a.SelectDMAllowlist(extra, []string{"WHATSAPP_ALLOWED_USERS"}, func(name string) (string, error) { return wenv(ctx, name, "") })
-	if err != nil {
-		return nil, err
-	}
-	a.AllowFrom = CoerceAllowList(rawAllow)
-	groupPolicy, err := gateway.ExtraOrSecret(ctx, extra, "group_policy", "WHATSAPP_GROUP_POLICY", "pairing", true)
-	if err != nil {
-		return nil, err
-	}
-	a.GroupPolicy = pystr.Lower(pystr.Strip(pyrepr.Str(groupPolicy)))
-	_, rawGroups, err := SelectAllowlist(extra, []string{"group_allow_from", "groupAllowFrom"},
-		[]string{"WHATSAPP_GROUP_ALLOW_FROM", "WHATSAPP_GROUP_ALLOWED_USERS"}, func(name string) (string, error) { return wenv(ctx, name, "") })
-	if err != nil {
-		return nil, err
-	}
-	a.GroupAllowFrom = CoerceAllowList(rawGroups)
+	sctx := gateway.SettingsContext(ctx)
+	a.DMPolicy, a.GroupPolicy = settings.WhatsappDmPolicy.Get(sctx), settings.WhatsappGroupPolicy.Get(sctx)
+	a.AllowFrom, a.GroupAllowFrom = gateway.SettingSet(ctx, settings.WhatsappAllowFrom), gateway.SettingSet(ctx, settings.WhatsappGroupAllowFrom)
+	a.OwnAccessPolicyMixin.LiveDMAllowFrom = liveAllowedPeople
 	switch rr := extra["send_read_receipts"].(type) {
 	case bool:
 		a.sendReadReceipts = rr
@@ -203,11 +184,13 @@ func NewWhatsAppAdapter(ctx context.Context, config *gateway.PlatformConfig) (*W
 	default:
 		a.sendReadReceipts = whatsappTruthy[pystr.Lower(pystr.Strip(pyrepr.Str(rr)))] && pyrepr.Truthy(rr)
 	}
-	if a.MentionPatterns, err = a.CompileMentionPatterns(ctx); err != nil {
-		return nil, err
-	}
 	a.ConfigureTextBatchDelays()
 	return a, nil
+}
+
+// People the profile in scope allows in direct chats right now, so a pairing approval applies without a restart
+func liveAllowedPeople(ctx context.Context) (map[string]bool, error) {
+	return gateway.SettingSet(ctx, settings.WhatsappAllowFrom), nil
 }
 
 // Platform display name, the base name over the mixin's field

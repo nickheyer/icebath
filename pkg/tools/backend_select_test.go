@@ -249,7 +249,7 @@ func TestRemovedBackendNoteAndSelectionError(t *testing.T) {
 		t.Fatalf("removed %q", msg)
 	}
 	msg = SelectionError("web", "'exa'", "EXA_API_KEY is not set")
-	if msg != "web is configured to use 'exa' (set via icebath tools), but EXA_API_KEY is not set. Run 'icebath tools' to change it." {
+	if msg != "web is configured to use 'exa', but EXA_API_KEY is not set. Pick another one in /settings → Tools." {
 		t.Fatalf("live %q", msg)
 	}
 }

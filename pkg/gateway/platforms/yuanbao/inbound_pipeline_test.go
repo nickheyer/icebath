@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
@@ -115,7 +116,7 @@ func TestAccessGuardMiddleware(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			adapter := makeAdapter(t, nil)
 			if c.optIn {
-				t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
+				allowAllUsers(t)
 			}
 			adapter.accessPolicy = makePolicy(t, c.dmPolicy, c.dmAllowFrom, c.groupPolicy, nil)
 			ic := NewInboundContext(adapter, nil)
@@ -152,10 +153,13 @@ func TestAccessPolicyReadsTheScopedAllowAllOptIn(t *testing.T) {
 	if opted, err := policy.OpenDMOptedIn(scoped); err != nil || !opted {
 		t.Fatalf("scoped opt in ignored %v", err)
 	}
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
-	other := withMultiplexScope(t, map[string]string{"SOMETHING_ELSE": "x"})
+	allowAllUsers(t)
+	if opted, err := policy.OpenDMOptedIn(context.Background()); err != nil || !opted {
+		t.Fatalf("the allow all users setting of the profile ignored %v", err)
+	}
+	other := home.WithOverride(withMultiplexScope(t, map[string]string{"SOMETHING_ELSE": "x"}), t.TempDir())
 	if opted, err := policy.OpenDMOptedIn(other); err != nil || opted {
-		t.Fatalf("the default profile opt in leaked into a scoped miss %v", err)
+		t.Fatalf("the default profile opt in leaked into another profile %v", err)
 	}
 }
 
@@ -184,13 +188,13 @@ func TestAutoSetHomeOnlyForApprovedSenders(t *testing.T) {
 		if calls := runMiddleware(t, newAutoSetHomeMiddleware(), ic); calls != 1 {
 			t.Fatalf("approved=%v continued %d times", approved, calls)
 		}
-		_, statErr := os.Stat(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"))
+		stored := storedHomeChannel(t)
 		switch {
-		case approved && (os.Getenv("YUANBAO_HOME_CHANNEL") != "direct:sender-1" || statErr != nil || adapter.Config.HomeChannel == nil ||
+		case approved && (os.Getenv("YUANBAO_HOME_CHANNEL") != "direct:sender-1" || stored != "direct:sender-1" || adapter.Config.HomeChannel == nil ||
 			adapter.Config.HomeChannel.ChatID != "direct:sender-1" || !adapter.autoSethomeDoneValue()):
-			t.Fatalf("approved sender did not claim the home channel %q %v", os.Getenv("YUANBAO_HOME_CHANNEL"), statErr)
-		case !approved && (os.Getenv("YUANBAO_HOME_CHANNEL") != "" || statErr == nil || adapter.Config.HomeChannel != nil):
-			t.Fatalf("intake only sender claimed the home channel %q", os.Getenv("YUANBAO_HOME_CHANNEL"))
+			t.Fatalf("approved sender did not claim the home channel %q, stored %q", os.Getenv("YUANBAO_HOME_CHANNEL"), stored)
+		case !approved && (os.Getenv("YUANBAO_HOME_CHANNEL") != "" || stored != "" || adapter.Config.HomeChannel != nil):
+			t.Fatalf("intake only sender claimed the home channel %q, stored %q", os.Getenv("YUANBAO_HOME_CHANNEL"), stored)
 		}
 	}
 }
@@ -241,7 +245,7 @@ func TestQuoteContextMiddlewareReadsTheQuote(t *testing.T) {
 
 func TestFullPipelineDispatchesADirectMessage(t *testing.T) {
 	adapter := makeAdapter(t, nil)
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
+	allowAllUsers(t)
 	adapter.accessPolicy = makePolicy(t, "open", nil, "open", nil)
 	events := captureEvents(t)
 	ic := NewInboundContext(adapter, [][]byte{makeJSONPush(t, "alice", "", "Hello bot!", "msg-e2e-001")})
@@ -278,7 +282,7 @@ func TestFullPipelineStopsBlankSendersAndUnaddressedGroupTraffic(t *testing.T) {
 	if blank.FromAccount != "   " || blank.ChatID != "direct:   " || blank.Source != nil {
 		t.Fatalf("blank sender passed the access guard %+v", blank)
 	}
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
+	allowAllUsers(t)
 	t.Setenv("YUANBAO_HOME_CHANNEL", "")
 	adapter.setAutoSethomeDone(false)
 	adapter.accessPolicy = makePolicy(t, "pairing", nil, "open", nil)
@@ -286,8 +290,8 @@ func TestFullPipelineStopsBlankSendersAndUnaddressedGroupTraffic(t *testing.T) {
 	if err := adapter.inboundPipeline.Execute(context.Background(), group); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml")); err == nil || os.Getenv("YUANBAO_HOME_CHANNEL") != "" {
-		t.Fatal("unaddressed group traffic claimed the home channel")
+	if stored := storedHomeChannel(t); stored != "" || os.Getenv("YUANBAO_HOME_CHANNEL") != "" {
+		t.Fatalf("unaddressed group traffic claimed the home channel %q", stored)
 	}
 	time.Sleep(20 * time.Millisecond)
 	if len(events()) != 0 {
@@ -297,7 +301,7 @@ func TestFullPipelineStopsBlankSendersAndUnaddressedGroupTraffic(t *testing.T) {
 
 func TestGroupDispatchesRunOneAtATimePerSession(t *testing.T) {
 	adapter := makeAdapter(t, nil)
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
+	allowAllUsers(t)
 	adapter.accessPolicy = makePolicy(t, "pairing", nil, "open", nil)
 	t.Cleanup(func() { _ = adapter.Disconnect(context.Background()) })
 	var mu sync.Mutex

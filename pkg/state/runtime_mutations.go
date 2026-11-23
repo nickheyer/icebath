@@ -4,10 +4,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
+
+// Shell lines a committed branch owes its child: those of the parent that ran before the first message left behind
+type branchShellLines struct {
+	child  string
+	before *float64
+}
 
 // The on_session_delete event a committed runtime mutation owes its plugins
 type SessionGoneEvent struct {
@@ -70,8 +77,9 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 	}
 	var result *pyjson.Object
 	var event *SessionGoneEvent
+	var carried *branchShellLines
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
-		result, event = nil, nil
+		result, event, carried = nil, nil, nil
 		if err := runtimeEpoch(ctx, conn, in.Epoch); err != nil {
 			return err
 		}
@@ -137,6 +145,14 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 		if err != nil {
 			return err
 		}
+		if in.Operation == "branch" {
+			before, err := branchLeftBehindAt(ctx, conn, in.SessionID, payload)
+			if err != nil {
+				return err
+			}
+			child, _ := projection.Get("branched_session_id")
+			carried = &branchShellLines{child: pyStr(child), before: before}
+		}
 		if in.Operation == "delete" {
 			ids := []string{in.SessionID}
 			if deleted, _ := projection.Get("deleted_ids"); pyTruthy(deleted) {
@@ -188,6 +204,16 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 	}
 	if event != nil {
 		d.EmitSessionDeleted(ctx, event.SessionIDs, event.Reason, in.SessionID, "")
+		if event.Reason == "delete" {
+			for _, sid := range event.SessionIDs {
+				removeSessionFiles(d.sessionsDir(), sid)
+			}
+		}
+	}
+	if carried != nil {
+		if err := CopyShellLines(d.sessionsDir(), in.SessionID, carried.child, carried.before); err != nil {
+			pkgLog().Warn(fmt.Sprintf("shell lines of session %s not carried to its branch %s: %v", in.SessionID, carried.child, err))
+		}
 	}
 	return result, nil
 }

@@ -311,11 +311,7 @@ func (r *GatewayRunner) adapterGroupHasSenderAllowlist(ctx context.Context, plat
 	if !ok {
 		return false
 	}
-	senderAllow := groupCfg["allow_from"]
-	if !pyrepr.Truthy(senderAllow) {
-		senderAllow = groupCfg["allowFrom"]
-	}
-	switch v := senderAllow.(type) {
+	switch v := groupCfg["allow_from"].(type) {
 	case string:
 		return pystr.Strip(v) != ""
 	case []any:

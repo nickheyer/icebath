@@ -196,21 +196,12 @@ func TestGatewayClarifyWaitResolveAndClear(t *testing.T) {
 	}
 }
 
-func TestResolveClarifyTimeout(t *testing.T) {
-	if ResolveClarifyTimeout(config.Tree{}) != 3600 {
-		t.Fatal("default")
-	}
-	if ResolveClarifyTimeout(config.Tree{"clarify": map[string]any{"timeout": "0"}}) != 0 {
-		t.Fatal("legacy string zero")
-	}
-	if ResolveClarifyTimeout(config.Tree{"agent": map[string]any{"clarify_timeout": 12.9}}) != 12 {
-		t.Fatal("agent float")
-	}
-	if ResolveClarifyTimeout(config.Tree{"agent": map[string]any{"clarify_timeout": "soon"}}) != 3600 {
-		t.Fatal("non numeric")
-	}
-	if ResolveClarifyTimeout(config.Tree{"clarify": map[string]any{"timeout": nil}, "agent": map[string]any{"clarify_timeout": -5}}) != -5 {
-		t.Fatal("null legacy falls through")
+func TestClarifyTimeoutFollowsTheQuestionTimeoutSetting(t *testing.T) {
+	for text, want := range map[string]int{"": 3600, "agent:\n  clarify_timeout: 0\n": 0, "agent:\n  clarify_timeout: 12.9\n": 12,
+		"agent:\n  clarify_timeout: soon\n": 3600, "agent:\n  clarify_timeout: -5\n": -5} {
+		if got := GetClarifyTimeout(approvalYAMLEnv(t, text)); got != want {
+			t.Fatalf("%q gives %d, want %d", text, got, want)
+		}
 	}
 }
 

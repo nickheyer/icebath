@@ -160,18 +160,6 @@ func TestAIAgentReusesExistingErrorsLogHandler(t *testing.T) {
 	}
 }
 
-func TestToolDelayKwargIsDeprecatedNoop(t *testing.T) {
-	prev := warnDeprecation
-	t.Cleanup(func() { warnDeprecation = prev })
-	var warned []string
-	warnDeprecation = func(m string) { warned = append(warned, m) }
-	zero := 0.0
-	a := newFixtureAgent(t, AIAgentOptions{BaseURL: "https://openrouter.ai/api/v1", ToolDelay: &zero})
-	if a == nil || len(warned) != 1 || !strings.Contains(warned[0], "tool_delay") {
-		t.Fatalf("warnings %v", warned)
-	}
-}
-
 func TestHasContentAfterThinkBlockNoneReturnsFalse(t *testing.T) {
 	if runAgentFixture(t).hasContentAfterThinkBlock("") {
 		t.Fatal("empty content has no visible text")

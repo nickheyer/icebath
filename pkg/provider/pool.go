@@ -454,7 +454,7 @@ func (p *Pool) syncEntryFromPoolStore(entry PooledCredential, held bool) PooledC
 	if display == "" {
 		display = p.provider
 	}
-	if isAnthropic && IsBorrowedCredentialSource(entry.Source, p.provider) {
+	if isAnthropic && IsBorrowedCredentialSource(entry.Source) {
 		return entry
 	}
 	rows, err := p.env.Store.ReadCredentialPool(p.provider)

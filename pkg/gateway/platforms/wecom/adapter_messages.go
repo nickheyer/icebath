@@ -225,7 +225,7 @@ func (a *WeComAdapter) IsGroupAllowed(ctx context.Context, chatID, senderID stri
 		return false, err
 	}
 	groupCfg := a.resolveGroupCfg(chatID)
-	senderAllow := coerceList(pyrepr.Or(groupCfg["allow_from"], groupCfg["allowFrom"]))
+	senderAllow := coerceList(groupCfg["allow_from"])
 	if len(senderAllow) == 0 {
 		return true, nil
 	}

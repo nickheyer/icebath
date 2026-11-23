@@ -57,7 +57,7 @@ func TestLaunchOptionsReachTheOwnerFrozenAndHooksConsented(t *testing.T) {
 	if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	envRefsWrite(t, home, "config.yaml", "model: fixture\nplatform_toolsets:\n  cli: []\nhooks:\n  pre_tool_call:\n  - command: "+hook+"\n")
+	envRefsWrite(t, home, "config.yaml", "model:\n  default: fixture\nplatform_toolsets:\n  cli: []\nhooks:\n  pre_tool_call:\n  - command: "+hook+"\n")
 	plugins.ResetPluginManagersForTests()
 	plugins.ResetShellHooksForTests()
 	t.Cleanup(func() {

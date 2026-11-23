@@ -189,7 +189,7 @@ func goroutineStacks() []byte {
 
 // Warns per served profile whose config still declares a timed session reset unless the restoring plugin is enabled
 func (r *GatewayRunner) startLogRetiredSessionReset(ctx context.Context) {
-	type hit struct{ name, path, mode string }
+	type hit struct{ name, mode string }
 	err := func() (err error) {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -206,13 +206,13 @@ func (r *GatewayRunner) startLogRetiredSessionReset(ctx context.Context) {
 			if err != nil {
 				return err
 			}
-			if path, mode, ok := plugins.RetiredResetPolicy(layers); ok {
-				hits = append(hits, hit{p.Name, path, mode})
+			if mode, ok := plugins.TimedSessionReset(layers); ok {
+				hits = append(hits, hit{p.Name, mode})
 			}
 		}
 		if len(hits) > 0 && !plugins.ResetPluginEnabled(ctx) {
 			for _, h := range hits {
-				pkgLog().Warn(fmt.Sprintf("Profile %s: %s", h.name, plugins.FormatSessionResetNotice(h.path, h.mode)))
+				pkgLog().Warn(fmt.Sprintf("Profile %s: %s", h.name, plugins.FormatSessionResetNotice(h.mode)))
 			}
 		}
 		return nil

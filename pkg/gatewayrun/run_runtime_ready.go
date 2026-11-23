@@ -89,7 +89,6 @@ func waitGatewayRuntime(ctx context.Context, r *GatewayRunner) error {
 		if !ownStopBegun(r) {
 			r.sessionRuntimeDescriptor.update(func(descriptor map[string]any) {
 				descriptor["state"] = "failed"
-				descriptor["capabilities"] = []any{}
 			})
 			return &causedError{msg: "gateway session API stopped unexpectedly", cause: r.sessionAPI.serveErr}
 		}

@@ -2,101 +2,39 @@ package discord
 
 import (
 	"context"
-	"errors"
 	"math/big"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
-const (
-	DiscordPromptTimeoutDefault = 300
-	DiscordPromptTimeoutMin     = 30
-)
+// Shortest wait in seconds a button view may be given
+const DiscordPromptTimeoutMin = 30
 
+// Longest wait in seconds a button view may be given, the longest a timer takes safely
 var DiscordPromptTimeoutMax = int(tools.MaxSafeTimeoutSeconds)
 
-// Raw config.yaml of the home in effect, replaced by tests that patch read_raw_config
-var readRawConfig = func(ctx context.Context) (map[string]any, error) {
-	return config.ReadRawConfig(ctx, home.Dir(ctx))
+// Server whose roles also authorize direct messages for this adapter's profile, nil while roles apply only inside servers
+func (a *DiscordAdapter) dmRoleAuthGuild(ctx context.Context) *big.Int {
+	raw := pystr.Strip(settings.DiscordDmRoleAuthGuild.Get(a.sctx(ctx)))
+	if !isDigitString(raw) {
+		return nil
+	}
+	guildID, ok := pyint.Parse(raw)
+	if !ok || guildID.Sign() <= 0 {
+		return nil
+	}
+	return guildID
 }
 
-// Section of the raw config, ok false where Python's dict access would raise
-func rawSection(ctx context.Context, name string) (map[string]any, bool) {
-	cfg, err := readRawConfig(ctx)
-	if err != nil {
-		return nil, false
-	}
-	section, present := cfg[name]
-	if !present || !pyrepr.Truthy(section) {
-		return map[string]any{}, true
-	}
-	m, ok := section.(map[string]any)
-	return m, ok
-}
-
-// Python int of a config value, ok false for the TypeError and ValueError the readers catch
-func configInt(raw any) (*big.Int, bool, error) {
-	n, err := pyint.Of(raw)
-	if err == nil {
-		return n, true, nil
-	}
-	var pe *pyint.Error
-	if errors.As(err, &pe) && pe.Kind == "OverflowError" {
-		return nil, false, errors.New("OverflowError: " + pe.Msg)
-	}
-	return nil, false, nil
-}
-
-// Guild opted in to DM role based auth from discord.dm_role_auth_guild, nil for the secure default
-func ReadDMRoleAuthGuild(ctx context.Context) (*big.Int, error) {
-	section, ok := rawSection(ctx, "discord")
-	if !ok {
-		return nil, nil
-	}
-	raw := section["dm_role_auth_guild"]
-	if raw == nil || raw == "" {
-		return nil, nil
-	}
-	guildID, ok, err := configInt(raw)
-	if err != nil || !ok {
-		return nil, err
-	}
-	if guildID.Sign() <= 0 {
-		return nil, nil
-	}
-	return guildID, nil
-}
-
-// Button view timeout from approvals.discord_prompt_timeout clamped to the min and safe max
-func ReadDiscordPromptTimeout(ctx context.Context) (int, error) {
-	section, ok := rawSection(ctx, "approvals")
-	if !ok {
-		return DiscordPromptTimeoutDefault, nil
-	}
-	raw := section["discord_prompt_timeout"]
-	if raw == nil || raw == "" {
-		return DiscordPromptTimeoutDefault, nil
-	}
-	seconds, ok, err := configInt(raw)
-	if err != nil {
-		return 0, err
-	}
-	if !ok {
-		return DiscordPromptTimeoutDefault, nil
-	}
-	if seconds.Cmp(big.NewInt(DiscordPromptTimeoutMin)) < 0 {
-		return DiscordPromptTimeoutMin, nil
-	}
-	if seconds.Cmp(big.NewInt(int64(DiscordPromptTimeoutMax))) > 0 {
-		return DiscordPromptTimeoutMax, nil
-	}
-	return int(seconds.Int64()), nil
+// Seconds a button view of this adapter's profile waits for an answer, kept between the shortest and the longest safe wait
+func (a *DiscordAdapter) promptTimeoutSeconds(ctx context.Context) float64 {
+	seconds := settings.ApprovalsDiscordPromptTimeout.Get(a.sctx(ctx)).Seconds()
+	return min(max(seconds, DiscordPromptTimeoutMin), float64(DiscordPromptTimeoutMax))
 }
 
 // Whether exec approval buttons are admin only and the admin ids allowed to click, empty when gated with none

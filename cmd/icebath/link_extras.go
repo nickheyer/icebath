@@ -103,7 +103,7 @@ func init() {
 func installExtrasWiring() {
 	tui.SpeechOutput.Play, tui.SpeechOutput.Stop = media.PlayAudioFile, media.StopPlayback
 	tui.SpeechOutput.StartThinking, tui.SpeechOutput.StopThinking = media.StartThinkingSound, media.StopThinkingSound
-	gatewayrun.CheckRuntime, gatewayrun.MaybeRunBootBootstrap = selfupdate.CheckRuntime, selfupdate.MaybeRunBootBootstrap
+	gatewayrun.ActivateRuntime, gatewayrun.MaybeRunBootBootstrap = selfupdate.ActivateRuntime, selfupdate.MaybeRunBootBootstrap
 	selfupdate.RunCLIHook = run
 	acp.RunModelSetup = func(context.Context) int { return run([]string{"model"}) }
 	cron.SetupWorkerLogging = logging.SetupHomeLogging
@@ -443,7 +443,7 @@ func finishOwedSourceUpdate([]string) {
 	}
 }
 
-// Sweeps update leftovers, reports owed restarts, runs the boot bootstrap and prints the runtime verdict
+// Sweeps update leftovers, reports owed restarts, runs the boot bootstrap and puts the store's tools first on PATH
 func updateRunSteps(argv []string) {
 	cleanupQuarantinedExes()
 	selfupdate.SweepStaleBytecodeIfCheckoutChanged()
@@ -452,9 +452,8 @@ func updateRunSteps(argv []string) {
 	if first != "update" {
 		maybeRunBootBootstrap(pm.InstallRoot())
 	}
-	ctx := context.Background()
-	if err := selfupdate.NoteRuntimeOnce(ctx, home.Dir(ctx), pm.InstallRoot(), os.Stderr); err != nil {
-		pkgLog().Debug("pm startup check failed", "error", err)
+	if err := selfupdate.ActivateRuntime(context.Background()); err != nil {
+		pkgLog().Debug("store activation failed", "error", err)
 	}
 }
 

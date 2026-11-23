@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -30,11 +29,24 @@ func word(v any) string {
 	return strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
 }
 
-// Whether a written value means unset
+// Whether a written value means unset: nothing, empty text or the way YAML spells no value
 func blank(v any) bool {
 	if v == nil {
 		return true
 	}
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	switch strings.TrimSpace(s) {
+	case "", "~", "null", "Null", "NULL":
+		return true
+	}
+	return false
+}
+
+// Whether a stored value is empty text, which a setting that may be unset reads as no value
+func emptyText(v any) bool {
 	s, ok := v.(string)
 	return ok && strings.TrimSpace(s) == ""
 }
@@ -67,8 +79,11 @@ func (b *Bool) Coerce(v any) (any, error) {
 }
 
 func (b *Bool) read(v any) (any, bool) {
-	if v == nil {
+	if v == nil || (b.Null != "" && emptyText(v)) {
 		return nil, b.Null != ""
+	}
+	if on, ok := boolWords[word(v)]; ok {
+		return on, true
 	}
 	return config.AsBool(v)
 }
@@ -120,7 +135,7 @@ func (n *Int) Coerce(v any) (any, error) {
 }
 
 func (n *Int) read(v any) (any, bool) {
-	if v == nil {
+	if v == nil || (n.Null != "" && emptyText(v)) {
 		return nil, n.Null != ""
 	}
 	return config.AsInt(v)
@@ -178,7 +193,7 @@ func (f *Float) Coerce(v any) (any, error) {
 }
 
 func (f *Float) read(v any) (any, bool) {
-	if v == nil {
+	if v == nil || (f.Null != "" && emptyText(v)) {
 		return nil, f.Null != ""
 	}
 	return config.AsFloat(v)
@@ -265,6 +280,9 @@ func (d *Duration) Coerce(v any) (any, error) {
 	if !ok {
 		return nil, invalid(d.Key, "takes a length of time such as 30s or 5m")
 	}
+	if x, isNumber := config.AsFloat(v); isNumber && math.Abs(x*float64(d.unit())) >= math.MaxInt64 {
+		return nil, invalid(d.Key, "is too long, the most it takes is %d days", int(time.Duration(math.MaxInt64)/(24*time.Hour)))
+	}
 	if d.Min != nil && parsed < *d.Min {
 		return nil, invalid(d.Key, "must be at least %s", *d.Min)
 	}
@@ -275,7 +293,7 @@ func (d *Duration) Coerce(v any) (any, error) {
 }
 
 func (d *Duration) read(v any) (any, bool) {
-	if v == nil {
+	if v == nil || (d.Null != "" && emptyText(v)) {
 		return nil, d.Null != ""
 	}
 	parsed, ok := d.parse(v)
@@ -321,9 +339,14 @@ func (e *Enum) DefaultValue() any {
 	return e.Default
 }
 
-// Whether a word is one of the values
-func (e *Enum) has(w string) bool {
-	return slices.ContainsFunc(e.Values, func(c Choice) bool { return c.Value == w })
+// Canonical spelling of the value a word names, letter case ignored
+func (e *Enum) choice(w string) (string, bool) {
+	for _, c := range e.Values {
+		if strings.EqualFold(c.Value, w) {
+			return c.Value, true
+		}
+	}
+	return "", false
 }
 
 // Words of the values in order
@@ -335,26 +358,38 @@ func (e *Enum) Words() []string {
 	return out
 }
 
-// Value a written or stored word names, false when none
+// Words YAML reads as a boolean, by the boolean they become
+var yamlBoolWords = map[bool][]string{true: {"on", "true", "yes"}, false: {"off", "false", "no"}}
+
+// Value a written or stored word names, false when none; a boolean stands for the toggle pair or the word YAML read it from
 func (e *Enum) match(v any) (string, bool) {
-	if on, isBool := v.(bool); isBool && e.On != "" {
-		if on {
-			return e.On, true
+	if on, isBool := v.(bool); isBool {
+		if e.On != "" {
+			if on {
+				return e.On, true
+			}
+			return e.Off, true
 		}
-		return e.Off, true
-	}
-	w := word(v)
-	if e.has(w) {
-		return w, true
-	}
-	if s, isStr := v.(string); isStr && e.has(strings.TrimSpace(s)) {
-		return strings.TrimSpace(s), true
-	}
-	if e.Open && w != "" {
-		if s, isStr := v.(string); isStr {
-			return strings.TrimSpace(s), true
+		for _, w := range yamlBoolWords[on] {
+			if c, ok := e.choice(w); ok {
+				return c, true
+			}
 		}
-		return w, true
+		return "", false
+	}
+	text := ""
+	switch t := v.(type) {
+	case nil:
+	case string:
+		text = strings.TrimSpace(t)
+	default:
+		text = strings.TrimSpace(fmt.Sprint(t))
+	}
+	if c, ok := e.choice(text); ok {
+		return c, true
+	}
+	if e.Open && text != "" {
+		return text, true
 	}
 	return "", false
 }
@@ -370,7 +405,7 @@ func (e *Enum) Coerce(v any) (any, error) {
 }
 
 func (e *Enum) read(v any) (any, bool) {
-	if v == nil {
+	if v == nil || (e.Null != "" && emptyText(v)) {
 		return nil, e.Null != ""
 	}
 	return e.match(v)
@@ -552,6 +587,9 @@ func (l *List) read(v any) (any, bool) {
 	case []any:
 		return t, true
 	}
+	if l.Null != "" && emptyText(v) {
+		return nil, true
+	}
 	return nil, false
 }
 
@@ -612,8 +650,20 @@ func (m *Map) read(v any) (any, bool) {
 	if v == nil {
 		return map[string]any{}, true
 	}
-	out := config.AsMap(v)
-	return out, out != nil
+	in := config.AsMap(v)
+	if in == nil {
+		return nil, false
+	}
+	if m.Value == nil {
+		return in, true
+	}
+	out := make(map[string]any, len(in))
+	for name, item := range in {
+		if typed, ok := m.Value.read(item); ok {
+			out[name] = typed
+		}
+	}
+	return out, true
 }
 
 // Sets one entry of the map in its default scope through Set, any name allowed

@@ -3,7 +3,6 @@ package state
 import (
 	"context"
 	"errors"
-	"math/big"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -35,32 +34,6 @@ func TestHintFallsBackWhenDetectionFails(t *testing.T) {
 	pinVar(t, &detectInstallMethod, func(context.Context, string, string) (string, error) { return "", errors.New("boom") })
 	if hint := walResetRepairHint(context.Background()); !strings.Contains(hint, "SQLite 3.51.3+") {
 		t.Fatalf("fallback hint = %q", hint)
-	}
-}
-
-func TestResolveSynchronousLevelAcceptsDocumentedSpellings(t *testing.T) {
-	cases := []struct {
-		raw  any
-		want int
-	}{
-		{"OFF", 0}, {"NORMAL", 1}, {"FULL", 2}, {"EXTRA", 3}, {"full", 2}, {"Full", 2}, {"  FULL  ", 2},
-		{0, 0}, {1, 1}, {2, 2}, {3, 3}, {"2", 2}, {" 2 ", 2}, {"o\ufb00", 0}, {int64(3), 3}, {big.NewInt(1), 1},
-	}
-	for _, c := range cases {
-		if got, ok := ResolveSynchronousLevel(c.raw); !ok || got != c.want {
-			t.Errorf("ResolveSynchronousLevel(%#v) = %d, %v want %d", c.raw, got, ok, c.want)
-		}
-	}
-}
-
-func TestResolveSynchronousLevelRejectsEverythingElse(t *testing.T) {
-	for _, raw := range []any{"PARANOID", "", "   ", 4, -1, "4", nil, []any{}, map[string]any{}, 2.5, "2.0", true} {
-		if got, ok := ResolveSynchronousLevel(raw); ok {
-			t.Errorf("ResolveSynchronousLevel(%#v) = %d accepted", raw, got)
-		}
-	}
-	if got, ok := ResolveSynchronousLevel(false); !ok || got != 0 {
-		t.Fatalf("YAML off = %d, %v", got, ok)
 	}
 }
 
@@ -149,7 +122,7 @@ func TestGarbageSynchronousWarnsAndChangesNothing(t *testing.T) {
 	if got := pragmaInt(t, conn, "synchronous"); got != 2 {
 		t.Fatalf("synchronous = %d", got)
 	}
-	if len(logLinesWith(buf, "WARN", "PARANOID")) != 1 || len(logLinesWith(buf, "WARN", "ignoring non-integer database.cache_size=")) != 1 {
+	if len(logLinesWith(buf, "WARN", "database.synchronous")) != 1 || len(logLinesWith(buf, "WARN", "database.cache_size")) != 1 {
 		t.Fatalf("warnings = %s", buf.String())
 	}
 }

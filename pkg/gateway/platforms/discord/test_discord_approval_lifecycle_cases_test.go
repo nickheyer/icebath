@@ -72,7 +72,7 @@ func TestClickStopsViewEvenIfInteractionEditFails(t *testing.T) {
 	for _, editFails := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ok", true: "fails"}[editFails], func(t *testing.T) {
 			a, f, view, entry := pendingCard(t)
-			t.Setenv("DISCORD_ALLOW_ALL_USERS", "true")
+			setDiscord(t, "allow_all_users", true)
 			if editFails {
 				f.setFail(func(c fakeCall, _ int) (int, string) {
 					if isEditCallback(c) {
@@ -114,7 +114,7 @@ func TestClickStopsViewEvenIfInteractionEditFails(t *testing.T) {
 func TestObserverThatFiresBeforeAFailedClickEditStillSeesTheCardRetired(t *testing.T) {
 	ctx := context.Background()
 	a, f, view, entry := pendingCard(t)
-	t.Setenv("DISCORD_ALLOW_ALL_USERS", "true")
+	setDiscord(t, "allow_all_users", true)
 	var editedEarly bool
 	f.setFail(func(c fakeCall, _ int) (int, string) {
 		if !isEditCallback(c) {
@@ -322,7 +322,7 @@ func TestExternalAnswerThenStaleClickPreservesResolvedObserver(t *testing.T) {
 func TestFailedClickKeepsAPendingCardLive(t *testing.T) {
 	ctx := context.Background()
 	a, f, view, entry := pendingCard(t)
-	t.Setenv("DISCORD_ALLOW_ALL_USERS", "true")
+	setDiscord(t, "allow_all_users", true)
 	real := resolveGatewayApprovalFn
 	resolveGatewayApprovalFn = func(string, string, bool, string, string) int { panic("division by zero") }
 	defer func() { resolveGatewayApprovalFn = real }()

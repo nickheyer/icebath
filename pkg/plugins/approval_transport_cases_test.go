@@ -135,13 +135,19 @@ func atGuardSetup(t *testing.T) (context.Context, string, *Manager) {
 	return ctx, h, GetPluginManager(ctx)
 }
 
-// Manual mode env selecting the phone transport with the given session markers
-func atGuardEnv(h, sessionKey, fallback string, markers map[string]any) *tools.Env {
-	approval := map[string]any{"transport": "phone"}
+// Env of a home whose config.yaml asks before every risky command and selects the phone transport, with the given session markers
+func atGuardEnv(t *testing.T, h, sessionKey, fallback string, markers map[string]any) *tools.Env {
+	t.Helper()
+	text := "approvals:\n  mode: manual\nsecurity:\n  approval:\n    transport: phone\n"
 	if fallback != "" {
-		approval["transport_fallback"] = fallback
+		text += "    transport_fallback: " + fallback + "\n"
 	}
-	env := &tools.Env{Home: h, Config: config.Tree{"approvals": map[string]any{"mode": "manual"}, "security": map[string]any{"approval": approval}}, Values: &sync.Map{}}
+	writeFile(t, filepath.Join(h, "config.yaml"), text)
+	cfg, err := config.LoadReadonly(homeCtx(h), h, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := &tools.Env{Home: h, Config: cfg, Values: &sync.Map{}}
 	env.Values.Store("session.key", sessionKey)
 	for k, v := range markers {
 		env.Values.Store("session."+k, v)
@@ -156,7 +162,7 @@ func TestCliSelectedTransportReplacesBuiltinPrompt(t *testing.T) {
 	if err := atContext(m, "fixture-approval").RegisterApprovalTransport(ctx, "phone", atRecording(&mu, &seen, func(r tools.ApprovalRequest) tools.ApprovalTransportDecision { return r.Respond("once") })); err != nil {
 		t.Fatal(err)
 	}
-	env := atGuardEnv(h, "at-cli-session", "", map[string]any{"interactive": true})
+	env := atGuardEnv(t, h, "at-cli-session", "", map[string]any{"interactive": true})
 	env.Ask = &atAsker{t: t}
 	result := tools.CheckAllCommandGuards(ctx, env, "rm -rf /tmp/example", "local", false)
 	if !result.Approved || !result.UserApproved {
@@ -176,7 +182,7 @@ func TestGatewaySelectedTransportDoesNotRequireGatewayNotifier(t *testing.T) {
 	if err := atContext(m, "fixture-approval").RegisterApprovalTransport(ctx, "phone", atRecording(&mu, &seen, func(r tools.ApprovalRequest) tools.ApprovalTransportDecision { return r.Respond("once") })); err != nil {
 		t.Fatal(err)
 	}
-	env := atGuardEnv(h, "at-gateway-session", "", map[string]any{"gateway": true})
+	env := atGuardEnv(t, h, "at-gateway-session", "", map[string]any{"gateway": true})
 	result := tools.CheckAllCommandGuards(ctx, env, "rm -rf /tmp/example", "local", false)
 	if !result.Approved {
 		t.Fatalf("%+v", result)
@@ -195,7 +201,7 @@ func TestExecuteCodeGatewayUsesSelectedTransport(t *testing.T) {
 	if err := atContext(m, "fixture-approval").RegisterApprovalTransport(ctx, "phone", atRecording(&mu, &seen, func(r tools.ApprovalRequest) tools.ApprovalTransportDecision { return r.Respond("once") })); err != nil {
 		t.Fatal(err)
 	}
-	env := atGuardEnv(h, "at-execute-code-session", "", map[string]any{"gateway": true})
+	env := atGuardEnv(t, h, "at-execute-code-session", "", map[string]any{"gateway": true})
 	result := tools.CheckExecuteCodeGuard(ctx, env, "print('ok')", "local", false)
 	if !result.Approved {
 		t.Fatalf("%+v", result)
@@ -215,7 +221,7 @@ func TestTransportFailureDeniesWithoutBuiltinFallback(t *testing.T) {
 	if err := atContext(m, "fixture-approval").RegisterApprovalTransport(ctx, "phone", uncorrelated); err != nil {
 		t.Fatal(err)
 	}
-	env := atGuardEnv(h, "at-failure-session", "", map[string]any{"interactive": true})
+	env := atGuardEnv(t, h, "at-failure-session", "", map[string]any{"interactive": true})
 	asker := &atAsker{t: t, answer: "once"}
 	env.Ask = asker
 	result := tools.CheckAllCommandGuards(ctx, env, "rm -rf /tmp/example", "local", false)
@@ -232,7 +238,7 @@ func TestExplicitBuiltinFallbackUsesExistingSurface(t *testing.T) {
 	if err := atContext(m, "fixture-approval").RegisterApprovalTransport(ctx, "phone", uncorrelated); err != nil {
 		t.Fatal(err)
 	}
-	env := atGuardEnv(h, "at-fallback-session", "builtin", map[string]any{"interactive": true})
+	env := atGuardEnv(t, h, "at-fallback-session", "builtin", map[string]any{"interactive": true})
 	asker := &atAsker{t: t, answer: "once"}
 	env.Ask = asker
 	result := tools.CheckAllCommandGuards(ctx, env, "rm -rf /tmp/example", "local", false)
@@ -248,7 +254,7 @@ func TestHardlineBlocksBeforeSelectedTransport(t *testing.T) {
 	if err := atContext(m, "fixture-approval").RegisterApprovalTransport(ctx, "phone", atRecording(&mu, &seen, func(r tools.ApprovalRequest) tools.ApprovalTransportDecision { return r.Respond("once") })); err != nil {
 		t.Fatal(err)
 	}
-	env := atGuardEnv(h, "at-hardline-session", "", map[string]any{"interactive": true})
+	env := atGuardEnv(t, h, "at-hardline-session", "", map[string]any{"interactive": true})
 	result := tools.CheckAllCommandGuards(ctx, env, "rm -rf /", "local", false)
 	mu.Lock()
 	defer mu.Unlock()

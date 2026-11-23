@@ -52,7 +52,7 @@ func TestHookFiresWithoutSessionStoreAttribute(t *testing.T) {
 	}
 	defer server.Stop()
 	r := admissionRunner(t, server)
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "")
+	setSettings(t, map[string]any{"gateway.allow_all_users": false})
 	r.sessionStore = nil
 	ctx := context.Background()
 	var mu sync.Mutex

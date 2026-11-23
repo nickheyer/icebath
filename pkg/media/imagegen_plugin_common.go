@@ -248,9 +248,10 @@ func promptRequiredError(providerName, aspect string) map[string]any {
 	return errorFactory(providerName, aspect, "", "")(promptRequired, "invalid_argument")
 }
 
-// Options of materializeImage and cacheURLBestEffort
+// Options of materializeImage and cacheURLBestEffort, ProviderBase naming the API endpoint that returned the result
 type materializeOptions struct {
 	Prefix, Label, Provider, Model, Prompt, Aspect string
+	ProviderBase                                   string
 	Log                                            *slog.Logger
 	OnURLFail                                      func(error)
 }
@@ -273,7 +274,7 @@ func materializeImage(ctx context.Context, env *tools.Env, b64, rawURL string, o
 
 // Local cache path of an image URL, the bare URL with a warning or the callback when the download fails
 func cacheURLBestEffort(ctx context.Context, env *tools.Env, rawURL string, o materializeOptions) string {
-	path, err := saveURLImage(ctx, env, rawURL, o.Prefix, 60*time.Second, 25*1024*1024)
+	path, err := saveURLImage(ctx, env, rawURL, o.Prefix, 60*time.Second, 25*1024*1024, o.ProviderBase)
 	if err == nil {
 		return path
 	}

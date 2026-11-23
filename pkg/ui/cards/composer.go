@@ -656,6 +656,18 @@ func (c *Composer) Update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
+// Sends the prompt as it is typed, whatever the completion popup offers; a line ending in a backslash breaks there instead
+func (c *Composer) Send() tea.Cmd {
+	c.comp = nil
+	if c.escaped() {
+		before := c.snap()
+		c.breakLine()
+		c.tracked(before)
+		return c.persist()
+	}
+	return c.submit()
+}
+
 // Carries out a keymap action of the prompt or its completion popup
 func (c *Composer) Action(id string) tea.Cmd {
 	if c.search != nil {
@@ -700,13 +712,7 @@ func (c *Composer) Action(id string) tea.Cmd {
 		c.startSearch()
 		return nil
 	case "composer.send":
-		if c.escaped() {
-			before := c.snap()
-			c.breakLine()
-			c.tracked(before)
-			return c.persist()
-		}
-		return c.submit()
+		return c.Send()
 	case "text.undo", "text.redo":
 		if id == "text.undo" {
 			c.swap(&c.undo, &c.redo)

@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -19,26 +18,13 @@ type adapterCore struct {
 	base *gateway.BasePlatformAdapter
 }
 
-// Runner authorizing a full session source through its whole gateway chain
-type runnerUserAuthorizer interface {
-	IsUserAuthorized(ctx context.Context, source *gateway.SessionSource, allowAdapterDelegation bool) (bool, error)
-}
-
-// Runner reporting the unauthorized DM behavior of a platform for a profile
+// Background service surface naming how a profile answers a private chat from someone it does not allow
 type runnerDMBehavior interface {
 	GetUnauthorizedDMBehavior(ctx context.Context, platform gateway.Platform, profile *string) string
 }
 
-// Runner auth chain of the bound message handler owner, nil for a closure handler
-func (g *adapterCore) legacyRunnerAuthFn() runnerUserAuthorizer {
-	if auth, ok := g.base.MessageHandlerOwner().(runnerUserAuthorizer); ok && auth != nil {
-		return auth
-	}
-	return nil
-}
-
-// Whether an inline button caller may run gated actions, failing closed without an allowlist
-func (g *adapterCore) isCallbackUserAuthorized(ctx context.Context, userID string, chatID, chatType, threadID, userName *string) bool {
+// Whether an inline button caller may run gated actions, the background service's access check deciding and no verdict refusing
+func (g *adapterCore) isCallbackUserAuthorized(userID string, chatID, chatType, threadID *string) bool {
 	normalizedUserID := pystr.Strip(userID)
 	if normalizedUserID == "" {
 		return false
@@ -52,32 +38,8 @@ func (g *adapterCore) isCallbackUserAuthorized(ctx context.Context, userID strin
 	if chatID != nil && *chatID != "" {
 		effectiveChatID = *chatID
 	}
-	if g.base.HasAuthorizationCheck() {
-		if injected := g.base.IsSenderAuthorized(normalizedUserID, &normalizedChatType, &effectiveChatID,
-			gateway.AuthorizationOpts{ThreadID: threadID}); injected != nil {
-			return *injected
-		}
-	}
-	if auth := g.legacyRunnerAuthFn(); auth != nil {
-		var name *string
-		if userName != nil && *userName != "" {
-			stripped := pystr.Strip(*userName)
-			name = &stripped
-		}
-		uid := normalizedUserID
-		source := &gateway.SessionSource{Platform: gateway.PlatformTelegram, ChatID: effectiveChatID, ChatType: normalizedChatType,
-			UserID: &uid, UserName: name, ThreadID: threadID}
-		ok, err := auth.IsUserAuthorized(ctx, source, true)
-		if err == nil {
-			return ok
-		}
-		pkgLog().Debug(fmt.Sprintf("[Telegram] Falling back to env-only callback auth for user %s", normalizedUserID), "error", err)
-	}
-	decision := envAllowlistDecision(ctx, normalizedUserID)
-	if decision == nil {
-		return settings.GatewayAllowAllUsers.Get(gateway.SettingsContext(ctx))
-	}
-	return *decision
+	verdict := g.base.IsSenderAuthorized(normalizedUserID, &normalizedChatType, &effectiveChatID, gateway.AuthorizationOpts{ThreadID: threadID})
+	return verdict != nil && *verdict
 }
 
 // Session source the gateway auth path expects, the sender chat standing in for a channel post author
@@ -156,46 +118,31 @@ func (g *adapterCore) sourceFromReactionForAuth(ctx context.Context, update *mod
 		MessageID: &messageID}), nil
 }
 
-// Whether an unauthorized DM must still reach the gateway for a pairing code or a one time decline
+// Whether a private chat from someone not allowed must still reach the background service, which answers with a pairing code or a decline
 func (g *adapterCore) shouldPassUnauthorizedDMForPairing(ctx context.Context, source *gateway.SessionSource) bool {
 	if source.ChatType != "dm" {
 		return false
 	}
-	runner := g.base.MessageHandlerOwner()
-	if runner == nil {
-		runner = g.base.GatewayRunner
+	behavior, ok := g.base.GatewayRunner.(runnerDMBehavior)
+	if !ok || behavior == nil {
+		return false
 	}
-	if behavior, ok := runner.(runnerDMBehavior); ok && behavior != nil {
-		profile := source.Profile
-		if profile == nil || *profile == "" {
-			if owner := g.base.OwnerProfile(); owner != "" {
-				profile = &owner
-			} else {
-				profile = nil
-			}
-		}
-		if resolved, err := callDMBehavior(ctx, behavior, profile); err == nil {
-			return resolved != "ignore"
-		} else {
-			pkgLog().Debug("[Telegram] Failed to resolve unauthorized DM behavior; falling back to adapter-local override", "error", err)
+	profile := source.Profile
+	if profile == nil || *profile == "" {
+		profile = nil
+		if owner := g.base.OwnerProfile(); owner != "" {
+			profile = &owner
 		}
 	}
-	var raw any
-	if g.base.Config != nil {
-		raw = g.base.Config.Extra["unauthorized_dm_behavior"]
+	resolved, err := callDMBehavior(ctx, behavior, profile)
+	if err != nil {
+		pkgLog().Warn("[Telegram] Could not tell how the profile answers unknown senders; dropping the private chat", "error", err)
+		return false
 	}
-	text := ""
-	if raw != nil {
-		text = pyrepr.Str(raw)
-	}
-	switch pystr.Lower(pystr.Strip(text)) {
-	case "pair", "decline":
-		return true
-	}
-	return false
+	return resolved != "ignore"
 }
 
-// Unauthorized DM behavior from the runner, a panic in the resolver surfacing as an error
+// Unauthorized DM behavior from the background service, a panic in the resolver surfacing as an error
 func callDMBehavior(ctx context.Context, behavior runnerDMBehavior, profile *string) (out string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -205,54 +152,15 @@ func callDMBehavior(ctx context.Context, behavior runnerDMBehavior, profile *str
 	return behavior.GetUnauthorizedDMBehavior(ctx, gateway.PlatformTelegram, profile), nil
 }
 
-// Intake auth prefilter that rejects only when it can make the runner's context aware decision
+// Whether a message goes on to the trigger gates: the background service's access check decides, no verdict leaving the decision to its admission
 func (g *adapterCore) isUserAuthorizedFromMessage(ctx context.Context, message *models.Message) bool {
 	source := g.sourceFromMessageForAuth(message)
 	if source.UserID == nil {
 		return true
 	}
-	userID := *source.UserID
-	var authorized *bool
-	list := settings.Entry(settings.TelegramAllowFrom)
-	switch source.ChatType {
-	case "group", "forum", "channel":
-		list = settings.TelegramGroupAllowFrom
-	}
-	if allowed := gateway.SettingSet(ctx, list); len(allowed) > 0 {
-		decision := allowed[userID] || allowed["*"]
-		authorized = &decision
-	}
-	if authorized == nil {
-		auth := g.legacyRunnerAuthFn()
-		hasCallback := g.base.HasAuthorizationCheck()
-		if hasCallback || auth != nil {
-			if !telegramAuthEnvConfigured(ctx) {
-				return true
-			}
-			var decision *bool
-			if hasCallback {
-				chatType, chatID := source.ChatType, source.ChatID
-				decision = g.base.IsSenderAuthorized(userID, &chatType, &chatID,
-					gateway.AuthorizationOpts{IsBot: source.IsBot, ThreadID: source.ThreadID})
-			}
-			if decision != nil {
-				authorized = decision
-			} else if auth != nil {
-				if ok, err := auth.IsUserAuthorized(ctx, source, true); err == nil {
-					authorized = &ok
-				} else {
-					pkgLog().Debug(fmt.Sprintf("[Telegram] Falling back to env-only auth for user %s", userID), "error", err)
-				}
-			}
-		}
-	}
-	if authorized == nil {
-		authorized = envAllowlistDecision(ctx, userID)
-		if authorized == nil {
-			return true
-		}
-	}
-	if *authorized {
+	chatType, chatID := source.ChatType, source.ChatID
+	verdict := g.base.IsSenderAuthorized(*source.UserID, &chatType, &chatID, gateway.AuthorizationOpts{IsBot: source.IsBot, ThreadID: source.ThreadID})
+	if verdict == nil || *verdict {
 		return true
 	}
 	return g.shouldPassUnauthorizedDMForPairing(ctx, source)

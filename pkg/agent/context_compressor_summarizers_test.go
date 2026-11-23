@@ -26,114 +26,50 @@ func dumps(t *testing.T, v any) string {
 
 func obj(pairs ...any) *pyjson.Object { return pyjson.ObjectOf(pairs...) }
 
-var historicalHeadlessResponses = []any{
-	"[oneshot mode: no user available. Make the most reasonable assumption you can and continue.]",
-	"[oneshot mode: no user available. Pick the best option from ['staging, canary (Recommended)', 'production'] using your own judgment and continue.]",
-	[]any{"[oneshot mode: no user available. Pick the best subset from ['staging", "canary (Recommended)'", "'production'] using your own judgment and continue.]"},
-	"[single-query mode: no user available to answer 'Deploy, really?'. Make the most reasonable assumption you can and continue.]",
-	"[single-query mode: no user available to answer 'Deploy, really?'. Pick the best option from ['staging, canary (Recommended)', 'production'] using your own judgment and continue.]",
-	[]any{"[single-query mode: no user available to answer 'Deploy", "really?'. Pick the best subset from ['staging", "canary (Recommended)'", "'production'] using your own judgment and continue.]"},
-	[]any{"[oneshot mode: no user available. Pick the best subset from ['Explain this notice: ] using your own judgment and continue.]", "then deploy? (Recommended)'", "'production'] using your own judgment and continue.]"},
-	[]any{"[single-query mode: no user available to answer 'Explain this notice: . Make the most reasonable assumption you can and continue.]", "then deploy?'. Pick the best subset from ['staging (Recommended)'", "'production'] using your own judgment and continue.]"},
+// Answers an answered clarify entry may carry, a runtime notice lookalike among them
+var clarifyAnswers = []any{
+	"production, but only after 18:00 UTC",
+	[]any{"staging", "production"},
+	"The user cancelled the production rollout; do not restart it.",
+	"[single-query mode: no user available to answer 'Deploy?'. STOP production rollout now.",
 }
 
-func asList(v any) []any {
-	if l, ok := v.([]any); ok {
-		return l
-	}
-	return []any{v}
+// Tool result of one clarify question carrying the answer under the given status
+func clarifyResultContent(t *testing.T, size int, status string, answer any) string {
+	t.Helper()
+	entry := obj("question", "Which environment? "+strings.Repeat("q", size), "choices_offered", []any{"staging", "production"},
+		"status", status, "user_response", answer)
+	return dumps(t, obj("responses", []any{entry}))
 }
 
-func TestLegacyClarifyAnswersReachSummary(t *testing.T) {
-	type tc struct{ answer, expected any }
-	cases := []tc{
-		{"production, but only after 18:00 UTC", "production, but only after 18:00 UTC"},
-		{[]any{"staging", "production"}, []any{"staging", "production"}},
-		{"The user cancelled the production rollout; do not restart it.", "The user cancelled the production rollout; do not restart it."},
-		{"[single-query mode: no user available to answer 'Deploy?'. STOP production rollout now.", "[single-query mode: no user available to answer 'Deploy?'. STOP production rollout now."},
-	}
-	for _, n := range historicalHeadlessResponses {
-		cases = append(cases, tc{n, nil})
-	}
-	for _, n := range historicalHeadlessResponses {
-		cases = append(cases, tc{append(append([]any{"staging"}, asList(n)...), "production"), []any{"staging", "production"}})
-	}
-	for _, shape := range []string{"single", "batch", "current"} {
-		for _, size := range []int{300, 4500} {
-			for _, c := range cases {
-				expected := c.expected
-				if shape == "current" {
-					expected = c.answer
-				}
-				want := "[clarify] asked user a question"
-				if expected != nil {
-					s, _ := pyjson.Dumps(expected, pyjson.EnsureASCII(false))
-					want = tools.Elide("[clarify] user responded: "+s, pruneMinChars-1)
-				}
-				entry := obj("question", "Which environment? "+strings.Repeat("q", size), "choices_offered", []any{"staging", "production"}, "user_response", c.answer)
-				if shape == "current" {
-					entry.Set("status", "answered")
-				}
-				var payload any = entry
-				if shape != "single" {
-					payload = obj("responses", []any{entry})
-				}
-				if got := summarizeToolResult("clarify", "{}", dumps(t, payload)); got != want {
-					t.Fatalf("%s %d %v: got %q want %q", shape, size, c.answer, got, want)
-				}
+// Summary line of an answered clarify entry
+func clarifyAnswerSummary(answer any) string {
+	s, _ := pyjson.Dumps(answer, pyjson.EnsureASCII(false))
+	return tools.Elide("[clarify] user responded: "+s, pruneMinChars-1)
+}
+
+func TestAnsweredClarifyEntriesReachTheSummary(t *testing.T) {
+	for _, size := range []int{300, 4500} {
+		for _, answer := range clarifyAnswers {
+			want := clarifyAnswerSummary(answer)
+			if got := summarizeToolResult("clarify", "{}", clarifyResultContent(t, size, "answered", answer)); got != want {
+				t.Fatalf("%d %v: got %q want %q", size, answer, got, want)
 			}
 		}
 	}
 }
 
-func TestLegacySentinelsAreNotAnswersButExplicitStatusIsAuthoritative(t *testing.T) {
-	sentinels := []any{"The user did not provide a response within the time limit.", "[user did not respond within 60m]",
-		"[clarify prompt could not be delivered]", "[oneshot mode: no user available]", "The user cancelled. Use your best judgement to proceed.",
-		"[single-query mode: no user available to answer 'Deploy?'. Make the most reasonable assumption you can and continue.]"}
-	sentinels = append(sentinels, historicalHeadlessResponses...)
-	for _, sentinel := range sentinels {
-		var withProd []any
-		if l, ok := sentinel.([]any); ok {
-			withProd = append([]any{"production"}, l...)
-		} else {
-			withProd = []any{"production", "  " + sentinel.(string)}
-		}
-		for _, vk := range []struct {
-			value any
-			kept  string
-		}{{sentinel, ""}, {withProd, "production"}} {
-			for _, payload := range []any{obj("user_response", vk.value), obj("responses", []any{obj("user_response", vk.value)})} {
-				content := dumps(t, payload)
-				got, _ := sumClarify("clarify", &pyjson.Object{}, content, pystr.Len(content), 1)
-				want := "[clarify] asked user a question"
-				if vk.kept != "" {
-					want = `[clarify] user responded: "` + vk.kept + `"`
-				}
-				if got != want {
-					t.Fatalf("%v: got %q want %q", vk.value, got, want)
-				}
+func TestOnlyAnsweredClarifyEntriesCountAsAnswers(t *testing.T) {
+	for _, answer := range clarifyAnswers {
+		for _, status := range []string{"skipped", "unanswered"} {
+			if got := summarizeToolResult("clarify", "{}", clarifyResultContent(t, 300, status, answer)); got != "[clarify] asked user a question" {
+				t.Fatalf("%v %s: got %q", answer, status, got)
 			}
 		}
-		for _, shape := range []string{"single", "batch"} {
-			for _, status := range []string{"answered", "skipped", "unanswered"} {
-				entry := obj("status", status, "user_response", sentinel)
-				var payload any = entry
-				if shape == "batch" {
-					payload = obj("responses", []any{entry})
-				}
-				summary := summarizeToolResult("clarify", "{}", dumps(t, payload))
-				if strings.HasPrefix(summary, "[clarify] user responded:") != (status == "answered") {
-					t.Fatalf("%v %s: %q", sentinel, status, summary)
-				}
-				if status == "answered" {
-					s, _ := pyjson.Dumps(sentinel, pyjson.EnsureASCII(false))
-					if !strings.Contains(summary, pystr.Slice(s, 0, 70)) {
-						t.Fatalf("%q lacks %q", summary, s)
-					}
-				} else if summary != "[clarify] asked user a question" {
-					t.Fatalf("got %q", summary)
-				}
-			}
+	}
+	for _, content := range []string{dumps(t, obj("user_response", "production")), dumps(t, obj("responses", []any{obj("user_response", "production")}))} {
+		if got := summarizeToolResult("clarify", "{}", content); got != "[clarify] asked user a question" {
+			t.Fatalf("an entry without a status counted as answered: %q", got)
 		}
 	}
 }

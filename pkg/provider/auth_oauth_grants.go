@@ -14,11 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-// SingleUseOAuthSingletonFiles hold single use grants outside auth.json and must never be copied into a profile
-var SingleUseOAuthSingletonFiles = []string{".anthropic_oauth.json"}
-
-var deviceCodeBlockProviders = []string{"openai-codex", "xai-oauth"}
-
 var oauthTokenFields = []string{"access_token", "refresh_token", "expires_at", "expires_at_ms", "last_refresh"}
 
 const oauthHealCleanMarkFilename = "oauth_heal_clean.json"
@@ -37,15 +32,7 @@ func orEmptyStr(v any) string {
 	return anyString(v)
 }
 
-// Token pair of a device code block, nested under tokens or flat on the block
-func blockTokens(block map[string]any) map[string]any {
-	if tokens, ok := block["tokens"].(map[string]any); ok {
-		return tokens
-	}
-	return block
-}
-
-// OAuth by auth_type, a refresh token or a legacy Anthropic OAuth access token
+// OAuth by auth_type, a refresh token or an Anthropic OAuth access token
 func isOAuthPoolPayload(entry any) bool {
 	m, ok := entry.(map[string]any)
 	if !ok {
@@ -169,38 +156,7 @@ func MergeSnapshotAuthPreservingLiveSingleUseGrants(snapshot, live map[string]an
 		}
 		snapshotPool[providerID] = append(merged, mergedSnapshot...)
 	}
-	snapshotProviders, _ := restored["providers"].(map[string]any)
-	liveProviders, _ := live["providers"].(map[string]any)
-	for _, providerID := range deviceCodeBlockProviders {
-		snapshotBlock, snapOK := snapshotProviders[providerID].(map[string]any)
-		liveBlock, liveOK := liveProviders[providerID].(map[string]any)
-		snapshotHasRefresh := snapOK && truthyAny(blockTokens(snapshotBlock)["refresh_token"])
-		liveHasRefresh := liveOK && truthyAny(blockTokens(liveBlock)["refresh_token"])
-		if !snapshotHasRefresh && !liveHasRefresh {
-			continue
-		}
-		if snapshotProviders == nil {
-			snapshotProviders = map[string]any{}
-			restored["providers"] = snapshotProviders
-		}
-		if liveOK {
-			snapshotProviders[providerID] = deepCopyAny(liveBlock)
-		} else {
-			delete(snapshotProviders, providerID)
-		}
-	}
 	return restored
-}
-
-func isPKCERow(row map[string]any) bool {
-	return strings.HasSuffix(orEmptyStr(row["source"]), IcebathPKCESource)
-}
-
-// ClonedGrantStrip names the pool providers, provider blocks and singleton files removed from a clone
-type ClonedGrantStrip struct {
-	Pool      []string
-	Providers []string
-	Files     []string
 }
 
 // Process default root the clone strip compares against, swappable so tests can make it fail
@@ -231,19 +187,9 @@ func readJSONObjectFile(path string) (map[string]any, bool) {
 	return obj, true
 }
 
-// StripClonedSingleUseOAuthGrants removes forked single use OAuth grants from a freshly cloned profile, keeping API key rows
-func StripClonedSingleUseOAuthGrants(profileDir string) ClonedGrantStrip {
-	stripped := ClonedGrantStrip{Pool: []string{}, Providers: []string{}, Files: []string{}}
-	for _, name := range SingleUseOAuthSingletonFiles {
-		target := filepath.Join(profileDir, name)
-		if st, err := os.Lstat(target); err == nil && (st.Mode().IsRegular() || st.Mode()&os.ModeSymlink != 0) {
-			if err := os.Remove(target); err != nil {
-				pkgLog().Debug(fmt.Sprintf("Could not remove cloned %s from %s: %v", name, profileDir, err))
-			} else {
-				stripped.Files = append(stripped.Files, name)
-			}
-		}
-	}
+// StripClonedSingleUseOAuthGrants removes forked single use OAuth logins from a freshly cloned profile, keeping API key rows, and names the pool keys it stripped
+func StripClonedSingleUseOAuthGrants(profileDir string) []string {
+	stripped := []string{}
 	authPath := filepath.Join(profileDir, "auth.json")
 	if st, err := os.Stat(authPath); err != nil || !st.Mode().IsRegular() {
 		return stripped
@@ -266,45 +212,36 @@ func StripClonedSingleUseOAuthGrants(profileDir string) ClonedGrantStrip {
 	if !ok {
 		return stripped
 	}
-	changed := false
-	if pool, ok := store["credential_pool"].(map[string]any); ok {
-		ids := make([]string, 0, len(pool))
-		for id := range pool {
-			ids = append(ids, id)
+	pool, ok := store["credential_pool"].(map[string]any)
+	if !ok {
+		return stripped
+	}
+	ids := make([]string, 0, len(pool))
+	for id := range pool {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, providerID := range ids {
+		entries, isList := pool[providerID].([]any)
+		if !SingleUseRefreshPoolProviders[providerID] || !isList {
+			continue
 		}
-		sort.Strings(ids)
-		for _, providerID := range ids {
-			entries, isList := pool[providerID].([]any)
-			if !SingleUseRefreshPoolProviders[providerID] || !isList {
-				continue
+		kept := []any{}
+		for _, e := range entries {
+			if !isOAuthPoolPayload(e) {
+				kept = append(kept, e)
 			}
-			kept := []any{}
-			for _, e := range entries {
-				if !isOAuthPoolPayload(e) {
-					kept = append(kept, e)
-				}
-			}
-			if len(kept) != len(entries) {
-				changed = true
-				stripped.Pool = append(stripped.Pool, providerID)
-				if len(kept) > 0 {
-					pool[providerID] = kept
-				} else {
-					delete(pool, providerID)
-				}
+		}
+		if len(kept) != len(entries) {
+			stripped = append(stripped, providerID)
+			if len(kept) > 0 {
+				pool[providerID] = kept
+			} else {
+				delete(pool, providerID)
 			}
 		}
 	}
-	if providers, ok := store["providers"].(map[string]any); ok {
-		for _, providerID := range deviceCodeBlockProviders {
-			if block, ok := providers[providerID].(map[string]any); ok && truthyAny(blockTokens(block)["refresh_token"]) {
-				delete(providers, providerID)
-				stripped.Providers = append(stripped.Providers, providerID)
-				changed = true
-			}
-		}
-	}
-	if !changed {
+	if len(stripped) == 0 {
 		return stripped
 	}
 	if err := NewStore(profileDir).SaveTo(AuthData(store), authPath); err != nil {
@@ -489,58 +426,10 @@ func adoptOAuthMaterial(target, winner map[string]any) map[string]any {
 	return merged
 }
 
-// Pool row shaped view of an Anthropic PKCE singleton file, nil when it holds no access token
-func singletonAsRow(path string) map[string]any {
-	data, ok := readJSONObjectFile(path)
-	if !ok || strings.TrimSpace(orEmptyStr(data["accessToken"])) == "" {
-		return nil
-	}
-	return map[string]any{"access_token": data["accessToken"], "refresh_token": data["refreshToken"], "expires_at_ms": data["expiresAt"]}
-}
-
 // OAuthHealSummary reports one forked grant consolidation into the root store
 type OAuthHealSummary struct {
-	Adopted        bool
-	StrippedIDs    []any
-	Files          []string
-	ProvidersBlock bool
-}
-
-// Consolidates a forked providers block into root, matched false when no copy matched and adopted when the profile pair was fresher
-func healForkedProviderBlock(profileStore, rootStore AuthData, providerID string, lineageProven bool) (adopted, matched bool) {
-	pProviders, ok1 := profileStore["providers"].(map[string]any)
-	rProviders, ok2 := rootStore["providers"].(map[string]any)
-	if !ok1 || !ok2 {
-		return false, false
-	}
-	pBlock, ok1 := pProviders[providerID].(map[string]any)
-	rBlock, ok2 := rProviders[providerID].(map[string]any)
-	if !ok1 || !truthyAny(blockTokens(pBlock)["refresh_token"]) || !ok2 || len(rBlock) == 0 {
-		return false, false
-	}
-	flat := func(block map[string]any) map[string]any {
-		out := cloneMap(blockTokens(block))
-		out["last_refresh"] = block["last_refresh"]
-		return out
-	}
-	pFlat, rFlat := flat(pBlock), flat(rBlock)
-	if !lineageProven {
-		shared := false
-		for _, key := range []string{"access_token", "refresh_token"} {
-			if truthyAny(pFlat[key]) && pyJSONEqual(pFlat[key], rFlat[key]) {
-				shared = true
-			}
-		}
-		if !shared {
-			return false, false
-		}
-	}
-	adopted = oauthFresher(pFlat, rFlat)
-	if adopted {
-		rProviders[providerID] = cloneMap(pBlock)
-	}
-	delete(pProviders, providerID)
-	return adopted, true
+	Adopted     bool
+	StrippedIDs []any
 }
 
 // Mtime ns, size, inode and ctime ns from one stat, nil when the path is absent
@@ -570,38 +459,20 @@ func adoptIfFresher(target, candidate map[string]any) map[string]any {
 
 // One heal pass of a profile store against the root store for one provider
 type oauthHealPass struct {
-	env              PoolEnv
-	profileStore     AuthData
-	rootStore        AuthData
-	provider         string
-	summary          OAuthHealSummary
-	profileChanged   bool
-	rootChanged      bool
-	lineageProven    bool
-	pPool            map[string]any
-	pRows            []any
-	rPool            map[string]any
-	rRows            []any
-	rOAuth           bool
-	rootSingleton    string
-	rootSingletonRow map[string]any
+	provider       string
+	summary        OAuthHealSummary
+	profileChanged bool
+	rootChanged    bool
+	pPool          map[string]any
+	pRows          []any
+	rPool          map[string]any
+	rRows          []any
 }
 
-func newOAuthHealPass(env PoolEnv, profileStore, rootStore AuthData, providerID, rootSingleton string) *oauthHealPass {
-	run := &oauthHealPass{env: env, profileStore: profileStore, rootStore: rootStore, provider: providerID, rootSingleton: rootSingleton}
-	run.summary = OAuthHealSummary{StrippedIDs: []any{}, Files: []string{}}
+func newOAuthHealPass(profileStore, rootStore AuthData, providerID string) *oauthHealPass {
+	run := &oauthHealPass{provider: providerID, summary: OAuthHealSummary{StrippedIDs: []any{}}}
 	run.pPool, run.pRows = storePoolRows(profileStore, providerID)
 	run.rPool, run.rRows = storePoolRows(rootStore, providerID)
-	for _, r := range run.rRows {
-		if isOAuthPoolPayload(r) {
-			run.rOAuth = true
-		}
-	}
-	if rootSingleton != "" {
-		if _, err := os.Stat(rootSingleton); err == nil {
-			run.rootSingletonRow = singletonAsRow(rootSingleton)
-		}
-	}
 	return run
 }
 
@@ -609,13 +480,6 @@ func (run *oauthHealPass) adoptRootRow(idx int, row map[string]any) {
 	if merged := adoptIfFresher(run.rRows[idx].(map[string]any), row); merged != nil {
 		run.rRows[idx] = merged
 		run.rootChanged, run.summary.Adopted = true, true
-	}
-}
-
-func (run *oauthHealPass) adoptRootSingleton(row map[string]any) {
-	if merged := adoptIfFresher(run.rootSingletonRow, row); merged != nil {
-		run.rootSingletonRow = merged
-		run.summary.Adopted = true
 	}
 }
 
@@ -628,15 +492,12 @@ func (run *oauthHealPass) healPoolRows() {
 			continue
 		}
 		row := raw.(map[string]any)
-		if idx := findRootCounterpart(row, run.rRows); idx >= 0 {
-			run.lineageProven = true
-			run.adoptRootRow(idx, row)
-		} else if row["source"] == IcebathPKCESource && run.rootSingletonRow != nil && !run.rOAuth {
-			run.adoptRootSingleton(row)
-		} else {
+		idx := findRootCounterpart(row, run.rRows)
+		if idx < 0 {
 			kept = append(kept, raw)
 			continue
 		}
+		run.adoptRootRow(idx, row)
 		run.summary.StrippedIDs = append(run.summary.StrippedIDs, row["id"])
 		run.profileChanged = true
 	}
@@ -646,82 +507,6 @@ func (run *oauthHealPass) healPoolRows() {
 		} else {
 			delete(run.pPool, run.provider)
 		}
-	}
-}
-
-func (run *oauthHealPass) healProviderBlock() {
-	isBlockProvider := false
-	for _, p := range deviceCodeBlockProviders {
-		isBlockProvider = isBlockProvider || p == run.provider
-	}
-	if !isBlockProvider {
-		return
-	}
-	adopted, matched := healForkedProviderBlock(run.profileStore, run.rootStore, run.provider, run.lineageProven)
-	if matched {
-		run.profileChanged, run.summary.ProvidersBlock = true, true
-		if adopted {
-			run.rootChanged, run.summary.Adopted = true, true
-		}
-	}
-}
-
-// Folds a profile PKCE singleton into root's grant and unlinks it, never touching an aliased or only surviving copy
-func (run *oauthHealPass) healProfileSingleton(profileSingleton string) {
-	if profileSingleton == "" {
-		return
-	}
-	if _, err := os.Stat(profileSingleton); err != nil {
-		return
-	}
-	if run.rootSingleton != "" && SameAuthStore(profileSingleton, run.rootSingleton) {
-		return
-	}
-	pSingle := singletonAsRow(profileSingleton)
-	rootHasGrant := run.rOAuth || run.rootSingletonRow != nil
-	if pSingle == nil || !rootHasGrant {
-		return
-	}
-	if run.rootSingletonRow != nil {
-		run.adoptRootSingleton(pSingle)
-	} else {
-		for i, r := range run.rRows {
-			if isOAuthPoolPayload(r) && isPKCERow(r.(map[string]any)) {
-				run.adoptRootRow(i, pSingle)
-				break
-			}
-		}
-	}
-	if err := os.Remove(profileSingleton); err != nil {
-		run.env.log().Debug(fmt.Sprintf("could not remove %s: %v", profileSingleton, err))
-		return
-	}
-	run.summary.Files = append(run.summary.Files, filepath.Base(profileSingleton))
-}
-
-// Keeps root's PKCE singleton and its seeded pool row on the same freshest pair
-func (run *oauthHealPass) syncRootSingletonWithPKCERow() {
-	if !run.summary.Adopted || run.rootSingleton == "" || run.rootSingletonRow == nil {
-		return
-	}
-	pkceIdx := -1
-	for i, r := range run.rRows {
-		if isOAuthPoolPayload(r) && r.(map[string]any)["source"] == IcebathPKCESource {
-			pkceIdx = i
-			break
-		}
-	}
-	if pkceIdx < 0 {
-		return
-	}
-	pkceRow := run.rRows[pkceIdx].(map[string]any)
-	order, ok := oauthPairOrder(pkceRow, run.rootSingletonRow)
-	switch {
-	case ok && order == 1:
-		run.rootSingletonRow = adoptOAuthMaterial(run.rootSingletonRow, pkceRow)
-	case ok && order == -1:
-		run.rRows[pkceIdx] = adoptOAuthMaterial(pkceRow, run.rootSingletonRow)
-		run.rootChanged = true
 	}
 }
 
@@ -737,12 +522,6 @@ func (run *oauthHealPass) notice(profileName string) string {
 			ids[i] = pyRepr(id)
 		}
 		bits = append(bits, "pool rows ["+strings.Join(ids, ", ")+"]")
-	}
-	if run.summary.ProvidersBlock {
-		bits = append(bits, "providers."+run.provider+" block")
-	}
-	if len(run.summary.Files) > 0 {
-		bits = append(bits, strings.Join(run.summary.Files, ", "))
 	}
 	detail := strings.Join(bits, "; ")
 	if detail == "" {
@@ -780,12 +559,7 @@ func runOAuthGrantHeal(env PoolEnv, provider string) (*OAuthHealSummary, error) 
 	}
 	profilePath := env.Store.Path()
 	profileHome := filepath.Dir(profilePath)
-	var profileSingleton, rootSingleton string
-	if provider == "anthropic" {
-		profileSingleton = filepath.Join(profileHome, ".anthropic_oauth.json")
-		rootSingleton = filepath.Join(filepath.Dir(rootPath), ".anthropic_oauth.json")
-	}
-	fingerprint := []any{profilePath, statSig(profilePath), statSig(profileSingleton), rootPath, statSig(rootPath), statSig(rootSingleton)}
+	fingerprint := []any{profilePath, statSig(profilePath), rootPath, statSig(rootPath)}
 	fpText := oauthHealFingerprintJSON(fingerprint)
 	oauthHealMu.Lock()
 	inMemory := oauthHealCleanMarks[provider] == fpText
@@ -799,7 +573,7 @@ func runOAuthGrantHeal(env PoolEnv, provider string) (*OAuthHealSummary, error) 
 		oauthHealMu.Unlock()
 		return nil, nil
 	}
-	if fingerprint[1] == nil && fingerprint[2] == nil {
+	if fingerprint[1] == nil {
 		markOAuthHealClean(env, provider, fingerprint)
 		return nil, nil
 	}
@@ -832,15 +606,12 @@ func runOAuthGrantHeal(env PoolEnv, provider string) (*OAuthHealSummary, error) 
 	if err != nil {
 		return nil, err
 	}
-	run := newOAuthHealPass(env, profileStore, rootStore, provider, rootSingleton)
+	run := newOAuthHealPass(profileStore, rootStore, provider)
 	run.healPoolRows()
-	run.healProviderBlock()
-	run.healProfileSingleton(profileSingleton)
 	if !run.dirty() {
 		markOAuthHealClean(env, provider, fingerprint)
 		return nil, nil
 	}
-	run.syncRootSingletonWithPKCERow()
 	if run.rootChanged {
 		if run.rPool != nil {
 			run.rPool[provider] = run.rRows
@@ -848,12 +619,6 @@ func runOAuthGrantHeal(env PoolEnv, provider string) (*OAuthHealSummary, error) 
 			rootStore["credential_pool"] = map[string]any{provider: run.rRows}
 		}
 		if err := env.Store.SaveTo(rootStore, rootPath); err != nil {
-			return nil, err
-		}
-	}
-	if row := run.rootSingletonRow; run.summary.Adopted && rootSingleton != "" && row != nil {
-		payload := map[string]any{"accessToken": orEmptyStr(row["access_token"]), "refreshToken": row["refresh_token"], "expiresAt": row["expires_at_ms"]}
-		if err := commitPrivateJSON(env, rootSingleton, payload, "Icebath OAuth credentials"); err != nil {
 			return nil, err
 		}
 	}

@@ -42,9 +42,6 @@ func TestMain(m *testing.M) {
 		}
 		return false
 	}
-	provider.GatewayHooks.LegacyJSON = func(string) map[string]any { return nil }
-	provider.GatewayHooks.MergePlatformSections = func(map[string]any, any, map[string]any, []string) map[string]any { return map[string]any{} }
-	provider.GatewayHooks.PlatformEnabled = func(map[string]any) (bool, string) { return false, "" }
 	provider.GatewayHooks.ServesHome = func(string) bool { return false }
 	tools.ProfileSecrets = providerProfileSecrets{}
 	if tools.ConfigEnvTableKeys == nil {
@@ -78,12 +75,16 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
+	sandboxHome = dir
 	os.Setenv("ICEBATH_HOME", dir)
 	hermetic.AroundEachTest(m, hermetic.Environ, hermetic.WorkingDir, joinTitleUpgrades, joinBackgroundJobs)
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
 }
+
+// Home every case shares until it sets its own, which no case writes settings into
+var sandboxHome string
 
 // Joins the title upgrades a case left running so none resolves the home of a later case
 func joinTitleUpgrades(t *testing.T) func() {

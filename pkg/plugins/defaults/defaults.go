@@ -3,6 +3,7 @@ package defaults
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -27,10 +28,10 @@ import (
 const Entry = "__icebath_default_plugins__"
 
 const (
-	// Config key listing the default plugins a home was given once, so a removed or disabled default stays the user's choice
-	installedKey = "_default_plugins_installed"
+	// File in the plugins directory of a home listing the default plugins it was given once, so a removed or disabled default stays the user's choice
+	givenFile = ".default-plugins.json"
 	// Failure stamp name of a whole pass, kept in the dependency home root
-	backoffName = "default-plugins"
+	backoffName = "pass"
 	// Reason a pass ran nothing where lazy installs are off
 	skippedLazy = "lazy-installs-disabled"
 )
@@ -69,22 +70,32 @@ func Entries(ctx context.Context) []*plugins.PluginCatalogEntry {
 	return out
 }
 
-// Default plugins the config.yaml of a home records as given once
-func recorded(h string) map[string]bool {
+// Default plugins a home records as given once, none when it has no record yet
+func recorded(h string) (map[string]bool, error) {
 	done := map[string]bool{}
-	if names, ok := provider.HomeRawConfig(h)[installedKey].([]any); ok {
-		for _, name := range names {
-			done[pyrepr.Str(name)] = true
-		}
+	raw, err := os.ReadFile(filepath.Join(home.PluginsDir(h), givenFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return done, nil
 	}
-	return done
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	if err := json.Unmarshal(raw, &names); err != nil {
+		return nil, fmt.Errorf("%s: %w", filepath.Join(home.PluginsDir(h), givenFile), err)
+	}
+	for _, name := range names {
+		done[name] = true
+	}
+	return done, nil
 }
 
-// Adds names to the marker of a home as a one key write, so another process's edit to the rest of its config is never overwritten
-func record(ctx context.Context, h string, names map[string]bool) error {
-	ctx = home.WithOverride(ctx, h)
-	path := home.ConfigPath(h)
-	done := recorded(h)
+// Adds names to the record of the default plugins a home was given
+func record(h string, names map[string]bool) error {
+	done, err := recorded(h)
+	if err != nil {
+		return err
+	}
 	for name := range names {
 		done[name] = true
 	}
@@ -93,26 +104,11 @@ func record(ctx context.Context, h string, names map[string]bool) error {
 		sorted = append(sorted, name)
 	}
 	sort.Strings(sorted)
-	marker := make([]any, len(sorted))
-	for i, name := range sorted {
-		marker[i] = name
-	}
-	exists, err := config.ConfigExists(ctx, path)
+	data, err := json.MarshalIndent(sorted, "", "  ")
 	if err != nil {
 		return err
 	}
-	if exists {
-		return config.WriteConfigKey(ctx, path, installedKey, marker)
-	}
-	cfg, err := provider.HomeRawConfigForWrite(path)
-	if err != nil {
-		return err
-	}
-	if cfg == nil {
-		cfg = map[string]any{}
-	}
-	cfg[installedKey] = marker
-	return config.SaveUser(ctx, h, cfg)
+	return config.AtomicWrite(filepath.Join(home.PluginsDir(h), givenFile), append(data, '\n'), 0o600)
 }
 
 // Directory a home installed a catalog entry into, the one its install record ties to the catalog name else the directory of that name, empty when it has none
@@ -166,7 +162,7 @@ func manifestName(target string) string {
 
 // Whether one of the names is in plugins.enabled and in plugins.disabled of a home, read with the managed overlay applied the way the loader reads it
 func listed(h string, names map[string]bool) (enabled, disabled bool) {
-	cfg, err := provider.HomeYAMLLayers(h)
+	cfg, err := yamlLayers(h)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("default plugins: unreadable config for %s: %s", h, err))
 		return false, false
@@ -193,7 +189,7 @@ func settled(h string, entry *plugins.PluginCatalogEntry) bool {
 	if target == "" {
 		return pathExists(placedMarker(h, entry))
 	}
-	if !pathExists(provider.LeftCoreFailureStamp(h, attemptName(entry))) {
+	if !pathExists(failureStamp(h, entry.Name)) {
 		return true
 	}
 	names := map[string]bool{entry.Name: true, filepath.Base(target): true}
@@ -203,9 +199,6 @@ func settled(h string, entry *plugins.PluginCatalogEntry) bool {
 	enabled, disabled := listed(h, names)
 	return enabled || disabled
 }
-
-// Failure stamp name of the automatic install of an entry into a home
-func attemptName(entry *plugins.PluginCatalogEntry) string { return "default-" + entry.Name }
 
 // Marker written when a failed automatic attempt left the tree of an entry on disk
 func placedMarker(h string, entry *plugins.PluginCatalogEntry) string {
@@ -218,7 +211,7 @@ func FetchPolicy(h string) string {
 	case "1", "true", "yes":
 		return FetchDenied
 	}
-	cfg, err := provider.HomeYAMLLayers(h)
+	cfg, err := yamlLayers(h)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("default plugins: unreadable config for %s: %s", h, err))
 		return FetchUnreadable
@@ -321,7 +314,10 @@ func Install(ctx context.Context, h string, say func(string), entries []*plugins
 	if entries == nil {
 		entries = Entries(ctx)
 	}
-	done := recorded(h)
+	done, err := recorded(h)
+	if err != nil {
+		return result, err
+	}
 	var pending []*plugins.PluginCatalogEntry
 	for _, entry := range entries {
 		if !done[entry.Name] {
@@ -341,32 +337,38 @@ func Install(ctx context.Context, h string, say func(string), entries []*plugins
 		placed := placedMarker(h, entry)
 		leftover := installedDir(h, entry)
 		if leftover != "" {
-			_ = removeFile(placed)
+			if err := removeFile(placed); err != nil {
+				return result, err
+			}
 		}
 		ok, reason := installOne(ctx, h, entry.Name, leftover)
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
 		if ok {
-			provider.NoteLeftCoreSuccess(h, attemptName(entry))
-			_ = removeFile(placed)
+			if err := removeFile(failureStamp(h, entry.Name)); err != nil {
+				return result, err
+			}
+			if err := removeFile(placed); err != nil {
+				return result, err
+			}
 			have[entry.Name] = true
 			result.Installed = append(result.Installed, entry.Name)
-			say(fmt.Sprintf("  ✓ Installed default plugin '%s' for %s", entry.Name, provider.PluginHomeLabel(h)))
+			say(fmt.Sprintf("  ✓ Installed default plugin '%s' for %s", entry.Name, homeLabel(h)))
 			continue
 		}
 		result.Owed = append(result.Owed, entry.Name)
-		provider.NoteLeftCoreFailure(h, attemptName(entry))
+		noteFailure(h, entry.Name)
 		if installedDir(h, entry) != "" {
 			if err := touch(placed); err != nil {
 				return result, err
 			}
 		}
 		say(fmt.Sprintf("  ⚠ Default plugin '%s' could not be installed for %s: %s. Icebath retries at a later start; "+
-			"`icebath plugins install %s` installs it now.", entry.Name, provider.PluginHomeLabel(h), provider.LeftCoreFirstCause(reason), entry.Name))
+			"`icebath plugins install %s` installs it now.", entry.Name, homeLabel(h), firstCause(reason), entry.Name))
 	}
 	if len(have) > 0 {
-		if err := record(ctx, h, have); err != nil {
+		if err := record(h, have); err != nil {
 			return result, err
 		}
 	}
@@ -440,10 +442,12 @@ func InstallAndRecord(ctx context.Context, say func(string), wait time.Duration)
 		}
 	}
 	if len(outcome.Owed) > 0 {
-		provider.NoteLeftCoreFailure(root, backoffName)
+		noteFailure(root, backoffName)
 		return outcome, removeFile(settledMark)
 	}
-	provider.NoteLeftCoreSuccess(root, backoffName)
+	if err := removeFile(failureStamp(root, backoffName)); err != nil {
+		return outcome, err
+	}
 	if err := os.MkdirAll(filepath.Dir(settledMark), 0o777); err != nil {
 		return outcome, err
 	}
@@ -470,7 +474,7 @@ func SpawnInstall(ctx context.Context, h string) (bool, error) {
 	if err := removeFile(stateFile(root, "settled")); err != nil {
 		return false, err
 	}
-	if provider.LeftCoreFailedRecently(root, backoffName) {
+	if failedRecently(root, backoffName) {
 		return false, nil
 	}
 	if err := touch(stateFile(root, "rerun")); err != nil {
@@ -521,7 +525,7 @@ func RunChild(ctx context.Context) (code int) {
 	}
 	failed := func(reason any) int {
 		say(fmt.Sprintf("default plugin install failed: %v", reason))
-		provider.NoteLeftCoreFailure(root, backoffName)
+		noteFailure(root, backoffName)
 		return 1
 	}
 	defer func() {

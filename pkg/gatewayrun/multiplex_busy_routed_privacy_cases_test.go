@@ -38,13 +38,12 @@ func primaryAdapterBusyOriginUsesRoutedPrivacy(t *testing.T, mode string, second
 	}
 	t.Setenv("HOME", tmp)
 	t.Setenv("ICEBATH_HOME", homeDir)
-	t.Setenv("ICEBATH_GATEWAY_BUSY_ACK_ENABLED", "false")
 	t.Setenv("TELEGRAM_ALLOW_ALL_USERS", "true")
 	home.ResetKeyCache()
 	config.ResetCache()
 	t.Cleanup(config.ResetCache)
 	for dir, privacy := range map[string]bool{homeDir: !secondaryPrivacy, secondary: secondaryPrivacy} {
-		body := fmt.Sprintf("privacy:\n  redact_pii: %t\n", privacy)
+		body := fmt.Sprintf("privacy:\n  redact_pii: %t\ndisplay:\n  busy_ack_enabled: false\n", privacy)
 		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}

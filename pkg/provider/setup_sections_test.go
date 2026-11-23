@@ -32,7 +32,7 @@ func scriptedSetupConsole(t *testing.T, answers ...string) (context.Context, *by
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
 	t.Setenv("ICEBATH_NONINTERACTIVE", "")
-	for _, key := range []string{"ICEBATH_MAX_ITERATIONS", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ICEBATH_INFERENCE_PROVIDER", "LLM_MODEL"} {
+	for _, key := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY", "OPENAI_BASE_URL", "ICEBATH_INFERENCE_PROVIDER", "LLM_MODEL"} {
 		t.Setenv(key, "")
 		os.Unsetenv(key)
 	}

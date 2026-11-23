@@ -122,9 +122,8 @@ func MirrorLaunchCredentials(ctx context.Context, path string, mirrored *tuigate
 		mirrored.Auth = tuigateway.MirroredValue{Done: copied}
 		if copied {
 			mirrorItem("OAuth grant strip", func() (bool, error) {
-				stripped := provider.StripClonedSingleUseOAuthGrants(path)
 				seen := map[string]bool{}
-				for _, name := range append(append([]string{}, stripped.Pool...), stripped.Providers...) {
+				for _, name := range provider.StripClonedSingleUseOAuthGrants(path) {
 					if !seen[name] {
 						seen[name] = true
 						keptRoot = append(keptRoot, name)

@@ -178,7 +178,7 @@ func (p *deepInfraImageGenProvider) Generate(ctx context.Context, env *tools.Env
 	}
 	imageRef, failure := materializeImage(ctx, env, openAIItemString(first, "b64_json"), openAIItemString(first, "url"),
 		materializeOptions{Prefix: "deepinfra_" + strings.ReplaceAll(short, ":", "_"), Label: "DeepInfra", Provider: "deepinfra",
-			Model: modelID, Prompt: prompt, Aspect: aspect, OnURLFail: func(err error) {
+			Model: modelID, Prompt: prompt, Aspect: aspect, ProviderBase: baseURL, OnURLFail: func(err error) {
 				logOf(env).Debug(fmt.Sprintf("DeepInfra: caching delivery URL failed (%v); returning URL", err))
 			}})
 	if failure != nil {

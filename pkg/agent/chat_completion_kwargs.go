@@ -336,7 +336,7 @@ func (a *AIAgent) chatProviderProfile(ctx context.Context) (out *provider.Profil
 	return nil
 }
 
-// Chat completions kwargs through the provider profile hooks, or the legacy route flags for unregistered providers
+// Chat completions kwargs through the provider profile hooks, or the host matched route flags for a provider without a profile
 func (a *AIAgent) buildChatCompletionsKwargs(ctx context.Context, apiMessages, toolsForAPI []map[string]any, reasoningConfig, requestOverrides map[string]any, cacheScopeID any) (map[string]any, error) {
 	t := a.getTransport("")
 	toolsForAPI = a.aliasToolSearchBridgeForXAI(t, toolsForAPI)

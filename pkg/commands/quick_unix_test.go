@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
 )
 
@@ -218,7 +219,11 @@ func TestQuickReplyKeysPerLocale(t *testing.T) {
 		"gateway.quick_command.error":     "Quick command error: {error}",
 	}
 	for lang := range i18n.BundledLanguageInfo {
-		t.Setenv("ICEBATH_LANGUAGE", lang)
+		if printed, err := captureFacadeOutput(func() error {
+			return config.SetConfigValue(ctx, env.Home, config.DisplayLanguageKey, lang, configCommandSources(env.Home))
+		}); err != nil {
+			t.Fatalf("language %s: %v %s", lang, err, printed)
+		}
 		catalog := i18n.LoadBundled(lang)
 		want := func(key string, kwargs map[string]any) string {
 			t.Helper()

@@ -127,9 +127,6 @@ func ActivationPredicate(ctx context.Context, yamlCfg any, platformNames []strin
 	for _, n := range platformNames {
 		blocks[n] = true
 	}
-	for k := range jsonSectionKeys(filepath.Join(h, "gateway.json"), "platforms", "gateway.json") {
-		blocks[k] = true
-	}
 	upperEnv := map[string]bool{}
 	for e := range envNames(ctx, h) {
 		upperEnv[pystr.Upper(e)] = true

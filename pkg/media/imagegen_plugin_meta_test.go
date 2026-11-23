@@ -148,7 +148,7 @@ func TestMetaGenerate(t *testing.T) {
 	}
 	imgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write(openAITestPNG) }))
 	defer imgSrv.Close()
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "1")
+	setAllowPrivateURLs(t, env, true)
 	f.reply = func(*http.Request) (int, string) {
 		return 200, `{"data": [{"b64_json": null, "url": "` + imgSrv.URL + `/img.webp"}]}`
 	}

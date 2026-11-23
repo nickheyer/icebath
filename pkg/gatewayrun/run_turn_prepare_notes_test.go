@@ -23,7 +23,7 @@ func TestFirstDmGetsTheProfileBuildOfferOnce(t *testing.T) {
 	config.ResetCache()
 	t.Cleanup(config.ResetCache)
 	cfgPath := filepath.Join(h, "config.yaml")
-	if err := os.WriteFile(cfgPath, []byte("model: test\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("model:\n  default: test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	r := allocGatewayRunner()

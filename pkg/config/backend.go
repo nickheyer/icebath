@@ -158,13 +158,8 @@ func (FileBackend) WritePath(ctx context.Context, path string, changes Changes) 
 			return err
 		}
 	}
-	for _, kv := range changes.Set {
-		if err := atomicRoundtripYAMLUpdate(ctx, path, kv.Key, kv.Value); err != nil {
-			return err
-		}
-	}
-	for _, key := range changes.Unset {
-		if err := atomicRoundtripYAMLUpdate(ctx, path, key, nil); err != nil {
+	if len(changes.Set) > 0 || len(changes.Unset) > 0 {
+		if err := atomicRoundtripYAMLApply(ctx, path, changes.Set, changes.Unset); err != nil {
 			return err
 		}
 	}

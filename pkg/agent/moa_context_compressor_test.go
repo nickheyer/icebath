@@ -30,7 +30,7 @@ func TestMoAContextLengthMoaCustomContextConfiguresCompressorThreshold(t *testin
 			"enabled": true, "reference_models": []any{map[string]any{"provider": "openrouter", "model": "openai/gpt-5.5"}},
 			"aggregator": map[string]any{"provider": "custom:example", "model": "example-model"}}}},
 		"providers": map[string]any{"example": map[string]any{
-			"api": endpoint.URL + "/v1", "default_model": "example-model",
+			"base_url": endpoint.URL + "/v1", "default_model": "example-model",
 			"models": map[string]any{"example-model": map[string]any{"context_length": configuredContext}}}},
 	}
 	raw, err := yaml.Marshal(payload)

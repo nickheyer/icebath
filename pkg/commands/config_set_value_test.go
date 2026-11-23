@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -58,13 +57,13 @@ func (c *configHome) isolateEnv(names ...string) {
 	}
 }
 
-func (c *configHome) set(key, value string, force bool) error {
+func (c *configHome) set(key, value string) error {
 	return config.SetConfigValue(context.Background(), c.h, key, value, configCommandSources(c.h))
 }
 
-func (c *configHome) mustSet(key, value string, force bool) {
+func (c *configHome) mustSet(key, value string) {
 	c.t.Helper()
-	if err := c.set(key, value, force); err != nil {
+	if err := c.set(key, value); err != nil {
 		c.t.Fatalf("set %s: %v (stderr %q)", key, err, c.errOut.String())
 	}
 }
@@ -136,7 +135,7 @@ func TestExplicitAllowlist(t *testing.T) {
 		for _, key := range []string{"FAL_KEY", "SUDO_PASSWORD", "API_SERVER_KEY"} {
 			c := newConfigHome(t)
 			c.isolateEnv(key)
-			c.mustSet(key, "test-value-123", false)
+			c.mustSet(key, "test-value-123")
 			if !strings.Contains(c.readEnv(), key+"=test-value-123") || strings.Contains(c.readConfig(), key) {
 				t.Fatalf("%s env %q config %q", key, c.readEnv(), c.readConfig())
 			}
@@ -149,7 +148,7 @@ func TestCatchAllPatterns(t *testing.T) {
 		for _, key := range []string{"SOME_FUTURE_SERVICE_API_KEY", "MY_CUSTOM_TOKEN", "CLIENT_SECRET"} {
 			c := newConfigHome(t)
 			c.isolateEnv(key)
-			c.mustSet(key, "secret-456", false)
+			c.mustSet(key, "secret-456")
 			if !strings.Contains(c.readEnv(), key+"=secret-456") || strings.Contains(c.readConfig(), key) {
 				t.Fatalf("%s env %q config %q", key, c.readEnv(), c.readConfig())
 			}
@@ -157,79 +156,43 @@ func TestCatchAllPatterns(t *testing.T) {
 	})
 }
 
-func TestGatewayPlatformsPrefixRedirect(t *testing.T) {
-	t.Run("test_set_lands_on_top_level_platforms_block_the_loader_reads", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.isolateEnv("TELEGRAM_BOT_TOKEN")
-		c.write("platforms:\n  telegram:\n    enabled: false\n")
-		c.mustSet("gateway.platforms.telegram.enabled", "true", false)
-		if out, _ := c.drain(); !strings.Contains(out, "saved as platforms.telegram.enabled") {
-			t.Fatalf("stdout %q", out)
-		}
-		loaded := c.parsed()
-		if _, has := loaded["gateway"]; has || c.at("platforms", "telegram", "enabled") != true {
-			t.Fatalf("saved %v", loaded)
-		}
-		gc, err := gateway.LoadGatewayConfig(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if p := gc.Platforms[gateway.PlatformTelegram]; p == nil || !p.Enabled {
-			t.Fatalf("gateway loader %#v", p)
-		}
-	})
-	t.Run("test_get_and_unset_still_reach_a_legacy_nested_only_value", func(t *testing.T) {
-		c := newConfigHome(t)
-		legacy := "gateway:\n  platforms:\n    telegram:\n      enabled: true\n"
-		c.write(legacy)
-		if err := config.GetConfigValue(context.Background(), c.h, "gateway.platforms.telegram.enabled", false, false, configCommandSources(c.h)); err != nil {
-			t.Fatal(err)
-		}
-		if out, _ := c.drain(); strings.ToLower(strings.TrimSpace(out)) != "true" {
-			t.Fatalf("get %q", out)
-		}
-		if err := config.UnsetConfigValue(context.Background(), c.h, "gateway.platforms.telegram.enabled", configCommandSources(c.h)); err != nil {
-			t.Fatal(err)
-		}
-		if _, has := c.parsed()["gateway"]; has {
-			t.Fatalf("unset left %v", c.parsed())
-		}
-		c.write(legacy)
-		c.mustSet("gateway.platforms.telegram.enabled", "false", false)
-		if got := c.parsed(); !reflect.DeepEqual(got, map[string]any{"platforms": map[string]any{"telegram": map[string]any{"enabled": false}}}) {
-			t.Fatalf("set over nested only %v", got)
-		}
-	})
+func TestPlatformSettingReachesTheGatewayLoader(t *testing.T) {
+	c := newConfigHome(t)
+	c.isolateEnv("TELEGRAM_BOT_TOKEN")
+	c.write("platforms:\n  telegram:\n    enabled: false\n")
+	c.mustSet("platforms.telegram.enabled", "true")
+	if c.at("platforms", "telegram", "enabled") != true {
+		t.Fatalf("saved %v", c.parsed())
+	}
+	gc, err := gateway.LoadGatewayConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := gc.Platforms[gateway.PlatformTelegram]; p == nil || !p.Enabled {
+		t.Fatalf("gateway loader %#v", p)
+	}
 }
 
 func TestConfigYamlRouting(t *testing.T) {
 	t.Run("test_simple_key", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.mustSet("model", "gpt-4o", false)
-		if !strings.Contains(c.readConfig(), "gpt-4o") || strings.Contains(c.readEnv(), "model") {
+		c.mustSet("model.default", "gpt-4o")
+		if c.at("model", "default") != "gpt-4o" || c.readEnv() != "" {
 			t.Fatalf("config %q env %q", c.readConfig(), c.readEnv())
 		}
 	})
-	t.Run("test_tool_search_defer_is_recognized", func(t *testing.T) {
+	t.Run("test_tool_search_defer_takes_a_list_literal", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.mustSet("tools.tool_search.defer", `["todo_list", "skill_manage"]`, false)
-		out, errOut := c.drain()
-		if strings.Contains(out, "not a recognized config key") || strings.Contains(errOut, "not a recognized config key") {
-			t.Fatalf("flagged %q %q", out, errOut)
-		}
+		c.mustSet("tools.tool_search.defer", `["todo_list", "skill_manage"]`)
 		if got := c.at("tools", "tool_search", "defer"); !reflect.DeepEqual(got, []any{"todo_list", "skill_manage"}) {
 			t.Fatalf("saved %#v", got)
 		}
 	})
-	t.Run("test_terminal_docker_shared_key_preserves_string_values", func(t *testing.T) {
+	t.Run("test_text_setting_keeps_a_word_yaml_reads_as_a_boolean", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.isolateEnv("TERMINAL_DOCKER_SHARED_CONTAINER_KEY")
-		c.mustSet("terminal.docker_shared_container_key", "off", false)
-		if c.at("terminal", "docker_shared_container_key") != "off" || !strings.Contains(c.readEnv(), "TERMINAL_DOCKER_SHARED_CONTAINER_KEY=off") {
+		c.mustSet("terminal.docker_shared_container_key", "off")
+		if c.at("terminal", "docker_shared_container_key") != "off" || c.readEnv() != "" {
 			t.Fatalf("config %q env %q", c.readConfig(), c.readEnv())
-		}
-		if out, _ := c.drain(); strings.Contains(out, "not a recognized config key") {
-			t.Fatalf("flagged %q", out)
 		}
 	})
 }
@@ -237,16 +200,16 @@ func TestConfigYamlRouting(t *testing.T) {
 func TestFalsyValues(t *testing.T) {
 	t.Run("test_config_command_rejects_missing_value", func(t *testing.T) {
 		c := newConfigHome(t)
-		if err := c.command(config.ConfigArgs{Command: "set", Key: "model"}); exitStatus(err) != 1 {
+		if err := c.command(config.ConfigArgs{Command: "set", Key: "model.default"}); exitStatus(err) != 1 {
 			t.Fatalf("missing value %v", err)
 		}
 	})
 	t.Run("test_config_command_accepts_empty_string", func(t *testing.T) {
 		c := newConfigHome(t)
-		if err := c.command(config.ConfigArgs{Command: "set", Key: "model", Value: strPtr("")}); err != nil {
+		if err := c.command(config.ConfigArgs{Command: "set", Key: "model.default", Value: strPtr("")}); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(c.readConfig(), "model") {
+		if stored, held := config.CfgGet(c.parsed(), "model", "default"); !held || stored != "" {
 			t.Fatalf("config %q", c.readConfig())
 		}
 	})
@@ -255,8 +218,7 @@ func TestFalsyValues(t *testing.T) {
 func TestConfigGetUnset(t *testing.T) {
 	t.Run("test_config_get_prints_resolved_nested_value", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.isolateEnv("TERMINAL_TIMEOUT")
-		c.mustSet("terminal.timeout", "120", false)
+		c.mustSet("terminal.timeout", "120")
 		c.drain()
 		if err := c.command(config.ConfigArgs{Command: "get", Key: "terminal.timeout"}); err != nil {
 			t.Fatal(err)
@@ -265,18 +227,17 @@ func TestConfigGetUnset(t *testing.T) {
 			t.Fatalf("get %q", out)
 		}
 	})
-	t.Run("test_config_unset_removes_yaml_key_and_synced_env", func(t *testing.T) {
+	t.Run("test_config_unset_removes_yaml_key", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.isolateEnv("TERMINAL_ENV")
-		c.mustSet("terminal.backend", "docker", false)
-		if !strings.Contains(c.readEnv(), "TERMINAL_ENV=docker") {
-			t.Fatalf("env %q", c.readEnv())
+		c.mustSet("terminal.backend", "docker")
+		if c.at("terminal", "backend") != "docker" || c.readEnv() != "" {
+			t.Fatalf("config %q env %q", c.readConfig(), c.readEnv())
 		}
 		c.drain()
 		if err := c.command(config.ConfigArgs{Command: "unset", Key: "terminal.backend"}); err != nil {
 			t.Fatal(err)
 		}
-		if len(c.parsed()) != 0 || strings.Contains(c.readEnv(), "TERMINAL_ENV=") {
+		if _, held := config.CfgGet(c.parsed(), "terminal", "backend"); held || c.readEnv() != "" {
 			t.Fatalf("config %q env %q", c.readConfig(), c.readEnv())
 		}
 		if out, _ := c.drain(); !strings.Contains(out, "Unset terminal.backend") {
@@ -299,38 +260,28 @@ func TestConfigGetUnset(t *testing.T) {
 	})
 }
 
-func TestConfigGetPhantomKeyNotice(t *testing.T) {
-	t.Run("test_unknown_nested_key_flags_on_stderr_and_keeps_stdout_parseable", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.write("compression:\n  compressor:\n    enabled: true\n")
-		if err := c.command(config.ConfigArgs{Command: "get", Key: "compression.compressor.enabled", JSON: true}); err != nil {
-			t.Fatal(err)
-		}
-		out, errOut := c.drain()
-		var parsed any
-		if err := json.Unmarshal([]byte(out), &parsed); err != nil || parsed != true {
-			t.Fatalf("stdout %q %v", out, err)
-		}
-		if !strings.Contains(errOut, "not a recognized config key") {
-			t.Fatalf("stderr %q", errOut)
-		}
-	})
-	t.Run("test_unseeded_live_key_notice_hedges_instead_of_asserting_unread", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.write("gateway:\n  mirror_endpoint: http://127.0.0.1:1\n")
-		if err := c.command(config.ConfigArgs{Command: "get", Key: "gateway.mirror_endpoint"}); err != nil {
-			t.Fatal(err)
-		}
-		out, errOut := c.drain()
-		if strings.TrimSpace(out) != "http://127.0.0.1:1" || !strings.Contains(errOut, "may not read it") || strings.Contains(errOut, "does not read it") {
-			t.Fatalf("stdout %q stderr %q", out, errOut)
-		}
-	})
-	t.Run("test_recognized_and_custom_keys_are_not_flagged", func(t *testing.T) {
+func TestConfigGetUnknownKey(t *testing.T) {
+	t.Run("test_unknown_key_is_refused_on_stderr_and_stdout_stays_empty", func(t *testing.T) {
 		for _, tc := range [][2]string{
-			{"terminal.timeout", "terminal:\n  timeout: 120\n"},
+			{"compression.compressor.enabled", "compression:\n  compressor:\n    enabled: true\n"},
+			{"gateway.mirror_endpoint", "gateway:\n  mirror_endpoint: http://127.0.0.1:1\n"},
 			{"my_custom_setting", "my_custom_setting: hello\n"},
-			{"mcp_servers.local.url", "mcp_servers:\n  local:\n    url: http://127.0.0.1:1\n"},
+		} {
+			c := newConfigHome(t)
+			c.write(tc[1])
+			if err := c.command(config.ConfigArgs{Command: "get", Key: tc[0], JSON: true}); exitStatus(err) != 1 {
+				t.Fatalf("%s not refused %v", tc[0], err)
+			}
+			out, errOut := c.drain()
+			if out != "" || !strings.Contains(errOut, tc[0]+" is not a setting icebath knows") {
+				t.Fatalf("%s stdout %q stderr %q", tc[0], out, errOut)
+			}
+		}
+	})
+	t.Run("test_settings_and_map_entries_print_their_value", func(t *testing.T) {
+		for _, tc := range [][3]string{
+			{"terminal.timeout", "terminal:\n  timeout: 120\n", "120"},
+			{"mcp_servers.local.url", "mcp_servers:\n  local:\n    url: http://127.0.0.1:1\n", "http://127.0.0.1:1"},
 		} {
 			c := newConfigHome(t)
 			c.write(tc[1])
@@ -338,51 +289,23 @@ func TestConfigGetPhantomKeyNotice(t *testing.T) {
 				t.Fatal(err)
 			}
 			out, errOut := c.drain()
-			if strings.TrimSpace(out) == "" || strings.Contains(errOut, "not a recognized config key") {
+			if strings.TrimSpace(out) != tc[2] || errOut != "" {
 				t.Fatalf("%s stdout %q stderr %q", tc[0], out, errOut)
 			}
 		}
 	})
 }
 
-var _ = time.Second
-
 func TestListNavigation(t *testing.T) {
-	t.Run("test_indexed_set_preserves_sibling_list_entries", func(t *testing.T) {
+	t.Run("test_indexed_set_inside_a_map_setting_keeps_sibling_items", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.write("custom_providers:\n- name: provider-a\n  api_key: old-a\n  base_url: https://a.example.com\n- name: provider-b\n  api_key: old-b\n  base_url: https://b.example.com\n")
-		c.mustSet("custom_providers.0.api_key", "new-a", false)
-		list, isList := c.parsed()["custom_providers"].([]any)
-		if !isList || len(list) != 2 {
-			t.Fatalf("list %v", c.parsed())
+		c.write("mcp_servers:\n  files:\n    command: npx\n    args:\n      - -y\n      - old-package\n      - /srv\n")
+		c.mustSet("mcp_servers.files.args.1", "new-package")
+		if got := c.at("mcp_servers", "files", "args"); !reflect.DeepEqual(got, []any{"-y", "new-package", "/srv"}) {
+			t.Fatalf("args %#v", got)
 		}
-		want := []any{
-			map[string]any{"name": "provider-a", "api_key": "new-a", "base_url": "https://a.example.com"},
-			map[string]any{"name": "provider-b", "api_key": "old-b", "base_url": "https://b.example.com"},
-		}
-		if !reflect.DeepEqual(list, want) {
-			t.Fatalf("entries %v", list)
-		}
-	})
-	t.Run("test_indexed_set_preserves_non_targeted_fields", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.write("custom_providers:\n- name: provider-a\n  api_key: old\n  base_url: https://a.example.com\n  models:\n    foo: {}\n    bar: {}\n")
-		c.mustSet("custom_providers.0.api_key", "rotated", false)
-		entry := c.parsed()["custom_providers"].([]any)[0].(map[string]any)
-		models, _ := entry["models"].(map[string]any)
-		_, foo := models["foo"]
-		_, bar := models["bar"]
-		if entry["api_key"] != "rotated" || entry["name"] != "provider-a" || entry["base_url"] != "https://a.example.com" || len(models) != 2 || !foo || !bar {
-			t.Fatalf("entry %v", entry)
-		}
-	})
-	t.Run("test_deeper_nesting_through_list", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.write("telegram:\n  allowlist:\n    - name: alice\n      role: admin\n    - name: bob\n      role: user\n")
-		c.mustSet("telegram.allowlist.1.role", "admin", false)
-		list, isList := c.at("telegram", "allowlist").([]any)
-		if !isList || !reflect.DeepEqual(list, []any{map[string]any{"name": "alice", "role": "admin"}, map[string]any{"name": "bob", "role": "admin"}}) {
-			t.Fatalf("allowlist %v", c.at("telegram", "allowlist"))
+		if c.at("mcp_servers", "files", "command") != "npx" {
+			t.Fatalf("config %q", c.readConfig())
 		}
 	})
 }
@@ -391,31 +314,23 @@ func TestStringTypedConfigValues(t *testing.T) {
 	t.Run("test_string_typed_values_are_not_coerced", func(t *testing.T) {
 		for _, value := range []string{"off", "smart", "manual"} {
 			c := newConfigHome(t)
-			c.mustSet("approvals.mode", value, false)
+			c.mustSet("approvals.mode", value)
 			if got, isStr := c.at("approvals", "mode").(string); !isStr || got != value {
 				t.Fatalf("%q saved %#v", value, c.at("approvals", "mode"))
 			}
 		}
 	})
-	t.Run("test_non_string_defaults_keep_existing_coercion", func(t *testing.T) {
+	t.Run("test_non_string_settings_take_their_own_type", func(t *testing.T) {
 		for _, tc := range []struct {
 			key, value string
 			want       any
 		}{{"terminal.persistent_shell", "off", false}, {"approvals.timeout", "30", 30}} {
 			c := newConfigHome(t)
-			c.isolateEnv("TERMINAL_PERSISTENT_SHELL")
-			c.mustSet(tc.key, tc.value, false)
+			c.mustSet(tc.key, tc.value)
 			got := c.at(strings.Split(tc.key, ".")...)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Fatalf("%s saved %#v want %#v", tc.key, got, tc.want)
 			}
-		}
-	})
-	t.Run("test_unknown_keys_keep_existing_coercion", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.mustSet("custom.enabled", "off", true)
-		if c.at("custom", "enabled") != false {
-			t.Fatalf("saved %#v", c.at("custom", "enabled"))
 		}
 	})
 }
@@ -424,70 +339,40 @@ func TestSecretRedactionInDisplay(t *testing.T) {
 	t.Run("test_set_echo_masks_secret_value", func(t *testing.T) {
 		c := newConfigHome(t)
 		secret := "cfut_ANOTHERSECRET0987654321zyxwvu"
-		c.mustSet("model.api_key", secret, false)
-		if out, _ := c.drain(); strings.Contains(out, secret) || !strings.Contains(out, "Set model.api_key") {
+		c.mustSet("providers.lab.api_key", secret)
+		if out, _ := c.drain(); strings.Contains(out, secret) || !strings.Contains(out, "Set providers.lab.api_key") {
 			t.Fatalf("stdout %q", out)
+		}
+		if c.at("providers", "lab", "api_key") != secret {
+			t.Fatalf("config %q", c.readConfig())
 		}
 	})
 }
 
-func TestSchemaValidation(t *testing.T) {
-	t.Run("test_unknown_subkey_under_known_section_refused_before_write", func(t *testing.T) {
-		for _, tc := range [][2]string{
-			{"gateway.discord.gateway_restart_notification", "discord.gateway_restart_notification"},
-			{"agent.gateway.strict", "gateway.strict"},
-		} {
-			c := newConfigHome(t)
-			c.write("model: gpt-4o\n")
-			if err := c.set(tc[0], "true", false); exitStatus(err) != 1 {
-				t.Fatalf("%s not refused %v", tc[0], err)
-			}
-			_, errOut := c.drain()
-			if c.readConfig() != "model: gpt-4o\n" || !strings.Contains(errOut, "nothing was written") || !strings.Contains(errOut, "Did you mean: "+tc[1]) {
-				t.Fatalf("%s config %q stderr %q", tc[0], c.readConfig(), errOut)
-			}
-		}
-	})
-	t.Run("test_unknown_leaf_under_known_section_is_written_with_notice", func(t *testing.T) {
-		for _, tc := range []struct {
-			key, value string
-			want       any
-			suggestion string
-		}{
-			{"gateway.mirror_endpoint", "http://127.0.0.1:1", "http://127.0.0.1:1", ""},
-			{"agent.max_turnz", "50", 50, "agent.max_turns"},
-			{"gateway.filter_silence_narration", "false", false, ""},
-		} {
-			c := newConfigHome(t)
-			c.mustSet(tc.key, tc.value, false)
-			if got := c.at(strings.Split(tc.key, ".")...); !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("%s saved %#v", tc.key, got)
-			}
-			out, _ := c.drain()
-			if !strings.Contains(out, "not a recognized config key") || strings.Contains(out, "bridged to the environment") || !strings.Contains(out, "Use --force") {
-				t.Fatalf("%s stdout %q", tc.key, out)
-			}
-			if (tc.suggestion == "") == strings.Contains(out, "Did you mean") || (tc.suggestion != "" && !strings.Contains(out, "Did you mean: "+tc.suggestion)) {
-				t.Fatalf("%s suggestion in %q", tc.key, out)
-			}
-		}
-	})
-	t.Run("test_unknown_top_level_key_still_written_with_notice", func(t *testing.T) {
+func TestUnknownKeysAreRefused(t *testing.T) {
+	const start = "model:\n  default: gpt-4o\n"
+	for _, tc := range []struct{ key, suggestion string }{
+		{"agent.gateway.strict", "gateway.strict"},
+		{"agent.max_turnz", "agent.max_turns"},
+		{"brand_new_future_key", ""},
+	} {
 		c := newConfigHome(t)
-		c.isolateEnv("BRAND_NEW_FUTURE_KEY")
-		c.mustSet("brand_new_future_key", "value", false)
-		if out, _ := c.drain(); !strings.Contains(c.readConfig(), "brand_new_future_key") || !strings.Contains(out, "not a recognized config key") {
-			t.Fatalf("config %q stdout %q", c.readConfig(), out)
+		c.write(start)
+		if err := c.set(tc.key, "true"); exitStatus(err) != 1 {
+			t.Fatalf("%s not refused %v", tc.key, err)
 		}
-	})
-	t.Run("test_force_suppresses_notice", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.isolateEnv("BRAND_NEW_FUTURE_KEY")
-		c.mustSet("brand_new_future_key", "value", true)
-		if out, _ := c.drain(); strings.Contains(out, "not a recognized config key") || !strings.Contains(c.readConfig(), "brand_new_future_key") {
-			t.Fatalf("config %q stdout %q", c.readConfig(), out)
+		_, errOut := c.drain()
+		if c.readConfig() != start || !strings.Contains(errOut, tc.key+" is not a setting icebath knows; nothing was written") {
+			t.Fatalf("%s config %q stderr %q", tc.key, c.readConfig(), errOut)
 		}
-	})
+		hint := ""
+		if tc.suggestion != "" {
+			hint = "Did you mean: " + tc.suggestion
+		}
+		if strings.Contains(errOut, "Did you mean") != (hint != "") || !strings.Contains(errOut, hint) {
+			t.Fatalf("%s suggestion in %q", tc.key, errOut)
+		}
+	}
 }
 
 func TestDisplaySkinTouch(t *testing.T) {
@@ -498,19 +383,19 @@ func TestDisplaySkinTouch(t *testing.T) {
 		os.MkdirAll(filepath.Dir(skin), 0o755)
 		os.WriteFile(skin, []byte("name: synthwave\ncolors:\n  background: '#1a1030'\n"), 0o644)
 		os.Chtimes(skin, old, old)
-		c.mustSet("display.skin", "synthwave", false)
+		c.mustSet("display.skin", "synthwave")
 		if st, _ := os.Stat(skin); !st.ModTime().After(old) {
 			t.Fatal("first set left the mtime")
 		}
 		os.Chtimes(skin, old, old)
-		c.mustSet("display.skin", "synthwave", false)
+		c.mustSet("display.skin", "synthwave")
 		if st, _ := os.Stat(skin); !st.ModTime().After(old) {
 			t.Fatal("re-affirmed set left the mtime")
 		}
 	})
 	t.Run("test_builtin_or_missing_skin_file_is_fine", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.mustSet("display.skin", "contrast", false)
+		c.mustSet("display.skin", "contrast")
 		if !strings.Contains(c.readConfig(), "skin: contrast") {
 			t.Fatalf("config %q", c.readConfig())
 		}
@@ -521,111 +406,42 @@ func TestDisplaySkinTouch(t *testing.T) {
 		os.MkdirAll(filepath.Dir(skin), 0o755)
 		body := "name: neon\ncolors:\n  ui_accent: '#ff33aa'\n"
 		os.WriteFile(skin, []byte(body), 0o644)
-		c.mustSet("display.skin", "neon", false)
+		c.mustSet("display.skin", "neon")
 		if got, _ := os.ReadFile(skin); string(got) != body {
 			t.Fatalf("skin %q", got)
 		}
 	})
 }
 
-func TestMappingGuard(t *testing.T) {
-	t.Run("test_bare_model_shorthand_preserves_siblings", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.writeDoc(map[string]any{"model": map[string]any{"default": "gpt-4o", "provider": "openai-api", "context_length": 128000, "base_url": "https://api.example.com/v1"}})
-		c.mustSet("model", "claude-sonnet-4-20250514", false)
-		m, _ := c.parsed()["model"].(map[string]any)
-		if m["default"] != "claude-sonnet-4-20250514" || m["provider"] != "openai-api" || !reflect.DeepEqual(m["context_length"], 128000) || m["base_url"] != "https://api.example.com/v1" {
-			t.Fatalf("model %v", m)
-		}
-	})
-	t.Run("test_bare_model_shorthand_creates_default_when_none", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.mustSet("model", "gpt-5.6-sol", false)
-		if !strings.Contains(c.readConfig(), "gpt-5.6-sol") {
-			t.Fatalf("config %q", c.readConfig())
-		}
-	})
-	t.Run("test_bare_model_container_literal_is_refused", func(t *testing.T) {
-		for _, tc := range []struct {
-			start   map[string]any
-			literal string
-		}{
-			{map[string]any{"model": map[string]any{"default": "glm-5.3-flash", "provider": "zai"}}, `{"provider": "openai-codex", "default": "gpt-6.1-sol"}`},
-			{map[string]any{}, "[a, b]"},
-			{map[string]any{"model": "gpt-4o"}, "[a, b]"},
-		} {
+func TestSectionNamesAreNotSettings(t *testing.T) {
+	t.Run("test_section_name_is_refused_and_the_section_kept", func(t *testing.T) {
+		for _, tc := range [][2]string{{"model", "claude-opus-4"}, {"model", `{"provider": "openrouter", "default": "z-ai/glm-5.3-flash"}`}, {"terminal", "zsh"}} {
 			c := newConfigHome(t)
-			c.writeDoc(tc.start)
-			if err := c.set("model", tc.literal, false); exitStatus(err) != 1 {
-				t.Fatalf("%q not refused %v", tc.literal, err)
+			start := map[string]any{
+				"model":    map[string]any{"default": "gpt-4o", "provider": "openai-api"},
+				"terminal": map[string]any{"backend": "docker", "docker_image": "python:3.12"},
 			}
-			if got := c.parsed(); !reflect.DeepEqual(got, tc.start) {
-				t.Fatalf("%q changed the config to %v", tc.literal, got)
+			c.writeDoc(start)
+			if err := c.set(tc[0], tc[1]); exitStatus(err) != 1 {
+				t.Fatalf("%s=%q not refused %v", tc[0], tc[1], err)
+			}
+			if got := c.parsed(); !reflect.DeepEqual(got, start) {
+				t.Fatalf("%s=%q changed the config to %v", tc[0], tc[1], got)
 			}
 		}
 	})
-	t.Run("test_bare_model_mapping_force_replaces_section", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.writeDoc(map[string]any{"model": map[string]any{"default": "gpt-4o", "provider": "openai-api", "context_length": 128000}})
-		c.mustSet("model", `{"provider": "openrouter", "default": "z-ai/glm-5.3-flash"}`, true)
-		if got := c.parsed()["model"]; !reflect.DeepEqual(got, map[string]any{"provider": "openrouter", "default": "z-ai/glm-5.3-flash"}) {
-			t.Fatalf("model %v", got)
-		}
-	})
-	t.Run("test_non_model_mapping_is_refused", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.writeDoc(map[string]any{"terminal": map[string]any{"backend": "docker", "docker_image": "python:3.12", "shell": "bash"}})
-		if err := c.set("terminal", "zsh", false); exitStatus(err) != 1 {
-			t.Fatalf("not refused %v", err)
-		}
-	})
-	t.Run("test_non_model_mapping_force_overwrites", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.writeDoc(map[string]any{"terminal": map[string]any{"backend": "docker", "shell": "bash"}})
-		c.mustSet("terminal", "zsh", true)
-		if got := c.parsed()["terminal"]; got != "zsh" {
-			t.Fatalf("terminal %v", got)
-		}
-	})
-	t.Run("test_model_default_dotted_path_is_not_guarded", func(t *testing.T) {
+	t.Run("test_dotted_key_changes_one_field_of_its_section", func(t *testing.T) {
 		c := newConfigHome(t)
 		c.writeDoc(map[string]any{"model": map[string]any{"default": "gpt-4o", "provider": "openai-api"}})
-		c.mustSet("model.default", "claude-opus-4", false)
+		c.mustSet("model.default", "claude-opus-4")
 		if m := c.parsed()["model"].(map[string]any); m["default"] != "claude-opus-4" || m["provider"] != "openai-api" {
-			t.Fatalf("model %v", m)
-		}
-	})
-	t.Run("test_model_force_overwrites_entire_section", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.writeDoc(map[string]any{"model": map[string]any{"default": "gpt-4o", "provider": "openai-api", "context_length": 128000}})
-		c.mustSet("model", "claude-opus-4", true)
-		if got := c.parsed()["model"]; got != "claude-opus-4" {
-			t.Fatalf("model %v", got)
-		}
-	})
-}
-
-func TestScalarModelSubKeyPreservation(t *testing.T) {
-	t.Run("test_scalar_model_id_preserved_after_provider_write", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.mustSet("model", "gpt-4o", false)
-		c.mustSet("model.provider", "openai", false)
-		if m := c.parsed()["model"].(map[string]any); m["default"] != "gpt-4o" || m["provider"] != "openai" {
-			t.Fatalf("model.default lost: %v", m)
-		}
-	})
-	t.Run("test_scalar_model_id_preserved_after_api_key_write", func(t *testing.T) {
-		c := newConfigHome(t)
-		c.mustSet("model", "claude-sonnet", false)
-		c.mustSet("model.api_key", "sk-test", false)
-		if m := c.parsed()["model"].(map[string]any); m["default"] != "claude-sonnet" || m["api_key"] != "sk-test" {
 			t.Fatalf("model %v", m)
 		}
 	})
 }
 
 func TestMalformedYAMLConfigPreservation(t *testing.T) {
-	const broken = "model: gpt-4o\nterminal:\n  backend: docker\n  broken: [this is invalid YAML"
+	const broken = "model:\n  default: gpt-4o\nterminal:\n  backend: docker\n  broken: [this is invalid YAML"
 	check := func(t *testing.T, c *configHome, err error) {
 		t.Helper()
 		var rt *config.RuntimeError
@@ -643,32 +459,29 @@ func TestMalformedYAMLConfigPreservation(t *testing.T) {
 	t.Run("test_set_config_value_refuses_broken_yaml", func(t *testing.T) {
 		c := newConfigHome(t)
 		c.write(broken)
-		check(t, c, c.set("agent.max_turns", "50", false))
+		check(t, c, c.set("agent.max_turns", "50"))
 	})
 	t.Run("test_unset_config_value_refuses_broken_yaml", func(t *testing.T) {
 		c := newConfigHome(t)
 		c.write(broken)
-		check(t, c, config.UnsetConfigValue(context.Background(), c.h, "model", configCommandSources(c.h)))
+		check(t, c, config.UnsetConfigValue(context.Background(), c.h, "model.default", configCommandSources(c.h)))
 	})
 }
 
 func TestLiteralDotKeyEscaping(t *testing.T) {
 	providers := func(c *configHome) {
-		c.write("providers:\n  qwen3.5-397b-wafer-non-zdr:\n    api: https://pass.wafer.ai/v1\n  openrouter:\n    api_key: or-keep\n")
+		c.write("providers:\n  qwen3.5-397b-wafer-non-zdr:\n    base_url: https://pass.wafer.ai/v1\n  openrouter:\n    api_key: or-keep\n")
 	}
 	t.Run("test_set_preserves_literal_dot_in_provider_key", func(t *testing.T) {
 		c := newConfigHome(t)
 		providers(c)
-		c.mustSet(`providers.qwen3\.5-397b-wafer-non-zdr.extra_headers`, `{"Wafer-ZDR": "required"}`, false)
+		c.mustSet(`providers.qwen3\.5-397b-wafer-non-zdr.extra_headers`, `{"Wafer-ZDR": "required"}`)
 		saved := c.parsed()["providers"].(map[string]any)
 		target, _ := saved["qwen3.5-397b-wafer-non-zdr"].(map[string]any)
-		if _, has := saved["qwen3"]; has || target["api"] != "https://pass.wafer.ai/v1" ||
+		if _, has := saved["qwen3"]; has || target["base_url"] != "https://pass.wafer.ai/v1" ||
 			!reflect.DeepEqual(target["extra_headers"], map[string]any{"Wafer-ZDR": "required"}) ||
 			!reflect.DeepEqual(saved["openrouter"], map[string]any{"api_key": "or-keep"}) {
 			t.Fatalf("providers %v", saved)
-		}
-		if out, _ := c.drain(); strings.Contains(out, "not a recognized config key") {
-			t.Fatalf("stdout %q", out)
 		}
 	})
 	t.Run("test_unset_removes_literal_dot_provider_key", func(t *testing.T) {
@@ -687,19 +500,19 @@ func TestLiteralDotKeyEscaping(t *testing.T) {
 	})
 	t.Run("test_unset_nested_field_under_literal_dot_key", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.write("providers:\n  qwen3.5-397b-wafer-non-zdr:\n    api: https://pass.wafer.ai/v1\n    extra_headers: '{\"K\": \"V\"}'\n")
+		c.write("providers:\n  qwen3.5-397b-wafer-non-zdr:\n    base_url: https://pass.wafer.ai/v1\n    extra_headers: '{\"K\": \"V\"}'\n")
 		if err := c.command(config.ConfigArgs{Command: "unset", Key: `providers.qwen3\.5-397b-wafer-non-zdr.extra_headers`}); err != nil {
 			t.Fatal(err)
 		}
 		target := c.parsed()["providers"].(map[string]any)["qwen3.5-397b-wafer-non-zdr"].(map[string]any)
-		if _, has := target["extra_headers"]; has || target["api"] != "https://pass.wafer.ai/v1" {
+		if _, has := target["extra_headers"]; has || target["base_url"] != "https://pass.wafer.ai/v1" {
 			t.Fatalf("target %v", target)
 		}
 	})
 	t.Run("test_get_reads_literal_dot_provider_key", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.write("providers:\n  qwen3.5-397b:\n    api: https://pass.wafer.ai/v1\n")
-		if err := c.command(config.ConfigArgs{Command: "get", Key: `providers.qwen3\.5-397b.api`}); err != nil {
+		c.write("providers:\n  qwen3.5-397b:\n    base_url: https://pass.wafer.ai/v1\n")
+		if err := c.command(config.ConfigArgs{Command: "get", Key: `providers.qwen3\.5-397b.base_url`}); err != nil {
 			t.Fatal(err)
 		}
 		if out, _ := c.drain(); strings.TrimSpace(out) != "https://pass.wafer.ai/v1" {
@@ -708,8 +521,7 @@ func TestLiteralDotKeyEscaping(t *testing.T) {
 	})
 	t.Run("test_unescaped_dotted_path_unchanged", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.isolateEnv("TERMINAL_ENV")
-		c.mustSet("terminal.backend", "docker", false)
+		c.mustSet("terminal.backend", "docker")
 		if c.at("terminal", "backend") != "docker" {
 			t.Fatalf("config %q", c.readConfig())
 		}
@@ -781,40 +593,41 @@ func TestConfigGetRedaction(t *testing.T) {
 }
 
 func TestContainerTypeRefusal(t *testing.T) {
-	t.Run("test_string_where_schema_wants_list_is_refused", func(t *testing.T) {
+	t.Run("test_plain_word_where_the_setting_wants_a_list_is_refused", func(t *testing.T) {
 		c := newConfigHome(t)
 		c.writeDoc(map[string]any{"model": map[string]any{"default": "m"}})
-		if err := c.set("custom_providers", "plainstring", false); exitStatus(err) != 1 {
+		if err := c.set("fallback_providers", "plainstring"); exitStatus(err) != 1 {
 			t.Fatalf("plain string %v", err)
 		}
-		if err := c.set("custom_providers", "- name: x\n  model: \"C:\\models\\x\"", false); exitStatus(err) != 1 {
+		if err := c.set("fallback_providers", "- provider: x\n  model: \"C:\\models\\x\""); exitStatus(err) != 1 {
 			t.Fatalf("bad literal %v", err)
 		}
 		_, errOut := c.drain()
-		if !strings.Contains(errOut, "must be a list, got a string") || !strings.Contains(errOut, "not valid YAML/JSON") || strings.Contains(c.readConfig(), "custom_providers") {
+		if !strings.Contains(errOut, "fallback_providers: takes a list") || !strings.Contains(errOut, "not valid YAML/JSON") ||
+			strings.Contains(errOut, "exit 1") || strings.Contains(c.readConfig(), "fallback_providers") {
 			t.Fatalf("stderr %q config %q", errOut, c.readConfig())
 		}
 	})
 	t.Run("test_valid_literal_and_scalar_keys_still_write", func(t *testing.T) {
 		c := newConfigHome(t)
-		c.writeDoc(map[string]any{"model": map[string]any{"default": "m", "aliases": map[string]any{"a": "p/m"}}})
-		c.mustSet("custom_providers", "[{name: ok, base_url: http://h/v1}]", false)
-		c.mustSet("model.default", "bar", false)
-		if err := c.set("model.aliases", "notamap", false); exitStatus(err) != 1 {
+		aliases := map[string]any{"quick": map[string]any{"model": "some/model", "provider": "openrouter"}}
+		c.writeDoc(map[string]any{"model": map[string]any{"default": "m", "aliases": aliases}})
+		c.mustSet("fallback_providers", "[{provider: openrouter, model: some/model}]")
+		c.mustSet("model.default", "bar")
+		if err := c.set("model.aliases", "notamap"); exitStatus(err) != 1 {
 			t.Fatalf("not a map %v", err)
 		}
-		c.mustSet("model.aliases", "replaced", true)
 		saved := c.parsed()
-		if !reflect.DeepEqual(saved["custom_providers"], []any{map[string]any{"name": "ok", "base_url": "http://h/v1"}}) ||
-			!reflect.DeepEqual(saved["model"], map[string]any{"default": "bar", "aliases": "replaced"}) {
+		if !reflect.DeepEqual(saved["fallback_providers"], []any{map[string]any{"provider": "openrouter", "model": "some/model"}}) ||
+			!reflect.DeepEqual(saved["model"], map[string]any{"default": "bar", "aliases": aliases}) {
 			t.Fatalf("saved %v", saved)
 		}
 	})
-	t.Run("test_unseeded_or_top_level_container_key_is_refused_without_on_disk_value", func(t *testing.T) {
+	t.Run("test_container_setting_refuses_a_plain_word", func(t *testing.T) {
 		for _, key := range []string{"model.aliases", "providers"} {
 			c := newConfigHome(t)
 			c.writeDoc(map[string]any{"model": map[string]any{"default": "m"}})
-			if err := c.set(key, "notacontainer", false); exitStatus(err) != 1 {
+			if err := c.set(key, "notacontainer"); exitStatus(err) != 1 {
 				t.Fatalf("%s not refused %v", key, err)
 			}
 			if got := c.parsed(); !reflect.DeepEqual(got, map[string]any{"model": map[string]any{"default": "m"}}) {
@@ -825,7 +638,7 @@ func TestContainerTypeRefusal(t *testing.T) {
 	t.Run("test_bare_name_for_string_list_slot_is_stored_as_one_item_list", func(t *testing.T) {
 		c := newConfigHome(t)
 		c.writeDoc(map[string]any{"model": map[string]any{"default": "m"}})
-		c.mustSet("agent.disabled_toolsets", "web", false)
+		c.mustSet("agent.disabled_toolsets", "web")
 		if got := c.at("agent", "disabled_toolsets"); !reflect.DeepEqual(got, []any{"web"}) {
 			t.Fatalf("saved %#v", got)
 		}
@@ -847,7 +660,7 @@ func mergedModel(parts ...map[string]any) map[string]any {
 
 func TestProviderSwitchClearsBaseUrl(t *testing.T) {
 	seed := func(c *configHome, model map[string]any) {
-		c.writeDoc(map[string]any{"model": model, "custom_providers": []any{map[string]any{"name": "mylab", "base_url": "http://10.0.0.5:8000/v1", "api_key": "k"}}})
+		c.writeDoc(map[string]any{"model": model, "providers": map[string]any{"mylab": map[string]any{"base_url": "http://10.0.0.5:8000/v1", "api_key": "k"}}})
 	}
 	t.Run("test_switching_provider_clears_foreign_route", func(t *testing.T) {
 		for _, tc := range []struct {
@@ -856,7 +669,7 @@ func TestProviderSwitchClearsBaseUrl(t *testing.T) {
 		}{{"anthropic", switchRoute}, {"mylab", switchRoute}, {"anthropic", map[string]any{"api_mode": "codex_responses"}}} {
 			c := newConfigHome(t)
 			seed(c, mergedModel(map[string]any{"provider": "opencode-go", "default": "gpt-5.3-codex"}, tc.route))
-			c.mustSet("model.provider", tc.target, false)
+			c.mustSet("model.provider", tc.target)
 			if got := c.parsed()["model"]; !reflect.DeepEqual(got, map[string]any{"provider": tc.target, "default": "gpt-5.3-codex"}) {
 				t.Fatalf("%s model %v", tc.target, got)
 			}
@@ -885,7 +698,7 @@ func TestProviderSwitchClearsBaseUrl(t *testing.T) {
 		} {
 			c := newConfigHome(t)
 			seed(c, mergedModel(tc.seed, map[string]any{"default": "m"}))
-			c.mustSet(tc.key, tc.target, false)
+			c.mustSet(tc.key, tc.target)
 			want := mergedModel(tc.seed, map[string]any{"default": "m", strings.SplitN(tc.key, ".", 2)[1]: tc.target})
 			if got := c.parsed()["model"]; !reflect.DeepEqual(got, want) {
 				t.Fatalf("%s=%s model %v want %v", tc.key, tc.target, got, want)

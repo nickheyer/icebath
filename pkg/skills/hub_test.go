@@ -22,6 +22,12 @@ func newTestHub(t *testing.T) (*Hub, string) {
 	return h, tmp
 }
 
+// Sets security.allow_private_urls in the config.yaml of a home, so its hub reaches a loopback server
+func allowPrivateURLs(t *testing.T, home string) {
+	t.Helper()
+	writeTestFile(t, filepath.Join(home, "config.yaml"), "security:\n  allow_private_urls: true\n")
+}
+
 func writeTestFile(t *testing.T, p, text string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

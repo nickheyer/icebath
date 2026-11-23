@@ -197,12 +197,8 @@ func FindPluginEntry(h, name string) (*PluginEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	target := legacyPluginAlias(name)
-	if target == "" {
-		target = name
-	}
 	for i := range entries {
-		if entries[i].Name == target || entries[i].Key == target {
+		if entries[i].Name == name || entries[i].Key == name {
 			return &entries[i], nil
 		}
 	}

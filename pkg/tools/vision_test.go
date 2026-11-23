@@ -134,10 +134,19 @@ func envelopeURL(t *testing.T, result string) string {
 	return ""
 }
 
-// Resolves test hostnames to loopback and allows private targets for one test
-func loopbackHosts(t *testing.T) {
+// Resolves test hostnames to loopback and writes the session config file allowing private targets, with a website blocklist of the given domains
+func loopbackHosts(t *testing.T, env *Env, blocked ...string) {
 	t.Helper()
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
+	body := "security:\n  allow_private_urls: true\n"
+	if len(blocked) > 0 {
+		body += "  website_blocklist:\n    enabled: true\n    domains:\n"
+		for _, d := range blocked {
+			body += "      - " + d + "\n"
+		}
+	}
+	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	prev := lookupHostIPs
 	lookupHostIPs = func(ctx context.Context, host string) ([]netip.Addr, error) {
 		return []netip.Addr{netip.MustParseAddr("127.0.0.1")}, nil
@@ -149,18 +158,6 @@ func loopbackHosts(t *testing.T) {
 func hostURL(srv *httptest.Server, host, path string) string {
 	u, _ := url.Parse(srv.URL)
 	return "http://" + host + ":" + u.Port() + path
-}
-
-// Writes a website blocklist into the session config file
-func writeBlocklist(t *testing.T, env *Env, domains ...string) {
-	t.Helper()
-	body := "security:\n  website_blocklist:\n    enabled: true\n    domains:\n"
-	for _, d := range domains {
-		body += "      - " + d + "\n"
-	}
-	if err := os.WriteFile(filepath.Join(env.Home, "config.yaml"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func TestValidateImageURL(t *testing.T) {
@@ -299,13 +296,12 @@ func TestVisionSafetyGuards(t *testing.T) {
 		}
 	})
 	t.Run("blocked remote URL short circuits before download", func(t *testing.T) {
-		loopbackHosts(t)
 		var hits atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
 		defer srv.Close()
 		aux := &fakeVisionAux{}
 		env := visionEnv(t, aux)
-		writeBlocklist(t, env, "blocked.test")
+		loopbackHosts(t, env, "blocked.test")
 		r := decodeResult(t, visionAnalyzeTool(context.Background(), env, hostURL(srv, "blocked.test", "/cat.png"), "describe", "", "", nil))
 		if r["success"] != false || !strings.Contains(r["error"].(string), "Blocked by website policy") || hits.Load() != 0 || aux.count() != 0 {
 			t.Fatalf("%v hits %d", r, hits.Load())
@@ -316,7 +312,6 @@ func TestVisionSafetyGuards(t *testing.T) {
 func TestDownloadMedia(t *testing.T) {
 	pngBody := append(append([]byte{}, isrcPNG...), make([]byte, 16)...)
 	t.Run("redirected final URL blocked by policy", func(t *testing.T) {
-		loopbackHosts(t)
 		var srv *httptest.Server
 		srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/cat.png" {
@@ -327,7 +322,7 @@ func TestDownloadMedia(t *testing.T) {
 		}))
 		defer srv.Close()
 		env := isrcEnv(t, "local")
-		writeBlocklist(t, env, "blocked.test")
+		loopbackHosts(t, env, "blocked.test")
 		dest := filepath.Join(t.TempDir(), "cat.png")
 		err := downloadImage(context.Background(), env, hostURL(srv, "allowed.test", "/cat.png"), dest, 1)
 		var policy *mediaPolicyError
@@ -339,7 +334,6 @@ func TestDownloadMedia(t *testing.T) {
 		}
 	})
 	t.Run("size cap enforced while streaming", func(t *testing.T) {
-		loopbackHosts(t)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("12345"))
 			w.(http.Flusher).Flush()
@@ -347,6 +341,7 @@ func TestDownloadMedia(t *testing.T) {
 		}))
 		defer srv.Close()
 		env := isrcEnv(t, "local")
+		loopbackHosts(t, env)
 		dir := t.TempDir()
 		dest := filepath.Join(dir, "big.png")
 		err := downloadMedia(context.Background(), env, hostURL(srv, "example.test", "/big.png"), dest, 1,
@@ -360,13 +355,13 @@ func TestDownloadMedia(t *testing.T) {
 		}
 	})
 	t.Run("declared length over the cap refused early", func(t *testing.T) {
-		loopbackHosts(t)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Length", "100")
 			w.Write(make([]byte, 100))
 		}))
 		defer srv.Close()
 		env := isrcEnv(t, "local")
+		loopbackHosts(t, env)
 		err := downloadMedia(context.Background(), env, hostURL(srv, "example.test", "/x.png"), filepath.Join(t.TempDir(), "x.png"), 1,
 			mediaDownloadOptions{label: "Image", maxBytes: 10, timeout: 5 * time.Second})
 		if err == nil || !strings.Contains(err.Error(), "Image too large (100 bytes, max 10)") {
@@ -374,7 +369,6 @@ func TestDownloadMedia(t *testing.T) {
 		}
 	})
 	t.Run("stream without a length is saved whole", func(t *testing.T) {
-		loopbackHosts(t)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("User-Agent") != visionDownloadUserAgent || r.Header.Get("Accept") != "image/*,*/*;q=0.8" {
 				w.WriteHeader(400)
@@ -386,6 +380,7 @@ func TestDownloadMedia(t *testing.T) {
 		}))
 		defer srv.Close()
 		env := isrcEnv(t, "local")
+		loopbackHosts(t, env)
 		dest := filepath.Join(t.TempDir(), "cat.png")
 		if err := downloadImage(context.Background(), env, hostURL(srv, "example.test", "/cat.png"), dest, 1); err != nil {
 			t.Fatal(err)
@@ -395,7 +390,6 @@ func TestDownloadMedia(t *testing.T) {
 		}
 	})
 	t.Run("503 retries then raises", func(t *testing.T) {
-		loopbackHosts(t)
 		var hits atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			hits.Add(1)
@@ -407,6 +401,7 @@ func TestDownloadMedia(t *testing.T) {
 		mediaRetrySleep = func(ctx context.Context, d time.Duration) error { sleeps = append(sleeps, d); return nil }
 		t.Cleanup(func() { mediaRetrySleep = prev })
 		env := isrcEnv(t, "local")
+		loopbackHosts(t, env)
 		err := downloadImage(context.Background(), env, hostURL(srv, "example.test", "/flaky.jpg"), filepath.Join(t.TempDir(), "y.jpg"), 3)
 		var status *mediaHTTPStatusError
 		if !errors.As(err, &status) || status.status != 503 || hits.Load() != 3 || len(sleeps) != 2 || sleeps[0] != 2*time.Second || sleeps[1] != 4*time.Second {
@@ -417,7 +412,6 @@ func TestDownloadMedia(t *testing.T) {
 		}
 	})
 	t.Run("404 fails fast", func(t *testing.T) {
-		loopbackHosts(t)
 		var hits atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			hits.Add(1)
@@ -425,12 +419,12 @@ func TestDownloadMedia(t *testing.T) {
 		}))
 		defer srv.Close()
 		env := isrcEnv(t, "local")
+		loopbackHosts(t, env)
 		if err := downloadImage(context.Background(), env, hostURL(srv, "example.test", "/gone.jpg"), filepath.Join(t.TempDir(), "g.jpg"), 3); err == nil || hits.Load() != 1 {
 			t.Fatalf("err %v hits %d", err, hits.Load())
 		}
 	})
 	t.Run("video retries every failure class", func(t *testing.T) {
-		loopbackHosts(t)
 		var hits atomic.Int32
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			hits.Add(1)
@@ -441,6 +435,7 @@ func TestDownloadMedia(t *testing.T) {
 		mediaRetrySleep = func(ctx context.Context, d time.Duration) error { return nil }
 		t.Cleanup(func() { mediaRetrySleep = prev })
 		env := isrcEnv(t, "local")
+		loopbackHosts(t, env)
 		err := downloadMedia(context.Background(), env, hostURL(srv, "example.test", "/v.mp4"), filepath.Join(t.TempDir(), "v.mp4"), 3,
 			mediaDownloadOptions{label: "Video", maxBytes: 1 << 20, timeout: 5 * time.Second, retryAll: true})
 		if err == nil || hits.Load() != 3 {

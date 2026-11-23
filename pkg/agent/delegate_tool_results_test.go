@@ -32,7 +32,7 @@ func budgetParent(contextLength, usedTokens, maxTokens int, sessionTotal int) *A
 	return &AIAgent{contextCompressor: cc, lastTurnUsage: map[string]any{"prompt_tokens": usedTokens}, sessionPromptTokens: sessionTotal}
 }
 
-// Isolated home with an optional delegation summary ceiling and the redaction opt out
+// Isolated home with an optional delegation summary ceiling and the hide secrets setting turned off on opt out
 func delegationTestEnv(t *testing.T, maxSummaryChars int, optOut bool) *tools.Env {
 	t.Helper()
 	h := filepath.Join(t.TempDir(), ".icebath")
@@ -42,19 +42,17 @@ func delegationTestEnv(t *testing.T, maxSummaryChars int, optOut bool) *tools.En
 	t.Setenv("ICEBATH_HOME", h)
 	tools.ResetTerminalScopeCache()
 	t.Cleanup(tools.ResetTerminalScopeCache)
+	values := map[string]any{}
 	if maxSummaryChars > 0 {
-		cfg := fmt.Sprintf("delegation:\n  max_summary_chars: %d\n", maxSummaryChars)
-		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(cfg), 0o600); err != nil {
-			t.Fatal(err)
-		}
+		values["delegation.max_summary_chars"] = maxSummaryChars
 	}
-	env := &tools.Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}}
 	if optOut {
-		if err := env.Secrets.Set("ICEBATH_REDACT_SECRETS", "false"); err != nil {
-			t.Fatal(err)
-		}
+		values["security.redact_secrets"] = false
 	}
-	return env
+	if len(values) > 0 {
+		setSettingsForTest(t, values)
+	}
+	return &tools.Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}}
 }
 
 type delegationRecorder struct {
@@ -253,8 +251,8 @@ var delegationFooterPathRe = regexp.MustCompile(`read_file path="([^"]+)"`)
 
 // test_truncation_footer_sandbox_paths.py test_truncation_footers_render_the_sandbox_visible_cache_path
 func TestTruncationFootersRenderTheSandboxVisibleCachePath(t *testing.T) {
-	t.Setenv("TERMINAL_ENV", "docker")
 	env := delegationTestEnv(t, 0, false)
+	setSettingsForTest(t, map[string]any{"terminal.backend": "docker"})
 	rows := make([]string, 5000)
 	for i := range rows {
 		rows[i] = fmt.Sprintf("row %d", i)
@@ -648,7 +646,6 @@ func TestStructuredSummaryIsRedactedPerValueAndStaysValidJSON(t *testing.T) {
 
 // test_truncation_footer_sandbox_paths.py test_local_backend_footer_keeps_the_host_path
 func TestLocalBackendFooterKeepsTheHostPath(t *testing.T) {
-	t.Setenv("TERMINAL_ENV", "local")
 	env := delegationTestEnv(t, 0, false)
 	rows := make([]string, 5000)
 	for i := range rows {

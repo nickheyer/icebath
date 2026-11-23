@@ -246,7 +246,6 @@ func TestEnsureDBSessionCreatesTheRowOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	t.Setenv("TERMINAL_ENV", "docker")
 	a := &AIAgent{sessionDB: db, sessionID: "sess-1", model: "m1", platform: "telegram", chatID: "c", userID: "u",
 		profileName: "work", parentSessionID: "", env: nil}
 	if err := a.ensureDBSession(); err != nil || !a.sessionDBCreated {
@@ -364,16 +363,13 @@ func TestApplyFallbackChainReplacesTheChainOnThePrimary(t *testing.T) {
 	if len(a.fallbackChain) != 1 || a.fallbackChain[0]["provider"] != "openrouter" || a.fallbackIndex != 0 || len(a.unavailableFallbackKeys) != 0 {
 		t.Fatalf("chain %v index %d memo %v", a.fallbackChain, a.fallbackIndex, a.unavailableFallbackKeys)
 	}
-	if got := a.FallbackModel(); got == nil || got["provider"] != "openrouter" {
-		t.Fatalf("first entry %v", got)
-	}
 	a.unavailableFallbackKeys[[3]string{"openrouter", "x", ""}] = true
 	a.ApplyFallbackChain(next)
 	if len(a.unavailableFallbackKeys) != 1 {
 		t.Fatal("an unchanged chain must keep the unavailability memo")
 	}
 	a.ApplyFallbackChain(nil)
-	if len(a.fallbackChain) != 0 || a.FallbackModel() != nil {
+	if len(a.fallbackChain) != 0 {
 		t.Fatalf("a removed chain left %v", a.fallbackChain)
 	}
 }

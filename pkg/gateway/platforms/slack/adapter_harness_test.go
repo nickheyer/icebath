@@ -58,14 +58,20 @@ func slackSettingsHome(t *testing.T, extra map[string]any) map[string]any {
 			rest[k] = v
 		}
 	}
+	writeSlackSettings(t, block)
+	return rest
+}
+
+// Rewrites the slack section of the test home's config.yaml the way a person edits the file
+func writeSlackSettings(t *testing.T, block map[string]any) {
+	t.Helper()
 	doc, err := json.Marshal(map[string]any{"slack": block})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), doc, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "config.yaml"), doc, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return rest
 }
 
 // Unwrapped string of an optional value

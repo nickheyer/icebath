@@ -194,8 +194,12 @@ func TestLaunchTuiLocalSessionStartsInLaunchDirNotTerminalCwd(t *testing.T) {
 			if _, ok := env["ICEBATH_TUI_CWD"]; ok {
 				t.Fatal("remote backend kept ICEBATH_TUI_CWD")
 			}
-			if tuiResolved(t, env["TERMINAL_CWD"]) != tuiResolved(t, configured) {
-				t.Fatalf("remote terminal cwd %q", env["TERMINAL_CWD"])
+			if cwd := env["TERMINAL_CWD"]; cwd != "" {
+				t.Fatalf("the launcher exported the terminal folder %q of a remote backend, which the background service reads from the profile", cwd)
+			}
+			scope, err := tools.BuildProfileTerminalScope(context.Background(), h, nil)
+			if err != nil || tuiResolved(t, scope["TERMINAL_CWD"]) != tuiResolved(t, configured) {
+				t.Fatalf("profile terminal folder %q %v", scope["TERMINAL_CWD"], err)
 			}
 		})
 	}

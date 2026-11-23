@@ -1,4 +1,4 @@
-# Home Manager module installing icebath and running its gateway as a user service
+# Home Manager module installing icebath and running its background service as a user service
 { inputs, ... }:
 {
   flake.homeManagerModules.default =
@@ -134,23 +134,13 @@
               memory and the cron jobs.
 
               The NixOS module takes a `stateDir` and adds `/.icebath` to it.
-              This module sets ICEBATH_HOME directly. Thus an existing
-              ~/.icebath continues to work, and you can give the directory any
-              name.
+              This module sets ICEBATH_HOME directly, so you can give the
+              directory any name.
             '';
             example = "/home/alice/.icebath-work";
           };
 
-          installPackage = lib.mkOption {
-            type = lib.types.nullOr lib.types.bool;
-            default = null;
-            visible = false;
-            description = ''
-              Removed. Use `programs.icebath-agent.enable` instead.
-            '';
-          };
-
-          gateway.enable = lib.mkEnableOption "the messaging gateway service (Telegram, Discord, Slack, ...)";
+          service.enable = lib.mkEnableOption "the background service, which serves chat apps and scheduled jobs";
         };
 
       config = lib.mkMerge [
@@ -159,15 +149,6 @@
           home.packages = [ cfgPrograms.package ];
           home.sessionVariables.ICEBATH_HOME = cfg.icebathHome;
         })
-
-        {
-          assertions = [
-            {
-              assertion = cfg.installPackage == null;
-              message = common.installPackageRemovedMessage cfg.installPackage;
-            }
-          ];
-        }
 
         (lib.mkIf cfg.enable (
           lib.mkMerge [
@@ -218,16 +199,16 @@
                   );
             }
 
-            (lib.mkIf (isLinux && cfg.gateway.enable) {
+            (lib.mkIf (isLinux && cfg.service.enable) {
               systemd.user.services.icebath-agent = mkUnit {
-                description = "Icebath Agent Gateway";
-                argv = common.gatewayArgv cfg;
+                description = "Icebath background service";
+                argv = common.serviceArgv cfg;
               };
             })
 
-            (lib.mkIf (isDarwin && cfg.gateway.enable) {
+            (lib.mkIf (isDarwin && cfg.service.enable) {
               launchd.agents.icebath-agent = mkAgent {
-                argv = common.gatewayArgv cfg;
+                argv = common.serviceArgv cfg;
                 logName = "icebath-agent";
               };
             })

@@ -122,47 +122,11 @@ func TestUnescapedDottedModelKeys(t *testing.T) {
 	})
 }
 
-func TestMatrixRoomIds(t *testing.T) {
-	t.Run("test_set_existing_room_id_key", func(t *testing.T) {
-		s, _ := newCfgSetHome(t, map[string]any{"matrix": map[string]any{"channel_prompts": map[string]any{"!TestRoom:example.org": "old"}}})
-		s.mustSet("matrix.channel_prompts.!TestRoom:example.org", "be brief")
-		if got := s.at("matrix", "channel_prompts"); !reflect.DeepEqual(got, map[string]any{"!TestRoom:example.org": "be brief"}) {
-			t.Fatalf("room id %v", got)
-		}
-	})
-	t.Run("test_escaped_creates_new_room_id_key", func(t *testing.T) {
-		s, _ := newCfgSetHome(t, map[string]any{"matrix": map[string]any{"channel_prompts": map[string]any{}}})
-		s.mustSet(`matrix.channel_prompts.!TestRoom:example\.org`, "be brief")
-		if got := s.at("matrix", "channel_prompts", "!TestRoom:example.org"); got != "be brief" {
-			t.Fatalf("escaped room id %v", s.raw())
-		}
-	})
-}
-
-func TestCustomProvidersListIndex(t *testing.T) {
-	t.Run("test_set_updates_existing_dotted_model_under_list_index", func(t *testing.T) {
-		s, _ := newCfgSetHome(t, map[string]any{"custom_providers": []any{map[string]any{"name": "Local Ollama", "models": map[string]any{"qwen3.5:4b": map[string]any{"context_length": 16384}}}}})
-		s.mustSet("custom_providers.0.models.qwen3.5:4b.context_length", "65536")
-		models := AsMap(AsMap(s.raw()["custom_providers"].([]any)[0])["models"])
-		if !reflect.DeepEqual(models, map[string]any{"qwen3.5:4b": map[string]any{"context_length": 65536}}) {
-			t.Fatalf("list indexed %v", models)
-		}
-	})
-	t.Run("test_escaped_creates_absent_dotted_model_under_list_index", func(t *testing.T) {
-		s, _ := newCfgSetHome(t, map[string]any{"custom_providers": []any{map[string]any{"name": "Local Ollama", "models": map[string]any{}}}})
-		s.mustSet(`custom_providers.0.models.qwen3\.5:4b.context_length`, "65536")
-		models := AsMap(AsMap(s.raw()["custom_providers"].([]any)[0])["models"])
-		if !reflect.DeepEqual(models, map[string]any{"qwen3.5:4b": map[string]any{"context_length": 65536}}) {
-			t.Fatalf("escaped list indexed %v", models)
-		}
-	})
-}
-
 func TestAtomicRoundtripYamlUpdate(t *testing.T) {
 	t.Run("test_existing_dotted_model_id_not_split", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.yaml")
 		os.WriteFile(path, []byte("model_overrides:\n  zai:\n    glm-5.3:\n      supports_reasoning: false\n"), 0o600)
-		if err := atomicRoundtripYAMLUpdate(context.Background(), path, "model_overrides.zai.glm-5.3.supports_reasoning", true); err != nil {
+		if err := atomicRoundtripYAMLApply(context.Background(), path, []KeyValue{{Key: "model_overrides.zai.glm-5.3.supports_reasoning", Value: true}}, nil); err != nil {
 			t.Fatal(err)
 		}
 		doc, _ := ReadDocument(path)
@@ -174,7 +138,7 @@ func TestAtomicRoundtripYamlUpdate(t *testing.T) {
 	t.Run("test_escaped_dotted_key_created", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.yaml")
 		os.WriteFile(path, []byte("model_overrides: {}\n"), 0o600)
-		if err := atomicRoundtripYAMLUpdate(context.Background(), path, `model_overrides.zai.glm-5\.3.supports_reasoning`, true); err != nil {
+		if err := atomicRoundtripYAMLApply(context.Background(), path, []KeyValue{{Key: `model_overrides.zai.glm-5\.3.supports_reasoning`, Value: true}}, nil); err != nil {
 			t.Fatal(err)
 		}
 		doc, _ := ReadDocument(path)
@@ -185,7 +149,7 @@ func TestAtomicRoundtripYamlUpdate(t *testing.T) {
 	t.Run("test_plain_paths_unchanged", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "config.yaml")
 		os.WriteFile(path, []byte("# keep this comment\ndisplay:\n  personality: default\n"), 0o600)
-		if err := atomicRoundtripYAMLUpdate(context.Background(), path, "display.personality", "hacker"); err != nil {
+		if err := atomicRoundtripYAMLApply(context.Background(), path, []KeyValue{{Key: "display.personality", Value: "hacker"}}, nil); err != nil {
 			t.Fatal(err)
 		}
 		text, _ := os.ReadFile(path)
@@ -347,8 +311,8 @@ func TestConfigSetListValues(t *testing.T) {
 	})
 	t.Run("test_multiline_yaml_list_is_parsed", func(t *testing.T) {
 		s, _ := newCfgSetHome(t, nil)
-		s.mustSet("custom_providers", "- name: foo\n  base_url: https://foo.example/v1\n- name: bar\n  base_url: https://bar.example/v1")
-		if !reflect.DeepEqual(s.raw()["custom_providers"], []any{map[string]any{"name": "foo", "base_url": "https://foo.example/v1"}, map[string]any{"name": "bar", "base_url": "https://bar.example/v1"}}) {
+		s.mustSet("fallback_providers", "- provider: openrouter\n  model: anthropic/claude-sonnet-4.6\n- provider: nous\n  model: icebath-4")
+		if !reflect.DeepEqual(s.raw()["fallback_providers"], []any{map[string]any{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"}, map[string]any{"provider": "nous", "model": "icebath-4"}}) {
 			t.Fatalf("%v", s.raw())
 		}
 	})
@@ -367,11 +331,11 @@ func TestConfigSetListValues(t *testing.T) {
 			t.Fatalf("%s %q saved %#v", key, value, s.at(strings.Split(key, ".")...))
 		}
 	}
-	t.Run("test_string_typed_key_bracket_value_stays_string", func(t *testing.T) { stays(t, "approvals.mode", "[off]") })
-	t.Run("test_string_typed_key_negative_number_stays_string", func(t *testing.T) { stays(t, "approvals.mode", "-5") })
-	t.Run("test_dash_prefixed_scalar_not_treated_as_list", func(t *testing.T) { stays(t, "weird.flag", "--verbose") })
+	t.Run("test_string_typed_key_bracket_value_stays_string", func(t *testing.T) { stays(t, "streaming.cursor", "[off]") })
+	t.Run("test_string_typed_key_negative_number_stays_string", func(t *testing.T) { stays(t, "streaming.cursor", "-5") })
+	t.Run("test_dash_prefixed_scalar_not_treated_as_list", func(t *testing.T) { stays(t, "streaming.cursor", "--verbose") })
 	t.Run("test_plain_scalar_that_parses_to_scalar_kept_as_string", func(t *testing.T) {
-		stays(t, "some.note", "line one\nline two without yaml shape")
+		stays(t, "streaming.cursor", "line one\nline two without yaml shape")
 	})
 	t.Run("test_round_trip_through_load_config", func(t *testing.T) {
 		s, _ := newCfgSetHome(t, nil)
@@ -381,16 +345,13 @@ func TestConfigSetListValues(t *testing.T) {
 			t.Fatalf("round trip %v %v", err, cfg.Get("platform_toolsets.line"))
 		}
 	})
-	t.Run("test_bare_string_into_list_slot_absent_from_defaults_is_refused", func(t *testing.T) {
-		s, _ := newCfgSetHome(t, nil)
+	t.Run("test_comma_separated_text_into_a_list_setting_becomes_its_items", func(t *testing.T) {
 		for _, key := range []string{"plugins.enabled", "model_catalog.excluded_providers"} {
-			FacadeNoticeOut.(interface{ Reset() }).Reset()
-			if err := s.set(key, "a,b"); exitCode(err) < 0 || !strings.Contains(errText(), "must be a list") {
-				t.Fatalf("%s bare string %v", key, err)
+			s, _ := newCfgSetHome(t, nil)
+			s.mustSet(key, "a, b")
+			if got := s.at(strings.Split(key, ".")...); !reflect.DeepEqual(got, []any{"a", "b"}) {
+				t.Fatalf("%s saved %#v", key, got)
 			}
-		}
-		if len(s.raw()) != 0 {
-			t.Fatalf("refused list slots wrote %v", s.raw())
 		}
 	})
 }

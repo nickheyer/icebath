@@ -146,7 +146,7 @@ func TestProvidersDictApiModeAnthropicMessagesResolveProviderClientReturnsAnthro
 }
 
 func TestCustomProviderAliasCollisionCustomNamedKimiWinsOverBuiltinAlias(t *testing.T) {
-	ctx := auxMainTestHome(t, auxOpenrouterMainConfigYAML+"custom_providers:\n  - name: kimi\n    base_url: https://my-custom-kimi.example.com/v1\n    api_key: my-kimi-key\n    models:\n      my-kimi-model:\n        context_length: 200000\n")
+	ctx := auxMainTestHome(t, auxOpenrouterMainConfigYAML+"providers:\n  kimi:\n    base_url: https://my-custom-kimi.example.com/v1\n    api_key: my-kimi-key\n    models:\n      my-kimi-model:\n        context_length: 200000\n")
 	client, model, err := ResolveProviderClient(ctx, "kimi", "my-kimi-model", ProviderClientOptions{RawCodex: true})
 	if err != nil {
 		t.Fatal(err)

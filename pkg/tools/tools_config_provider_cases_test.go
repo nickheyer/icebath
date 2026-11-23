@@ -402,23 +402,23 @@ func TestCodexOAuthBootstrapHookHookStartsCodexOauthOnlyWhenCredentialsMissing(t
 			swapHook(t, &ToolsConfigHooks.CodexAuthStatus, func(context.Context, string) map[string]any { return map[string]any{"logged_in": loggedIn} })
 			swapHook(t, &ToolsConfigHooks.SetupPromptChoice, func(string, []string, int) int { return 0 })
 			started := 0
-			var saved []bool
+			saved := 0
 			swapHook(t, &ToolsConfigHooks.CodexDeviceCodeLogin, func(context.Context, string, io.Writer) (map[string]any, error) {
 				started++
 				return map[string]any{"tokens": map[string]any{"access_token": "t"}, "last_refresh": "x"}, nil
 			})
-			swapHook(t, &ToolsConfigHooks.SaveCodexTokens, func(_ context.Context, _ string, _ map[string]any, _ string, setActive bool) error {
-				saved = append(saved, setActive)
+			swapHook(t, &ToolsConfigHooks.SaveCodexTokens, func(context.Context, string, map[string]any, string) error {
+				saved++
 				return nil
 			})
 			if err := postSetupHooks["openai_codex"](s); err != nil {
 				t.Fatal(err)
 			}
-			wantStarted, wantSaved := 1, []bool{false}
+			wantStarted, wantSaved := 1, 1
 			if loggedIn {
-				wantStarted, wantSaved = 0, nil
+				wantStarted, wantSaved = 0, 0
 			}
-			if started != wantStarted || !slices.Equal(saved, wantSaved) {
+			if started != wantStarted || saved != wantSaved {
 				t.Fatalf("started %d saved %v", started, saved)
 			}
 		})

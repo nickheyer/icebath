@@ -25,7 +25,7 @@ import (
 
 func readyPayload(h string) *pyjson.Object {
 	v, err := pyjson.Loads(fmt.Sprintf(`{"runtime_protocol": 1, "state": "ready", "instance_id": "inst", "authority_epoch": 3,
-		"capabilities": ["session-authority-v1"], "api_origin": "http://127.0.0.1:4321", "supervisor": "none",
+		"api_origin": "http://127.0.0.1:4321", "supervisor": "none",
 		"served_profiles": [{"profile_id": %q, "home": %q}]}`, h, h))
 	if err != nil {
 		panic(err)
@@ -100,7 +100,6 @@ func TestLiveDiscoveryDoesNotTreatAnUnusableOwnerAsAbsent(t *testing.T) {
 		{"api_origin", "http://secret:credential@127.0.0.1:41817", "inaccessible"},
 		{"api_origin", "http://example.com:41817", "inaccessible"},
 		{"authority_epoch", true, "inaccessible"},
-		{"capabilities", []any{}, "incompatible"},
 	} {
 		mu.Lock()
 		old, _ := payload.Get(c.key)

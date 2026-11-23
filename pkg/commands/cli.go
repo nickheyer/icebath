@@ -139,7 +139,7 @@ const rootEpilog = `Examples:
     icebath fallback check [--live]  Check each fallback entry can be used (exit 1 if not)
     icebath config                 View configuration
     icebath config edit            Edit config in $EDITOR
-    icebath config set model gpt-4 Set a config value
+    icebath config set model.default gpt-4  Set a config value
     icebath gateway                Run messaging gateway
     icebath gateway install        Install gateway background service
     icebath gateway start          Start the installed gateway service

@@ -129,13 +129,36 @@ func LoadManagedConfig() map[string]any {
 			return nil, err
 		}
 		if m := AsMap(doc); m != nil {
-			return m, nil
+			return withoutNulls(m), nil
 		}
 		if doc == nil {
 			return map[string]any{}, nil
 		}
 		return doc, nil
 	})
+}
+
+// Copy of a managed mapping without its null values and the sections they leave empty, since a null pins nothing
+func withoutNulls(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	var order []string
+	for _, k := range MappingKeys(m) {
+		v := m[k]
+		if v == nil {
+			continue
+		}
+		if child, ok := v.(map[string]any); ok && len(child) > 0 {
+			kept := withoutNulls(child)
+			if len(kept) == 0 {
+				continue
+			}
+			v = kept
+		}
+		out[k] = v
+		order = append(order, k)
+	}
+	SetMappingKeys(out, order)
+	return out
 }
 
 // Text of a managed file read as strict utf-8-sig, a decode error failing loud instead of falling back to Latin-1

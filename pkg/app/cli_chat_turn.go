@@ -432,10 +432,6 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 	if showInterruptMarker {
 		cprint("\n" + dimANSI + c.t("cli.chat.interrupted_marker", nil) + resetANSI)
 	}
-	func() {
-		defer func() { _ = recover() }()
-		c.emitFocusRecoveryLine()
-	}()
 	c.ringBell()
 	if len(result) > 0 && !cliTruthy(result["completed"]) && !cliTruthy(result["interrupted"]) {
 		apiCalls, _ := progressNumber(mapValueOr(result, "api_calls", 0))

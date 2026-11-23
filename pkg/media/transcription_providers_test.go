@@ -205,7 +205,9 @@ func TestGetProviderXAIAutoDetectXaiAfterMistral(t *testing.T) {
 	ctx := keepSTTSeams(t)
 	t.Setenv("XAI_API_KEY", "xai-test")
 	noLocalNoOpenAI()
-	sttResolveXAICredentials = func(context.Context) (string, string, string) { return tools.ResolveXAIHTTPCredentials(nil, false) }
+	sttResolveXAICredentials = func(ctx context.Context) (string, string, string) {
+		return tools.ResolveXAIHTTPCredentials(sttCredentialEnv(ctx), false)
+	}
 	if got, _ := getProvider(ctx, map[string]any{}); got != "xai" {
 		t.Fatalf("getProvider = %q", got)
 	}

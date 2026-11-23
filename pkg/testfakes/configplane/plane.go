@@ -32,11 +32,10 @@ type Request struct {
 	Body                                         map[string]any
 }
 
-// Profile layer the plane stores with its version and the writer config version last sent
+// Profile layer the plane stores with its version
 type Profile struct {
 	Values  map[string]any
 	Version int
-	Writer  any
 }
 
 // Status and body the plane answers every PATCH with instead of applying it
@@ -185,15 +184,15 @@ func (p *Plane) Profile(name string) *Profile {
 // Effective response for a profile, the etag a digest of the body
 func (p *Plane) Effective(name string) map[string]any {
 	prof := p.Profile(name)
-	lvls := []any{map[string]any{"kind": "tenant", "version": 1, "writerConfigVersion": nil}}
+	lvls := []any{map[string]any{"kind": "tenant", "version": 1}}
 	for _, g := range p.Groups {
-		lv := map[string]any{"kind": "group", "writerConfigVersion": nil}
+		lv := map[string]any{"kind": "group"}
 		for k, v := range g {
 			lv[k] = config.Clone(v)
 		}
 		lvls = append(lvls, lv)
 	}
-	lvls = append(lvls, map[string]any{"kind": "profile", "version": prof.Version, "writerConfigVersion": prof.Writer})
+	lvls = append(lvls, map[string]any{"kind": "profile", "version": prof.Version})
 	locks := make([]any, len(p.UpperLocks))
 	for i, l := range p.UpperLocks {
 		locks[i] = config.Clone(l)
@@ -413,9 +412,6 @@ func (p *Plane) patch(w http.ResponseWriter, profile string, body map[string]any
 		}
 	}
 	prof.Version++
-	if w2, ok := body["writerConfigVersion"]; ok {
-		prof.Writer = w2
-	}
 	eff := p.Effective(profile)
 	send(w, 200, eff, eff["etag"].(string))
 }

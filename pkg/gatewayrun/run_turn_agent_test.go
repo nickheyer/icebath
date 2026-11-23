@@ -91,7 +91,6 @@ func installTurnFakes(t *testing.T, server *fakellm.Server, extraConfig string) 
 	if err := os.MkdirAll(filepath.Join(home, "logs"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("ICEBATH_TOOL_PROGRESS_MODE", "all")
 	if err := fakellm.WriteHome(home, server.BaseURL(), "", extraConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +147,7 @@ func TestCleanupChainsWithExistingCallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer server.Stop()
-	installTurnFakes(t, server, "display:\n  platforms:\n    telegram:\n      cleanup_progress: true\n")
+	installTurnFakes(t, server, "display:\n  platforms:\n    telegram:\n      tool_progress: all\n      cleanup_progress: true\n")
 	adapter := newCleanupCaptureAdapter()
 	r := makeTurnRunner(t, adapter)
 	source := &gateway.SessionSource{Platform: gateway.PlatformTelegram, ChatID: "-1001"}

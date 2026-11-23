@@ -376,31 +376,11 @@ func dotenvHasProviderKey(envFile string, providerEnvVars map[string]bool) bool 
 	return false
 }
 
-// True when auth.json's active provider is logged in, api key providers ignored under strict scope
-func authStoreLoggedIn(authFile string, rows []*provider.Profile, strictProfileScope bool, env provider.PoolEnv) bool {
-	if _, err := os.Stat(authFile); err != nil {
-		return false
-	}
-	auth, err := env.Store.LoadFile(authFile)
-	if err != nil {
-		return false
-	}
-	activeRaw := auth["active_provider"]
-	if !truthy(activeRaw) {
-		return false
-	}
-	active := strings.ToLower(strings.TrimSpace(pyStr(activeRaw)))
-	var activeConfig *provider.Profile
-	for _, row := range rows {
-		if row.Name == active {
-			activeConfig = row
-			break
-		}
-	}
-	if strictProfileScope && activeConfig != nil && activeConfig.AuthType == provider.AuthTypeAPIKey {
-		return false
-	}
-	return truthy(provider.GetAuthStatus(env, pyStr(activeRaw))["logged_in"])
+// True when a stored login of some provider reports signed in, api key providers ignored under strict scope
+func authStoreLoggedIn(strictProfileScope bool, env provider.PoolEnv) bool {
+	return provider.SignedInProvider(env, func(row *provider.Profile) bool {
+		return !strictProfileScope || row.AuthType != provider.AuthTypeAPIKey
+	}) != ""
 }
 
 // Whether at least one inference provider is usable, never creating one
@@ -451,7 +431,7 @@ func hasAnyProviderConfigured(ctx context.Context, strictProfileScope bool) bool
 		return true
 	}
 	env := provider.HomePoolEnv(h)
-	if authStoreLoggedIn(home.AuthPath(h), rows, strictProfileScope, env) {
+	if authStoreLoggedIn(strictProfileScope, env) {
 		return true
 	}
 	if m, ok := modelCfg.(map[string]any); ok {

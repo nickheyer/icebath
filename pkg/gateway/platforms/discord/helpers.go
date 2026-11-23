@@ -21,11 +21,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -403,10 +403,10 @@ func formatPrivilegedIntentsGuidance(needsMembers bool) string {
 		"  - Message Content Intent (required to read message text)",
 	}
 	if needsMembers {
-		lines = append(lines, "  - Server Members Intent (required for username allowlists and/or DISCORD_ALLOWED_ROLES)")
+		lines = append(lines, "  - Server Members Intent (required for usernames in "+settings.DiscordAllowFrom.Key+" and for "+settings.DiscordAllowedRoles.Key+")")
 	}
 	lines = append(lines,
-		"Fix: https://discord.com/developers/applications → your application → Bot → Privileged Gateway Intents → enable the intent(s) listed above → Save Changes, then restart the gateway.",
+		"Fix: https://discord.com/developers/applications → your application → Bot → Privileged Gateway Intents → enable the intent(s) listed above → Save Changes, then restart the background service.",
 		"Docs: .env.example, key DISCORD_BOT_TOKEN",
 	)
 	return strings.Join(lines, "\n")
@@ -507,20 +507,4 @@ func buildAllowedMentions(ctx context.Context, extra map[string]any) (*discordgo
 	}
 	am.RepliedUser = replied
 	return am, nil
-}
-
-// Seconds the gateway startup waits for Discord ready, overridable by env
-func discordReadyTimeoutSeconds() float64 {
-	raw := pystr.Strip(os.Getenv("ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT"))
-	if raw != "" {
-		v, err := pyint.ParseFloat(raw)
-		if err == nil {
-			if v > 0 {
-				return v
-			}
-			return 0
-		}
-		pkgLog().Warn(fmt.Sprintf("Ignoring invalid ICEBATH_GATEWAY_PLATFORM_CONNECT_TIMEOUT=%s", pyrepr.Repr(raw)))
-	}
-	return 30.0
 }

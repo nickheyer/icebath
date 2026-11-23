@@ -119,7 +119,7 @@ func (p *metaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 	case b64 != "":
 		imageRef, err = saveB64Image(env, b64, "meta", "webp")
 	case rawURL != "":
-		imageRef, err = saveURLImage(ctx, env, rawURL, "meta", 0, 0)
+		imageRef, err = saveURLImage(ctx, env, rawURL, "meta", 0, 0, baseURL)
 	default:
 		return fail("Meta response contained neither b64_json nor URL", "empty_response"), nil
 	}

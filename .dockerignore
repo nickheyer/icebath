@@ -1,9 +1,13 @@
 .git
 .gitignore
+.claude/
+.icebath/
 **/.venv
+**/.DS_Store
 dist/
 references/
 dev/
 site/
 .env
-**/.DS_Store
+icebath
+icebath.exe

@@ -2,11 +2,13 @@ package settings
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -35,10 +37,14 @@ type layers struct {
 	sig []any
 	// The user's config.yaml in canonical form, references unexpanded
 	doc map[string]any
-	// Every key the administrator pins with its value
+	// The administrator's config document, references expanded against the process env and nulls dropped
 	managed map[string]any
 	// The home's runtime state settings
 	state map[string]any
+	// Values the derived settings written in doc give the keys they stand for
+	derived map[string]any
+	// The keys of doc no setting reads were reported
+	unknownTold atomic.Bool
 }
 
 // Latest layers read per home
@@ -105,19 +111,31 @@ func configPathOf(h string) string {
 	return p
 }
 
-// Dotted keys of a managed document mapped to their values, references expanded against the process env
-func flattenManaged(doc map[string]any, prefix string, out map[string]any) {
-	for k, v := range doc {
-		key := k
-		if prefix != "" {
-			key = prefix + "." + k
-		}
-		if child, ok := v.(map[string]any); ok && len(child) > 0 {
-			flattenManaged(child, key, out)
-			continue
-		}
-		out[key] = config.Expand(v, os.LookupEnv)
+// The administrator's config document with references expanded against the process env, so a user cannot shadow a pinned literal
+func managedDoc() map[string]any {
+	doc, _ := config.Expand(config.LoadManagedConfig(), os.LookupEnv).(map[string]any)
+	if doc == nil {
+		return map[string]any{}
 	}
+	return doc
+}
+
+// Whether a setting's value is a mapping of named parts, which a pin may cover in part
+func takesMapping(e Entry) bool {
+	kind := e.Kind()
+	return kind == KindMap || kind == KindObject
+}
+
+// Value the administrator pins for a setting: whole when it replaces the setting, not whole when a mapping pins only the parts it names
+func managedPin(l *layers, e Entry) (v any, whole, pinned bool) {
+	v, ok := lookupPath(l.managed, e.Info().Key)
+	if !ok || v == nil {
+		return nil, false, false
+	}
+	if _, isMapping := v.(map[string]any); isMapping && takesMapping(e) {
+		return v, false, true
+	}
+	return v, true, true
 }
 
 // Layers of a home, read again only when config.yaml or the managed config changed; an unreadable config keeps the last good read
@@ -127,6 +145,7 @@ func layersOf(ctx context.Context, h string) *layers {
 	cached := layerCache.byHome[h]
 	layerCache.Unlock()
 	if cached != nil && slices.Equal(cached.sig, sig) {
+		tellUnknownKeys(h, cached)
 		return cached
 	}
 	next := &layers{sig: sig, doc: map[string]any{}, managed: map[string]any{}, state: map[string]any{}}
@@ -153,20 +172,40 @@ func layersOf(ctx context.Context, h string) *layers {
 			doc = raw
 		}
 		next.doc = doc
-		noteUnknownKeys(h, doc)
+		next.derived = derivedCompanions(ctx, doc)
 	}
-	flattenManaged(config.LoadManagedConfig(), "", next.managed)
+	next.managed = managedDoc()
+	tellMisfits(ctx, h, next)
 	layerCache.Lock()
 	layerCache.byHome[h] = next
 	layerCache.Unlock()
+	tellUnknownKeys(h, next)
 	return next
 }
 
-// Keys already reported as unknown, per home
-var unknownNoted = struct {
+// Notices already given, so a person hears of each problem once per home
+var noticesGiven = struct {
 	sync.Mutex
 	seen map[string]bool
 }{seen: map[string]bool{}}
+
+// Whether a notice is given for the first time
+func firstNotice(parts ...string) bool {
+	id := strings.Join(parts, "\x00")
+	noticesGiven.Lock()
+	defer noticesGiven.Unlock()
+	if noticesGiven.seen[id] {
+		return false
+	}
+	noticesGiven.seen[id] = true
+	return true
+}
+
+// Whether every settings block a plugin declares is registered, so a key no setting names is truly unknown
+var pluginKeysKnown atomic.Bool
+
+// Marks the settings blocks of every discovered plugin as registered, which lets the notices about unknown config keys out
+func PluginKeysRegistered() { pluginKeysKnown.Store(true) }
 
 // Dotted sections that hold registered keys, rebuilt when the registry grows
 var sectionCache = struct {
@@ -202,34 +241,200 @@ func nextDot(key string, i int) int {
 	return i + 1 + j
 }
 
-// Logs one plain line for each key of a config file no setting reads, once per home and key; the value is ignored
-func noteUnknownKeys(h string, doc map[string]any) {
-	var unknown []string
+// Walks a stored document, handing each value a setting covers to known and each key no setting reads to unknown
+func walkStored(doc map[string]any, known func(e Entry, key string, v any), unknown func(key string)) {
 	var walk func(m map[string]any, prefix string)
 	walk = func(m map[string]any, prefix string) {
 		for k, v := range m {
 			path := prefix + k
-			if FindKey(path) != nil {
+			if e := FindKey(path); e != nil {
+				if known != nil {
+					known(e, path, v)
+				}
 				continue
 			}
 			if child, isMap := v.(map[string]any); isMap && isSection(path) {
 				walk(child, path+".")
 				continue
 			}
-			unknown = append(unknown, path)
+			if unknown != nil {
+				unknown(path)
+			}
 		}
 	}
 	walk(doc, "")
+}
+
+// Logs one plain line for each key of a home's config.yaml no setting reads, once per home and key, as soon as the plugin settings blocks are registered
+func tellUnknownKeys(h string, l *layers) {
+	if !pluginKeysKnown.Load() || l.unknownTold.Load() || l.unknownTold.Swap(true) {
+		return
+	}
+	var unknown []string
+	walkStored(l.doc, func(e Entry, key string, _ any) {
+		if e.Info().State {
+			unknown = append(unknown, key)
+		}
+	}, func(key string) { unknown = append(unknown, key) })
 	slices.Sort(unknown)
-	for _, path := range unknown {
-		unknownNoted.Lock()
-		first := !unknownNoted.seen[h+"\x00"+path]
-		unknownNoted.seen[h+"\x00"+path] = true
-		unknownNoted.Unlock()
-		if first {
-			pkgLog().Warn("config.yaml holds " + path + ", which is not a setting; it is ignored")
+	for _, key := range unknown {
+		if firstNotice(h, "unknown", key) {
+			pkgLog().Warn(storePlace() + " holds " + key + ", which is not a setting; it is ignored")
 		}
 	}
+	var unknownPins []string
+	walkStored(l.managed, nil, func(key string) { unknownPins = append(unknownPins, key) })
+	slices.Sort(unknownPins)
+	for _, key := range unknownPins {
+		if firstNotice(managedPlace, "unknown", key) {
+			pkgLog().Warn(managedPlace + " holds " + key + ", which is not a setting; it is ignored")
+		}
+	}
+}
+
+// Name of the administrator's config file in notices
+const managedPlace = "The administrator's config.yaml"
+
+// Name notices give the place a home's settings are stored: the file, or Remote Config where a config service holds them
+func storePlace() string {
+	if backend := strings.TrimSpace(os.Getenv(config.BackendEnv)); backend == "" || strings.EqualFold(backend, "file") {
+		return "config.yaml"
+	}
+	return "Remote Config"
+}
+
+// Calls report for every part of a stored value its entry does not take, with the full key of the part; field is nil for a name an object has no field for
+func eachMisfit(e Entry, key string, v any, report func(key string, v any, field Entry)) {
+	if child, isChild := e.(*mapChild); isChild {
+		e = child.Entry
+	}
+	if v == nil {
+		return
+	}
+	if _, ok := e.read(v); !ok {
+		report(key, v, e)
+		return
+	}
+	switch t := e.(type) {
+	case *Map:
+		if t.Value == nil {
+			return
+		}
+		for name, item := range config.AsMap(v) {
+			eachMisfit(t.Value, key+"."+name, item, report)
+		}
+	case *Object:
+		for name, item := range config.AsMap(v) {
+			if f := t.Field(name); f != nil {
+				eachMisfit(f, key+"."+name, item, report)
+			} else {
+				report(key+"."+name, item, nil)
+			}
+		}
+	}
+}
+
+// What a setting takes, said the way a refusal of the same value says it
+func takes(e Entry, v any) string {
+	if _, err := e.Coerce(v); err != nil {
+		return reasonOf(err)
+	}
+	switch e.Kind() {
+	case KindList:
+		return "takes a list"
+	case KindMap, KindObject:
+		return "takes a mapping"
+	}
+	return "takes another kind of value"
+}
+
+// Plain text of a stored value for a notice
+func storedText(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return "nothing"
+	case string:
+		return fmt.Sprintf("%q", t)
+	case []any:
+		return "a list"
+	case map[string]any:
+		return "a mapping"
+	}
+	return fmt.Sprint(v)
+}
+
+// Plain text of the default a setting falls back to
+func defaultText(e Entry) string {
+	row := Row{Value: e.DefaultValue()}
+	schemaOf(&row, e)
+	return valueText(row)
+}
+
+// Tells the person once about every stored value of a home a setting does not take: where it is, the key, the value, what the setting takes and what is used instead
+func tellMisfits(ctx context.Context, h string, l *layers) {
+	tell := func(place string) func(e Entry, key string, v any) {
+		return func(e Entry, key string, v any) {
+			eachMisfit(e, key, config.Expand(v, config.EnvRefLookupContext(ctx)), func(part string, bad any, field Entry) {
+				shown := storedText(bad)
+				if !firstNotice(h, place, part, shown) {
+					return
+				}
+				switch {
+				case field == nil:
+					pkgLog().Warn(place + " holds " + part + ", which is not a setting; it is ignored")
+				case part == e.Info().Key:
+					pkgLog().Warn(fmt.Sprintf("%s has %s set to %s, but it %s. Using the default (%s) instead.", place, part, shown, takes(field, bad), defaultText(e)))
+				default:
+					pkgLog().Warn(fmt.Sprintf("%s has %s set to %s, but it %s. It is ignored.", place, part, shown, takes(field, bad)))
+				}
+			})
+		}
+	}
+	walkStored(l.doc, func(e Entry, key string, v any) {
+		if !e.Info().State {
+			tell(storePlace())(e, key, v)
+		}
+	}, nil)
+	walkStored(l.state, func(e Entry, key string, v any) {
+		if e.Info().State {
+			tell(stateFile)(e, key, v)
+		}
+	}, nil)
+	walkStored(l.managed, tell(managedPlace), nil)
+}
+
+// Settings that store nothing of their own and write the keys they stand for instead
+var derivedEntries = sync.OnceValue(func() []Entry {
+	var out []Entry
+	for _, e := range All() {
+		if m := e.Info(); m.Derive != nil && m.Companions != nil {
+			out = append(out, e)
+		}
+	}
+	return out
+})
+
+// Values a derived setting written by hand in a config document gives the keys it stands for, so the written word applies wherever those keys are not set themselves
+func derivedCompanions(ctx context.Context, doc map[string]any) map[string]any {
+	var out map[string]any
+	for _, e := range derivedEntries() {
+		m := e.Info()
+		raw, set := storedValue(ctx, doc, m.Key)
+		if !set || raw == nil {
+			continue
+		}
+		value, err := e.Coerce(raw)
+		if err != nil || value == nil || (m.Validate != nil && m.Validate(value) != nil) {
+			continue
+		}
+		for _, kv := range m.Companions(value) {
+			if out == nil {
+				out = map[string]any{}
+			}
+			out[kv.Key] = kv.Value
+		}
+	}
+	return out
 }
 
 // Forgets every cached read so the next resolve reads the files again
@@ -270,6 +475,9 @@ func globalValue(ctx context.Context, e Entry, l *layers) (any, bool) {
 		}
 		return v, true
 	}
+	if v, ok := l.derived[m.Key]; ok && !m.State {
+		return v, true
+	}
 	return nil, false
 }
 
@@ -282,12 +490,11 @@ func Resolve(ctx context.Context, key string) (Value, error) {
 	return resolveEntry(ctx, e), nil
 }
 
-// Typed value of a stored value, the default when it does not fit
+// Typed value of a stored value, the default when it does not fit; tellMisfits has told the person about the misfit
 func typedOr(e Entry, v any) any {
 	if typed, ok := e.read(v); ok {
 		return typed
 	}
-	pkgLog().Debug("settings: stored value does not fit, using the default", "key", e.Info().Key)
 	typed, _ := e.read(e.DefaultValue())
 	return typed
 }
@@ -302,13 +509,28 @@ func resolveEntry(ctx context.Context, e Entry) Value {
 		return Value{Key: m.Key, Value: e.DefaultValue(), Source: SourceDefault}
 	}
 	l := layersOf(ctx, homeDir(ctx))
-	if v, ok := l.managed[m.Key]; ok {
-		return Value{Key: m.Key, Value: v, Source: SourceManaged, Locked: true}
+	pin, whole, pinned := managedPin(l, e)
+	if pinned && whole {
+		return Value{Key: m.Key, Value: pin, Source: SourceManaged, Locked: true}
 	}
+	v := resolveUnpinned(ctx, e, l)
+	if pinned {
+		v.Value, v.Source = config.DeepMerge(config.AsMap(v.Value), pin.(map[string]any)), SourceManaged
+	}
+	return v
+}
+
+// Value of a setting from every layer under the administrator's pins: env override, session, platform, global, default
+func resolveUnpinned(ctx context.Context, e Entry, l *layers) Value {
+	m := e.Info()
 	if _, isSecret := e.(*Secret); !isSecret && m.Env != "" {
 		if v, ok := os.LookupEnv(m.Env); ok && strings.TrimSpace(v) != "" {
-			if coerced, err := e.Coerce(v); err == nil {
+			coerced, err := e.Coerce(v)
+			if err == nil {
 				return Value{Key: m.Key, Value: coerced, Source: SourceEnv}
+			}
+			if firstNotice("env", m.Env, v) {
+				pkgLog().Warn(fmt.Sprintf("The %s environment variable is set to %q, but %s %s. It is ignored.", m.Env, v, m.Key, reasonOf(err)))
 			}
 		}
 	}

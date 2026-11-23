@@ -186,11 +186,11 @@ func exportHTMLEscape(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#x27;").Replace(s)
 }
 
-// Appends every non system message of a session under headings of the given level, tool output folded
+// Appends every non system message of a session under headings of the given level, tool output folded and shell lines among them by time
 func appendExportSessionMessages(lines []string, session *pyjson.Object, headingLevel int) ([]string, error) {
 	marker := strings.Repeat("#", headingLevel)
 	var visible []*pyjson.Object
-	for _, message := range exportMessageRows(session) {
+	for _, message := range exportDisplayRows(session) {
 		if rowValue(message, "role") != "system" {
 			visible = append(visible, message)
 		}
@@ -207,6 +207,10 @@ func appendExportSessionMessages(lines []string, session *pyjson.Object, heading
 		text, err := exportMessageText(rowValue(message, "content"))
 		if err != nil {
 			return nil, err
+		}
+		if role == shellLineRole {
+			lines = append(lines, marker+" Shell"+suffix, "", exportFencedText(text, "text"), "")
+			continue
 		}
 		if role == "tool" {
 			toolName := exportTextOr(message, "tool_name", "")

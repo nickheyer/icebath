@@ -58,26 +58,24 @@ func mustSanitize(t *testing.T, env *Env, base, extra map[string]string) map[str
 
 func clearTempVars(t *testing.T) {
 	t.Helper()
-	for _, v := range []string{"TERMINAL_TEMP_DIR", "TMPDIR", "TMP", "TEMP"} {
+	for _, v := range []string{"TMPDIR", "TMP", "TEMP"} {
 		t.Setenv(v, "")
 		os.Unsetenv(v)
 	}
 }
 
-func TestLocalTempDirOverrideHonored(t *testing.T) {
-	clearTempVars(t)
-	target := t.TempDir()
-	l := newUninitLocalEnv(t, newTestToolEnv(t), target, map[string]string{"TERMINAL_TEMP_DIR": target})
-	if got := l.TempDir(); filepath.Clean(got) != filepath.Clean(target) {
-		t.Fatalf("got %q want %q", got, target)
-	}
+// Tool env whose home config.yaml names dir as the terminal temp folder
+func tempDirSettingEnv(t *testing.T, dir string) *Env {
+	t.Helper()
+	env := newTestToolEnv(t)
+	writeHomeConfig(t, env, "terminal:\n  temp_dir: '"+dir+"'\n")
+	return env
 }
 
-func TestLocalTempDirFromProcessEnv(t *testing.T) {
+func TestLocalTempDirSettingHonored(t *testing.T) {
 	clearTempVars(t)
 	target := t.TempDir()
-	t.Setenv("TERMINAL_TEMP_DIR", target)
-	l := newUninitLocalEnv(t, newTestToolEnv(t), target, nil)
+	l := newUninitLocalEnv(t, tempDirSettingEnv(t, target), target, nil)
 	if got := l.TempDir(); filepath.Clean(got) != filepath.Clean(target) {
 		t.Fatalf("got %q want %q", got, target)
 	}
@@ -86,7 +84,7 @@ func TestLocalTempDirFromProcessEnv(t *testing.T) {
 func TestLocalTempDirNonExistentFallsThrough(t *testing.T) {
 	clearTempVars(t)
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	l := newUninitLocalEnv(t, newTestToolEnv(t), t.TempDir(), map[string]string{"TERMINAL_TEMP_DIR": missing})
+	l := newUninitLocalEnv(t, tempDirSettingEnv(t, missing), t.TempDir(), nil)
 	if l.TempDir() == missing {
 		t.Fatal("missing path must not be used")
 	}
@@ -96,7 +94,7 @@ func TestLocalTempDirEmptyFallsThrough(t *testing.T) {
 	clearTempVars(t)
 	tmp := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
-	l := newUninitLocalEnv(t, newTestToolEnv(t), tmp, map[string]string{"TERMINAL_TEMP_DIR": ""})
+	l := newUninitLocalEnv(t, tempDirSettingEnv(t, ""), tmp, nil)
 	if got := l.TempDir(); filepath.Clean(got) != filepath.Clean(tmp) {
 		t.Fatalf("got %q", got)
 	}
@@ -307,7 +305,7 @@ func shellInitEnv(t *testing.T, files []string, auto bool) *Env {
 	for _, f := range files {
 		raw = append(raw, f)
 	}
-	env.Config = config.Tree{"terminal": map[string]any{"shell_init_files": raw, "auto_source_bashrc": auto}}
+	writeHomeConfigDoc(t, env, map[string]any{"terminal": map[string]any{"shell_init_files": raw, "auto_source_bashrc": auto}})
 	return env
 }
 

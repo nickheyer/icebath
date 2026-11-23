@@ -13,7 +13,7 @@ import (
 
 const geminiNoFilterURL = "https://generativelanguage.googleapis.com/v1beta"
 
-// Writes the config the patched _iter_custom_providers or pool key lookup answers from
+// Writes the config.yaml of the active home whose providers entries the pool key lookup answers from
 func writeCustomProvidersConfig(t *testing.T, body string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(home.Dir(context.Background()), "config.yaml"), []byte(body), 0o600); err != nil {
@@ -22,7 +22,7 @@ func writeCustomProvidersConfig(t *testing.T, body string) {
 	config.ResetCache()
 }
 
-const geminiConfig = "custom_providers:\n  - name: Gemini No Filter\n    provider_key: gemini-no-filter\n    base_url: " + geminiNoFilterURL + "\n"
+const geminiConfig = "providers:\n  gemini-no-filter:\n    name: Gemini No Filter\n    base_url: " + geminiNoFilterURL + "\n"
 
 // Pool statuses keyed by entry id, the observable state a guarded recovery must leave alone
 func poolStatuses(pool *provider.Pool) map[string]string {
@@ -78,7 +78,7 @@ func TestCustomPoolMismatchGuard(t *testing.T) {
 	})
 	t.Run("test_unrelated_custom_pool_still_guarded", func(t *testing.T) {
 		pool := seededCredentialPool(t, "custom:fireworks", poolRow(0, "fw-a", nil), poolRow(1, "fw-b", nil))
-		writeCustomProvidersConfig(t, "custom_providers:\n  - name: fireworks\n    base_url: https://api.fireworks.ai/inference/v1\n  - name: other\n    base_url: https://other-endpoint.example/v1\n")
+		writeCustomProvidersConfig(t, "providers:\n  fireworks:\n    base_url: https://api.fireworks.ai/inference/v1\n  other:\n    base_url: https://other-endpoint.example/v1\n")
 		swaps := recordSwaps(t)
 		before := poolStatuses(pool)
 		a := &AIAgent{provider: "custom", credentialPool: pool}

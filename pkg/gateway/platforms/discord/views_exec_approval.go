@@ -41,10 +41,6 @@ type execApprovalView struct {
 // Exec approval view with the tiers the prompt allows and the optional admin gate
 func (a *DiscordAdapter) newExecApprovalView(ctx context.Context, sessionKey string, users, roles strSet, requireAdmin bool, adminUserIDs map[string]struct{},
 	allowPermanent, allowSession, smartDenied bool, requestID string) (*execApprovalView, error) {
-	timeout, err := ReadDiscordPromptTimeout(ctx)
-	if err != nil {
-		return nil, err
-	}
 	admins := strSet{}
 	for id := range adminUserIDs {
 		if s := pystr.Strip(id); s != "" {
@@ -52,7 +48,7 @@ func (a *DiscordAdapter) newExecApprovalView(ctx context.Context, sessionKey str
 		}
 	}
 	v := &execApprovalView{sessionKey: sessionKey, requestID: requestID, requireAdmin: requireAdmin, adminUserIDs: admins}
-	v.initView(a, "ExecApprovalView", v, users, roles, float64(timeout))
+	v.initView(a, "ExecApprovalView", v, users, roles, a.promptTimeoutSeconds(ctx))
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, b := range []struct {

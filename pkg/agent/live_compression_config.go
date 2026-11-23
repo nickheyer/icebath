@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
-	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Compressor integer settings with the minimum each live value is clamped to
@@ -250,10 +249,11 @@ func (a *AIAgent) ApplyLiveCompressionConfig(ctx context.Context, cfg map[string
 		text := pystr.Lower(pyrepr.Str(enabledRaw))
 		a.compressionEnabled = text == "true" || text == "1" || text == "yes"
 	}
-	a.codexResponsesNativeCompaction = isTruthyValue(cfgValue(compression, "codex_responses_native", false), false)
+	appServerAuto, responsesNative, compactThreshold := compressionCodexSettings(compression)
+	a.codexAppServerAutoCompaction, a.codexResponsesNativeCompaction = appServerAuto, responsesNative
 	a.codexResponsesCompactThreshold = 0
-	if n, set := settings.CompressionCodexResponsesCompactThreshold.Lookup(ctx); set && n > 0 {
-		a.codexResponsesCompactThreshold = float64(n)
+	if compactThreshold != nil {
+		a.codexResponsesCompactThreshold = float64(*compactThreshold)
 	}
 	idleRaw := cfgValue(compression, "idle_compact_after_seconds", 0)
 	if !pyrepr.Truthy(idleRaw) {

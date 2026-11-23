@@ -362,9 +362,8 @@ func oauthRow(provider, token string) map[string]any {
 
 func authStore(token, static string) map[string]any {
 	return map[string]any{
-		"version": 1,
-		"providers": map[string]any{"openai-codex": map[string]any{"tokens": map[string]any{
-			"access_token": "access-" + token, "refresh_token": "refresh-" + token}}},
+		"version":   2,
+		"providers": map[string]any{},
 		"credential_pool": map[string]any{
 			"openai-codex": []any{oauthRow("openai-codex", token)},
 			"openrouter":   []any{map[string]any{"id": "static", "auth_type": "api_key", "priority": 0, "api_key": static}},
@@ -415,9 +414,8 @@ func TestQuickSnapshotRestoreKeepsLiveOauthAndRestoresStaticAuth(t *testing.T) {
 	}
 	pool := restored["credential_pool"].(map[string]any)
 	codex := pool["openai-codex"].([]any)[0].(map[string]any)
-	tokens := restored["providers"].(map[string]any)["openai-codex"].(map[string]any)["tokens"].(map[string]any)
 	static := pool["openrouter"].([]any)[0].(map[string]any)
-	if codex["refresh_token"] != "refresh-rotated" || tokens["refresh_token"] != "refresh-rotated" || static["api_key"] != "snapshot-static" {
+	if codex["refresh_token"] != "refresh-rotated" || static["api_key"] != "snapshot-static" {
 		t.Fatal(restored)
 	}
 	if st, _ := os.Stat(filepath.Join(h, "auth.json")); st.Mode().Perm() != 0o600 {

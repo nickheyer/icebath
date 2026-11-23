@@ -78,15 +78,11 @@ func numberedIndex(val string) (*big.Int, bool) {
 	return new(big.Int).Sub(n, big.NewInt(1)), true
 }
 
-// Provider menu index with arrow keys, a numbered fallback without curses, false when the user or the TUI cancels
+// Provider menu index with arrow keys, a numbered fallback without curses, false when the user cancels
 func promptProviderChoice(out io.Writer, choices []string, def int, title string) (int, bool) {
-	idx, err := flowCursesChoiceFn(title, choices, def, "")
-	switch {
-	case err == nil && idx >= 0:
+	if idx, err := flowCursesChoiceFn(title, choices, def, ""); err == nil && idx >= 0 {
 		fmt.Fprintln(out)
 		return idx, true
-	case err == nil && hostedAsker() != nil:
-		return 0, false
 	}
 	printNumbered(out, title, choices, def)
 	fmt.Fprintln(out)
@@ -250,14 +246,8 @@ func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save
 		fmt.Fprintln(out, "  ✓ Setup-token saved.")
 		return true, false, nil
 	}
-	hosted := hostedAsker() != nil
-	if hosted {
-		flowSay(out, "", "  Running 'claude setup-token' in a terminal window — authorize in the browser it opens.",
-			"  The token it prints is picked up and saved automatically.", "")
-	} else {
-		flowSay(out, "", "  Running 'claude setup-token' — follow the prompts below.",
-			"  A browser window will open for you to authorize access.", "")
-	}
+	flowSay(out, "", "  Running 'claude setup-token' — follow the prompts below.",
+		"  A browser window will open for you to authorize access.", "")
 	token, err := anthRunOAuthSetupTokenFn(env)
 	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		flowSay(out, "", "  The 'claude' CLI is required for OAuth login.", "", "  To install and authenticate:", "",
@@ -296,11 +286,7 @@ func runAnthropicOAuthFlow(ctx context.Context, env PoolEnv, out io.Writer, save
 		fmt.Fprintln(out, "  ✓ OAuth credentials saved.")
 		return true, nil
 	}
-	if hosted {
-		flowSay(out, "", "  The terminal window closed without printing a setup-token. Paste one here if you have it:", "")
-	} else {
-		flowSay(out, "", "  If the setup-token was displayed above, paste it here:", "")
-	}
+	flowSay(out, "", "  If the setup-token was displayed above, paste it here:", "")
 	saved, cancelled, perr := pasteToken("  Paste setup-token (or Enter to cancel): ")
 	if perr != nil {
 		return false, perr

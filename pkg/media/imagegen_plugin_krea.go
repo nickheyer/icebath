@@ -75,7 +75,7 @@ var (
 	kreaLoadConfig = func(env *tools.Env) map[string]any { return loadImageGenConfig(env, "") }
 	// Local cache path of a result URL with the save_url_image defaults
 	kreaSaveURLImage = func(ctx context.Context, env *tools.Env, rawURL, prefix string) (string, error) {
-		return saveURLImage(ctx, env, rawURL, prefix, 60*time.Second, 25*1024*1024)
+		return saveURLImage(ctx, env, rawURL, prefix, 60*time.Second, 25*1024*1024, kreaBaseURL)
 	}
 )
 

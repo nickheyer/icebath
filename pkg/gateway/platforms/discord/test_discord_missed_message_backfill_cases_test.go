@@ -11,9 +11,7 @@ import (
 // Adapter with backfill on, bot user 999 and channel 123 answering history with the given messages
 func backfillAdapter(t *testing.T, history string, channels ...*discordgo.Channel) *DiscordAdapter {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("DISCORD_MISSED_MESSAGE_BACKFILL", "true")
-	t.Setenv("DISCORD_ALLOW_ALL_USERS", "true")
-	a := newTestAdapter(t, nil)
+	a := newTestAdapter(t, map[string]any{"missed_message_backfill.enabled": true, "allow_all_users": true})
 	s := attachClient(t, a, "999", []string{"777"}, channels...)
 	api := newFakeDiscordAPI(t, s)
 	api.mu.Lock()
@@ -31,7 +29,7 @@ var backfillChannel = &discordgo.Channel{ID: "123", GuildID: "777", Name: "wiki-
 
 func TestConfiguredBotSenderIsLeftForSharedIngressPolicy(t *testing.T) {
 	a := backfillAdapter(t, `[]`, backfillChannel)
-	t.Setenv("DISCORD_ALLOW_BOTS", "mentions")
+	setDiscord(t, "allow_bots", "mentions")
 	m := backfillMessage("98", "42", true, "<@999> run this", backfillChannel, a.selfUser())
 	if !a.shouldBackfillDiscordMessage(context.Background(), m) {
 		t.Fatal("bot sender skipped")

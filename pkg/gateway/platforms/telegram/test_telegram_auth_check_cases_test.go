@@ -7,121 +7,93 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
-// Core whose config extra carries the overrides of the make adapter helper
-func authCore(extra map[string]any) *adapterCore {
+// Core with a closure message handler, the adapter state before the background service wires it
+func authCore() *adapterCore {
 	core := newTestCore()
-	core.base.Config.Extra = extra
 	core.base.SetMessageHandler(closureHandler)
 	return core
 }
 
-// Message of the make message helper
+// Message from a user in a chat of the given Telegram type
 func authMessage(fromUserID, chatID int64, chatType string) *models.Message {
 	return &models.Message{ID: 42, Text: "hello", Chat: models.Chat{ID: chatID, Type: models.ChatType(chatType), Title: "Test"},
 		From: &models.User{ID: fromUserID, FirstName: "Test", LastName: "User"}}
 }
 
-// Runner double answering the auth chain and the unauthorized DM behavior
-type authRunner struct {
-	behavior string
-	allow    func(source *gateway.SessionSource) bool
-	seen     []*gateway.SessionSource
+// One call of the access check with the sender and chat it was asked about
+type accessQuestion struct {
+	userID, chatType, chatID string
 }
 
-func (r *authRunner) IsUserAuthorized(_ context.Context, source *gateway.SessionSource, _ bool) (bool, error) {
-	r.seen = append(r.seen, source)
-	return r.allow(source), nil
+// Access check of the background service allowing only user 111, recording every question
+func allowOnly111(core *adapterCore) *[]accessQuestion {
+	seen := &[]accessQuestion{}
+	core.base.SetAuthorizationCheck(func(userID string, chatType, chatID *string, _ gateway.AuthorizationOpts) (any, error) {
+		*seen = append(*seen, accessQuestion{userID, *chatType, *chatID})
+		return userID == "111", nil
+	})
+	return seen
 }
 
-func (r *authRunner) GetUnauthorizedDMBehavior(_ context.Context, platform gateway.Platform, _ *string) string {
+// Background service double answering how a profile treats a private chat from someone not allowed
+type dmBehaviorRunner struct{ behavior string }
+
+func (r *dmBehaviorRunner) GetUnauthorizedDMBehavior(_ context.Context, platform gateway.Platform, _ *string) string {
 	if platform != gateway.PlatformTelegram {
 		panic("wrong platform")
 	}
 	return r.behavior
 }
 
-func (r *authRunner) handle(context.Context, *gateway.MessageEvent) (any, error) { return nil, nil }
-
-// Runner allowing only user 111
-func userRunner(behavior string) *authRunner {
-	return &authRunner{behavior: behavior, allow: func(s *gateway.SessionSource) bool { return s.UserID != nil && *s.UserID == "111" }}
-}
-
-func bindRunner(core *adapterCore, runner *authRunner) {
-	core.base.SetBoundMessageHandler(runner, runner.handle)
-}
-
-func TestIsUserAuthorizedFromMessageAllowFrom(t *testing.T) {
-	core := authCore(map[string]any{"allow_from": []any{"111", "222"}})
+func TestIntakeFollowsTheAccessCheck(t *testing.T) {
+	core := authCore()
+	allowOnly111(core)
 	ctx := context.Background()
-	if !core.isUserAuthorizedFromMessage(ctx, authMessage(111, -100, "dm")) {
+	if !core.isUserAuthorizedFromMessage(ctx, authMessage(111, 111, "private")) {
 		t.Fatal("111 must pass")
 	}
-	if core.isUserAuthorizedFromMessage(ctx, authMessage(333, -100, "dm")) {
+	if core.isUserAuthorizedFromMessage(ctx, authMessage(333, 333, "private")) {
 		t.Fatal("333 must be rejected")
 	}
 }
 
-func TestAllowlistDmWithExplicitPairBehaviorReachesGateway(t *testing.T) {
-	t.Setenv("TELEGRAM_ALLOWED_USERS", "111")
-	core := authCore(map[string]any{})
-	bindRunner(core, userRunner("pair"))
-	if !core.isUserAuthorizedFromMessage(context.Background(), authMessage(999, 999, "private")) {
-		t.Fatal("pairing DM must reach the gateway")
+func TestUnauthorizedDmReachesGatewayUnlessTheProfileIgnoresStrangers(t *testing.T) {
+	for behavior, want := range map[string]bool{"pair": true, "decline": true, "ignore": false} {
+		core := authCore()
+		allowOnly111(core)
+		core.base.GatewayRunner = &dmBehaviorRunner{behavior: behavior}
+		if got := core.isUserAuthorizedFromMessage(context.Background(), authMessage(999, 999, "private")); got != want {
+			t.Fatalf("%s: stranger DM passed = %v, want %v", behavior, got, want)
+		}
 	}
 }
 
-func TestAllowlistDmWithoutPairBehaviorStillEarlyRejects(t *testing.T) {
-	t.Setenv("TELEGRAM_ALLOWED_USERS", "111")
-	core := authCore(map[string]any{})
-	bindRunner(core, userRunner("ignore"))
-	if core.isUserAuthorizedFromMessage(context.Background(), authMessage(999, 999, "private")) {
-		t.Fatal("ignored DM must be rejected early")
-	}
-}
-
-func TestAllowFromDmWithPairOverrideReachesGateway(t *testing.T) {
-	core := authCore(map[string]any{"allow_from": []any{"111"}, "unauthorized_dm_behavior": "pair"})
-	if !core.isUserAuthorizedFromMessage(context.Background(), authMessage(999, 999, "dm")) {
-		t.Fatal("pair override must reach the gateway")
-	}
-}
-
-func TestAllowlistGroupWithPairBehaviorStillEarlyRejects(t *testing.T) {
-	t.Setenv("TELEGRAM_ALLOWED_USERS", "111")
-	core := authCore(map[string]any{"group_allow_from": []any{"111"}})
-	bindRunner(core, userRunner("pair"))
+func TestUnauthorizedGroupMessageIsRejectedEvenWhenStrangersArePaired(t *testing.T) {
+	core := authCore()
+	allowOnly111(core)
+	core.base.GatewayRunner = &dmBehaviorRunner{behavior: "pair"}
 	if core.isUserAuthorizedFromMessage(context.Background(), authMessage(999, -100, "group")) {
 		t.Fatal("groups never pair")
 	}
 }
 
-func TestRunnerAuthGetsGroupUserAllowlistContext(t *testing.T) {
-	t.Setenv("TELEGRAM_GROUP_ALLOWED_USERS", "111")
-	core := authCore(map[string]any{})
-	runner := &authRunner{allow: func(s *gateway.SessionSource) bool {
-		return s.ChatType == "group" && s.ChatID == "-100" && s.UserID != nil && *s.UserID == "111"
-	}}
-	bindRunner(core, runner)
-	if !core.isUserAuthorizedFromMessage(context.Background(), authMessage(111, -100, "group")) {
+func TestAccessCheckGetsTheGroupContext(t *testing.T) {
+	core := authCore()
+	seen := allowOnly111(core)
+	if !core.isUserAuthorizedFromMessage(context.Background(), authMessage(111, -100, "supergroup")) {
 		t.Fatal("group member must pass")
 	}
-	if len(runner.seen) == 0 || runner.seen[0].ChatType != "group" || runner.seen[0].ChatID != "-100" {
-		t.Fatalf("runner saw %v", runner.seen)
+	if len(*seen) != 1 || (*seen)[0] != (accessQuestion{"111", "group", "-100"}) {
+		t.Fatalf("access check saw %v", *seen)
 	}
 }
 
-func TestGroupAllowlistAuthorizedUnderMultiplexClosureHandler(t *testing.T) {
-	t.Setenv("TELEGRAM_GROUP_ALLOWED_CHATS", "-100123")
-	core := authCore(map[string]any{"group_allowed_chats": []any{"-100123"}})
-	if core.base.MessageHandlerOwner() != nil {
-		t.Fatal("closure handler has no owner")
-	}
+func TestAccessCheckDecidesByChat(t *testing.T) {
+	core := authCore()
 	core.base.SetAuthorizationCheck(func(_ string, _, chatID *string, _ gateway.AuthorizationOpts) (any, error) {
-		return chatID != nil && pyrepr.Str(*chatID) == "-100123", nil
+		return chatID != nil && *chatID == "-100123", nil
 	})
 	ctx := context.Background()
 	if !core.isUserAuthorizedFromMessage(ctx, authMessage(555, -100123, "group")) {
@@ -132,15 +104,9 @@ func TestGroupAllowlistAuthorizedUnderMultiplexClosureHandler(t *testing.T) {
 	}
 }
 
-func TestMultiplexClosureHandlerWithoutCallbackFallsBackToEnv(t *testing.T) {
-	t.Setenv("TELEGRAM_GROUP_ALLOWED_CHATS", "-100123")
-	t.Setenv("TELEGRAM_ALLOWED_USERS", "111")
-	core := authCore(map[string]any{"group_allowed_chats": []any{"-100123"}})
-	ctx := context.Background()
-	if !core.isUserAuthorizedFromMessage(ctx, authMessage(111, -100123, "group")) {
-		t.Fatal("env allowlisted user must pass")
-	}
-	if core.isUserAuthorizedFromMessage(ctx, authMessage(555, -100123, "group")) {
-		t.Fatal("env unlisted user must be rejected")
+func TestIntakeWithoutAnAccessCheckLeavesTheDecisionToAdmission(t *testing.T) {
+	core := authCore()
+	if !core.isUserAuthorizedFromMessage(context.Background(), authMessage(555, -100123, "group")) {
+		t.Fatal("an adapter no background service wired must hand the message on")
 	}
 }

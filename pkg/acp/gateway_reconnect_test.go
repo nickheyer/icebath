@@ -311,7 +311,7 @@ func TestPickerIdentityReachesPreparedMutation(t *testing.T) {
 		t.Run("model_"+tc.modelID, func(t *testing.T) {
 			dir := testingHome(t)
 			config.ResetCache()
-			if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("custom_providers:\n  - name: fixture\n    base_url: http://127.0.0.1:9/v1\n"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("providers:\n  fixture:\n    base_url: http://127.0.0.1:9/v1\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			a := NewGatewayACPAgent()

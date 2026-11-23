@@ -62,7 +62,7 @@ type TelegramAdapter struct {
 	admission    *UpdateAdmission
 	coreHandlers map[Handler]struct{}
 
-	mentionPatterns         []*regexp2.Regexp
+	mentionPatterns         mentionPatternCache
 	replyToMode             string
 	disableLinkPreviews     bool
 	richMessagesEnabled     bool
@@ -103,19 +103,26 @@ type TelegramAdapter struct {
 	approvalCounter         int
 	slashConfirmState       map[string]string
 	clarifyState            map[string]string
-	notificationsMode       string
 	statusMessageIDs        *pydict.Dict[[2]string, string]
 	lastOverflowPreview     map[[2]string]string
 	topicTransferFn         TopicTransferFn
 	reconnectWaitSeconds    float64
 	reconnectPollInterval   float64
 	homeDir                 string
+	settingsCtx             context.Context
+}
+
+// Compiled mention word patterns with the setting value they were compiled from
+type mentionPatternCache struct {
+	mu       sync.Mutex
+	source   string
+	compiled []*regexp2.Regexp
 }
 
 // Adapter of the platform config with every constructor default and extra derived setting
 func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *TelegramAdapter {
 	a := &TelegramAdapter{reconnectWaitSeconds: reconnectWaitSeconds, reconnectPollInterval: reconnectPollInterval,
-		notificationsMode: "important", retriggerTasks: map[string]*gateway.AdapterTask{}, retriggerAt: map[string]float64{},
+		retriggerTasks: map[string]*gateway.AdapterTask{}, retriggerAt: map[string]float64{},
 		pendingPhotoBatches: map[string]*gateway.MessageEvent{}, pendingPhotoBatchTasks: map[string]*gateway.AdapterTask{},
 		mediaGroupEvents: map[string]*gateway.MessageEvent{}, mediaGroupTasks: map[string]*gateway.AdapterTask{},
 		committedFlushTasks: map[[2]string]*gateway.AdapterTask{}, dmTopics: pydict.New[string, int64](),
@@ -132,8 +139,8 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 	a.polling = newPollingLifecycle(a)
 	extra := cfg.Extra
 	a.homeDir = home.Dir(ctx)
+	a.settingsCtx = home.WithOverride(context.WithoutCancel(ctx), a.homeDir)
 	a.admission = NewUpdateAdmission(a.homeDir)
-	a.mentionPatterns = a.compileMentionPatterns(ctx)
 	a.replyToMode = "first"
 	if mode := cfg.ReplyToMode; pyTruthy(mode) {
 		a.replyToMode = pyrepr.Str(mode)

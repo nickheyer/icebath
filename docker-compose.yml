@@ -1,8 +1,8 @@
-# Gateway on the host network, sharing ~/.icebath as the data volume.
+# Background service on the host network, sharing ~/.icebath as the data volume.
 # Files land owned by your host user when ICEBATH_UID and ICEBATH_GID match it:
 #   ICEBATH_UID=$(id -u) ICEBATH_GID=$(id -g) docker compose up -d
 services:
-  gateway:
+  icebath:
     build: .
     image: icebath
     container_name: icebath

@@ -13,9 +13,6 @@ import (
 // Provider ids that select the Copilot API profile
 var copilotProviderIDs = map[string]bool{"copilot": true, "github-copilot": true, "github-models": true, "github-model": true, "github": true}
 
-// Pool row sources a user created through an icebath Copilot sign in
-var copilotExplicitPoolSources = map[string]bool{"manual": true, "device_code": true}
-
 // Context key marking a Copilot flow the user started
 type copilotUserFlowKey struct{}
 
@@ -117,8 +114,7 @@ func copilotPoolHasExplicitRow(h string) (bool, error) {
 		return false, err
 	}
 	for _, row := range rows {
-		source := strings.ToLower(pystr.Strip(cpOrStr(row["source"])))
-		if copilotExplicitPoolSources[source] || strings.HasPrefix(source, "manual:") {
+		if isManualSource(pystr.Strip(cpOrStr(row["source"]))) {
 			return true, nil
 		}
 	}

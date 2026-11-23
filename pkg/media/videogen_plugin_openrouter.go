@@ -550,7 +550,7 @@ func (p *openRouterVideoGenProvider) poll(ctx context.Context, client *http.Clie
 // Downloads the output from the configured origin with the bearer key, never from provider supplied URLs
 func (p *openRouterVideoGenProvider) saveCompletedVideo(ctx context.Context, env *tools.Env, jobID, base string, headers map[string]string) (string, error) {
 	return saveURLVideo(ctx, env, base+"/videos/"+jobID+"/content", videoURLOptions{Prefix: "openrouter", Headers: headers,
-		RequireVideoContentType: true, TrustedOrigin: true})
+		RequireVideoContentType: true, ProviderBase: base})
 }
 
 // Submits, polls and downloads one video job under a single resolved credential

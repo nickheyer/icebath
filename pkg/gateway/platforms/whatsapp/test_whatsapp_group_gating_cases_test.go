@@ -6,28 +6,31 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-// Adapter over the extra with the policies, allowlists and mention patterns resolved like the Python harness
-func gatingAdapter(t *testing.T, extra map[string]any) *WhatsAppAdapter {
+// Adapter with the policies and allowlists of the given values set on it and their mention settings stored in the home of the test
+func gatingAdapter(t *testing.T, values map[string]any) *WhatsAppAdapter {
 	t.Helper()
 	a := newBareAdapter(t, "/tmp/test-bridge", t.TempDir(), 3000)
-	a.BasePlatformAdapter.Config.Extra = extra
-	a.WhatsAppBehaviorMixin.Config = a.BasePlatformAdapter.Config
 	policy := func(key string) string {
-		if v, ok := extra[key]; ok {
+		if v, ok := values[key]; ok {
 			return strings.ToLower(strings.TrimSpace(v.(string)))
 		}
 		return "pairing"
 	}
 	a.DMPolicy, a.GroupPolicy = policy("dm_policy"), policy("group_policy")
-	a.AllowFrom, a.GroupAllowFrom = CoerceAllowList(extra["allow_from"]), CoerceAllowList(extra["group_allow_from"])
-	patterns, err := a.CompileMentionPatterns(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	a.AllowFrom, a.GroupAllowFrom = CoerceAllowList(values["allow_from"]), CoerceAllowList(values["group_allow_from"])
+	for key, unset := range map[string]any{settings.WhatsappRequireMention.Key: false, settings.WhatsappMentionPatterns.Key: []any{},
+		settings.WhatsappFreeResponseChats.Key: []any{}} {
+		value, ok := values[strings.TrimPrefix(key, "whatsapp.")]
+		if !ok {
+			value = unset
+		}
+		if _, err := settings.Set(context.Background(), key, value, settings.Global); err != nil {
+			t.Fatal(err)
+		}
 	}
-	a.MentionPatterns = patterns
 	return a
 }
 
@@ -94,17 +97,16 @@ func TestFreeResponseChatsBypassMentionGating(t *testing.T) {
 	}
 }
 
-func TestBlankFreeResponseChatsFallsThroughToEnv(t *testing.T) {
-	a := gatingAdapter(t, map[string]any{"free_response_chats": ""})
-	t.Setenv("WHATSAPP_FREE_RESPONSE_CHATS", "123@g.us")
-	chats, err := a.WhatsAppFreeResponseChats(context.Background())
-	if err != nil || len(chats) != 1 || !chats["123@g.us"] {
-		t.Fatalf("chats = %v %v", chats, err)
+func TestFreeResponseChatsFollowTheSetting(t *testing.T) {
+	a := gatingAdapter(t, map[string]any{"free_response_chats": []any{"123@g.us"}})
+	if chats := a.WhatsAppFreeResponseChats(context.Background()); len(chats) != 1 || !chats["123@g.us"] {
+		t.Fatalf("chats = %v", chats)
 	}
-	t.Setenv("WHATSAPP_FREE_RESPONSE_CHATS", "  ")
-	a.WhatsAppBehaviorMixin.Config = &gateway.PlatformConfig{Extra: map[string]any{"free_response_chats": []any{}}}
-	if chats, err = a.WhatsAppFreeResponseChats(context.Background()); err != nil || len(chats) != 0 {
-		t.Fatalf("chats = %v %v", chats, err)
+	if _, err := settings.Set(context.Background(), settings.WhatsappFreeResponseChats.Key, []any{}, settings.Global); err != nil {
+		t.Fatal(err)
+	}
+	if chats := a.WhatsAppFreeResponseChats(context.Background()); len(chats) != 0 {
+		t.Fatalf("chats = %v", chats)
 	}
 }
 

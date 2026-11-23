@@ -34,14 +34,11 @@ type CLIOptions struct {
 	IgnoreRules   bool
 }
 
-// Reads display config for compact, tool progress, focus view, bells, streaming, previews and stream buffers
+// Reads display config for compact, tool progress, bells, streaming, previews and stream buffers
 func (c *CLI) initDisplayOptions(verbose bool, compact *bool) {
 	c.console = console()
 	c.config = CLIConfig(c.ctx)
 	c.toolProgressMode = settings.ToolProgress.Get(c.ctx)
-	c.focusViewEnabled = false
-	c.focusSavedToolProgress, c.focusLastCountedTool = "", ""
-	c.focusHiddenLines = 0
 	c.bellOnComplete = settings.BellOnComplete.Get(c.ctx)
 	c.showReasoning = settings.ShowThinking.Get(settings.WithPlatform(c.ctx, settings.LocalPlatform))
 	c.reasoningFull = settings.FullThinking.Get(c.ctx)

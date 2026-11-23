@@ -766,49 +766,21 @@ func logJournalModeUpgradeOnce(dbLabel, previousMode string) {
 	logOnce("journal_upgrade", dbLabel, previousMode, previousMode)
 }
 
+// Pragma level of each word database.synchronous takes
 var synchronousLevels = map[string]int{"OFF": 0, "NORMAL": 1, "FULL": 2, "EXTRA": 3}
-
-var synchronousNames = map[int]string{0: "OFF", 1: "NORMAL", 2: "FULL", 3: "EXTRA"}
 
 const synchronousFull = 2
 
-// Pragma level of a database synchronous setting, false for anything unrecognised
-func ResolveSynchronousLevel(rawValue any) (int, bool) {
-	switch v := rawValue.(type) {
-	case bool:
-		return 0, !v
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, *big.Int:
-		n, err := pyIntOf(fmt.Sprint(v))
-		if err != nil || !n.IsInt64() {
-			return 0, false
-		}
-		_, ok := synchronousNames[int(n.Int64())]
-		return int(n.Int64()), ok
-	}
-	text := pyStrip(pyStr(rawValue))
-	if level, ok := synchronousLevels[pyUpper(text)]; ok {
-		return level, true
-	}
-	n, err := pyIntOf(text)
-	if err != nil || !n.IsInt64() {
-		return 0, false
-	}
-	_, ok := synchronousNames[int(n.Int64())]
-	return int(n.Int64()), ok
-}
-
-// Sets the configured synchronous level, refusing unknown values and anything below FULL on macOS
-func applySynchronousPragma(ctx context.Context, conn SQLiteConn, rawValue any, dbLabel string) error {
-	level, ok := ResolveSynchronousLevel(rawValue)
-	if !ok {
-		pkgLog().Warn(fmt.Sprintf("%s: ignoring unrecognized database.synchronous=%s (expected OFF, NORMAL, FULL, EXTRA, or 0-3)",
-			dbLabel, pyReprValue(rawValue)))
-		return nil
+// Sets the synchronous level a database.synchronous word names, keeping FULL on macOS when the word asks for less
+func applySynchronousPragma(ctx context.Context, conn SQLiteConn, word, dbLabel string) error {
+	level, known := synchronousLevels[word]
+	if !known {
+		return fmt.Errorf("%s: database.synchronous %q names no synchronous level", dbLabel, word)
 	}
 	if walPlatform == "darwin" && level < synchronousFull {
 		pkgLog().Warn(fmt.Sprintf("%s: refusing database.synchronous=%s on macOS; keeping FULL. Darwin's fsync() does not "+
 			"guarantee write ordering, so a lower level readmits the half-written btree pages FULL exists "+
-			"to prevent.", dbLabel, synchronousNames[level]))
+			"to prevent.", dbLabel, word))
 		return nil
 	}
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf("PRAGMA synchronous=%d", level)); err != nil && !isOperationalError(err) {

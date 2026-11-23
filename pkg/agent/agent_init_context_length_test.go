@@ -59,8 +59,8 @@ const (
 
 func pinTestConfig() map[string]any {
 	return map[string]any{
-		"model":            map[string]any{"default": "model-b", "provider": "custom:acme", "base_url": pinTestRoute, "context_length": pinTestPin},
-		"custom_providers": []any{map[string]any{"name": "acme", "base_url": pinTestRoute, "models": map[string]any{}}},
+		"model":     map[string]any{"default": "model-b", "provider": "custom:acme", "base_url": pinTestRoute, "context_length": pinTestPin},
+		"providers": map[string]any{"acme": map[string]any{"base_url": pinTestRoute}},
 	}
 }
 
@@ -130,19 +130,22 @@ func TestResolveContextLengthKeepsTheScopedPinAndRecordsCustomProviders(t *testi
 	}
 }
 
-func TestDisabledProviderMasksItsCustomProviderTwin(t *testing.T) {
+func TestConfiguredProviderRouteComesFromItsEnabledProvidersEntry(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	custom := []map[string]any{{"name": "acme", "provider_key": "acme", "base_url": "http://b.example/v1"}}
-	off := map[string]any{"providers": map[string]any{"acme": map[string]any{"enabled": false, "base_url": "http://a.example/v1"}}}
-	if got := customProviderConfiguredBaseURL("acme", off, custom); got != "" {
+	entries := func(block map[string]any) []map[string]any {
+		return provider.ProviderEntries(map[string]any{"providers": map[string]any{"acme": block}})
+	}
+	if got := customProviderConfiguredBaseURL("acme", entries(map[string]any{"enabled": false, "base_url": "http://a.example/v1"})); got != "" {
 		t.Fatalf("disabled provider resolved %q", got)
 	}
-	on := map[string]any{"providers": map[string]any{"acme": map[string]any{"api": "http://a.example/v1"}}}
-	if got := customProviderConfiguredBaseURL("acme", on, custom); got != provider.NormalizeRouteBaseURL("http://a.example/v1") {
-		t.Fatalf("enabled provider resolved %q", got)
+	want := provider.NormalizeRouteBaseURL("http://a.example/v1")
+	for _, name := range []string{"acme", "custom:acme", "Acme Lab", "custom:acme-lab"} {
+		if got := customProviderConfiguredBaseURL(name, entries(map[string]any{"name": "Acme Lab", "base_url": "http://a.example/v1"})); got != want {
+			t.Fatalf("%s resolved %q", name, got)
+		}
 	}
-	if got := customProviderConfiguredBaseURL("acme", map[string]any{}, custom); got != provider.NormalizeRouteBaseURL("http://b.example/v1") {
-		t.Fatalf("custom provider resolved %q", got)
+	if got := customProviderConfiguredBaseURL("other", entries(map[string]any{"base_url": "http://a.example/v1"})); got != "" {
+		t.Fatalf("another provider resolved %q", got)
 	}
 }
 

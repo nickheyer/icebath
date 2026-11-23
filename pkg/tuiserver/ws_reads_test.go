@@ -32,15 +32,14 @@ func (g *wsTestGates) of(method string) chan struct{} {
 	return g.gates[method]
 }
 
-// Real socket dispatcher over a gated stand in for the request dispatch and a logged teardown
+// Real socket dispatcher over an authority connection whose answers wait on gates, and a logged teardown
 func wsTestReadRig(t *testing.T) (*wsTestSocket, *wsTestGates, *wsTestLog) {
 	t.Helper()
 	wsTestNoOrphanGrace(t)
 	gates, log := &wsTestGates{gates: map[string]chan struct{}{}}, &wsTestLog{}
-	prevDispatch, prevClose := wsDispatchRequestFn, wsCloseSessionsForTransport
-	wsDispatchRequestFn = func(ctx context.Context, _ authorityConn, req any, _ *tuihost.WSTransport) (any, error) {
-		id := pyrepr.Str(req.(*pyjson.Object).GetOr("id", nil))
-		method := pyrepr.Str(req.(*pyjson.Object).GetOr("method", ""))
+	wsTestFakeAuthority(t, func(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error) {
+		id := pyrepr.Str(request.GetOr("id", nil))
+		method := pyrepr.Str(request.GetOr("method", ""))
 		log.add("start:" + id)
 		if gate := gates.of(method); gate != nil {
 			select {
@@ -51,13 +50,14 @@ func wsTestReadRig(t *testing.T) (*wsTestSocket, *wsTestGates, *wsTestLog) {
 			}
 		}
 		log.add("done:" + id)
-		return pyjson.ObjectOf("jsonrpc", "2.0", "id", req.(*pyjson.Object).GetOr("id", nil), "result", pyjson.NewObject()), nil
-	}
+		return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil), "result", pyjson.NewObject()), nil
+	})
+	prevClose := wsCloseSessionsForTransport
 	wsCloseSessionsForTransport = func(context.Context, tuihost.Transport, string) (int, int) {
 		log.add("teardown")
 		return 0, 0
 	}
-	t.Cleanup(func() { wsDispatchRequestFn, wsCloseSessionsForTransport = prevDispatch, prevClose })
+	t.Cleanup(func() { wsCloseSessionsForTransport = prevClose })
 	return newWSTestSocket(), gates, log
 }
 

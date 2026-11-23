@@ -20,8 +20,7 @@ func liveTestCompressor(model string, edit func(*ContextCompressorOptions)) *Con
 
 // Bare agent carrying only the compression attributes the hot reload reads and writes
 func liveTestAgent(model, providerName, baseURL string, cc ContextEngine) *AIAgent {
-	a := &AIAgent{model: model, provider: providerName, baseURL: baseURL, compressionEnabled: true,
-		codexResponsesCompactThreshold: 200_000}
+	a := &AIAgent{model: model, provider: providerName, baseURL: baseURL, compressionEnabled: true}
 	if cc != nil {
 		a.contextCompressor = cc
 	}
@@ -258,13 +257,13 @@ func TestRemovingCodexNativeCompactionRestoresFalse(t *testing.T) {
 	}
 }
 
-// test_compression_config_hot_reload.py test_removing_codex_native_threshold_restores_default
-func TestRemovingCodexNativeThresholdRestoresDefault(t *testing.T) {
+// A removed compact threshold goes back to the automatic one derived from local compression
+func TestRemovingCodexNativeThresholdRestoresTheAutomaticOne(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	a, _ := neutralSession(nil)
 	a.codexResponsesCompactThreshold = 120_000
 	syncLiveCompression(t, a, map[string]any{"compression": map[string]any{}})
-	if a.codexResponsesCompactThreshold != 200_000 {
+	if a.codexResponsesCompactThreshold != 0 {
 		t.Fatalf("threshold %v", a.codexResponsesCompactThreshold)
 	}
 }
@@ -336,8 +335,8 @@ func TestHotReloadDoesNotPinASessionOnAnotherRoute(t *testing.T) {
 	syncLiveCompression(t, a, map[string]any{
 		"model": map[string]any{"default": "model-b", "provider": "custom:acme", "base_url": "http://127.0.0.1:8123/v1",
 			"context_length": pinMirrorPin},
-		"custom_providers": []any{map[string]any{"name": "acme", "base_url": "http://127.0.0.1:8123/v1", "models": map[string]any{}}},
-		"compression":      map[string]any{},
+		"providers":   map[string]any{"acme": map[string]any{"base_url": "http://127.0.0.1:8123/v1"}},
+		"compression": map[string]any{},
 	})
 	if cc.configContextLength != nil {
 		t.Fatalf("compressor pin %v", *cc.configContextLength)

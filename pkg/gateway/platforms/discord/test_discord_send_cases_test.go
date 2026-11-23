@@ -21,7 +21,7 @@ import (
 
 func TestSendRejectsWhitespaceAndRecordsFailedFinalReply(t *testing.T) {
 	a, api := sendAdapter(t)
-	t.Setenv("DISCORD_MISSED_MESSAGE_BACKFILL", "true")
+	setDiscord(t, "missed_message_backfill.enabled", true)
 	var buf bytes.Buffer
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
@@ -33,14 +33,14 @@ func TestSendRejectsWhitespaceAndRecordsFailedFinalReply(t *testing.T) {
 	if len(api.sends("555")) != 0 {
 		t.Fatal("empty message sent")
 	}
-	row := a.withDiscordRecoveryDB(context.Background(), func(conn state.SQLiteConn) (any, error) {
+	row, _ := a.withDiscordRecoveryDB(context.Background(), func(conn state.SQLiteConn) (any, error) {
 		var status string
 		var replied, outage int
 		var resp sql.NullString
 		err := conn.QueryRowContext(context.Background(), "SELECT status, replied, outage_response, response_message_id FROM discord_messages WHERE message_id='123'").Scan(&status, &replied, &outage, &resp)
 		return []any{status, replied, outage, resp.Valid}, err
 	}, nil).([]any)
-	if row[0] != "failed" || row[1] != 0 || row[2] != 0 || row[3] != false {
+	if len(row) != 4 || row[0] != "failed" || row[1] != 0 || row[2] != 0 || row[3] != false {
 		t.Fatalf("row %v", row)
 	}
 	if !strings.Contains(buf.String(), "Dropped empty message to chat=555") {

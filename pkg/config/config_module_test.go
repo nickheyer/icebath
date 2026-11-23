@@ -214,17 +214,6 @@ func TestLoadConfigDefaultsReturnsDefaultsWhenNoFile(t *testing.T) {
 	}
 }
 
-func TestLoadConfigDefaultsLegacyRootLevelMaxTurnsMigratesToAgentConfig(t *testing.T) {
-	h, _, _ := moduleHome(t, "max_turns: 42\n")
-	cfg := moduleLoad(t, h)
-	if !pyEq(cfg.Get("agent.max_turns"), 42) {
-		t.Fatalf("agent.max_turns %v", cfg.Get("agent.max_turns"))
-	}
-	if _, has := cfg["max_turns"]; has {
-		t.Fatal("root max_turns kept")
-	}
-}
-
 func TestLoadConfigParseFailureCorruptConfigIsBackedUp(t *testing.T) {
 	broken := "\tmodel: test/custom\nbroken indent:\n"
 	h, path, errOut := moduleHome(t, broken)
@@ -597,11 +586,5 @@ func TestSanitizeEnvLinesSanitizeEnvFileNoopOnCleanFile(t *testing.T) {
 	}
 	if fixes, err := SanitizeEnvFile(t.Context(), h); err != nil || fixes != 0 {
 		t.Fatalf("fixes %d %v", fixes, err)
-	}
-}
-
-func TestOptionalEnvVarsRegistryMaxIterationsNotOfferedAsEnvVar(t *testing.T) {
-	if OptionalEnvVars.Has("ICEBATH_MAX_ITERATIONS") {
-		t.Fatal("ICEBATH_MAX_ITERATIONS is offered as an editable env var")
 	}
 }

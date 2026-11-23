@@ -145,7 +145,7 @@ func TestTranscriptLimitsAndRefusals(t *testing.T) {
 	}{
 		{"", 20000, 20000},
 		{"sessions:\n  max_resume_messages: 0\n  max_export_messages: '500'\n", 0, 500},
-		{"sessions:\n  max_resume_messages: -3\n  max_export_messages: 7.9\n", 20000, 7},
+		{"sessions:\n  max_resume_messages: -3\n  max_export_messages: 7.9\n", 20000, 20000},
 		{"sessions: [1]\n", 20000, 20000},
 		{"sessions:\n  max_resume_messages: lots\n", 20000, 20000},
 	} {

@@ -65,7 +65,6 @@ func pendingStallEvent() *gateway.MessageEvent {
 // test_session_stall_watchdog.py test_check_session_stalls_notifies_once
 func TestCheckSessionStallsNotifiesOnce(t *testing.T) {
 	r, a := runnerForStall(t)
-	t.Setenv("ICEBATH_SESSION_STALL_TIMEOUT", "60")
 	key := "agent:main:telegram:dm:1"
 	a.MergePendingMessage(key, pendingStallEvent(), false)
 	r.sessionState(key).turn.agent = idleAgent(120)

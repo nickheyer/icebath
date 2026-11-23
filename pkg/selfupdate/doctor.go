@@ -37,11 +37,11 @@ func checkAuthProviders(ctx context.Context, d *Doctor, shouldFix bool) (*Findin
 			doctorCheckInfo(d.W, "codex CLI not installed (optional — only required to import tokens from an existing Codex CLI login)")
 		}
 		minimaxStatus := provider.GetMinimaxOAuthAuthStatus(env)
-		region := "global"
-		if v, has := minimaxStatus["region"]; has {
-			region = pyrepr.Str(v)
+		minimaxDetail := "(logged in)"
+		if region := minimaxStatus["region"]; pyrepr.Truthy(region) {
+			minimaxDetail = "(logged in, region=" + pyrepr.Str(region) + ")"
 		}
-		doctorLoginRow(d.W, "MiniMax OAuth", minimaxStatus, "(logged in, region="+region+")", false)
+		doctorLoginRow(d.W, "MiniMax OAuth", minimaxStatus, minimaxDetail, false)
 		xaiStatus := provider.GetXAIOAuthAuthStatus(env)
 		if !pyrepr.Truthy(xaiStatus) {
 			xaiStatus = map[string]any{}
@@ -164,15 +164,14 @@ type doctorCheckEntry struct {
 	Check doctorCheckFunc
 }
 
-// Ordered doctor walk, an empty title meaning the check prints its own header or none, tiers adding theirs at init
-var doctorChecks = []doctorCheckEntry{
+// Checks every build runs in order, an empty title meaning the check prints its own header or none
+var doctorBaseChecks = []doctorCheckEntry{
 	{"Security Advisories", checkSecurityAdvisories}, {"MCP Server Security", checkMCPSecurity},
 	{"Runtime and SQLite", checkRuntime}, {"SSL / CA Certificates", checkCertificates},
 	{"", checkOptionalCapabilities},
 	{"Configuration Files", checkEnvFile},
 	{"", checkConfigFile}, {"", checkConfigDrift},
 	{"xAI Model Retirement (May 15, 2026)", checkXAIRetirement},
-	{"Session Reset (timers removed Sep 7, 2026)", checkRetiredSessionReset},
 	{"Auth Providers", checkAuthProviders},
 	{"Directory Structure", checkDirectoryStructure}, {"", checkStateDB}, {"", checkCronStore},
 	{"", checkCheckpointStore},
@@ -183,7 +182,15 @@ var doctorChecks = []doctorCheckEntry{
 	{"Memory Provider", checkMemoryProvider}, {"", checkPluginsDisabledByUpdate},
 	{"", checkPluginsInBothLists},
 	{"NeMo Relay Plugins", checkRelayPlugins},
-	{"", checkProfiles},
+}
+
+// Checks a build tier adds at init, run after the base checks and before the profiles check
+var doctorTierChecks []doctorCheckEntry
+
+// Ordered doctor walk, the base checks, then the tier checks, then the profiles check
+func doctorChecks() []doctorCheckEntry {
+	walk := append(append([]doctorCheckEntry{}, doctorBaseChecks...), doctorTierChecks...)
+	return append(walk, doctorCheckEntry{"", checkProfiles})
 }
 
 // Runs every doctor check in order, then the live probes when asked, and returns one when an issue remains
@@ -192,7 +199,7 @@ func RunDoctor(ctx context.Context, h string, ns map[string]any, w io.Writer) (i
 	if _, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{Home: h, ProjectEnv: filepath.Join(projectRoot, ".env")}); err != nil {
 		return 1, err
 	}
-	return runDoctor(ctx, &Doctor{W: w, Home: h, ProjectRoot: projectRoot, DisplayHome: home.Display(h)}, ns, doctorChecks)
+	return runDoctor(ctx, &Doctor{W: w, Home: h, ProjectRoot: projectRoot, DisplayHome: home.Display(h)}, ns, doctorChecks())
 }
 
 // Walks the given checks for one doctor run, or only persists an advisory dismissal when ack is set

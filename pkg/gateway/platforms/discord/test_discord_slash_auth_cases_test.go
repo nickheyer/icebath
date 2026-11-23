@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Slash interaction from a user in a guild channel
@@ -83,7 +84,7 @@ func waitSends(fa *alertAdapter, n int) [][2]string {
 
 func TestChannelNotInAllowlistRejected(t *testing.T) {
 	a, _, _ := inboundAdapter(t)
-	t.Setenv("DISCORD_ALLOWED_CHANNELS", "1111,2222")
+	setDiscord(t, "allowed_channels", "1111,2222")
 	var logs bytes.Buffer
 	prev := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
@@ -91,7 +92,7 @@ func TestChannelNotInAllowlistRejected(t *testing.T) {
 	if a.checkSlashAuthorization(t.Context(), makeInteraction("100200300", "9999"), "/bg hi") {
 		t.Fatal("channel outside the allowlist must be rejected")
 	}
-	if !strings.Contains(logs.String(), "DISCORD_ALLOWED_CHANNELS") {
+	if !strings.Contains(logs.String(), settings.DiscordAllowedChannels.Key) {
 		t.Fatalf("log %q", logs.String())
 	}
 }
@@ -106,7 +107,7 @@ func TestUnauthorizedAttemptNotifiesTelegram(t *testing.T) {
 	if len(sent) != 1 || sent[0][0] != "987654321" {
 		t.Fatalf("sends %v", sent)
 	}
-	for _, want := range []string{"Unauthorized", "999999999", "/bg hi", "DISCORD_ALLOWED_USERS"} {
+	for _, want := range []string{"Unauthorized", "999999999", "/bg hi", settings.DiscordAllowFrom.Key} {
 		if !strings.Contains(sent[0][1], want) {
 			t.Fatalf("missing %q in %q", want, sent[0][1])
 		}

@@ -3,7 +3,6 @@ package agent
 import (
 	"bytes"
 	"context"
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -58,8 +57,8 @@ func TestFallbackChainKeepsProviderAndModelEntriesAndPrintsTheChain(t *testing.T
 	if got := out.String(); got != "\U0001f504 Fallback chain (2 providers): a (openrouter) → b (deepseek)\n" {
 		t.Fatalf("banner %q", got)
 	}
-	if a.FallbackModel()["model"] != "a" {
-		t.Fatal("legacy fallback model is the first entry")
+	if a.fallbackChain[0]["model"] != "a" || a.fallbackChain[1]["model"] != "b" {
+		t.Fatalf("chain order %v", a.fallbackChain)
 	}
 	out.Reset()
 	initFallbackChain(a, []map[string]any{{"provider": "deepseek", "model": "b"}})
@@ -69,7 +68,7 @@ func TestFallbackChainKeepsProviderAndModelEntriesAndPrintsTheChain(t *testing.T
 	out.Reset()
 	a.quietMode = true
 	initFallbackChain(a, nil)
-	if out.Len() != 0 || a.FallbackModel() != nil {
+	if out.Len() != 0 || len(a.fallbackChain) != 0 {
 		t.Fatal("quiet empty chain prints nothing")
 	}
 }
@@ -194,25 +193,6 @@ func TestSnapshotPrimaryRuntimeRecordsRouteAndCompressorState(t *testing.T) {
 	switched := buildPrimaryRuntimeSnapshot(ctx, a, "chat_completions")
 	if _, ok := switched["anthropic_api_key"]; ok || switched["reasoning_config"] != nil || switched["compressor_api_mode"] != "" {
 		t.Fatalf("switch snapshot %v", switched)
-	}
-}
-
-func TestReadReasoningEchoFromConfig(t *testing.T) {
-	t.Setenv("ICEBATH_HOME", t.TempDir())
-	h := t.TempDir()
-	ctx := home.WithOverride(context.Background(), h)
-	write := func(body string) {
-		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(body), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("model:\n  reasoning_echo: true\n")
-	if !readReasoningEchoFromConfig(ctx) {
-		t.Fatal("opt in reads true")
-	}
-	write("model: gpt-5\n")
-	if readReasoningEchoFromConfig(ctx) {
-		t.Fatal("a string model section reads false")
 	}
 }
 

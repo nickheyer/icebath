@@ -167,9 +167,6 @@ func TestLiveUpdateLeavesASourceCheckoutAndItsGatewayAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log(liveRun(t, install, env, "bash", "./setup-icebath.sh"))
-	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("telemetry:\n  shared_metrics:\n    enabled: false\n    offer_version: 2\n    send: false\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	binary := filepath.Join(install, "icebath")
 	if got := liveBuiltRevision(t, env, binary); got != first {
 		t.Fatalf("setup built %q, want %s", got, first)

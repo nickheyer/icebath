@@ -14,7 +14,6 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -47,35 +46,6 @@ func NewOAuthPKCEConfig(clientID, authorizeURL, tokenURL string) OAuthPKCEConfig
 
 // Process home pool env the plugin hooks read and write, swappable so tests can inject transports
 var pkceEnvFn = func() PoolEnv { return modelsPoolEnv(context.Background()) }
-
-// Env of the hosted flow running a plugin sign in, nil while none runs
-var (
-	pluginSignInMu  sync.Mutex
-	pluginSignInEnv *PoolEnv
-)
-
-// Context a plugin auth handler runs under, the hosted flow context so stopping the flow cancels it
-func pluginSignInCtx(fallback context.Context) context.Context {
-	pluginSignInMu.Lock()
-	defer pluginSignInMu.Unlock()
-	if pluginSignInEnv != nil {
-		return pluginSignInEnv.ctx()
-	}
-	return fallback
-}
-
-// Runs a plugin sign in with its login and auth handler on the env of the hosted flow running it
-func withPluginSignInEnv(env PoolEnv, fn func() error) error {
-	pluginSignInMu.Lock()
-	pluginSignInEnv = &env
-	pluginSignInMu.Unlock()
-	defer func() {
-		pluginSignInMu.Lock()
-		pluginSignInEnv = nil
-		pluginSignInMu.Unlock()
-	}()
-	return fn()
-}
 
 func pkceErr(provider, message, code string) *AuthError {
 	return &AuthError{Message: provider + ": " + message, Provider: provider, Code: code}

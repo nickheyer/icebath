@@ -53,7 +53,7 @@ func (f *xaiFakeAPI) set(status int, body string) {
 func xaiTestEnv(t *testing.T) (*tools.Env, *xaiFakeAPI, func(context.Context, *tools.Env, *xaiImageCreds) (xaiLiveCatalog, error)) {
 	t.Helper()
 	env := openAIHomeEnv(t, nil)
-	for _, k := range []string{"XAI_IMAGE_MODEL", "XAI_OAUTH_ACCESS_TOKEN", "ICEBATH_ALLOW_PRIVATE_URLS"} {
+	for _, k := range []string{"XAI_IMAGE_MODEL", "XAI_OAUTH_ACCESS_TOKEN"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
 	}
@@ -214,7 +214,6 @@ func TestXAIGenerateOutcomes(t *testing.T) {
 	if raw, err := os.ReadFile(saved); err != nil || string(raw) != "test-image-data" || res["provider"] != "xai" || res["model"] != "grok-imagine-image" || res["success"] != true {
 		t.Fatal(res, err)
 	}
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "1")
 	gone := f.srv.URL + "/xai-tmp-imgen-already-404.jpeg"
 	f.set(200, `{"data": [{"url": "`+gone+`"}]}`)
 	if res, _ := p.Generate(ctx, env, ImageGenRequest{Prompt: "A cat playing piano"}); res["success"] != true || res["image"] != gone {
@@ -285,7 +284,6 @@ func TestXAIEditRejectsBareFileIDInputs(t *testing.T) {
 
 func TestXAIPublicURLFileOutputWinsOverTemporaryURL(t *testing.T) {
 	env, f, _ := xaiTestEnv(t)
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "1")
 	f.set(200, `{"data": [{"url": "`+f.srv.URL+`/xai-tmp-imgen-test.jpeg", "file_output": {"file_id": "file-123", "filename": "stored.png", `+
 		`"public_url": "https://xai-files.example/stored.png", "public_url_expires_at": 1234567890}}]}`)
 	res, _ := newXAIImageGenProvider().Generate(context.Background(), env, ImageGenRequest{Prompt: "A cat playing piano"})

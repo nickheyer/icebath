@@ -754,7 +754,7 @@ func TestDiscoveredModelsAutoSavedToCache(t *testing.T) {
 func TestSaveDiscoveredModelsPreservesDictForm(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	h := os.Getenv("ICEBATH_HOME")
-	writeConfigYAML(t, h, "custom_providers:\n  - name: my-gateway\n    base_url: https://gateway.example.com/v1\n    models:\n      configured-model:\n        context_length: 8192\n")
+	writeConfigYAML(t, h, "providers:\n  my-gateway:\n    base_url: https://gateway.example.com/v1\n    models:\n      configured-model:\n        context_length: 8192\n")
 	before, err := os.ReadFile(filepath.Join(h, "config.yaml"))
 	if err != nil {
 		t.Fatal(err)
@@ -1065,7 +1065,7 @@ func noSentinelIDs(ids []string) bool {
 func TestAutoSavedCatalogRoundTripsWithoutPinning(t *testing.T) {
 	ctx, _ := pickerTestHome(t, nil)
 	h := os.Getenv("ICEBATH_HOME")
-	writeConfigYAML(t, h, "custom_providers:\n  - name: Local MLX\n    base_url: "+localEndpoint+"\n    model: omlx-model-1\n")
+	writeConfigYAML(t, h, "providers:\n  local-mlx:\n    name: Local MLX\n    base_url: "+localEndpoint+"\n    default_model: omlx-model-1\n")
 	saveDiscoveredModelsToConfig(ctx, localEndpoint, localCatalog(), "", nil, nil)
 	saved := firstCustomProviderEntry(t, h)
 	models := listedModelIDs(t, saved["models"])
@@ -1115,7 +1115,7 @@ func TestLegacySentinelCatalogStillResolvesAndMigrates(t *testing.T) {
 		t.Fatalf("row %v fetched %v", row, fetched)
 	}
 	h := os.Getenv("ICEBATH_HOME")
-	writeConfigYAML(t, h, "custom_providers:\n  - name: Local MLX\n    base_url: "+localEndpoint+"\n    model: omlx-model-1\n    models:\n"+yamlModels)
+	writeConfigYAML(t, h, "providers:\n  local-mlx:\n    name: Local MLX\n    base_url: "+localEndpoint+"\n    default_model: omlx-model-1\n    models:\n"+yamlModels)
 	saveDiscoveredModelsToConfig(ctx, localEndpoint, localCatalog(), "", nil, nil)
 	saved := firstCustomProviderEntry(t, h)
 	ids := listedModelIDs(t, saved["models"])

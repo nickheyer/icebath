@@ -35,6 +35,76 @@ var ModelAPIMode = Register(&String{Meta: Meta{Key: "model.api_mode", Label: "Re
 	Help:  "Empty picks it from the provider.",
 	Group: GroupModel, Order: 101, Advanced: true, Apply: NewSession}})
 
+// API key of the model's service kept in the settings file
+var ModelAPIKey = Register(&String{Meta: Meta{Key: "model.api_key", Label: "Model key",
+	Short: "API key of the model's service, when you keep it in config.yaml.",
+	Help:  "Empty uses your login or the provider's key.",
+	Group: GroupModel, Order: 102, Advanced: true, Apply: NewSession},
+	Masked: true})
+
+// Environment variable that holds the model's API key
+var ModelKeyEnv = Register(&String{Meta: Meta{Key: "model.key_env", Label: "Key variable",
+	Short: "Name of the environment variable that holds the model's API key.",
+	Help:  "Empty uses the provider's usual variable.",
+	Group: GroupModel, Order: 103, Advanced: true, Apply: NewSession}})
+
+// Whether the model's reply arrives as it is written
+var ModelStreaming = Register(&Bool{Meta: Meta{Key: "model.streaming", Label: "Stream replies",
+	Short: "Receive the model's reply as it is written, not all at once.",
+	Group: GroupModel, Order: 104, Advanced: true, Apply: NewSession},
+	Default: true})
+
+// Whether the main model can look at pictures
+var ModelSupportsVision = Register(&Bool{Meta: Meta{Key: "model.supports_vision", Label: "Model sees images",
+	Short: "Say whether the main model can look at pictures.",
+	Group: GroupModel, Order: 3110, Advanced: true, Apply: NextTurn},
+	Null: "detected from the model"})
+
+// Chat size above which a model switch asks first
+var ModelSwitchContextConfirmTokens = Register(&Int{Meta: Meta{Key: "model.switch_context_confirm_tokens", Label: "Switch warning size",
+	Short: "Ask before a model switch once the chat holds this many tokens.",
+	Help:  "A switch resends the whole chat to the new model. Zero never asks.",
+	Group: GroupModel, Order: 3120, Advanced: true},
+	Default: 100000, Min: at(0), Unit: "tokens"})
+
+// Whether /model saves its choice to the profile
+var ModelPersistSwitchByDefault = Register(&Bool{Meta: Meta{Key: "model.persist_switch_by_default", Label: "Save model switches",
+	Short: "Make /model save its choice to the profile unless told otherwise.",
+	Group: GroupModel, Order: 3130, Advanced: true},
+	Default: false})
+
+// Runtime OpenAI Codex models run on
+var ModelOpenAIRuntime = Register(&Enum{Meta: Meta{Key: "model.openai_runtime", Label: "Codex runtime",
+	Short: "Which runtime drives OpenAI Codex models.",
+	Group: GroupModel, Order: 3140, Advanced: true, Apply: NewSession},
+	Default: "auto",
+	Values: []Choice{
+		{"auto", "Icebath", "Icebath's own agent loop, with every tool."},
+		{"codex_app_server", "Codex app", "The Codex app server runs the turn."},
+	}})
+
+// Codex program the Codex app runtime starts
+var ModelCodexBin = Register(&String{Meta: Meta{Key: "model.codex_bin", Label: "Codex program",
+	Short: "The codex program the Codex app runtime starts.",
+	Group: GroupModel, Order: 3150, Advanced: true, Apply: NewSession},
+	Null: "codex on your PATH"})
+
+// Context size requested from an Ollama server
+var ModelOllamaNumCtx = Register(&Int{Meta: Meta{Key: "model.ollama_num_ctx", Label: "Ollama context",
+	Short: "Context size to ask an Ollama server for on every request.",
+	Group: GroupModel, Order: 3160, Advanced: true, Apply: NewSession},
+	Null: "the size the Ollama server reports", Unit: "tokens"})
+
+// When LM Studio loads the model
+var ModelLMStudioLoadMode = Register(&Enum{Meta: Meta{Key: "model.lmstudio_load_mode", Label: "LM Studio loading",
+	Short: "When LM Studio loads the model into memory.",
+	Group: GroupModel, Order: 3170, Advanced: true, Apply: NewSession},
+	Default: "explicit",
+	Values: []Choice{
+		{"explicit", "Before the session", "Load the model before the first request."},
+		{"jit", "On first request", "Let LM Studio load it when the first request arrives."},
+	}})
+
 // How long the model thinks before answering
 var ReasoningEffort = Register(&Enum{Meta: Meta{Key: "agent.reasoning_effort", Label: "Reasoning effort",
 	Short: "How long the model thinks before answering.",

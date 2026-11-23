@@ -13,7 +13,6 @@ import (
 func explainerHome(t *testing.T) context.Context {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("ICEBATH_LANGUAGE", "en")
 	return context.Background()
 }
 
@@ -84,29 +83,19 @@ func TestTurnCompletionExplanationByExitReason(t *testing.T) {
 	}
 }
 
-func TestDisplayFlagEnvOverridesAndConfigIsCached(t *testing.T) {
+func TestDisplayFlagsFollowTheirSettingsOnEveryRead(t *testing.T) {
 	ctx := explainerHome(t)
-	h := os.Getenv("ICEBATH_HOME")
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("display:\n  file_mutation_verifier: false\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	a := &AIAgent{}
-	if a.fileMutationVerifierEnabled(ctx) {
-		t.Fatal("config false disables the verifier")
+	if !a.fileMutationVerifierEnabled(ctx) || !a.turnCompletionExplainerEnabled(ctx) {
+		t.Fatal("both flags are on by default")
 	}
-	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("display:\n  file_mutation_verifier: true\n"), 0o600); err != nil {
-		t.Fatal(err)
+	setSettingsForTest(t, map[string]any{"display.file_mutation_verifier": false, "display.turn_completion_explainer": false})
+	if a.fileMutationVerifierEnabled(ctx) || a.turnCompletionExplainerEnabled(ctx) {
+		t.Fatal("a setting turned off disables its flag")
 	}
-	if a.fileMutationVerifierEnabled(ctx) {
-		t.Fatal("the config answer is cached per agent")
-	}
-	t.Setenv("ICEBATH_FILE_MUTATION_VERIFIER", " On ")
-	if !a.fileMutationVerifierEnabled(ctx) {
-		t.Fatal("the env var wins on every call")
-	}
-	t.Setenv("ICEBATH_TURN_COMPLETION_EXPLAINER", "off")
-	if a.turnCompletionExplainerEnabled(ctx) {
-		t.Fatal("off disables the explainer")
+	setSettingsForTest(t, map[string]any{"display.file_mutation_verifier": true})
+	if !a.fileMutationVerifierEnabled(ctx) || a.turnCompletionExplainerEnabled(ctx) {
+		t.Fatal("a changed setting applies on the next read of the same agent")
 	}
 }
 

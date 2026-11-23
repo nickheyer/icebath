@@ -5,8 +5,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/config"
 )
 
 // Pauses the first GET after its response arrived until release closes, later requests passing through
@@ -114,33 +112,5 @@ func onlyPirate(t *testing.T, body map[string]any) {
 	mustEqualJSON(t, "set", body["set"], map[string]any{"display": map[string]any{"personality": "pirate"}})
 	if _, has := body["unset"]; has {
 		t.Fatalf("migration sent %v", body["unset"])
-	}
-}
-
-func TestUnrelatedWriteKeepsAnOldProfileStampSoLaterReadsStillMigrate(t *testing.T) {
-	p := setupPlane(t)
-	prof := p.Profile("default")
-	prof.Values, prof.Writer = map[string]any{"compression": map[string]any{"threshold_tokens": 256000}}, 46
-	ctx := context.Background()
-	noThreshold := func(doc map[string]any) bool {
-		c, _ := doc["compression"].(map[string]any)
-		_, has := c["threshold_tokens"]
-		return !has
-	}
-	if doc, _ := config.ReadRawConfig(ctx, p.Home); !noThreshold(doc) {
-		t.Fatal("precondition")
-	}
-	if err := setValue(p, "display.personality", "pirate"); err != nil {
-		t.Fatal(err)
-	}
-	patches := p.Patches()
-	if _, has := patches[0].Body["writerConfigVersion"]; len(patches) != 1 || has || prof.Writer != 46 {
-		t.Fatalf("stamp sent %v", patches[0].Body)
-	}
-	mustEqualJSON(t, "stored", prof.Values["compression"], map[string]any{"threshold_tokens": 256000})
-	ResetForTests()
-	doc, err := config.ReadRawConfig(ctx, p.Home)
-	if err != nil || !noThreshold(doc) || doc["display"].(map[string]any)["personality"] != "pirate" || len(p.Patches()) != 1 {
-		t.Fatalf("later read %v %v", doc, err)
 	}
 }

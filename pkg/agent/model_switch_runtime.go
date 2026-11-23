@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 var switchModelContextLength = provider.GetModelContextLength
@@ -174,7 +175,7 @@ func swapSwitchRuntime(ctx context.Context, a *AIAgent, newModel, newProvider, a
 	a.configContextLength = 0
 	a.model, a.modelNone = newModel, false
 	a.provider, a.requestedProvider = newProvider, newProvider
-	a.reasoningEchoFlag = readReasoningEchoFromConfig(ctx)
+	a.reasoningEchoFlag = settings.AgentReasoningEcho.Get(ctx)
 	if baseURL != "" {
 		a.setBaseURL(baseURL)
 	} else if oldNorm != newNorm {

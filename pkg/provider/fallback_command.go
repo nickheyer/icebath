@@ -12,11 +12,10 @@ import (
 
 // Fallback command seams, swappable so tests script the picker, the terminal check and the menus
 var (
-	fallbackPickerFn     = SelectProviderAndModel
-	fallbackStdinTTYFn   = func() bool { return setupUI().StdinIsTTY() }
-	fallbackChooseFn     = CursesPromptChoice
-	fallbackConfirmFn    = func(out io.Writer, prompt string) (string, error) { return flowRawInputFn(out, prompt) }
-	fallbackStoreForHome = NewStore
+	fallbackPickerFn   = SelectProviderAndModel
+	fallbackStdinTTYFn = func() bool { return setupUI().StdinIsTTY() }
+	fallbackChooseFn   = CursesPromptChoice
+	fallbackConfirmFn  = func(out io.Writer, prompt string) (string, error) { return flowRawInputFn(out, prompt) }
 )
 
 // Handler of icebath fallback check, installed by the package that links the support redactor and the parallel probe runner
@@ -97,33 +96,6 @@ func ExtractFallbackFromModelCfg(modelCfg any) (map[string]any, bool, error) {
 	return entry, true, nil
 }
 
-// SnapshotAuthActiveProvider returns the active_provider of auth.json under the store lock and whether it exists
-func SnapshotAuthActiveProvider(store *Store) (any, bool, error) {
-	unlock, err := store.Lock(AuthLockTimeout)
-	if err != nil {
-		return nil, false, err
-	}
-	defer unlock()
-	data, err := store.Load()
-	if err != nil {
-		return nil, false, err
-	}
-	v, ok := data["active_provider"]
-	return v, ok, nil
-}
-
-// RestoreAuthActiveProvider writes a snapshotted active_provider back, removing the key when it was absent
-func RestoreAuthActiveProvider(store *Store, value any, present bool) error {
-	return store.Update(func(data AuthData) (bool, error) {
-		if !present {
-			delete(data, "active_provider")
-		} else {
-			data["active_provider"] = value
-		}
-		return true, nil
-	})
-}
-
 // RestoreModelCfg puts the config model section back to a captured snapshot, re inserted last like a dict
 func RestoreModelCfg(ctx context.Context, h string, modelBefore any) error {
 	cfg, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
@@ -137,37 +109,6 @@ func RestoreModelCfg(ctx context.Context, h string, modelBefore any) error {
 	}
 	return config.Save(h, cfg)
 }
-
-// RestorePrimaryRoute attempts both halves of the temporary picker route restoration
-func RestorePrimaryRoute(ctx context.Context, h string, store *Store, modelBefore, activeBefore any, activePresent bool) error {
-	var errs []error
-	if err := RestoreModelCfg(ctx, h, modelBefore); err != nil {
-		errs = append(errs, err)
-	}
-	if err := RestoreAuthActiveProvider(store, activeBefore, activePresent); err != nil {
-		errs = append(errs, err)
-	}
-	if len(errs) == 0 {
-		return nil
-	}
-	details := ""
-	for i, e := range errs {
-		if i > 0 {
-			details += "; "
-		}
-		details += e.Error()
-	}
-	return &fallbackRestoreError{msg: "Could not fully restore the primary route: " + details, cause: errs[0]}
-}
-
-// RuntimeError raised from the first restore failure
-type fallbackRestoreError struct {
-	msg   string
-	cause error
-}
-
-func (e *fallbackRestoreError) Error() string { return e.msg }
-func (e *fallbackRestoreError) Unwrap() error { return e.cause }
 
 // Picker failure with the note a failed primary route restore attached, the picker error kept as the cause
 type fallbackPickerError struct {
@@ -271,10 +212,10 @@ func FallbackList(ctx context.Context, w io.Writer, h string) error {
 }
 
 // Runs the picker then reads the picked entry, restoring the primary route and re raising on any failure
-func runFallbackPicker(ctx context.Context, h string, store *Store, picker func() error, modelBefore, activeBefore any, activePresent bool) (entry map[string]any, err error) {
+func runFallbackPicker(ctx context.Context, h string, picker func() error, modelBefore any) (entry map[string]any, err error) {
 	failed := true
 	restoreOnFailure := func(cause error) error {
-		if rerr := RestorePrimaryRoute(ctx, h, store, modelBefore, activeBefore, activePresent); rerr != nil {
+		if rerr := RestoreModelCfg(ctx, h, modelBefore); rerr != nil {
 			return &fallbackPickerError{err: cause, note: "Could not fully restore the primary route after fallback selection failed: " + rerr.Error()}
 		}
 		return cause
@@ -282,7 +223,7 @@ func runFallbackPicker(ctx context.Context, h string, store *Store, picker func(
 	defer func() {
 		if failed {
 			if p := recover(); p != nil {
-				if rerr := RestorePrimaryRoute(ctx, h, store, modelBefore, activeBefore, activePresent); rerr != nil {
+				if rerr := RestoreModelCfg(ctx, h, modelBefore); rerr != nil {
 					if _, exiting := p.(SetupExit); !exiting {
 						if cause, isErr := p.(error); isErr {
 							p = &fallbackPickerError{err: cause, note: "Could not fully restore the primary route after fallback selection failed: " + rerr.Error()}
@@ -311,7 +252,7 @@ func runFallbackPicker(ctx context.Context, h string, store *Store, picker func(
 }
 
 // FallbackAdd runs the model picker, restores the primary route, then appends the pick to the chain
-func FallbackAdd(ctx context.Context, w io.Writer, h string, store *Store, picker func() error) error {
+func FallbackAdd(ctx context.Context, w io.Writer, h string, picker func() error) error {
 	before, err := config.LoadContext(ctx, h, config.NewSecrets(h).Lookup())
 	if err != nil {
 		return err
@@ -320,17 +261,13 @@ func FallbackAdd(ctx context.Context, w io.Writer, h string, store *Store, picke
 	if v, ok := before["model"]; ok {
 		modelBefore = config.Clone(v)
 	}
-	activeBefore, activePresent, err := SnapshotAuthActiveProvider(store)
-	if err != nil {
-		return err
-	}
 	fmt.Fprint(w, "\n  Adding a fallback provider.  The picker below is the same one used by\n  `icebath model` — select the provider + model you want as a fallback.\n\n")
-	newEntry, err := runFallbackPicker(ctx, h, store, picker, modelBefore, activeBefore, activePresent)
+	newEntry, err := runFallbackPicker(ctx, h, picker, modelBefore)
 	if err != nil {
 		return err
 	}
-	if err := RestorePrimaryRoute(ctx, h, store, modelBefore, activeBefore, activePresent); err != nil {
-		return err
+	if err := RestoreModelCfg(ctx, h, modelBefore); err != nil {
+		return fmt.Errorf("Could not restore the primary route: %w", err)
 	}
 	if newEntry == nil {
 		fmt.Fprintln(w, "\n  No fallback added.")
@@ -459,7 +396,7 @@ func FallbackCommand(ctx context.Context, h string, ns map[string]any, w, errw i
 		if !requireFallbackTTY(errw, "fallback add") {
 			return 1, nil
 		}
-		return 0, FallbackAdd(ctx, w, h, fallbackStoreForHome(h), func() error { return fallbackPickerFn(ctx, ns) })
+		return 0, FallbackAdd(ctx, w, h, func() error { return fallbackPickerFn(ctx, ns) })
 	case "remove", "rm":
 		return 0, FallbackRemove(ctx, w, h, fallbackChooseFn)
 	case "clear":

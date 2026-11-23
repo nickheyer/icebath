@@ -402,7 +402,7 @@ func TestFetchModelsEndpointSelection(t *testing.T) {
 }
 
 func TestHasNamedCustomProviderExportReadsTheHomeConfig(t *testing.T) {
-	h := runtimeConfigHome(t, "model:\n  default: m\ncustom_providers:\n  - name: Local Box\n    base_url: http://10.0.0.5:8000/v1\n    api_key: sk-box\n")
+	h := runtimeConfigHome(t, "model:\n  default: m\nproviders:\n  local-box:\n    name: Local Box\n    base_url: http://10.0.0.5:8000/v1\n    api_key: sk-box\n")
 	ctx := context.Background()
 	if !HasNamedCustomProvider(ctx, h, "local-box") || HasNamedCustomProvider(ctx, h, "nowhere") {
 		t.Fatal("named custom presence mismatch")

@@ -168,8 +168,12 @@ func (r *rig) dump() {
 		}
 	}
 	var text bytes.Buffer
-	for _, row := range r.s.Screen() {
-		text.WriteString(Line(row) + "\n")
+	for y, row := range r.s.Screen() {
+		line := Line(row)
+		text.WriteString(line + "\n")
+		if shown := strings.TrimRight(line, " "); shown != "" {
+			r.t.Logf("screen row %2d: %s", y, shown)
+		}
 	}
 	var in []byte
 	for _, c := range r.s.Input() {
@@ -208,14 +212,18 @@ func (r *rig) shotOf(region image.Rectangle) *image.RGBA {
 	return img
 }
 
-// Waits for the top bar with the palette hint the app shows once it is up
+// Top row of the mirrored screen, where the app paints its bar
+func (r *rig) bar() string { return Line(r.s.Screen()[0]) }
+
+// Waits for the field of the top bar the app shows once it is up, the word of the palette and after it the key that opens it
 func (r *rig) waitBar() {
 	r.t.Helper()
 	err := r.s.WaitFor(func([]byte) bool {
-		_, _, ok := r.s.Find("palette (alt+space)")
-		return ok
+		bar := r.bar()
+		word := strings.Index(bar, "palette")
+		return word >= 0 && strings.Contains(bar[word:], "alt+space")
 	}, 20*time.Second)
-	r.must(err == nil, "bar", []image.Image{r.shot()}, "the top bar with the palette hint never showed, %v", err)
+	r.must(err == nil, "bar", []image.Image{r.shot()}, "the top bar never showed the palette with its key, %v, top row %q", err, strings.TrimSpace(r.bar()))
 }
 
 // Opens the arena with the slash command and returns its frame once the mirror shows it settled

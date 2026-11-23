@@ -282,7 +282,6 @@ func TestCuratorReviewRuntimeAuxiliaryCredentials(t *testing.T) {
 		{"passes curator slot credentials", map[string]any{"model": main, "auxiliary": map[string]any{"curator": map[string]any{"provider": "custom", "model": "local-mini", "api_key": "sk-curator-only", "base_url": "http://localhost:11434/v1"}}}, "custom", "local-mini", "sk-curator-only", "http://localhost:11434/v1"},
 		{"strips blank credentials", map[string]any{"model": main, "auxiliary": map[string]any{"curator": map[string]any{"provider": "openrouter", "model": "x/y", "api_key": "   ", "base_url": ""}}}, "openrouter", "x/y", "", ""},
 		{"ignores slot credentials on main", map[string]any{"model": main, "auxiliary": map[string]any{"curator": map[string]any{"provider": "auto", "model": "", "api_key": "must-not-leak", "base_url": "http://curator-slot-ignored/"}}}, "openrouter", "openai/gpt-5.5", "", ""},
-		{"legacy auxiliary carries credentials", map[string]any{"model": main, "curator": map[string]any{"auxiliary": map[string]any{"provider": "custom", "model": "m", "api_key": "legacy-key", "base_url": "http://legacy/v1"}}}, "custom", "m", "legacy-key", "http://legacy/v1"},
 		{"provider only falls back", map[string]any{"model": main, "auxiliary": map[string]any{"curator": map[string]any{"provider": "openrouter", "model": ""}}}, "openrouter", "openai/gpt-5.5", "", ""},
 		{"model only falls back", map[string]any{"model": main, "auxiliary": map[string]any{"curator": map[string]any{"provider": "auto", "model": "gpt-5.4-mini"}}}, "openrouter", "openai/gpt-5.5", "", ""},
 	} {

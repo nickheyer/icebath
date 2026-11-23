@@ -62,7 +62,7 @@ func TestAKeyLessInjectFromAMessagingChatKeepsMainsRefusalLine(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	r := allocGatewayRunner()
-	r.SetSessionAuthority(gateway.NewSessionAuthority(r, "default", "test", db, 0))
+	r.SetSessionAuthority(gateway.NewSessionAuthority(r, storeHome(t, db), "test", db, 0))
 	logs := captureLogRecords(t, slog.LevelWarn)
 	authority, live, err := keylessResolve(ctx, r, tmp, "agent:main:telegram:dm:42", "desk")
 	if err != nil || authority != nil || live != nil {

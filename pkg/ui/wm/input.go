@@ -215,7 +215,7 @@ func (m *Model) overlayMouse(msg tea.MouseMsg, sx, sy int) tea.Cmd {
 		}
 	}
 	// A click as a guarded overlay appears was meant for what was under it
-	if _, click := msg.(tea.MouseClickMsg); click && m.guards(m.overlay) && m.now().Sub(m.overlay.shownAt) < sheetArmDelay {
+	if _, click := msg.(tea.MouseClickMsg); click && m.guards(m.overlay) && m.now().Sub(m.overlay.shownAt) < SheetArmDelay {
 		return nil
 	}
 	return m.forward(m.overlay, msg)

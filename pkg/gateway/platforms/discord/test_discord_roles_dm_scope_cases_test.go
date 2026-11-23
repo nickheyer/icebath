@@ -13,7 +13,6 @@ import (
 func dmScopeAdapter(t *testing.T, users, roles []string) *DiscordAdapter {
 	home := t.TempDir()
 	t.Setenv("ICEBATH_HOME", home)
-	t.Setenv("DISCORD_ALLOWED_CHANNELS", "")
 	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("discord:\n  dm_role_auth_guild: 222222\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +56,7 @@ func TestUserIDAllowlistWorksInGuild(t *testing.T) {
 
 func TestChannelAllowlistAuthorizesWithMatchingChannelContext(t *testing.T) {
 	a := dmScopeAdapter(t, nil, nil)
-	t.Setenv("DISCORD_ALLOWED_CHANNELS", "999")
+	setDiscord(t, "allowed_channels", "999")
 	attachClient(t, a, "1", []string{"111111"})
 	if !a.isAllowedUser(context.Background(), "42", nil, "111111", false, newStrSet("999")) {
 		t.Fatal("channel context rejected")

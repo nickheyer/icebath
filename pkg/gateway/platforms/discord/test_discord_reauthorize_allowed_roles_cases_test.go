@@ -8,13 +8,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
-// Home with the given config.yaml and no ambient role allowlist
+// Home with the given config.yaml
 func reauthorizeHome(t *testing.T, yaml string) {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
-	t.Setenv("DISCORD_ALLOWED_ROLES", "")
-	os.Unsetenv("DISCORD_ALLOWED_ROLES")
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(yaml), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -38,27 +36,13 @@ func reauthorize(t *testing.T, a *DiscordAdapter) any {
 	return got
 }
 
-func TestFlatPlatformsAllowedRolesAuthorize(t *testing.T) {
-	reauthorizeHome(t, "platforms:\n  discord:\n    enabled: true\n    allowed_roles: ['2']\n")
-	if reauthorize(t, reauthorizeAdapter(t, "2")) != true {
-		t.Fatal("flat platforms allowed_roles must authorize")
-	}
-}
-
-func TestPlatformsExtraAllowedRolesAuthorize(t *testing.T) {
-	reauthorizeHome(t, "platforms:\n  discord:\n    enabled: true\n    extra:\n      allowed_roles: ['2']\n")
-	if reauthorize(t, reauthorizeAdapter(t, "2")) != true {
-		t.Fatal("extra allowed_roles must authorize")
-	}
-}
-
-func TestPlatformsExtraBeatsTopLevelBlockLikeIngress(t *testing.T) {
+func TestAllowedRolesSettingDecidesReauthorization(t *testing.T) {
 	for _, tc := range []struct {
 		role string
 		want bool
 	}{{"2", true}, {"3", false}} {
 		t.Run(tc.role, func(t *testing.T) {
-			reauthorizeHome(t, "discord:\n  allowed_roles: ['3']\nplatforms:\n  discord:\n    enabled: true\n    extra:\n      allowed_roles: ['2']\n")
+			reauthorizeHome(t, "discord:\n  allowed_roles: ['2']\nplatforms:\n  discord:\n    enabled: true\n")
 			if reauthorize(t, reauthorizeAdapter(t, tc.role)) != tc.want {
 				t.Fatalf("role %s", tc.role)
 			}
@@ -66,17 +50,14 @@ func TestPlatformsExtraBeatsTopLevelBlockLikeIngress(t *testing.T) {
 	}
 }
 
-func TestLegacyTopLevelAllowedRolesStillAuthorize(t *testing.T) {
+func TestReauthorizationFollowsARoleRemovedFromTheSetting(t *testing.T) {
 	reauthorizeHome(t, "discord:\n  allowed_roles: ['2']\nplatforms:\n  discord:\n    enabled: true\n")
-	if reauthorize(t, reauthorizeAdapter(t, "2")) != true {
-		t.Fatal("legacy top level allowed_roles must authorize")
+	a := reauthorizeAdapter(t, "2")
+	if reauthorize(t, a) != true {
+		t.Fatal("listed role must authorize")
 	}
-}
-
-func TestScopedEnvAllowlistWinsOverConfig(t *testing.T) {
-	reauthorizeHome(t, "platforms:\n  discord:\n    enabled: true\n    allowed_roles: ['2']\n")
-	t.Setenv("DISCORD_ALLOWED_ROLES", "9")
-	if reauthorize(t, reauthorizeAdapter(t, "2")) != false {
-		t.Fatal("scoped env allowlist must win")
+	setDiscord(t, "allowed_roles", "9")
+	if reauthorize(t, a) != false {
+		t.Fatal("a role taken off the list must stop authorizing")
 	}
 }

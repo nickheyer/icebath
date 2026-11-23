@@ -10,9 +10,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestRunXAIOAuthLoginFromSetupDoesNotHijackActiveProvider(t *testing.T) {
+func TestRunXAIOAuthLoginFromSetupStoresALoginAndLeavesTheModelAlone(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openrouter", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	configPath := filepath.Join(h, "config.yaml")
 	raw, err := yaml.Marshal(map[string]any{
 		"model": map[string]any{"provider": "openrouter", "default": "anthropic/claude-sonnet-4", "base_url": "https://openrouter.ai/api/v1"},
@@ -53,15 +53,9 @@ func TestRunXAIOAuthLoginFromSetupDoesNotHijackActiveProvider(t *testing.T) {
 	if env.Store.IsSourceSuppressed("xai-oauth", "device_code") {
 		t.Fatal("device_code still suppressed after login")
 	}
-	auth := readAuthStore(t, h)
-	if auth["active_provider"] != "openrouter" {
-		t.Fatalf("active_provider %v", auth["active_provider"])
-	}
-	providers, _ := auth["providers"].(map[string]any)
-	xaiState, _ := providers["xai-oauth"].(map[string]any)
-	tokens, _ := xaiState["tokens"].(map[string]any)
-	if tokens["access_token"] != "tts-xai-access" || tokens["refresh_token"] != "tts-xai-refresh" {
-		t.Fatalf("xai tokens %v", tokens)
+	logins := poolRows(t, h, "xai-oauth")
+	if len(logins) != 1 || logins[0]["access_token"] != "tts-xai-access" || logins[0]["refresh_token"] != "tts-xai-refresh" {
+		t.Fatalf("xai logins %v", logins)
 	}
 	data, err := os.ReadFile(configPath)
 	if err != nil {

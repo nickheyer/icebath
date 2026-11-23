@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -485,9 +486,9 @@ func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
 	return videoSchema(strings.Join(parts, "\n"), properties)
 }
 
-// Whether video_gen.provider is exactly xai in the profile config
+// Whether the profile chose xai as its video service
 func configuredForXAIVideo(ctx context.Context) bool {
-	return videoGenConfig(ctx)["provider"] == "xai"
+	return tools.StoredProvider(&tools.Env{Home: home.Dir(ctx)}, "video_gen") == "xai"
 }
 
 // Edit and extend tools require the xai provider configured and xAI credentials

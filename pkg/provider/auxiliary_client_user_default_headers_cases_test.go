@@ -48,7 +48,7 @@ func TestAuxClientHonorsUserDefaultHeadersCustomProviderNoOverrideSendsNoUserAge
 
 func TestAuxClientHonorsUserDefaultHeadersNamedCustomProviderHonorsOverride(t *testing.T) {
 	auxIsolateClientCache(t)
-	ctx := auxMainTestHome(t, "model:\n  default: test-model\n  default_headers:\n    User-Agent: curl/8.7.1\ncustom_providers:\n  - name: my-gw\n    base_url: http://my-gw.local/v1\n    api_key: k\n")
+	ctx := auxMainTestHome(t, "model:\n  default: test-model\n  default_headers:\n    User-Agent: curl/8.7.1\nproviders:\n  my-gw:\n    base_url: http://my-gw.local/v1\n    api_key: k\n")
 	oc := auxResolveOpenAIWireClient(t, ctx, "my-gw", "test-model")
 	if oc.customHeaders["User-Agent"] != "curl/8.7.1" {
 		t.Fatalf("headers %v", oc.customHeaders)

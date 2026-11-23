@@ -235,14 +235,14 @@ func TestCodexMigrationStripExistingManagedBlock(t *testing.T) {
 			t.Fatalf("stripped %q", out)
 		}
 	})
-	t.Run("end marker and legacy block", func(t *testing.T) {
+	t.Run("end marker and a block that lost it", func(t *testing.T) {
 		text := "a = 1\n" + CodexMigrationMarker + "\nx = 2\n[mcp_servers.m]\n" + CodexMigrationEndMarker + "\n[mcp_servers.user]\ncommand = \"u\"\n"
 		if got := codexStripExistingManagedBlock(text); got != "a = 1\n[mcp_servers.user]\ncommand = \"u\"\n" {
 			t.Fatalf("bounded %q", got)
 		}
-		legacy := CodexMigrationMarker + "\n[permissions]\nx = 1\n[plugins.\"p@m\"]\nenabled = true\n[features]\ny = 2\n"
-		if got := codexStripExistingManagedBlock(legacy); got != "[features]\ny = 2\n" {
-			t.Fatalf("legacy %q", got)
+		unterminated := CodexMigrationMarker + "\n[permissions]\nx = 1\n[plugins.\"p@m\"]\nenabled = true\n[features]\ny = 2\n"
+		if got := codexStripExistingManagedBlock(unterminated); got != "[features]\ny = 2\n" {
+			t.Fatalf("unterminated %q", got)
 		}
 	})
 	t.Run("insert at top level", func(t *testing.T) {

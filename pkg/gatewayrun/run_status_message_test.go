@@ -133,7 +133,7 @@ func TestPluginPlatformStringSuppressesNoise(t *testing.T) {
 func progressNoticesCtx(t *testing.T, enabled *bool) context.Context {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
-	body := "model: test\n"
+	body := "model:\n  default: test\n"
 	if enabled != nil {
 		body += fmt.Sprintf("compression:\n  progress_notices: %t\n", *enabled)
 	}

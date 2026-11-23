@@ -19,17 +19,17 @@ import (
 
 // ---- test_credential_pool_provider_boundary.py ----
 
+// Config holding one providers block per entry, keyed by provider_key or else by the entry's name
 func customCfg(entries ...map[string]any) map[string]any {
-	list := make([]any, 0, len(entries))
 	providers := map[string]any{}
 	for _, e := range entries {
-		if key, ok := e["provider_key"].(string); ok {
-			providers[key] = map[string]any{"name": e["name"], "api": e["base_url"]}
-			continue
+		key, ok := e["provider_key"].(string)
+		if !ok {
+			key = anyString(e["name"])
 		}
-		list = append(list, e)
+		providers[key] = map[string]any{"name": e["name"], "base_url": e["base_url"]}
 	}
-	return map[string]any{"custom_providers": list, "providers": providers}
+	return map[string]any{"providers": providers}
 }
 
 func TestProviderMatchRequiresExactNonCustomIdentity(t *testing.T) {
@@ -81,12 +81,10 @@ func TestRuntimePoolKeyResolvesAllCustomRuntimeIdentities(t *testing.T) {
 	}
 }
 
-func TestRuntimePoolKeyResolvesModernProviderInMixedConfig(t *testing.T) {
+func TestRuntimePoolKeyResolvesItsOwnEntryAmongSeveral(t *testing.T) {
 	endpoint := "https://generativelanguage.googleapis.com/v1beta"
-	cfg := map[string]any{
-		"custom_providers": []any{map[string]any{"name": "Legacy Provider", "base_url": "https://legacy.example/v1"}},
-		"providers":        map[string]any{"gemini-no-filter": map[string]any{"name": "Gemini Display", "api": endpoint}},
-	}
+	cfg := customCfg(map[string]any{"name": "Other Provider", "provider_key": "other-provider", "base_url": "https://other.example/v1"},
+		map[string]any{"name": "Gemini Display", "provider_key": "gemini-no-filter", "base_url": endpoint})
 	if got := ResolveRuntimePoolKey("gemini-no-filter", endpoint, cfg); got != "gemini-no-filter" {
 		t.Fatalf("got %q", got)
 	}
@@ -270,71 +268,8 @@ func TestPluginRefreshAdoptsPeerRotationWithoutSpendingToken(t *testing.T) {
 	}
 }
 
-// ---- test_credential_pool_oauth_writethrough.py ----
-
-func profileAndRoot(t *testing.T) (string, string) {
-	t.Helper()
-	root := newTestHome(t)
-	profile := filepath.Join(root, "profiles", "work")
-	if err := os.MkdirAll(profile, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	return profile, root
-}
-
 func oauthEntry(provider, id, access, refresh string) PooledCredential {
-	return PooledCredential{Provider: provider, ID: id, Label: "cred", AuthType: AuthTypeOAuth, Priority: 0, Source: "device_code", AccessToken: access, RefreshToken: refresh, Extra: map[string]any{}}
-}
-
-func TestGlobalWriteThroughPreservesConcurrentRootUpdate(t *testing.T) {
-	profile, root := profileAndRoot(t)
-	writeAuthStore(t, root, map[string]any{"version": 2,
-		"providers":       map[string]any{"xai-oauth": map[string]any{"tokens": map[string]any{"access_token": "old-xai", "refresh_token": "old-r"}}},
-		"credential_pool": map[string]any{"anthropic": []any{map[string]any{"id": "anthropic-existing"}}, "openrouter": []any{map[string]any{"id": "openrouter-existing"}}}})
-	env := testEnv(t, profile)
-	if env.Store.globalPath != filepath.Join(root, "auth.json") {
-		t.Fatalf("the profile store must fall back to the root: %q", env.Store.globalPath)
-	}
-	rootStore := NewStore(root)
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		writeThroughProviderStateToGlobalRoot(env, "xai-oauth", map[string]any{"tokens": map[string]any{"access_token": "new-xai", "refresh_token": "new-r"}})
-	}()
-	go func() {
-		defer wg.Done()
-		unlock, err := rootStore.Lock(AuthLockTimeout)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		data, _ := rootStore.Load()
-		rootStore.StoreProviderState(data, "openai-codex", map[string]any{"tokens": map[string]any{"access_token": "codex-a", "refresh_token": "codex-r"}}, false)
-		pool, _ := data["credential_pool"].(map[string]any)
-		if pool == nil {
-			pool = map[string]any{}
-			data["credential_pool"] = pool
-		}
-		pool["openai-codex"] = []any{map[string]any{"id": "codex-login"}}
-		_ = rootStore.Save(data)
-		unlock()
-	}()
-	wg.Wait()
-	rootData := readAuthStore(t, root)
-	providers := rootData["providers"].(map[string]any)
-	if providers["xai-oauth"].(map[string]any)["tokens"].(map[string]any)["refresh_token"] != "new-r" {
-		t.Fatal("the write through must land")
-	}
-	if providers["openai-codex"].(map[string]any)["tokens"].(map[string]any)["refresh_token"] != "codex-r" {
-		t.Fatal("the concurrent login must survive")
-	}
-	pools := rootData["credential_pool"].(map[string]any)
-	for _, key := range []string{"openai-codex", "anthropic", "openrouter"} {
-		if len(pools[key].([]any)) != 1 {
-			t.Fatalf("pool %s must survive: %v", key, pools[key])
-		}
-	}
+	return PooledCredential{Provider: provider, ID: id, Label: "cred", AuthType: AuthTypeOAuth, Priority: 0, Source: SourceManualDeviceCode, AccessToken: access, RefreshToken: refresh, Extra: map[string]any{}}
 }
 
 func TestCodexPoolRefreshHoldsAuthStoreLockAcrossPost(t *testing.T) {
@@ -491,7 +426,7 @@ func raceEntry(source string) PooledCredential {
 func TestConcurrentClaudeCodeRefreshRecoversViaCredentialsFile(t *testing.T) {
 	ResetSpentRotationsForTests()
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	env := testEnv(t, h)
 	server := &singleUseTokenServer{spent: map[string]bool{}}
 	anthropicTokenServer(t, &env, server.refresh)
@@ -636,7 +571,7 @@ func TestTransientRefreshErrorStillBenched(t *testing.T) {
 func TestSelectDoesNotHoldPoolLockDuringDeferredRefresh(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	entry := PooledCredential{Provider: "openai-codex", ID: "codex-1", Label: "test codex", AuthType: AuthTypeOAuth, Source: "device_code",
+	entry := PooledCredential{Provider: "openai-codex", ID: "codex-1", Label: "test codex", AuthType: AuthTypeOAuth, Source: SourceManualDeviceCode,
 		AccessToken: jwtWithClaims(map[string]any{"exp": 1}), RefreshToken: "rt-stale", Extra: map[string]any{}}
 	pool := NewPool(env, "openai-codex", []PooledCredential{entry})
 	lockFree := false
@@ -678,7 +613,7 @@ func TestPendingRefreshSweepLeavesWaiterWindowsBetweenHolds(t *testing.T) {
 	t.Cleanup(func() { oauthRefreshProviders["openai-codex"] = prev })
 	var entries []PooledCredential
 	for i := 0; i < 3; i++ {
-		entries = append(entries, PooledCredential{Provider: "openai-codex", ID: "c" + string(rune('1'+i)), Label: "c", AuthType: AuthTypeOAuth, Source: "device_code",
+		entries = append(entries, PooledCredential{Provider: "openai-codex", ID: "c" + string(rune('1'+i)), Label: "c", AuthType: AuthTypeOAuth, Source: SourceManualDeviceCode,
 			AccessToken: jwtWithClaims(map[string]any{"exp": 1}), RefreshToken: "rt-" + string(rune('1'+i)), Extra: map[string]any{}})
 	}
 	pool := NewPool(env, "openai-codex", entries)
@@ -696,7 +631,7 @@ func TestPendingRefreshSweepLeavesWaiterWindowsBetweenHolds(t *testing.T) {
 func TestAcquireLeaseReselectsAfterDeferredRefresh(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	entry := PooledCredential{Provider: "openai-codex", ID: "e1", Label: "e1", AuthType: AuthTypeOAuth, Source: "device_code",
+	entry := PooledCredential{Provider: "openai-codex", ID: "e1", Label: "e1", AuthType: AuthTypeOAuth, Source: SourceManualDeviceCode,
 		AccessToken: jwtWithClaims(map[string]any{"exp": 1}), RefreshToken: "rt", Extra: map[string]any{}}
 	pool := NewPool(env, "openai-codex", []PooledCredential{entry})
 	calls := 0
@@ -722,7 +657,7 @@ func TestAcquireLeaseReselectsAfterDeferredRefresh(t *testing.T) {
 func TestAcquireLeaseStillNoneWhenRefreshDoesNotHelp(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	entry := PooledCredential{Provider: "openai-codex", ID: "e1", Label: "e1", AuthType: AuthTypeOAuth, Source: "device_code",
+	entry := PooledCredential{Provider: "openai-codex", ID: "e1", Label: "e1", AuthType: AuthTypeOAuth, Source: SourceManualDeviceCode,
 		AccessToken: jwtWithClaims(map[string]any{"exp": 1}), RefreshToken: "rt", Extra: map[string]any{}}
 	pool := NewPool(env, "openai-codex", []PooledCredential{entry})
 	calls := 0
@@ -790,7 +725,7 @@ func persistFailureHome(t *testing.T) (string, PoolEnv) {
 	ResetSpentRotationsForTests()
 	t.Cleanup(ResetSpentRotationsForTests)
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	env := testEnv(t, h)
 	anthropicTokenServer(t, &env, func(string) (map[string]any, int) {
 		return map[string]any{"access_token": rotatedAccess, "refresh_token": rotatedRefresh, "expires_in": 3600}, 200
@@ -815,7 +750,7 @@ func TestClaudeCodeWriterRaisesInsteadOfSwallowing(t *testing.T) {
 func TestConcurrentIcebathPKCERefreshRecoversViaPoolStore(t *testing.T) {
 	ResetSpentRotationsForTests()
 	h := newTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic", "providers": map[string]any{}})
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}})
 	env := testEnv(t, h)
 	server := &singleUseTokenServer{spent: map[string]bool{}}
 	anthropicTokenServer(t, &env, server.refresh)

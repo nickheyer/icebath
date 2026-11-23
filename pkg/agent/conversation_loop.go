@@ -749,9 +749,6 @@ const lengthContinuationNetworkStub = "[System: The previous response was cut of
 const lengthContinuationOutputLimit = "[System: Your previous response was truncated by the output length limit. Continue exactly " +
 	"where you left off. Do not restart or repeat prior text. Finish the answer directly.]"
 
-const legacyLengthContinuationNetworkStub = "[System: The previous response was cut off by a network error mid-stream. Continue exactly " +
-	"where you left off. Do not restart or repeat prior text. Finish the answer directly.]"
-
 const lengthContinuationDroppedToolsPrefix = "[System: Your previous tool call "
 
 // Continuation nudge for a cut stream, a dropped oversized tool call or an output length truncation

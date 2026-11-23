@@ -241,8 +241,8 @@ const provenanceSkillMD = "---\nname: demo-bundle\ndescription: A multi-file tes
 
 // Loopback file server of the upstream fixture repo with private URLs allowed, the served_repo fixture
 func servedRepo(t *testing.T) (*Hub, string, string) {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
 	h, tmp := newTestHub(t)
+	allowPrivateURLs(t, h.S.Home)
 	h.io.isSafeURL = func(string) bool { return true }
 	h.io.siteAccess = func(string) *tools.WebsiteBlock { return nil }
 	repo := filepath.Join(tmp, "upstream")

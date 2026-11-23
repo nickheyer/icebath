@@ -69,8 +69,6 @@ type fetchFailed struct {
 
 func (e *fetchFailed) Error() string { return e.detail }
 
-type unknownWriterStamp struct{}
-
 // In memory user layer of one profile home and the plane state it was installed from
 type profileState struct {
 	mu             sync.Mutex
@@ -79,8 +77,6 @@ type profileState struct {
 	doc            map[string]any
 	etag           string
 	profileVersion int
-	profileWriter  any
-	otherWriters   []int
 	locks          []Lock
 	changedNS      int64
 	gen, installed int
@@ -128,30 +124,6 @@ func pyInt(v any) (int, bool) {
 		return 0, true
 	}
 	return 0, false
-}
-
-func levels(body map[string]any) []any {
-	l, _ := body["levels"].([]any)
-	return l
-}
-
-// Stored writer stamp of the profile level, nil for a stored null, unknown when not reported
-func profileWriterOf(body map[string]any) any {
-	for _, raw := range levels(body) {
-		lv, ok := raw.(map[string]any)
-		if !ok || lv["kind"] != "profile" {
-			continue
-		}
-		w := lv["writerConfigVersion"]
-		if w == nil {
-			return nil
-		}
-		if n, ok := pyInt(w); ok {
-			return n
-		}
-		return unknownWriterStamp{}
-	}
-	return unknownWriterStamp{}
 }
 
 func effectiveOK(body map[string]any) bool {
@@ -392,15 +364,6 @@ func (b *remoteBackend) install(st *profileState, body map[string]any, etag stri
 		st.etag = pyTruthyStr(body["etag"])
 	}
 	st.profileVersion, _ = pyInt(body["profileVersion"])
-	st.profileWriter = profileWriterOf(body)
-	st.otherWriters = nil
-	for _, raw := range levels(body) {
-		if lv, ok := raw.(map[string]any); ok && lv["kind"] != "profile" {
-			if n, ok := pyInt(lv["writerConfigVersion"]); ok {
-				st.otherWriters = append(st.otherWriters, n)
-			}
-		}
-	}
 	st.locks = locks
 	st.changedNS = time.Now().UnixNano()
 	st.gen++

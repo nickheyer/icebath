@@ -107,7 +107,7 @@ func TestCustomProviderCompatibilityCompatibleCustomProvidersPrefersBaseUrlThenU
 }
 
 func TestEnvWriteDenylistIcebathIntegrationKeysStillWritable(t *testing.T) {
-	for _, key := range []string{"ICEBATH_LANGFUSE_PUBLIC_KEY", "ICEBATH_SPOTIFY_CLIENT_ID", "ICEBATH_QWEN_BASE_URL", "ICEBATH_MAX_ITERATIONS"} {
+	for _, key := range []string{"ICEBATH_LANGFUSE_PUBLIC_KEY", "ICEBATH_SPOTIFY_CLIENT_ID", "ICEBATH_QWEN_BASE_URL"} {
 		t.Run(key, func(t *testing.T) {
 			h := configModuleHome(t, key)
 			if err := config.EnsureIcebathHome(t.Context(), h); err != nil {

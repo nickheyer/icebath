@@ -56,7 +56,7 @@ RUN useradd -u 10000 -m -d /opt/data icebath && \
     mkdir -p /run/s6 /run/service && chown 10000:10000 /run/s6 /run/service
 WORKDIR /opt/icebath
 COPY --from=binary --chmod=0755 /out/icebath /out/icebath-init /opt/icebath/
-COPY --chmod=0644 LICENSE THIRD_PARTY_NOTICES README.md cli-config.yaml.example .env.example /opt/icebath/
+COPY --chmod=0644 LICENSE THIRD_PARTY_NOTICES README.md SETTINGS.md cli-config.yaml.example .env.example /opt/icebath/
 COPY --chmod=0644 docker/SOUL.md /opt/icebath/docker/SOUL.md
 
 # icebath-init is the init, supervisor, s6 control verbs and tini shim under those names, handing icebath work to the binary beside it
@@ -116,7 +116,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD [ "/opt/icebath/icebath-init", "container-health" ]
 
 # /init bootstraps the volume as root (UID/GID remap, ownership, seeding),
-# supervises the per-profile gateway services, then runs the
+# supervises the background service of each profile, then runs the
 # command as the icebath user and exits with its status:
 #   docker run <image>                 -> icebath
 #   docker run <image> gateway run     -> icebath gateway run

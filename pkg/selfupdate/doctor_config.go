@@ -21,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -32,113 +33,6 @@ func doctorHasProviderEnvConfig(content string) bool {
 		}
 	}
 	return false
-}
-
-// Legacy config keys still read for compatibility, each a section, a key and the modern replacement
-var doctorDeprecatedConfigKeys = [][3]string{
-	{"display", "tool_progress_overrides", "display.platforms"},
-	{"delegation", "max_async_children", "delegation.max_concurrent_children"},
-	{"compression", "summary_model", "auxiliary.compression"},
-	{"compression", "summary_provider", "auxiliary.compression"},
-	{"compression", "summary_base_url", "auxiliary.compression"},
-}
-
-// Deprecated variables looked up in the .env file, each with its replacement
-var doctorDeprecatedEnvVars = [][2]string{
-	{"ICEBATH_TOOL_PROGRESS", "display.tool_progress in config.yaml — ignored/unsupported since config floor v12"},
-	{"TERMINAL_CWD", "terminal.cwd in config.yaml"},
-	{"MESSAGING_CWD", "terminal.cwd in config.yaml"},
-	{"QQ_HOME_CHANNEL", "QQBOT_HOME_CHANNEL"},
-	{"QQ_HOME_CHANNEL_NAME", "QQBOT_HOME_CHANNEL_NAME"},
-}
-
-// Legacy dotted path and replacement of each deprecated key present in the raw config, empty containers counting
-func doctorCollectDeprecatedConfigKeys(rawConfig any) [][2]string {
-	out := [][2]string{}
-	raw, ok := rawConfig.(map[string]any)
-	if !ok {
-		return out
-	}
-	for _, k := range doctorDeprecatedConfigKeys {
-		section, isMap := raw[k[0]].(map[string]any)
-		if !isMap {
-			continue
-		}
-		if _, has := section[k[1]]; has {
-			out = append(out, [2]string{k[0] + "." + k[1], k[2]})
-		}
-	}
-	return out
-}
-
-// Deprecated variable and replacement for each one set to a non blank value in the given env map
-func doctorCollectDeprecatedEnvVars(envMap map[string]any) [][2]string {
-	out := [][2]string{}
-	for _, v := range doctorDeprecatedEnvVars {
-		if value, ok := envMap[v[0]]; ok && value != nil && pystr.Strip(pyrepr.Str(value)) != "" {
-			out = append(out, v)
-		}
-	}
-	return out
-}
-
-// Findings for the removed Relay plugin, its enabled keys and its ignored exporter variables
-func doctorCollectRelayPluginCutoverFindings(rawConfig any, envMap map[string]any) [][2]string {
-	findings := [][2]string{}
-	raw, _ := rawConfig.(map[string]any)
-	if pluginsCfg, ok := raw["plugins"].(map[string]any); ok {
-		for _, key := range plugins.LegacyRelayPluginKeysIn(pluginsCfg["enabled"]) {
-			findings = append(findings, [2]string{"plugins.enabled: " + key,
-				"remove it and configure a standard user or system Relay plugins.toml; " +
-					"use " + tools.RelayPluginsConfigEnv + " for an explicit user-file override"})
-		}
-	}
-	effective := map[string]any{}
-	for k, v := range envMap {
-		effective[k] = v
-	}
-	if envMap == nil {
-		for _, name := range append(append([]string{}, tools.LegacyRelayExportEnvVars...), tools.RelayPluginsConfigEnv) {
-			if _, has := effective[name]; has {
-				continue
-			}
-			if v, set := os.LookupEnv(name); set {
-				effective[name] = v
-			}
-		}
-	}
-	selected := ""
-	if v, has := effective[tools.RelayPluginsConfigEnv]; has {
-		selected = pyrepr.Str(v)
-	}
-	if pystr.Strip(selected) == "" {
-		for _, name := range tools.ConfiguredLegacyRelayEnvVars(effective) {
-			findings = append(findings, [2]string{name,
-				"run `icebath migrate relay` to generate relay-plugins.toml and set " + tools.RelayPluginsConfigEnv + "; " +
-					"this legacy variable is now ignored and does not configure an exporter"})
-		}
-	}
-	return findings
-}
-
-// Prints warn rows for deprecated config keys, env vars and Relay cutover findings, returning what it reported
-func doctorReportDeprecatedConfigAndEnv(w io.Writer, rawConfig any, envMap map[string]any) [][2]string {
-	deprecated := append(doctorCollectDeprecatedConfigKeys(rawConfig), doctorCollectDeprecatedEnvVars(envMap)...)
-	relayCutover := doctorCollectRelayPluginCutoverFindings(rawConfig, envMap)
-	findings := append(append([][2]string{}, deprecated...), relayCutover...)
-	if len(findings) == 0 {
-		doctorCheckOK(w, "No deprecated config keys or env vars", "")
-		return findings
-	}
-	for _, d := range deprecated {
-		doctorCheckWarn(w, "Deprecated: "+d[0], "(use "+d[1]+" instead)")
-		doctorCheckInfo(w, "Replace "+d[0]+" → "+d[1]+" (warn-only; not auto-migrated here)")
-	}
-	for _, r := range relayCutover {
-		doctorCheckWarn(w, "Breaking Relay migration: "+r[0], "("+r[1]+")")
-		doctorCheckInfo(w, "Migrate "+r[0]+": "+r[1])
-	}
-	return findings
 }
 
 // Names the plugins.toml files Relay applies, warning when Relay would reject them
@@ -655,24 +549,6 @@ func doctorCheckConfigBackend(ctx context.Context, d *Doctor, backend config.Con
 	return true, nil
 }
 
-// Runs the warn only deprecation sweep over the raw config file and the .env file on disk
-func doctorDriftDeprecations(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error {
-	raw := map[string]any{}
-	if configPath != "" {
-		loaded, err := config.ReadUserConfigRaw(ctx, configPath)
-		if err != nil {
-			return err
-		}
-		raw = loaded
-	}
-	env := map[string]any{}
-	for k, v := range config.LoadEnv(d.Home) {
-		env[k] = v
-	}
-	doctorReportDeprecatedConfigAndEnv(d.W, raw, env)
-	return nil
-}
-
 // Prints the structural validation issues of the loaded config under their own section
 func doctorDriftStructure(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error {
 	configIssues := config.ValidateLoadedConfigStructure(ctx, d.Home, config.EnvRefLookupContext(ctx), tools.RemovedBackendNote)
@@ -694,21 +570,79 @@ func doctorDriftStructure(ctx context.Context, d *Doctor, f *Finding, shouldFix 
 	return nil
 }
 
-// Comparable endpoint URL of a legacy list entry or a providers entry, lowercased without trailing slashes
-func doctorEndpointURL(entry map[string]any) string {
-	for _, k := range []string{"api", "base_url", "url"} {
-		if pyrepr.Truthy(entry[k]) {
-			return pystr.Lower(strings.TrimRight(pystr.Strip(pyrepr.Str(entry[k])), "/"))
-		}
-	}
-	return ""
-}
-
 // One config drift step, it prints its rows and records what it found in the shared finding
 type doctorDriftStep func(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error
 
 var doctorConfigDriftSteps = []doctorDriftStep{
-	doctorDriftDeprecations, doctorDriftStructure,
+	doctorDriftUnknownKeys, doctorDriftStructure,
+}
+
+// Sorted dotted keys of a config document no setting reads once every installed plugin registered its own, a whole unknown section named once
+func doctorUnknownConfigKeys(h string, doc map[string]any) []string {
+	plugins.RegisterActiveSettings(h)
+	sections := map[string]bool{}
+	for _, e := range settings.All() {
+		key := e.Info().Key
+		for i := strings.IndexByte(key, '.'); i >= 0; {
+			sections[key[:i]] = true
+			next := strings.IndexByte(key[i+1:], '.')
+			if next < 0 {
+				break
+			}
+			i += 1 + next
+		}
+	}
+	var unknown []string
+	var walk func(m map[string]any, prefix string)
+	walk = func(m map[string]any, prefix string) {
+		for k, v := range m {
+			path := prefix + k
+			if settings.FindKey(path) != nil {
+				continue
+			}
+			if child, isMap := v.(map[string]any); isMap && sections[path] {
+				walk(child, path+".")
+				continue
+			}
+			unknown = append(unknown, path)
+		}
+	}
+	walk(doc, "")
+	sort.Strings(unknown)
+	return unknown
+}
+
+// Warns for each config.yaml key no setting reads, a timed session_reset block named with the plugin that applies it
+func doctorDriftUnknownKeys(ctx context.Context, d *Doctor, f *Finding, shouldFix bool, configPath string) error {
+	raw, err := config.ReadUserConfigRaw(ctx, configPath)
+	if err != nil {
+		return err
+	}
+	reported, resetNoted := 0, false
+	for _, key := range doctorUnknownConfigKeys(d.Home, raw) {
+		if key == plugins.SessionResetConfigKey || strings.HasPrefix(key, plugins.SessionResetConfigKey+".") {
+			if plugins.ResetPluginEnabled(ctx) {
+				continue
+			}
+			if mode, timed := plugins.TimedSessionReset(raw); timed {
+				if !resetNoted {
+					notice := plugins.FormatSessionResetNotice(mode)
+					doctorCheckWarn(d.W, notice, "")
+					f.ManualIssues = append(f.ManualIssues, notice)
+					resetNoted = true
+					reported++
+				}
+				continue
+			}
+		}
+		doctorCheckWarn(d.W, "config.yaml holds "+key+", which is not a setting", "(it is ignored)")
+		f.ManualIssues = append(f.ManualIssues, "Remove "+key+" from "+d.DisplayHome+"/config.yaml or correct its name; type /settings in icebath to see every setting.")
+		reported++
+	}
+	if reported == 0 {
+		doctorCheckOK(d.W, "Every key in config.yaml is a setting", "")
+	}
+	return nil
 }
 
 // Warns about stale per install channel records, naming the config key the user removes
@@ -748,13 +682,12 @@ func checkConfigDrift(ctx context.Context, d *Doctor, shouldFix bool) (*Finding,
 		if err != nil {
 			return err
 		}
-		steps := doctorConfigDriftSteps
-		if !exists {
-			configPath = ""
-			steps = []doctorDriftStep{doctorDriftDeprecations}
-		}
-		for _, step := range steps {
-			_ = step(ctx, d, f, shouldFix, configPath)
+		if exists {
+			for _, step := range doctorConfigDriftSteps {
+				if err := step(ctx, d, f, shouldFix, configPath); err != nil {
+					doctorCheckWarn(d.W, "Could not check config.yaml", "("+err.Error()+")")
+				}
+			}
 		}
 		doctorCheckChannelRecordHygiene(ctx, d)
 		return nil
@@ -778,28 +711,6 @@ func checkXAIRetirement(ctx context.Context, d *Doctor, shouldFix bool) (*Findin
 		}
 		doctorCheckInfo(d.W, "Migration guide: "+provider.XAIMigrationGuideURL)
 		f.ManualIssues = append(f.ManualIssues, fmt.Sprintf("Update %d retired xAI model reference(s) in config.yaml — see %s", len(retiredRefs), provider.XAIMigrationGuideURL))
-		return nil
-	})
-}
-
-// Reports a timed session_reset policy the config still declares unless the restoring plugin is enabled
-func checkRetiredSessionReset(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
-	return doctorCheckGuarded(d.W, "Session reset check skipped", "({e})", func(f *Finding) error {
-		cfg, err := config.LoadUserEffective(home.ConfigPath(d.Home), os.LookupEnv)
-		if err != nil {
-			return err
-		}
-		path, mode, found := plugins.RetiredResetPolicy(cfg)
-		switch {
-		case !found:
-			doctorCheckOK(d.W, "No idle/daily session_reset policy configured", "")
-		case plugins.ResetPluginEnabled(ctx):
-			doctorCheckOK(d.W, path+".mode: "+mode+" is applied by the session reset plugin", "")
-		default:
-			notice := plugins.FormatSessionResetNotice(path, mode)
-			doctorCheckWarn(d.W, notice, "")
-			f.ManualIssues = append(f.ManualIssues, notice)
-		}
 		return nil
 	})
 }

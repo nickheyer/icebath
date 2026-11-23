@@ -236,7 +236,7 @@ let
           The merge into the config.yaml on disk is also a deep merge. These
           keys replace the keys on disk. The module keeps all other keys,
           which includes the keys that `icebath config set` and the settings
-          panes of the TUI write at runtime.
+          screen of the terminal UI write at runtime.
         '';
         example = literalExpression ''
           {
@@ -253,8 +253,7 @@ let
         description = ''
           The paths to environment files that contain secrets, for example
           API keys and tokens. Activation adds the contents of these files to
-          $ICEBATH_HOME/.env. Icebath reads that file at each start, with
-          load_icebath_dotenv().
+          $ICEBATH_HOME/.env. Icebath reads that file at each start.
 
           Each activation writes .env again from the start. Thus a secret
           file cannot go into .env two times.
@@ -378,10 +377,10 @@ let
         example = literalExpression ''
           [
             (pkgs.fetchFromGitHub {
-              owner = "stephenschoettler";
-              repo = "hermes-lcm";
-              name = "hermes-lcm";
-              rev = "v0.7.0";
+              owner = "example";
+              repo = "icebath-notes-plugin";
+              name = "notes";
+              rev = "v1.0.0";
               hash = "sha256-...";
             })
           ]
@@ -404,12 +403,12 @@ let
         example = literalExpression ''
           [
             (config.services.icebath-agent.package.python.pkgs.buildPythonPackage {
-              pname = "rtk-hermes";
+              pname = "icebath-notes-plugin";
               version = "1.0.0";
               src = pkgs.fetchFromGitHub {
-                owner = "ogallotti";
-                repo = "rtk-hermes";
-                rev = "main";
+                owner = "example";
+                repo = "icebath-notes-plugin";
+                rev = "v1.0.0";
                 hash = "sha256-...";
               };
             })
@@ -435,19 +434,6 @@ let
         description = "The systemd RestartSec= value. Darwin does not use this option.";
       };
     };
-
-  installPackageRemovedMessage =
-    value:
-    ''
-      services.icebath-agent.installPackage was removed. Icebath now
-      separates the installation from the services, which is the
-      Home Manager convention:
-
-        programs.icebath-agent.enable = ${lib.boolToString (value != false)};  # the icebath CLI, and ICEBATH_HOME for your shells
-
-      `services.icebath-agent` keeps the state, the configuration and
-      the daemons. Remove `installPackage` and add the line above.
-    '';
 
   effectivePackage =
     cfg:
@@ -627,7 +613,7 @@ let
       '') cfg.extraPlugins}
     '';
 
-  gatewayArgv =
+  serviceArgv =
     cfg:
     [
       "${effectivePackage cfg}/bin/icebath"
@@ -707,8 +693,7 @@ in
   inherit
     deepConfigType
     effectivePackage
-    gatewayArgv
-    installPackageRemovedMessage
+    serviceArgv
     mcpServerType
     mcpServersToConfig
     mkConfigFiles

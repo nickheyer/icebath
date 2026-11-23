@@ -39,8 +39,7 @@ var (
 	// Agent keys a profile following session re-reads each turn
 	FollowAgentKeys = []string{"reasoning_effort", "reasoning_overrides", "service_tier", "disabled_toolsets", "coding_context"}
 	// Model block keys a provider pick owns
-	SelectionKeys = []string{"default", "provider", "base_url", "api_mode", "selection_profile", "api_key_from", "key_env",
-		"api_key_env"}
+	SelectionKeys = []string{"default", "provider", "base_url", "api_mode", "selection_profile", "api_key_from", "key_env"}
 	// Troubleshooting isolation fields of a launch request
 	BypassFields = []string{"safe_mode", "ignore_user_config"}
 	// Creation label to agent surface, adopted gui history running on the TUI surface
@@ -159,17 +158,15 @@ func refusePolicy(field string, detail *string) error {
 
 // Model and provider a profile config selects with auto as no provider
 func profileTarget(config map[string]any) (string, string) {
-	switch model := config["model"].(type) {
-	case map[string]any:
-		providerName := strings.TrimSpace(routeStr(model["provider"]))
-		if strings.ToLower(providerName) == "auto" {
-			providerName = ""
-		}
-		return strings.TrimSpace(routeStr(model["default"])), providerName
-	case string:
-		return strings.TrimSpace(model), ""
+	model, ok := config["model"].(map[string]any)
+	if !ok {
+		return "", ""
 	}
-	return "", ""
+	providerName := strings.TrimSpace(routeStr(model["provider"]))
+	if strings.ToLower(providerName) == "auto" {
+		providerName = ""
+	}
+	return strings.TrimSpace(routeStr(model["default"])), providerName
 }
 
 // Provider and normalized endpoint identity of a model block
@@ -265,7 +262,7 @@ func heldPick(frozen, live map[string]any) map[string]any {
 	return out
 }
 
-// Config without null sections and with a scalar model id read as the model default
+// Config without null sections, a model section that holds no mapping read as an empty one
 func presentSections(config map[string]any) map[string]any {
 	out := make(map[string]any, len(config))
 	for k, v := range config {
@@ -273,10 +270,8 @@ func presentSections(config map[string]any) map[string]any {
 			out[k] = v
 		}
 	}
-	if model, ok := out["model"].(string); ok {
-		if strings.TrimSpace(model) != "" {
-			out["model"] = map[string]any{"default": model}
-		} else {
+	if held, present := out["model"]; present {
+		if _, isMap := held.(map[string]any); !isMap {
 			out["model"] = map[string]any{}
 		}
 	}
@@ -876,27 +871,16 @@ func (p *LocalSessionPolicy) Provider() any { return p.modelField("provider") }
 // Frozen model base URL
 func (p *LocalSessionPolicy) BaseURL() any { return p.modelField("base_url") }
 
-// Frozen checkpoints enabled flag accepting the legacy bool form
+// Frozen checkpoints enabled flag
 func (p *LocalSessionPolicy) CheckpointsEnabled() bool {
-	section, present := p.frozenConfig()["checkpoints"]
-	if !present {
-		return false
-	}
-	if m, ok := section.(map[string]any); ok {
-		return pyrepr.Truthy(m["enabled"])
-	}
-	return pyrepr.Truthy(section)
+	section, _ := p.frozenConfig()["checkpoints"].(map[string]any)
+	return pyrepr.Truthy(section["enabled"])
 }
 
-// Frozen iteration cap from agent max_turns, else the top level max_turns
+// Frozen iteration cap from agent max_turns
 func (p *LocalSessionPolicy) MaxTurns() int {
-	cfg := p.frozenConfig()
-	agent, _ := cfg["agent"].(map[string]any)
-	raw, ok := agent["max_turns"]
-	if !ok {
-		raw = cfg["max_turns"]
-	}
-	return config.ResolveTurnLimit(raw, config.TurnLimitUnlimited)
+	agent, _ := p.frozenConfig()["agent"].(map[string]any)
+	return config.ResolveTurnLimit(agent["max_turns"], config.TurnLimitUnlimited)
 }
 
 // Frozen reasoning config for the frozen model

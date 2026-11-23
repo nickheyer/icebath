@@ -7,8 +7,7 @@ import (
 )
 
 // Dotted path of every leaf and empty mapping in the default config table
-const pinnedDefaultPaths = `_config_version
-agent.agent_cache.idle_ttl_secs
+const pinnedDefaultPaths = `agent.agent_cache.idle_ttl_secs
 agent.agent_cache.max_evictions_per_pass
 agent.agent_cache.max_size
 agent.agent_cache.memory_high_mb
@@ -404,8 +403,6 @@ display.cli_layout
 display.ephemeral_system_ttl
 display.file_mutation_verifier
 display.final_response_markdown
-display.focus_saved_tool_progress
-display.focus_view
 display.friendly_tool_labels
 display.inline_diffs
 display.inline_images
@@ -418,10 +415,7 @@ display.pet.render_mode
 display.pet.scale
 display.pet.slug
 display.pet.unicode_cols
-display.platforms.discord.streaming
-display.platforms.slack.streaming
-display.platforms.telegram.streaming
-display.platforms.wecom.streaming
+display.platforms
 display.reasoning_full
 display.reasoning_style
 display.runtime_footer.enabled

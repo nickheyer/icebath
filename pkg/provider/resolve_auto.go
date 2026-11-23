@@ -30,9 +30,9 @@ type ModelCredentialSource interface {
 	TokenBenchedForModel(provider, token, model string) bool
 }
 
-// ActiveLoginSource names the auth store active provider when it reports logged in
-type ActiveLoginSource interface {
-	ActiveLoggedInProvider() string
+// SignedInSource names the provider whose stored logins report signed in, the one resolution falls to when nothing else selects a provider
+type SignedInSource interface {
+	SignedInProvider() string
 }
 
 // One resolved provider runtime, the dict handed to the agent
@@ -128,7 +128,7 @@ func newResolver(ctx context.Context, cfg config.Tree, secrets *config.Secrets, 
 
 // Process global env names a routed profile may still read from the environment
 var globalEnvExact = map[string]bool{
-	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true, "ICEBATH_MAX_ITERATIONS": true,
+	"ICEBATH_HOME": true, "ICEBATH_PROFILE": true, "ICEBATH_GATEWAY_LOCK_DIR": true,
 	"ICEBATH_API_TIMEOUT": true, "ICEBATH_REDACT_SECRETS": true, "_ICEBATH_GATEWAY": true,
 	"PATH": true, "HOME": true, "USER": true, "LANG": true, "LC_ALL": true, "TZ": true, "PWD": true, "SHELL": true, "TMPDIR": true,
 	"VIRTUAL_ENV": true, "PYTHONPATH": true, "SSL_CERT_FILE": true,
@@ -1228,17 +1228,17 @@ func (r *resolver) openrouterAutoDetected() bool {
 	return ok
 }
 
-// auth.json active_provider when it is a registry provider that reports logged in
-func (r *resolver) loggedInOAuthActiveProvider() string {
-	src, ok := r.creds.(ActiveLoginSource)
+// Registry provider whose stored logins report signed in, empty when the credential source names none
+func (r *resolver) signedInProvider() string {
+	src, ok := r.creds.(SignedInSource)
 	if !ok {
 		return ""
 	}
-	active := src.ActiveLoggedInProvider()
-	if _, known := registryProfileCtx(r.ctx, active); !known {
+	signedIn := src.SignedInProvider()
+	if _, known := registryProfileCtx(r.ctx, signedIn); !known {
 		return ""
 	}
-	return active
+	return signedIn
 }
 
 // Model config and the provider config.yaml names when it pins a registry provider or a custom endpoint
@@ -1271,7 +1271,7 @@ func (r *resolver) configModelProvider() (map[string]any, string) {
 var noAutoDetectProviders = map[string]bool{"lmstudio": true}
 
 // First registry api key provider in registry order with a usable env key
-func (r *resolver) envKeyAutoDetected(oauthActive string) string {
+func (r *resolver) envKeyAutoDetected(signedIn string) string {
 	ambient := map[string]bool{}
 	for _, p := range listProviders(r.ctx) {
 		if p.AmbientCredentials {
@@ -1285,9 +1285,9 @@ func (r *resolver) envKeyAutoDetected(oauthActive string) string {
 		}
 		for _, envVar := range pconfig.KeyEnvNames() {
 			if hasUsableSecret(r.secret(envVar)) {
-				if oauthActive != "" && oauthActive != pid {
-					pkgLog().Warn(fmt.Sprintf("Provider resolved to %q via %s, preempting your logged-in OAuth provider %q. "+
-						"If you meant to use the OAuth login, unset %s or set `model.provider` explicitly.", pid, envVar, oauthActive, envVar))
+				if signedIn != "" && signedIn != pid {
+					pkgLog().Warn(fmt.Sprintf("Provider resolved to %q via %s, preempting your signed-in provider %q. "+
+						"If you meant to use that login, unset %s or set `model.provider` explicitly.", pid, envVar, signedIn, envVar))
 				}
 				return pid
 			}
@@ -1350,16 +1350,16 @@ func (r *resolver) resolveProvider(requested, explicitAPIKey, explicitBaseURL st
 		}
 		return "openrouter", nil
 	}
-	oauthActive := r.loggedInOAuthActiveProvider()
-	if envPid := r.envKeyAutoDetected(oauthActive); envPid != "" {
+	signedIn := r.signedInProvider()
+	if envPid := r.envKeyAutoDetected(signedIn); envPid != "" {
 		return envPid, nil
 	}
-	if oauthActive != "" {
+	if signedIn != "" {
 		if len(modelCfg) > 0 && !truthy(modelCfg["provider"]) {
-			pkgLog().Warn(fmt.Sprintf("Provider resolved to logged-in OAuth provider %q because config.yaml `model` has no `provider` key. "+
-				"If you meant a different provider, set `model.provider` explicitly.", oauthActive))
+			pkgLog().Warn(fmt.Sprintf("Provider resolved to the signed-in provider %q because config.yaml `model` has no `provider` key. "+
+				"If you meant a different provider, set `model.provider` explicitly.", signedIn))
 		}
-		return oauthActive, nil
+		return signedIn, nil
 	}
 	if hasAWSCredentials(r.ctx, true) {
 		return "bedrock", nil

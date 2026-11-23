@@ -53,10 +53,10 @@ func TestGatewayTurnUnderMultiplexRunsTerminalWithTheServedProfilesSecrets(t *te
 	t.Setenv("SKILL_TOKEN", "launch-skill")
 	t.Setenv("SVC_TOKEN", "")
 	os.Unsetenv("SVC_TOKEN")
-	if err := fakellm.WriteHome(served, server.BaseURL(), "", "terminal:\n  env_passthrough: [SVC_TOKEN]\n"); err != nil {
+	if err := fakellm.WriteHome(served, server.BaseURL(), "", "terminal:\n  env_passthrough: [SVC_TOKEN]\ngateway:\n  allow_all_users: true\n"); err != nil {
 		t.Fatal(err)
 	}
-	appendFileLines(t, filepath.Join(served, ".env"), "SVC_TOKEN=served-secret\nSKILL_TOKEN=skill-secret\nGATEWAY_ALLOW_ALL_USERS=true\n")
+	appendFileLines(t, filepath.Join(served, ".env"), "SVC_TOKEN=served-secret\nSKILL_TOKEN=skill-secret\n")
 	tools.RegisterEnvPassthrough(nil, []string{"SKILL_TOKEN"})
 	t.Cleanup(tools.ClearEnvPassthrough)
 	provider.SetMultiplexActive(true)
@@ -65,10 +65,9 @@ func TestGatewayTurnUnderMultiplexRunsTerminalWithTheServedProfilesSecrets(t *te
 		t.Fatal(err)
 	}
 	appendFileLines(t, filepath.Join(launch, ".env"), "LAUNCH_ONLY_TOKEN=launch-secret\n")
-	for _, k := range []string{"TELEGRAM_ALLOWED_USERS", "GATEWAY_ALLOWED_USERS", "TELEGRAM_ALLOW_ALL_USERS"} {
+	for _, k := range []string{"GATEWAY_ALLOWED_USERS", "TELEGRAM_ALLOW_ALL_USERS"} {
 		t.Setenv(k, "")
 	}
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "")
 	home.ResetKeyCache()
 	config.ResetCache()
 	t.Cleanup(config.ResetCache)

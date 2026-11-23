@@ -389,7 +389,6 @@ func clarifyReply(callback func(questions []any) map[string]any, params map[stri
 	return out
 }
 
-
 // Whether the running notification turn mutes its reply on every surface
 func (a *GatewayAgent) MuteNotificationReply() bool {
 	a.mu.Lock()

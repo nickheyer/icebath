@@ -12,9 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
-
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
+	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 )
 
 func captureLog(t *testing.T) *bytes.Buffer {
@@ -177,9 +178,6 @@ func TestConfigSetSendsOnlyTheChangedKey(t *testing.T) {
 	if _, has := body["unset"]; has || body["expectedVersion"] != 0 {
 		t.Fatalf("body %v", body)
 	}
-	if _, ok := body["writerConfigVersion"].(int); !ok {
-		t.Fatalf("writer %v", body["writerConfigVersion"])
-	}
 	mustEqualJSON(t, "values", p.Profile("default").Values, map[string]any{"display": map[string]any{"personality": "pirate"}})
 	if loadConfig(t, p).Get("display.personality") != "pirate" {
 		t.Fatal("read back")
@@ -282,8 +280,12 @@ func TestSecretLiteralRefusedClientSide(t *testing.T) {
 	if err := writeKey(p, "mcp_servers.github.env.GITHUB_TOKEN", "ghp_live"); !errors.As(err, &verr) || verr.Code != "config_secret_literal" {
 		t.Fatalf("err %v", err)
 	}
-	if err := setValue(p, "delegation.api_key", "sk-live-abc"); err == nil || !strings.Contains(err.Error(), "secret-shaped") {
-		t.Fatalf("err %v", err)
+	var notice bytes.Buffer
+	prevNotice := config.FacadeNoticeOut
+	config.FacadeNoticeOut = &notice
+	t.Cleanup(func() { config.FacadeNoticeOut = prevNotice })
+	if err := setValue(p, "delegation.api_key", "sk-live-abc"); err == nil || !strings.Contains(notice.String(), "secret-shaped") {
+		t.Fatalf("err %v notice %q", err, notice.String())
 	}
 	if len(p.Patches()) != 0 {
 		t.Fatal("sent")
@@ -495,10 +497,15 @@ func TestUnknownTopLevelKeyWarnsOnce(t *testing.T) {
 	p := setupPlane(t)
 	logs := captureLog(t)
 	p.Upper = map[string]any{"from_the_future": map[string]any{"x": 1}}
-	loadConfig(t, p)
-	loadConfig(t, p)
-	if n := strings.Count(logs.String(), "unknown config key 'from_the_future'"); n != 1 {
-		t.Fatalf("warned %d times", n)
+	settings.PluginKeysRegistered()
+	ctx := home.WithOverride(context.Background(), p.Home)
+	for range 2 {
+		if _, err := settings.Resolve(ctx, "display.personality"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := strings.Count(logs.String(), "Remote Config holds from_the_future, which is not a setting; it is ignored"); n != 1 {
+		t.Fatalf("warned %d times in %q", n, logs.String())
 	}
 }
 

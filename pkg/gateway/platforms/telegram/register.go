@@ -16,11 +16,9 @@ import (
 var SendTelegramREST func(ctx context.Context, token any, chatID, message string, mediaFiles []gateway.MediaRef, threadID *string,
 	disableLinkPreviews, forceDocument bool) (map[string]any, error)
 
-// Adapter with the notification mode of the environment or display config applied
+// Adapter of a platform config for the plugin registry
 func buildAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (any, error) {
-	a := NewTelegramAdapter(ctx, cfg)
-	a.notificationsMode = resolveNotificationsMode(ctx)
-	return a, nil
+	return NewTelegramAdapter(ctx, cfg), nil
 }
 
 // Connected when a bot token is configured in the platform config or the env file

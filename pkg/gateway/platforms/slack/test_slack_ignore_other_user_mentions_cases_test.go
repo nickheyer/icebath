@@ -45,9 +45,9 @@ func TestMentionsSelfIDPrefixIsNotAMatch(t *testing.T) {
 	}
 }
 
-// Adapter of the live pipeline cases with no mention settings
-func ignoreAdapter(t *testing.T) (*SlackAdapter, *capturedEvents) {
-	a, _, captured := newHarnessAdapter(t, nil)
+// Adapter of the live pipeline cases under the given slack settings
+func ignoreAdapter(t *testing.T, extra map[string]any) (*SlackAdapter, *capturedEvents) {
+	a, _, captured := newHarnessAdapter(t, extra)
 	bot := ignoreBotUserID
 	a.botUserID = &bot
 	return a, captured
@@ -62,9 +62,7 @@ func ignoreEvent(text, ts, threadTS string) map[string]any {
 }
 
 func TestFreeResponseRepliesWhenBotAlsoMentioned(t *testing.T) {
-	a, captured := ignoreAdapter(t)
-	a.Config.Extra["free_response_channels"] = ignoreChannelID
-	a.Config.Extra["ignore_other_user_mentions"] = true
+	a, captured := ignoreAdapter(t, map[string]any{"free_response_channels": ignoreChannelID, "ignore_other_user_mentions": true})
 	if err := a.handleSlackMessage(context.Background(), ignoreEvent("<@"+ignoreOtherUserID+"> and <@"+ignoreBotUserID+"> please compare", "1700000000.000003", ""), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -74,9 +72,7 @@ func TestFreeResponseRepliesWhenBotAlsoMentioned(t *testing.T) {
 }
 
 func TestFreeResponseRepliesWhenBotMentionedInPipeForm(t *testing.T) {
-	a, captured := ignoreAdapter(t)
-	a.Config.Extra["free_response_channels"] = ignoreChannelID
-	a.Config.Extra["ignore_other_user_mentions"] = true
+	a, captured := ignoreAdapter(t, map[string]any{"free_response_channels": ignoreChannelID, "ignore_other_user_mentions": true})
 	if err := a.handleSlackMessage(context.Background(), ignoreEvent("<@"+ignoreOtherUserID+"|rasha> and <@"+ignoreBotUserID+"|icebath> please compare", "1700000000.000004", ""), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -86,10 +82,9 @@ func TestFreeResponseRepliesWhenBotMentionedInPipeForm(t *testing.T) {
 }
 
 func TestMentionedThreadIgnoresFollowupAddressedToOtherUser(t *testing.T) {
-	a, captured := ignoreAdapter(t)
+	a, captured := ignoreAdapter(t, map[string]any{"ignore_other_user_mentions": true})
 	threadTS := "1700000000.000010"
 	a.mentionedThreads[threadTS] = true
-	a.Config.Extra["ignore_other_user_mentions"] = true
 	if err := a.handleSlackMessage(context.Background(), ignoreEvent("<@"+ignoreOtherUserID+"> check this out", "1700000000.000011", threadTS), nil); err != nil {
 		t.Fatal(err)
 	}

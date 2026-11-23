@@ -300,9 +300,6 @@ func TestFindRules(t *testing.T) {
 	if execKey == deleteKey {
 		t.Fatalf("find -exec rm and find -delete share key %q", execKey)
 	}
-	if !ApprovalKeyAliases(execKey)["find"] || !ApprovalKeyAliases(deleteKey)["find"] {
-		t.Fatalf("legacy find key must alias both variants")
-	}
 }
 
 func TestWindowsAbsolutePathFolding(t *testing.T) {
@@ -653,17 +650,4 @@ func TestDockerAndMetadata(t *testing.T) {
 	assertKey(t, "DOCKER_HOST=ssh://prod docker ps", "docker/podman daemon redirect via environment (DOCKER_HOST/CONTAINER_HOST)")
 	assertKey(t, "curl http://169.254.169.254/latest/meta-data/", "cloud metadata endpoint access (instance credentials)")
 	assertSafe(t, "ping 169.254.169.2540")
-}
-
-func TestApprovalKeyAliases(t *testing.T) {
-	aliases := ApprovalKeyAliases("git branch force delete")
-	if !aliases[oldBranchKey] || !aliases["git branch force delete"] {
-		t.Fatalf("branch aliases %v", aliases)
-	}
-	if !ApprovalKeyAliases("script execution via heredoc")[`(python[23]?|perl|ruby|node)\s+<<`] {
-		t.Fatal("removed interpreter rule alias missing")
-	}
-	if got := ApprovalKeyAliases("unknown key"); len(got) != 1 || !got["unknown key"] {
-		t.Fatalf("unknown key aliases %v", got)
-	}
 }

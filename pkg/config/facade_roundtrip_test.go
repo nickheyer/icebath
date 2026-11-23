@@ -230,6 +230,9 @@ var rtSetExclude = map[string]bool{
 	roundtrip.Key("_config_version"): true, roundtrip.Key("display", "language"): true,
 }
 
+// Text to type for a registered scalar setting and the value config.yaml then holds, a sample the setting's own schema accepts that differs from current; installed by the file that links the registry, false for a key that takes no scalar
+var SettingSample func(key string, current any, g *roundtrip.RNG) (text string, want any, ok bool)
+
 func TestP2EveryDocumentedKeyIsSettableAndChangesExactlyOneKey(t *testing.T) {
 	var leaves []roundtrip.Leaf
 	for _, l := range rtSchema().Documented {
@@ -246,7 +249,7 @@ func TestP2EveryDocumentedKeyIsSettableAndChangesExactlyOneKey(t *testing.T) {
 			g := roundtrip.NewRNG(int64(300 + chunk))
 			var failures []string
 			for i := chunk; i < len(leaves); i += chunks {
-				path, def := leaves[i].Path, leaves[i].Default
+				path := leaves[i].Path
 				key := roundtrip.CLIKey(path)
 				if IsEnvConfigKey(key) {
 					continue
@@ -268,7 +271,10 @@ func TestP2EveryDocumentedKeyIsSettableAndChangesExactlyOneKey(t *testing.T) {
 				if blocked {
 					continue
 				}
-				s, want := roundtrip.SetValueFor(def, current, g)
+				s, want, sampled := SettingSample(key, current, g)
+				if !sampled {
+					continue
+				}
 				out.Reset()
 				errOut.Reset()
 				if err := SetConfigValue(context.Background(), h, key, s, testCommandSources()); err != nil {

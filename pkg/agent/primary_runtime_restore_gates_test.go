@@ -43,7 +43,7 @@ func newReselectAgent(t *testing.T, entries []map[string]any) *AIAgent {
 
 func reselectEntry(label, token string, priority int) map[string]any {
 	return map[string]any{"id": label, "label": label, "provider": "openai-codex", "auth_type": provider.AuthTypeOAuth,
-		"source": "device_code", "priority": priority, "access_token": token, "refresh_token": "rt-" + label, "base_url": codexRestoreURL}
+		"source": "manual:device_code", "priority": priority, "access_token": token, "refresh_token": "rt-" + label, "base_url": codexRestoreURL}
 }
 
 func TestRestorePrimaryPoolReselectRestoreUsesFreshestAvailableEntry(t *testing.T) {
@@ -197,7 +197,7 @@ func tempHomeContext(t *testing.T) context.Context {
 func writeExhaustedCodexPool(t *testing.T, h string, resetIn float64) {
 	t.Helper()
 	now := float64(time.Now().UnixNano()) / 1e9
-	entry := map[string]any{"id": "codex-1", "label": "codex-login", "auth_type": "oauth", "priority": 0, "source": "device_code",
+	entry := map[string]any{"id": "codex-1", "label": "codex-login", "auth_type": "oauth", "priority": 0, "source": "manual:device_code",
 		"access_token": "token", "refresh_token": "refresh", "base_url": codexRestoreURL, "last_status": "exhausted",
 		"last_status_at": now, "last_error_code": 429, "last_error_reason": "usage_limit_reached",
 		"last_error_message": "The usage limit has been reached", "last_error_reset_at": now + resetIn}

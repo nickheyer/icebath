@@ -66,7 +66,7 @@ func TestSaveEnvValueQuotedInputIsStable(t *testing.T) {
 func TestSaveEnvValueWriterDenylist(t *testing.T) {
 	h := saveEnvHome(t)
 	path := filepath.Join(h, ".env")
-	for _, key := range []string{"ICEBATH_LANGFUSE_PUBLIC_KEY", "ICEBATH_SPOTIFY_CLIENT_ID", "ICEBATH_QWEN_BASE_URL", "ICEBATH_MAX_ITERATIONS",
+	for _, key := range []string{"ICEBATH_LANGFUSE_PUBLIC_KEY", "ICEBATH_SPOTIFY_CLIENT_ID", "ICEBATH_QWEN_BASE_URL",
 		"GIT_COMMITTER_NAME", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "GIT_EDITOR_WIDE", "git_config_parameters", "ld_preload"} {
 		t.Setenv(key, "")
 		if err := SaveEnvValue(h, key, "test-value-123"); err != nil || LoadEnvFile(path)[key] != "test-value-123" {

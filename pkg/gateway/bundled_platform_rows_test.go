@@ -3,6 +3,8 @@ package gateway_test
 import (
 	"context"
 	"maps"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
@@ -119,7 +121,12 @@ func TestBundledDeclarationsServeEveryRegisteringPlatformWithoutOverride(t *test
 func TestBundledEnvFallbacksApplyWithoutOverride(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	gateway.UseCompiledTreeForTest(t)
-	ctx := home.WithOverride(context.Background(), t.TempDir())
+	h := t.TempDir()
+	settingsYAML := "wecom:\n  bot_id: bot\nwecom_callback:\n  corp_id: corp\nwhatsapp_cloud:\n  phone_number_id: \"1\"\n"
+	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(settingsYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := home.WithOverride(context.Background(), h)
 	env := map[string]string{"BLUEBUBBLES_SERVER_URL": "http://127.0.0.1:1", "BLUEBUBBLES_PASSWORD": "Zq81password77",
 		"DINGTALK_CLIENT_ID": "id", "DINGTALK_CLIENT_SECRET": "Zq81secret77", "DISCORD_BOT_TOKEN": "Zq81realvalue77",
 		"EMAIL_ADDRESS": "a@b.c", "EMAIL_PASSWORD": "Zq81password77", "EMAIL_IMAP_HOST": "imap.b.c", "EMAIL_SMTP_HOST": "smtp.b.c",
@@ -127,8 +134,8 @@ func TestBundledEnvFallbacksApplyWithoutOverride(t *testing.T) {
 		"MATRIX_HOMESERVER": "https://m.b.c", "MATRIX_USER_ID": "@u:b.c", "MATTERMOST_TOKEN": "Zq81realvalue77", "MATTERMOST_URL": "https://mm.b.c",
 		"QQ_APP_ID": "id", "QQ_CLIENT_SECRET": "Zq81secret77", "SIGNAL_HTTP_URL": "http://127.0.0.1:2", "SIGNAL_ACCOUNT": "+15550000000",
 		"SLACK_BOT_TOKEN": "xoxb-1", "TWILIO_ACCOUNT_SID": "AC1", "TWILIO_AUTH_TOKEN": "Zq81realvalue77", "TELEGRAM_BOT_TOKEN": "123456:Zq81realvalue77",
-		"WECOM_BOT_ID": "bot", "WECOM_SECRET": "Zq81secret77", "WECOM_CALLBACK_CORP_ID": "corp", "WECOM_CALLBACK_CORP_SECRET": "Zq81secret77",
-		"WEIXIN_TOKEN": "Zq81realvalue77", "WEIXIN_ACCOUNT_ID": "acc", "WHATSAPP_CLOUD_PHONE_NUMBER_ID": "1",
+		"WECOM_SECRET": "Zq81secret77", "WECOM_CALLBACK_CORP_SECRET": "Zq81secret77",
+		"WEIXIN_TOKEN": "Zq81realvalue77", "WEIXIN_ACCOUNT_ID": "acc",
 		"WHATSAPP_CLOUD_ACCESS_TOKEN": "Zq81realvalue77", "WHATSAPP_ENABLED": "true", "YUANBAO_APP_ID": "id", "YUANBAO_APP_SECRET": "Zq81secret77"}
 	for k, v := range env {
 		t.Setenv(k, v)

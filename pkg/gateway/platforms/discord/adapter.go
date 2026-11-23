@@ -34,6 +34,8 @@ type DiscordAdapter struct {
 	allowedUserIDs      strSet
 	usernameResolvedIDs strSet
 	allowedRoleIDs      strSet
+	// Text of the allowed people and allowed roles settings the two sets above were read from
+	allowlistStamp [2]string
 	// Home of the profile this adapter serves, bound at connect time
 	settingsHome string
 

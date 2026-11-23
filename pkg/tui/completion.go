@@ -219,5 +219,5 @@ func (a *app) applyOffer(text string, replace int) tea.Cmd {
 	if next, ok := completionToApplyOnSubmit(value, &text, replace, func(name string) bool { return a.findSlashCommand(name) != nil }); ok {
 		return target.SetValue(next)
 	}
-	return target.Action("composer.send")
+	return target.Send()
 }

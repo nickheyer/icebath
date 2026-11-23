@@ -14,7 +14,7 @@ const (
 var sessionHeaderMsgs = []map[string]any{{"role": "user", "content": "hello"}}
 
 func sessionHeaderConfig(withHeader bool) string {
-	cfg := "custom_providers:\n  - name: litellm-lan\n    provider_key: litellm-lan\n    base_url: " + sessionHeaderBase + "\n"
+	cfg := "providers:\n  litellm-lan:\n    base_url: " + sessionHeaderBase + "\n"
 	if withHeader {
 		cfg += "    session_affinity_header: " + sessionHeaderName + "\n"
 	}

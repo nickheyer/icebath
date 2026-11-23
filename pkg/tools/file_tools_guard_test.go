@@ -705,7 +705,6 @@ func TestFileToolsGuardWriteFileRequiresFullUnredactedReadOfExistingFile(t *test
 	}
 	secret := "ghp_" + strings.Repeat("A", 40)
 	ftgWriteFile(t, p, "token="+secret+"\n")
-	t.Setenv("ICEBATH_REDACT_SECRETS", "true")
 	read := ftgRead(t, env, p, nil, nil, "t2")
 	if content, ok := read["content"].(string); !ok || strings.Contains(content, secret) {
 		t.Fatalf("secret reached the model or no content %v", read)

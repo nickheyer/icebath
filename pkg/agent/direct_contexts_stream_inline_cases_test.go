@@ -93,11 +93,14 @@ func (w *inlineWire) completions() []map[string]any {
 	return out
 }
 
-// Custom endpoint agent on the given platform like tests/agent/test_direct_contexts_stream_inline.py _make_agent
-func inlineWireAgent(t *testing.T, baseURL, platform string) (*AIAgent, context.Context) {
+// Custom endpoint agent on the given platform in a fresh home holding the given settings
+func inlineWireAgent(t *testing.T, baseURL, platform string, values map[string]any) (*AIAgent, context.Context) {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
+	if len(values) > 0 {
+		setSettingsForTest(t, values)
+	}
 	env := &tools.Env{Home: h, Cwd: h}
 	ctx := tools.WithToolEnv(context.Background(), env)
 	a, err := NewAIAgent(ctx, AIAgentOptions{APIKey: "test-key", BaseURL: baseURL, Model: "m", Provider: "custom", Platform: platform,
@@ -138,7 +141,7 @@ func TestDirectContextsStreamOnTheWireAndOnTheCallingThread(t *testing.T) {
 	for _, platform := range []string{"subagent", "cron"} {
 		t.Run(platform, func(t *testing.T) {
 			wire := newInlineWire(t, false)
-			a, ctx := inlineWireAgent(t, wire.base, platform)
+			a, ctx := inlineWireAgent(t, wire.base, platform, nil)
 			if !provider.ShouldUseDirectAPICall(ctx, a.provider, a.platform, provider.APIMode(a.apiMode)) {
 				t.Fatalf("%s must route inline", platform)
 			}
@@ -167,7 +170,7 @@ func TestDirectContextsStreamOnTheWireAndOnTheCallingThread(t *testing.T) {
 
 func TestInteractivePlatformStillUsesTheWorkerThread(t *testing.T) {
 	wire := newInlineWire(t, false)
-	a, ctx := inlineWireAgent(t, wire.base, "cli")
+	a, ctx := inlineWireAgent(t, wire.base, "cli", nil)
 	if provider.ShouldUseDirectAPICall(ctx, a.provider, a.platform, provider.APIMode(a.apiMode)) {
 		t.Fatal("cli must keep the interrupt worker")
 	}
@@ -185,10 +188,9 @@ func TestInteractivePlatformStillUsesTheWorkerThread(t *testing.T) {
 }
 
 func TestInlineStreamStaleDetectorStillFiresFromMonitorThread(t *testing.T) {
-	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 1.0})
 	t.Setenv("ICEBATH_STREAM_RETRIES", "0")
 	wire := newInlineWire(t, true)
-	a, ctx := inlineWireAgent(t, wire.base, "subagent")
+	a, ctx := inlineWireAgent(t, wire.base, "subagent", map[string]any{"agent.stream_stale_timeout": 1.0})
 	started := time.Now()
 	_, err := a.interruptibleStreamingAPICall(ctx, inlineKwargs(), nil)
 	elapsed := time.Since(started)
@@ -202,10 +204,9 @@ func TestInlineStreamStaleDetectorStillFiresFromMonitorThread(t *testing.T) {
 }
 
 func TestInlineStreamCrossThreadInterruptAbortsPromptly(t *testing.T) {
-	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 60})
 	t.Setenv("ICEBATH_STREAM_RETRIES", "0")
 	wire := newInlineWire(t, true)
-	a, ctx := inlineWireAgent(t, wire.base, "cron")
+	a, ctx := inlineWireAgent(t, wire.base, "cron", map[string]any{"agent.stream_stale_timeout": 60})
 	type outcome struct {
 		kind    string
 		elapsed time.Duration

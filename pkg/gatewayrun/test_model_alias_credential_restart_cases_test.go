@@ -28,7 +28,7 @@ func TestLiteralAliasKeySurvivesOwnerRestartAndStaysInProfile(t *testing.T) {
 	oldURL, farURL := "http://127.0.0.1:9/v1", "http://127.0.0.3:9/v1"
 	h := runtimeTestHome(t, "{}\n", nil)
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(
-		"model_aliases:\n  Far: {model: far-model, provider: custom, base_url: \""+farURL+"\", api_key: sk-far-literal}\n"), 0o600); err != nil {
+		"model:\n  aliases:\n    Far: {model: far-model, provider: custom, base_url: \""+farURL+"\", api_key: sk-far-literal}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	config.ResetCache()

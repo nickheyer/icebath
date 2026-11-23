@@ -22,25 +22,6 @@ var (
 	searchTotalCountRe = mustPyRe(`"total_count"\s*:\s*(\d+)`)
 )
 
-// Runtime notices legacy clarify producers persisted as user_response, matched as prefixes
-var clarifyNonResponsePrefixes = []string{
-	"The user did not provide a response",
-	"[user did not respond",
-	"[clarify prompt could not be delivered",
-	"[oneshot mode:",
-}
-
-// Legacy clarify notices matched whole so real answers sharing the opening survive
-var clarifyNonResponseTexts = []string{"The user cancelled. Use your best judgement to proceed."}
-
-const clarifyQuotedText = `(?:'[^'\\]*(?:\\.[^'\\]*)*'|"[^"\\]*(?:\\.[^"\\]*)*")`
-
-var clarifyHeadlessNotice = mustPyFullmatch(`(?s)\[(?:oneshot mode: no user available\. |` +
-	`single-query mode: no user available to answer ` + clarifyQuotedText + `\. )` +
-	`(?:Make the most reasonable assumption you can and continue\.|` +
-	`Pick the best (?:option|subset) from \[` + clarifyQuotedText +
-	`(?:,\s*` + clarifyQuotedText + `)*\] using your own judgment and continue\.)\]`)
-
 func mustPyRe(pattern string) *regexp2.Regexp {
 	re, err := pyre.Compile(pattern)
 	if err != nil {
@@ -216,82 +197,18 @@ func sumSkillView(name string, args *pyjson.Object, content string, contentLen, 
 	return "[skill_view] name=" + pyrepr.Str(skill) + failed + " (" + groupedInt(contentLen) + " chars)" + marker, nil
 }
 
-// Status less legacy clarify entry that is a runtime notice rather than a user answer
-func isClarifyNonResponse(item any) bool {
-	s, ok := item.(string)
-	if !ok {
-		return false
-	}
-	text := pystr.Strip(s)
-	for _, t := range clarifyNonResponseTexts {
-		if text == t {
-			return true
-		}
-	}
-	for _, p := range clarifyNonResponsePrefixes {
-		if strings.HasPrefix(text, p) {
-			return true
-		}
-	}
-	matched, _ := clarifyHeadlessNotice.MatchString(text)
-	return matched
-}
-
-// Drops complete headless notices including comma split fragments, keeping every genuine selection
-func filterLegacyClarifyAnswers(values []any) []any {
-	answers := []any{}
-	for index := 0; index < len(values); {
-		item := values[index]
-		if s, ok := item.(string); ok {
-			head := pystr.Strip(s)
-			if strings.HasPrefix(head, "[oneshot mode: no user available.") || strings.HasPrefix(head, "[single-query mode: no user available to answer ") {
-				text, noticeEnd := "", -1
-				for end := index; end < len(values); end++ {
-					part, isStr := values[end].(string)
-					if !isStr {
-						break
-					}
-					if end > index {
-						text += ","
-					}
-					text += pystr.Strip(part)
-					if m, _ := clarifyHeadlessNotice.MatchString(text); m {
-						noticeEnd = end
-						break
-					}
-				}
-				if noticeEnd >= 0 {
-					index = noticeEnd + 1
-					continue
-				}
-			}
-		}
-		if !isClarifyNonResponse(item) {
-			answers = append(answers, item)
-		}
-		index++
-	}
-	return answers
-}
-
-// Resolved clarify answers bounded below the prune floor so later passes keep them
+// Answers of the answered clarify questions bounded below the prune floor so later passes keep them
 func sumClarify(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
 	const responsePrefix = "[clarify] user responded: "
-	payload := jsonDict(content)
-	responsesValue, _ := payload.Get("responses")
-	responses, isList := responsesValue.([]any)
-	if _, has := payload.Get("user_response"); !isList && has {
-		responses, isList = []any{payload}, true
-	}
-	answers := []any{}
+	responsesValue, _ := jsonDict(content).Get("responses")
+	responses, _ := responsesValue.([]any)
+	kept := []any{}
 	for _, raw := range responses {
 		entry, ok := raw.(*pyjson.Object)
 		if !ok {
 			continue
 		}
-		status, hasStatus := entry.Get("status")
-		_, hasResponse := entry.Get("user_response")
-		if status != "answered" && (hasStatus || !hasResponse) {
+		if status, _ := entry.Get("status"); status != "answered" {
 			continue
 		}
 		value, _ := entry.Get("user_response")
@@ -299,15 +216,10 @@ func sumClarify(name string, args *pyjson.Object, content string, contentLen, li
 		if !isValues {
 			values = []any{value}
 		}
-		if !hasStatus {
-			values = filterLegacyClarifyAnswers(values)
-		}
-		answers = append(answers, values...)
-	}
-	kept := []any{}
-	for _, a := range answers {
-		if s, ok := a.(string); ok && s != "" {
-			kept = append(kept, s)
+		for _, a := range values {
+			if s, ok := a.(string); ok && s != "" {
+				kept = append(kept, s)
+			}
 		}
 	}
 	if len(kept) == 0 {

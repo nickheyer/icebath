@@ -274,14 +274,11 @@ func restoreAuthJSON(src, dst string) bool {
 		_, ok := v.(*pyjson.Object)
 		return ok
 	}
-	if !isDict("providers") && !isDict("credential_pool") && !isDict("systems") {
+	if !isDict("providers") && !isDict("credential_pool") {
 		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: unrecognized auth-store shape", pypath.PathStr(src)))
 		return false
 	}
 	snapshot, _ := authStoreValue(pyjson.Plain(obj)).(map[string]any)
-	if !isDict("providers") && !isDict("credential_pool") && isDict("systems") {
-		snapshot = map[string]any{"providers": map[string]any{}, "active_provider": nil}
-	}
 	if err := saveRestoredAuth(snapshot, dst); err != nil {
 		if errors.Is(err, errAuthTargetRefused) {
 			return false

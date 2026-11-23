@@ -5,29 +5,26 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/home"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
-func TestExplicitEnvWinsOverMaterializedYamlDefault(t *testing.T) {
-	a := newTestAdapter(t, map[string]any{"reactions": false})
-	t.Setenv("TELEGRAM_REACTIONS", "true")
-	if !a.ReactionsEnabled(context.Background()) {
-		t.Fatal("explicit env must win over the materialized YAML default")
+func TestReactionsFollowTheSettingOfTheProfileInScope(t *testing.T) {
+	a := newTestAdapter(t, nil)
+	if a.ReactionsEnabled(context.Background()) {
+		t.Fatal("reactions must be off until the setting turns them on")
 	}
-}
-
-func TestScopedMissDoesNotLeakDefaultProfileEnv(t *testing.T) {
-	a := newTestAdapter(t, map[string]any{"reactions": false})
-	t.Setenv("TELEGRAM_REACTIONS", "true")
-	ctx := provider.WithMultiplexContext(provider.WithSecretScope(context.Background(), map[string]string{"TELEGRAM_BOT_TOKEN": "222:b2"}, ""), true)
-	if a.ReactionsEnabled(ctx) {
-		t.Fatal("a scoped miss must read this profile's YAML, not the default profile env")
+	setSetting(t, settings.TelegramReactions.Key, true)
+	if !a.ReactionsEnabled(context.Background()) {
+		t.Fatal("the profile's setting must turn reactions on")
+	}
+	if a.ReactionsEnabled(home.WithOverride(context.Background(), t.TempDir())) {
+		t.Fatal("another profile must read its own setting, not the default profile's")
 	}
 }
 
 func TestSetReactionCallsBotAPI(t *testing.T) {
 	a, fake := newScriptedAdapter(t, nil)
-	t.Setenv("TELEGRAM_REACTIONS", "true")
 	if !a.setReaction(context.Background(), "123", "456", "\U0001f440") {
 		t.Fatal("want true")
 	}
@@ -40,7 +37,7 @@ func TestSetReactionCallsBotAPI(t *testing.T) {
 
 func TestOnProcessingStartHandlesMissingIDs(t *testing.T) {
 	a, fake := newScriptedAdapter(t, nil)
-	t.Setenv("TELEGRAM_REACTIONS", "true")
+	setSetting(t, settings.TelegramReactions.Key, true)
 	event := gateway.NewMessageEvent("hello")
 	event.Source = &gateway.SessionSource{}
 	if err := a.OnProcessingStart(context.Background(), event); err != nil {
@@ -53,7 +50,7 @@ func TestOnProcessingStartHandlesMissingIDs(t *testing.T) {
 
 func TestOnProcessingCompleteCancelledClearsReaction(t *testing.T) {
 	a, fake := newScriptedAdapter(t, nil)
-	t.Setenv("TELEGRAM_REACTIONS", "true")
+	setSetting(t, settings.TelegramReactions.Key, true)
 	if err := a.OnProcessingComplete(context.Background(), privateEvent("123", "456"), gateway.ProcessingCancelled); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +65,6 @@ func TestOnProcessingCompleteCancelledClearsReaction(t *testing.T) {
 
 func TestClearReactionsHandlesAPIErrorGracefully(t *testing.T) {
 	a, fake := newScriptedAdapter(t, nil)
-	t.Setenv("TELEGRAM_REACTIONS", "true")
 	fake.respond = func(string, map[string]string) (int, string) { return botError(400, "Bad Request: no perms") }
 	if a.clearReactions(context.Background(), "123", "456") {
 		t.Fatal("want false")

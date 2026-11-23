@@ -255,17 +255,6 @@ func (m *Manager) discoverAndLoadInner(ctx context.Context) error {
 	cfg := loadConfigOrEmpty(m.home)
 	disabled := DisabledPlugins(m.home)
 	enabled, enabledPresent := enabledPlugins(cfg)
-	var stale []string
-	for name := range enabled {
-		if legacyRelayPluginKeys[name] {
-			stale = append(stale, name)
-		}
-	}
-	if len(stale) > 0 {
-		sort.Strings(stale)
-		pkgLog().Warn(fmt.Sprintf("Removed icebath plugin %s is still listed in plugins.enabled; remove it and configure a standard user or system Relay plugins.toml, or use %s for an explicit user-file override",
-			strings.Join(stale, ", "), tools.RelayPluginsConfigEnv))
-	}
 	winners := ResolveManifestWinners(manifests)
 	var order []string
 	seen := map[string]bool{}

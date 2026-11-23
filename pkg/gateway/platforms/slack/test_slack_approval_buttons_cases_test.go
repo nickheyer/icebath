@@ -147,7 +147,6 @@ func TestSlackApprovalActionGlobalAllowlistBlocksUnauthorizedClick(t *testing.T)
 	a.approvalResolved.Set("1234.5678", false)
 	t.Setenv("SLACK_ALLOWED_USERS", "")
 	t.Setenv("SLACK_ALLOW_ALL_USERS", "")
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "")
 	t.Setenv("GATEWAY_ALLOWED_USERS", "U_OWNER")
 	resolved := 0
 	prev := resolveGatewayApprovalFn
@@ -354,7 +353,7 @@ func TestSlackReactionForwardingDefaultOffReactionAckedAndDropped(t *testing.T) 
 
 func TestSlackReactionForwardingReactionSynthesizesMessageInThread(t *testing.T) {
 	a, f := approvalAdapter(t)
-	a.Config.Extra["reaction_triggers"] = true
+	writeSlackSettings(t, map[string]any{"reaction_triggers": true})
 	f.respond("conversations.replies", map[string]any{"ok": true, "messages": []any{
 		map[string]any{"ts": "2000.0", "thread_ts": "1000.0", "user": "U_BOT", "text": "Proposal"}}})
 	forwarded := captureSlackMessages(t)
@@ -375,8 +374,7 @@ func TestSlackReactionForwardingReactionSynthesizesMessageInThread(t *testing.T)
 
 func TestSlackReactionForwardingTargetChannelHandoffRoutesTopLevel(t *testing.T) {
 	a, f := approvalAdapter(t)
-	a.Config.Extra["reaction_triggers"] = []any{"task"}
-	a.Config.Extra["reaction_trigger_target"] = "C_TRAIN"
+	writeSlackSettings(t, map[string]any{"reaction_triggers": []any{"task"}, "reaction_trigger_target": "C_TRAIN"})
 	f.respond("conversations.replies", map[string]any{"ok": true, "messages": []any{map[string]any{"ts": "1000.0", "user": "U_OTHER", "text": "Handoff me"}}})
 	forwarded := captureSlackMessages(t)
 	if err := a.handleSlackReaction(context.Background(), reactionEvent("U1", "task", "1000.0", "U_OTHER", "3000.0"), false); err != nil {
@@ -393,8 +391,7 @@ func TestSlackReactionForwardingTargetChannelHandoffRoutesTopLevel(t *testing.T)
 
 func TestSlackReactionForwardingTargetChannelWithThreadRoutesToThread(t *testing.T) {
 	a, f := approvalAdapter(t)
-	a.Config.Extra["reaction_triggers"] = []any{"task"}
-	a.Config.Extra["reaction_trigger_target"] = "C_TRAIN:1719.0001"
+	writeSlackSettings(t, map[string]any{"reaction_triggers": []any{"task"}, "reaction_trigger_target": "C_TRAIN:1719.0001"})
 	f.respond("conversations.replies", map[string]any{"ok": true, "messages": []any{map[string]any{"ts": "1000.0", "user": "U_OTHER", "text": "Handoff me"}}})
 	forwarded := captureSlackMessages(t)
 	if err := a.handleSlackReaction(context.Background(), reactionEvent("U1", "task", "1000.0", "U_OTHER", "3000.0"), false); err != nil {
@@ -456,7 +453,7 @@ func TestSlackReactionForwardingTriggerConfigParsing(t *testing.T) {
 	}{{false, "", true}, {true, "", false}, {[]any{"thumbsup", ":task:"}, "task,thumbsup", false},
 		{"thumbsup, task", "task,thumbsup", false}, {"all", "", false}, {"false", "", true}}
 	for _, c := range cases {
-		a.Config.Extra["reaction_triggers"] = c.value
+		writeSlackSettings(t, map[string]any{"reaction_triggers": c.value})
 		got := a.slackReactionTriggers(ctx)
 		if (got == nil) != c.off || setOf(got) != c.want {
 			t.Fatalf("%v gave %v", c.value, got)

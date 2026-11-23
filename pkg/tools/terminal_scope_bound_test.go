@@ -31,7 +31,7 @@ func pollutedLaunchEnv(t *testing.T) string {
 }
 
 // Writes a profile home under tmp with optional config and dotenv text
-func scopeProfile(t *testing.T, tmp, name, configYAML, dotenv string) string {
+func scopeProfile(t *testing.T, tmp, name, configYAML string) string {
 	t.Helper()
 	h := filepath.Join(tmp, "profiles", name)
 	if err := os.MkdirAll(h, 0o755); err != nil {
@@ -39,11 +39,6 @@ func scopeProfile(t *testing.T, tmp, name, configYAML, dotenv string) string {
 	}
 	if configYAML != "" {
 		if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(configYAML), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if dotenv != "" {
-		if err := os.WriteFile(filepath.Join(h, ".env"), []byte(dotenv), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -85,7 +80,7 @@ func scopedPolicy(t *testing.T, ctx context.Context, h string) TerminalPolicy {
 func TestManagedBackendBeatsProfileConfig(t *testing.T) {
 	md := scopeManagedDir(t)
 	writeScopeManaged(t, md, "terminal:\n  backend: busybox\n")
-	h := scopeProfile(t, t.TempDir(), "work", "terminal:\n  backend: local\n  timeout: 77\n", "")
+	h := scopeProfile(t, t.TempDir(), "work", "terminal:\n  backend: local\n  timeout: 77\n")
 	scope, err := BuildProfileTerminalScope(context.Background(), h, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +93,7 @@ func TestManagedBackendBeatsProfileConfig(t *testing.T) {
 func TestManagedMappingMergesWithTheProfileMapping(t *testing.T) {
 	md := scopeManagedDir(t)
 	writeScopeManaged(t, md, "terminal:\n  docker_env:\n    A: managed\n")
-	h := scopeProfile(t, t.TempDir(), "work", "terminal:\n  docker_env:\n    A: profile\n    B: keep\n", "")
+	h := scopeProfile(t, t.TempDir(), "work", "terminal:\n  docker_env:\n    A: profile\n    B: keep\n")
 	scope, err := BuildProfileTerminalScope(context.Background(), h, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +110,7 @@ func TestManagedMappingMergesWithTheProfileMapping(t *testing.T) {
 func TestManagedDockerImagePinsTheImage(t *testing.T) {
 	md := scopeManagedDir(t)
 	writeScopeManaged(t, md, "terminal:\n  docker_image: lab/image:1\n")
-	h := scopeProfile(t, t.TempDir(), "work", "", "")
+	h := scopeProfile(t, t.TempDir(), "work", "")
 	scope, err := BuildProfileTerminalScope(context.Background(), h, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +123,7 @@ func TestManagedDockerImagePinsTheImage(t *testing.T) {
 func TestNullManagedValuesPinNothing(t *testing.T) {
 	md := scopeManagedDir(t)
 	writeScopeManaged(t, md, "terminal:\n  backend:\n  docker_image:\n")
-	h := scopeProfile(t, t.TempDir(), "work", "terminal:\n  backend: docker\n", "")
+	h := scopeProfile(t, t.TempDir(), "work", "terminal:\n  backend: docker\n")
 	scope, err := BuildProfileTerminalScope(context.Background(), h, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -162,57 +157,48 @@ func TestScopedReadNeverFallsThroughToProcessEnv(t *testing.T) {
 }
 
 func TestRoutedTurnReadsEveryTerminalConsumerFromProfile(t *testing.T) {
-	for _, form := range []string{"config-yaml", "dotenv-only"} {
-		t.Run(form, func(t *testing.T) {
-			tmp := pollutedLaunchEnv(t)
-			bCwd := filepath.Join(tmp, "b-work")
-			if err := os.MkdirAll(bCwd, 0o755); err != nil {
-				t.Fatal(err)
-			}
-			var h string
-			if form == "config-yaml" {
-				h = scopeProfile(t, tmp, "bee", "terminal:\n  backend: local\n  cwd: "+bCwd+"\n", "")
-			} else {
-				h = scopeProfile(t, tmp, "bee", "", "TERMINAL_ENV=local\nTERMINAL_CWD="+bCwd+"\n")
-			}
-			ctx := WithProfileTerminalScope(context.Background(), h, nil)
-			env := EnvInTerminalScope(ctx, &Env{Home: h})
-			cfg, err := getEnvConfig(env)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cfg["env_type"] != "local" || cfg["cwd"] != bCwd || cfg["docker_shared_container_key"] != "" {
-				t.Fatalf("cfg = %v", cfg)
-			}
-			if vols, _ := cfg["docker_volumes"].([]any); len(vols) != 0 {
-				t.Fatalf("docker_volumes = %v", cfg["docker_volumes"])
-			}
-			key, err := resolveContainerTaskID(env, "")
-			if err != nil || key != "home:"+realPathOf(h) {
-				t.Fatalf("container key = %q %v", key, err)
-			}
-			if got, err := configuredTerminalCwd(env); err != nil || got != bCwd {
-				t.Fatalf("configured cwd = %q %v", got, err)
-			}
-			if got, err := ResolveAgentCwd(env); err != nil || got != bCwd {
-				t.Fatalf("agent cwd = %q %v", got, err)
-			}
-			if local, err := isLocalTerminalBackend(env); err != nil || !local {
-				t.Fatalf("local backend = %v %v", local, err)
-			}
-			if got := resolveTerminalBackend(env); got != "local" {
-				t.Fatalf("probe backend = %q", got)
-			}
-			if GetTerminalScope(context.Background()) != nil || os.Getenv("TERMINAL_DOCKER_VOLUMES") != scopeLaunchVolumes {
-				t.Fatal("scope leaked past the turn")
-			}
-		})
+	tmp := pollutedLaunchEnv(t)
+	bCwd := filepath.Join(tmp, "b-work")
+	if err := os.MkdirAll(bCwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h := scopeProfile(t, tmp, "bee", "terminal:\n  backend: local\n  cwd: "+bCwd+"\n")
+	ctx := WithProfileTerminalScope(context.Background(), h, nil)
+	env := EnvInTerminalScope(ctx, &Env{Home: h})
+	cfg, err := getEnvConfig(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg["env_type"] != "local" || cfg["cwd"] != bCwd || cfg["docker_shared_container_key"] != "" {
+		t.Fatalf("cfg = %v", cfg)
+	}
+	if vols, _ := cfg["docker_volumes"].([]any); len(vols) != 0 {
+		t.Fatalf("docker_volumes = %v", cfg["docker_volumes"])
+	}
+	key, err := resolveContainerTaskID(env, "")
+	if err != nil || key != "home:"+realPathOf(h) {
+		t.Fatalf("container key = %q %v", key, err)
+	}
+	if got, err := configuredTerminalCwd(env); err != nil || got != bCwd {
+		t.Fatalf("configured cwd = %q %v", got, err)
+	}
+	if got, err := ResolveAgentCwd(env); err != nil || got != bCwd {
+		t.Fatalf("agent cwd = %q %v", got, err)
+	}
+	if local, err := isLocalTerminalBackend(env); err != nil || !local {
+		t.Fatalf("local backend = %v %v", local, err)
+	}
+	if got := resolveTerminalBackend(env); got != "local" {
+		t.Fatalf("probe backend = %q", got)
+	}
+	if GetTerminalScope(context.Background()) != nil || os.Getenv("TERMINAL_DOCKER_VOLUMES") != scopeLaunchVolumes {
+		t.Fatal("scope leaked past the turn")
 	}
 }
 
 func TestProfileOmittingKeysGetsDefaultsNotLaunchValues(t *testing.T) {
 	tmp := pollutedLaunchEnv(t)
-	h := scopeProfile(t, tmp, "bee", "terminal:\n  backend: docker\n", "")
+	h := scopeProfile(t, tmp, "bee", "terminal:\n  backend: docker\n")
 	env := EnvInTerminalScope(WithProfileTerminalScope(context.Background(), h, nil), &Env{Home: h})
 	cfg, err := getEnvConfig(env)
 	if err != nil {
@@ -231,7 +217,7 @@ func TestPersistentDockerRoutedProfileKeepsOneContainer(t *testing.T) {
 	tmp := pollutedLaunchEnv(t)
 	keys := map[string]string{}
 	for _, name := range []string{"bee", "wasp"} {
-		h := scopeProfile(t, tmp, name, "terminal:\n  backend: docker\n  container_persistent: true\n", "")
+		h := scopeProfile(t, tmp, name, "terminal:\n  backend: docker\n  container_persistent: true\n")
 		env := EnvInTerminalScope(WithProfileTerminalScope(context.Background(), h, nil), &Env{Home: h})
 		cronKey, err := resolveContainerTaskID(env, "")
 		if err != nil {
@@ -257,7 +243,7 @@ func TestPersistentDockerRoutedProfileKeepsOneContainer(t *testing.T) {
 
 func TestMalformedProfileConfigRefusesExecution(t *testing.T) {
 	tmp := pollutedLaunchEnv(t)
-	h := scopeProfile(t, tmp, "broken", "terminal: [unclosed\n", "")
+	h := scopeProfile(t, tmp, "broken", "terminal: [unclosed\n")
 	ctx := WithProfileTerminalScope(context.Background(), h, nil)
 	scope := GetTerminalScope(ctx)
 	if scope == nil || scope.Refusal == nil {
@@ -278,7 +264,7 @@ func TestMalformedProfileConfigRefusesExecution(t *testing.T) {
 
 func TestGatewayRuntimeScopeResetsOnError(t *testing.T) {
 	tmp := pollutedLaunchEnv(t)
-	h := scopeProfile(t, tmp, "qa", "terminal:\n  backend: local\n", "")
+	h := scopeProfile(t, tmp, "qa", "terminal:\n  backend: local\n")
 	parent := context.Background()
 	turn := func() (err error) {
 		ctx := WithProfileTerminalScope(parent, h, nil)
@@ -294,7 +280,7 @@ func TestGatewayRuntimeScopeResetsOnError(t *testing.T) {
 
 func TestCronBoundaryBindsAndResets(t *testing.T) {
 	tmp := pollutedLaunchEnv(t)
-	h := scopeProfile(t, tmp, "dash", "terminal:\n  backend: local\n", "")
+	h := scopeProfile(t, tmp, "dash", "terminal:\n  backend: local\n")
 	parent := context.Background()
 	ctx := WithProfileTerminalScope(parent, h, nil)
 	policy := scopedPolicy(t, ctx, h)
@@ -314,7 +300,7 @@ func TestConfigListAndDictValuesAreJSONNotRepr(t *testing.T) {
 	tmp := pollutedLaunchEnv(t)
 	h := scopeProfile(t, tmp, "docker-lists", strings.Join([]string{"terminal:", "  backend: docker",
 		"  docker_forward_env:", "    - EMAIL_HOME_ADDRESS", "  docker_volumes:", "    - /tmp/a:/data",
-		"  docker_env:", "    FOO: bar", "  docker_extra_args:", "    - --network=host", ""}, "\n"), "")
+		"  docker_env:", "    FOO: bar", "  docker_extra_args:", "    - --network=host", ""}, "\n"))
 	scope, err := BuildProfileTerminalScope(context.Background(), h, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -341,22 +327,9 @@ func TestConfigListAndDictValuesAreJSONNotRepr(t *testing.T) {
 	}
 }
 
-func TestDotenvJSONStringsStayJSONStrings(t *testing.T) {
-	tmp := pollutedLaunchEnv(t)
-	h := scopeProfile(t, tmp, "dotenv-json", "terminal:\n  backend: docker\n",
-		"TERMINAL_DOCKER_FORWARD_ENV=[\"EMAIL_HOME_ADDRESS\"]\nTERMINAL_DOCKER_VOLUMES=[\"/tmp/a:/data\"]\n")
-	scope, err := BuildProfileTerminalScope(context.Background(), h, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if scope["TERMINAL_DOCKER_FORWARD_ENV"] != `["EMAIL_HOME_ADDRESS"]` || scope["TERMINAL_DOCKER_VOLUMES"] != `["/tmp/a:/data"]` {
-		t.Fatalf("scope = %v", scope)
-	}
-}
-
 func TestLaunchTurnBindsTerminalScopeOnceMultiplexingIsActive(t *testing.T) {
 	launch := filepath.Join(t.TempDir(), ".icebath")
-	scopeProfile(t, filepath.Dir(launch), "x", "", "")
+	scopeProfile(t, filepath.Dir(launch), "x", "")
 	if err := os.MkdirAll(launch, 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -135,12 +135,10 @@ func TestResolveGatewayModel(t *testing.T) {
 		want string
 	}{
 		{"nil_config_loads_the_gateway_config", nil, "from-home"},
-		{"string_model", map[string]any{"model": "plain"}, "plain"},
-		{"default_key", map[string]any{"model": map[string]any{"default": "d", "model": "m"}}, "d"},
-		{"model_key_when_default_empty", map[string]any{"model": map[string]any{"default": "", "model": "m"}}, "m"},
-		{"truthy_non_string_default_wins", map[string]any{"model": map[string]any{"default": 5, "model": "m"}}, ""},
+		{"default_key", map[string]any{"model": map[string]any{"default": "d"}}, "d"},
+		{"non_string_default", map[string]any{"model": map[string]any{"default": 5}}, ""},
 		{"missing_model", map[string]any{}, ""},
-		{"non_string_model", map[string]any{"model": []any{"x"}}, ""},
+		{"model_that_is_no_mapping", map[string]any{"model": "plain"}, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

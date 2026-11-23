@@ -1,12 +1,9 @@
 package gateway
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/provider"
 )
 
 func TestBoolTokenAndCoerceBool(t *testing.T) {
@@ -57,31 +54,6 @@ func TestSmallHelpers(t *testing.T) {
 	}
 }
 
-func TestLoadLegacyGatewayJSON(t *testing.T) {
-	h := t.TempDir()
-	if got := LoadLegacyGatewayJSON(h); !reflect.DeepEqual(got, map[string]any{}) {
-		t.Fatalf("absent %v", got)
-	}
-	write := func(s string) { os.WriteFile(filepath.Join(h, "gateway.json"), []byte(s), 0o600) }
-	write("\xef\xbb\xbf{\"platforms\": {\"telegram\": {\"enabled\": true}}}")
-	want := map[string]any{"platforms": map[string]any{"telegram": map[string]any{"enabled": true}}}
-	if got := LoadLegacyGatewayJSON(h); !reflect.DeepEqual(got, want) {
-		t.Fatalf("bom %v", got)
-	}
-	write("{not json")
-	if got := LoadLegacyGatewayJSON(h); !reflect.DeepEqual(got, map[string]any{}) {
-		t.Fatalf("malformed %v", got)
-	}
-	write("[]")
-	if got := LoadLegacyGatewayJSON(h); !reflect.DeepEqual(got, map[string]any{}) {
-		t.Fatalf("falsy %v", got)
-	}
-	write("[1]")
-	if got := LoadLegacyGatewayJSON(h); !reflect.DeepEqual(got, []any{int64(1)}) {
-		t.Fatalf("list passes through %#v", got)
-	}
-}
-
 func TestBridgeToplevelKeysModes(t *testing.T) {
 	yamlCfg := map[string]any{
 		"quick_commands": nil, "stt": "bad", "streaming": "x", "profile_routes": []any{"r"},
@@ -105,16 +77,5 @@ func TestBridgeToplevelKeysModes(t *testing.T) {
 	BridgeToplevelKeys(map[string]any{"systemd_watchdog_seconds": 5, "stt": map[string]any{}}, "not a mapping", gw)
 	if !reflect.DeepEqual(gw, map[string]any{"stt": map[string]any{}}) {
 		t.Fatalf("nested only key ignores top level %v", gw)
-	}
-}
-
-func TestProviderHooksInstalled(t *testing.T) {
-	if provider.GatewayHooks.LegacyJSON == nil {
-		t.Fatal("init installs the provider hooks")
-	}
-	h := t.TempDir()
-	os.WriteFile(filepath.Join(h, "gateway.json"), []byte("[1]"), 0o600)
-	if provider.GatewayHooks.LegacyJSON(h) != nil {
-		t.Fatal("a non mapping reads as nil")
 	}
 }

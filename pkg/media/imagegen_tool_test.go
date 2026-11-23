@@ -18,7 +18,7 @@ func TestImage25SelectionRoutesGenerationAndEdits(t *testing.T) {
 		for aspect, size := range map[string]string{"landscape": "landscape_4_3", "square": "square_hd", "portrait": "portrait_4_3"} {
 			model := "openai/gpt-image-2.5/" + variant + "/text-to-image"
 			t.Setenv("FAL_KEY", "test-key")
-			env := &tools.Env{Home: t.TempDir(), Config: config.Tree{"image_gen": map[string]any{"model": model}}}
+			env := imageEnv(t, config.Tree{"image_gen": map[string]any{"model": model}})
 			selected, meta := resolveFalModel(env)
 			if selected != model {
 				t.Fatalf("selected %s", selected)
@@ -136,11 +136,11 @@ func TestFalModelResolution(t *testing.T) {
 	if id, _ := resolveFalModel(env); id != falDefaultModel {
 		t.Fatal(id)
 	}
-	env.Config = config.Tree{"image_gen": map[string]any{"model": "fal-ai/flux-2-pro"}}
+	setImageConfig(t, env, config.Tree{"image_gen": map[string]any{"model": "fal-ai/flux-2-pro"}})
 	if id, _ := resolveFalModel(env); id != "fal-ai/flux-2-pro" {
 		t.Fatal(id)
 	}
-	env.Config = config.Tree{"image_gen": map[string]any{"model": "nope/model"}}
+	setImageConfig(t, env, config.Tree{"image_gen": map[string]any{"model": "nope/model"}})
 	if id, _ := resolveFalModel(env); id != falDefaultModel {
 		t.Fatal(id)
 	}

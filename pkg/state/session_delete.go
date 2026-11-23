@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -155,17 +156,21 @@ func globEscape(s string) string {
 	return b.String()
 }
 
-// Removes every historical transcript snapshot and request dump of a session, swallowing filesystem errors
+// Removes the transcript snapshots, request dumps and shell lines kept for a session in a sessions folder, a file that stays being logged
 func removeSessionFiles(sessionsDir, sessionID string) {
 	if sessionsDir == "" {
 		return
 	}
-	targets := []string{filepath.Join(sessionsDir, sessionID+".json"), filepath.Join(sessionsDir, sessionID+".jsonl"), filepath.Join(sessionsDir, "session_"+sessionID+".json")}
-	if dumps, err := filepath.Glob(filepath.Join(sessionsDir, "request_dump_"+globEscape(sessionID)+"_*.json")); err == nil {
-		targets = append(targets, dumps...)
+	targets := []string{filepath.Join(sessionsDir, sessionID+".json"), filepath.Join(sessionsDir, sessionID+".jsonl"),
+		filepath.Join(sessionsDir, "session_"+sessionID+".json"), ShellLinesPath(sessionsDir, sessionID)}
+	dumps, err := filepath.Glob(filepath.Join(sessionsDir, "request_dump_"+globEscape(sessionID)+"_*.json"))
+	if err != nil {
+		pkgLog().Warn(fmt.Sprintf("could not list the request dumps of deleted session %s: %v", sessionID, err))
 	}
-	for _, p := range targets {
-		_ = os.Remove(p)
+	for _, p := range append(targets, dumps...) {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			pkgLog().Warn(fmt.Sprintf("could not remove %s of deleted session %s: %v", p, sessionID, err))
+		}
 	}
 }
 

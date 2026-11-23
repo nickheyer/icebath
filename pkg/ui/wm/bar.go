@@ -434,7 +434,8 @@ func (m *Model) closedField() fieldText {
 		}
 		return ft
 	}
-	return fieldText{mark: t.Glyphs.Prompt, tint: t.Accent, words: "palette", key: m.keys.Display("palette"), keyTint: t.TextDim}
+	palette, _ := m.keys.Action("palette")
+	return fieldText{mark: t.Glyphs.Prompt, tint: t.Accent, words: palette.LabelText(), key: m.keys.Display("palette"), keyTint: t.TextDim}
 }
 
 // Columns the closed field wants for its text and key, within its bounds

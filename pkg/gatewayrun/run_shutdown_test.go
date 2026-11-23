@@ -368,13 +368,6 @@ func TestMissingAPIAdapterIsNotWork(t *testing.T) {
 	}
 }
 
-// Agent whose last activity is now
-func touchedAgent() *agent.AIAgent {
-	a := &agent.AIAgent{}
-	a.TouchActivity("turn")
-	return a
-}
-
 // Agent whose activity clock reads idle for the given seconds
 func idleAgent(idleSeconds float64) *agent.AIAgent {
 	a := &agent.AIAgent{}
@@ -383,17 +376,17 @@ func idleAgent(idleSeconds float64) *agent.AIAgent {
 }
 
 func TestWedgedAgentCountDisabledTimeoutCountsNothing(t *testing.T) {
-	t.Setenv("ICEBATH_AGENT_TIMEOUT", "0")
+	t.Setenv("ICEBATH_HOME", t.TempDir())
+	setSettings(t, map[string]any{"agent.gateway_timeout": 0})
 	r, _ := makeRestartRunner(t)
-	r.sessionState("agent:main:telegram:dm:1").turn.agent = touchedAgent()
+	r.sessionState("agent:main:telegram:dm:1").turn.agent = idleAgent(4000)
 	if n := r.wedgedAgentCount(context.Background()); n != 0 {
 		t.Fatalf("wedged = %d", n)
 	}
 }
 
 func TestWedgedAgentCountIgnoresSentinelsAndBadSummaries(t *testing.T) {
-	t.Setenv("ICEBATH_AGENT_TIMEOUT", "")
-	os.Unsetenv("ICEBATH_AGENT_TIMEOUT")
+	t.Setenv("ICEBATH_HOME", t.TempDir())
 	r, _ := makeRestartRunner(t)
 	r.sessionState("pending").turn.agent = agentPendingSentinel
 	r.sessionState("no_summary").turn.agent = &agent.AIAgent{}

@@ -73,7 +73,7 @@ func authCodexPoolOnlyStore(exhausted bool) map[string]any {
 		entry["last_error_message"] = "The usage limit has been reached"
 		entry["last_error_reset_at"] = now + 3600
 	}
-	return map[string]any{"version": 2, "active_provider": "openai-codex", "providers": map[string]any{},
+	return map[string]any{"version": 2, "providers": map[string]any{},
 		"credential_pool": map[string]any{"openai-codex": []any{entry}}}
 }
 
@@ -131,34 +131,6 @@ func TestAuthAddApiKeyPersistsManualEntry(t *testing.T) {
 	}
 	if entry == nil || entry["label"] != "personal" || entry["auth_type"] != "api_key" || entry["source"] != "manual" || entry["access_token"] != "sk-or-manual" {
 		t.Fatalf("manual entry %v", entry)
-	}
-}
-
-func TestAuthAddMigratesLegacyPrefixedKeyForConfiguredProvider(t *testing.T) {
-	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{
-		"custom:groq": []any{map[string]any{"id": "legacy-key", "label": "legacy", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "gsk-legacy"}}}})
-	authTestGroqConfig(t, h, "groq", "Groq", "")
-	authMust(t, env, map[string]any{"auth_action": "add", "provider": "groq", "auth_type": "api-key", "api_key": "gsk-new", "label": "new"})
-	if authPoolHas(t, h, "custom:groq") {
-		t.Fatal("legacy custom:groq pool survived the migration")
-	}
-	if got := authTokenSet(authPoolEntries(t, h, "groq")); !reflect.DeepEqual(got, map[string]bool{"gsk-legacy": true, "gsk-new": true}) {
-		t.Fatalf("groq tokens %v", got)
-	}
-}
-
-func TestAuthAddMigratesDisplayNameDerivedLegacyPoolKey(t *testing.T) {
-	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{
-		"custom:groq": []any{map[string]any{"id": "legacy-key", "label": "legacy", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "gsk-legacy"}}}})
-	authTestGroqConfig(t, h, "groq-cloud", "Groq", "")
-	authMust(t, env, map[string]any{"auth_action": "add", "provider": "groq-cloud", "auth_type": "api-key", "api_key": "gsk-new", "label": "new"})
-	if authPoolHas(t, h, "custom:groq") {
-		t.Fatal("legacy custom:groq pool survived the migration")
-	}
-	if got := authTokenSet(authPoolEntries(t, h, "groq-cloud")); !reflect.DeepEqual(got, map[string]bool{"gsk-legacy": true, "gsk-new": true}) {
-		t.Fatalf("groq-cloud tokens %v", got)
 	}
 }
 
@@ -273,10 +245,7 @@ func TestAuthAddCodexOauthKeepsDistinctPoolAccounts(t *testing.T) {
 	}
 	payload := readAuthStore(t, h)
 	if providers, _ := payload["providers"].(map[string]any); providers["openai-codex"] != nil {
-		t.Fatalf("singleton block written: %v", providers["openai-codex"])
-	}
-	if payload["active_provider"] != "openai-codex" {
-		t.Fatalf("active_provider %v", payload["active_provider"])
+		t.Fatalf("provider block written: %v", providers["openai-codex"])
 	}
 }
 
@@ -367,10 +336,7 @@ func TestAuthAddXaiOauthKeepsDistinctPoolAccounts(t *testing.T) {
 	}
 	payload := readAuthStore(t, h)
 	if providers, _ := payload["providers"].(map[string]any); providers["xai-oauth"] != nil {
-		t.Fatalf("singleton block written: %v", providers["xai-oauth"])
-	}
-	if payload["active_provider"] != "xai-oauth" {
-		t.Fatalf("active_provider %v", payload["active_provider"])
+		t.Fatalf("provider block written: %v", providers["xai-oauth"])
 	}
 }
 
@@ -410,8 +376,8 @@ func TestAuthRemoveCodexMigratesLegacyDictSuppression(t *testing.T) {
 
 func TestClearProviderAuthRemovesProviderPoolEntries(t *testing.T) {
 	h, env := authTestHome(t)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "anthropic",
-		"providers": map[string]any{"anthropic": map[string]any{"access_token": "legacy-token"}},
+	writeAuthStore(t, h, map[string]any{"version": 2,
+		"providers": map[string]any{"anthropic": map[string]any{"detected_endpoint": map[string]any{"endpoint_id": "x"}}},
 		"credential_pool": map[string]any{
 			"anthropic":  []any{map[string]any{"id": "cred-1", "label": "primary", "auth_type": "oauth", "priority": 0, "source": "manual:icebath_pkce", "access_token": "pool-token"}},
 			"openrouter": []any{map[string]any{"id": "cred-2", "label": "other-provider", "auth_type": "api_key", "priority": 0, "source": "manual", "access_token": "sk-or-test"}}}})
@@ -421,7 +387,7 @@ func TestClearProviderAuthRemovesProviderPoolEntries(t *testing.T) {
 	}
 	payload := readAuthStore(t, h)
 	providers, _ := payload["providers"].(map[string]any)
-	if payload["active_provider"] != nil || providers["anthropic"] != nil || authPoolHas(t, h, "anthropic") || !authPoolHas(t, h, "openrouter") {
+	if providers["anthropic"] != nil || authPoolHas(t, h, "anthropic") || !authPoolHas(t, h, "openrouter") {
 		t.Fatalf("payload %v", payload)
 	}
 }

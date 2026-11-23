@@ -122,7 +122,7 @@ func TestAllowAnyAttachmentUnknownTypeCachedByDefault(t *testing.T) {
 
 func TestAllowAnyAttachmentMaxAttachmentBytesCapsUploads(t *testing.T) {
 	a, f, c := inboundAdapter(t)
-	a.Config.Extra["max_attachment_bytes"] = 1024
+	setDiscord(t, "max_attachment_bytes", 1024)
 	m := documentMessage(f, "", nil, attachment("too_big.xyz", "application/x-custom", 2048))
 	a.handleDiscordMessage(t.Context(), m, false, false)
 	if ev := lastEvent(t, c); len(ev.MediaURLs) != 0 {
@@ -132,7 +132,7 @@ func TestAllowAnyAttachmentMaxAttachmentBytesCapsUploads(t *testing.T) {
 
 func TestAllowAnyAttachmentMaxAttachmentBytesZeroMeansUnlimited(t *testing.T) {
 	a, f, c := inboundAdapter(t)
-	a.Config.Extra["max_attachment_bytes"] = 0
+	setDiscord(t, "max_attachment_bytes", 0)
 	m := documentMessage(f, "", map[string]string{"/attachments/fake/huge.xyz": strings.Repeat("x", 16)}, attachment("huge.xyz", "application/x-custom", 64*1024*1024))
 	a.handleDiscordMessage(t.Context(), m, false, false)
 	if ev := lastEvent(t, c); len(ev.MediaURLs) != 1 {

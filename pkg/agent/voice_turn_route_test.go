@@ -224,7 +224,7 @@ func TestBeginAndEndVoiceTurnRouteSwapAndRestoreTheSessionRoute(t *testing.T) {
 			if tc.separate {
 				extra = "auxiliary:\n  voice_chat:\n    provider: custom\n" +
 					"    base_url: " + voice.baseURL() + "\n    model: voice-model\n    api_key: sk-fake-voice\n" +
-					"custom_providers:\n  - name: voice\n" +
+					"providers:\n  voice:\n" +
 					"    base_url: " + voice.baseURL() + "\n    models:\n      voice-model:\n        context_length: " + tc.contextLength + "\n"
 			}
 			ctx, a := newVoiceAgent(t, writeVoiceHome(t, main.baseURL(), extra), main.baseURL())

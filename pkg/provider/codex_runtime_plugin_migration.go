@@ -469,10 +469,10 @@ func codexLooksLikeTableHeader(strippedLine string) bool {
 	return strings.HasSuffix(head, "]") && !strings.Contains(head[:strings.Index(head, "]")+1], "=")
 }
 
-// Section headers an old managed block without an end marker may contain
-var codexLegacyManagedHeaders = []string{"[mcp_servers", "[plugins", "[permissions]", "[permissions."}
+// Table headers the managed section holds
+var codexManagedHeaders = []string{"[mcp_servers", "[plugins", "[permissions]", "[permissions."}
 
-// Removes the prior managed section between the markers, a legacy block ending at its first foreign table
+// Removes the prior managed section between the markers, a section that lost its end marker ending at the first table it does not hold
 func codexStripExistingManagedBlock(tomlText string) string {
 	var out strings.Builder
 	inManaged := false
@@ -488,8 +488,8 @@ func codexStripExistingManagedBlock(tomlText string) string {
 				continue
 			}
 			stripped := pystr.Lstrip(line)
-			legacy := slices.ContainsFunc(codexLegacyManagedHeaders, func(h string) bool { return strings.HasPrefix(stripped, h) })
-			if !strings.HasPrefix(stripped, "[") || legacy {
+			managed := slices.ContainsFunc(codexManagedHeaders, func(h string) bool { return strings.HasPrefix(stripped, h) })
+			if !strings.HasPrefix(stripped, "[") || managed {
 				continue
 			}
 			inManaged = false

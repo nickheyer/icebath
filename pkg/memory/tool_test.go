@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -871,7 +870,9 @@ func TestManagerForRegistersAStoreOnlyManagerOnce(t *testing.T) {
 		t.Fatal("manager rebuilt")
 	}
 	off := testEnv(t)
-	off.Config = config.Tree{"memory": map[string]any{"memory_enabled": false, "user_profile_enabled": false}}
+	if err := os.WriteFile(filepath.Join(off.Home, "config.yaml"), []byte("memory:\n  memory_enabled: false\n  user_profile_enabled: false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if ManagerFor(context.Background(), off).Store() != nil {
 		t.Fatal("store built with both stores disabled")
 	}

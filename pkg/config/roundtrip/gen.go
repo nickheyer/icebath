@@ -493,28 +493,3 @@ func CLIKey(path []string) string {
 	}
 	return strings.Join(out, ".")
 }
-
-// CLI string for a new value of a documented leaf and the value it must persist as
-func SetValueFor(def, current any, g *RNG) (string, any) {
-	switch def.(type) {
-	case bool:
-		v := true
-		if c, ok := current.(bool); ok {
-			v = !c
-		} else {
-			v = !def.(bool)
-		}
-		return strconv.FormatBool(v), v
-	case int:
-		v := g.RandInt(1, 1000000)
-		for Equal(v, current) {
-			v++
-		}
-		return strconv.Itoa(v), v
-	case float64:
-		v := Round(g.Uniform(1, 999), 2) + 0.25
-		return FloatRepr(v), v
-	}
-	v := fmt.Sprintf("c18-%s-%d", Choice(g, Words), g.RandRange(1000000))
-	return v, v
-}

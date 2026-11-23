@@ -11,7 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 )
 
-const auxBeansCustomProviderYAML = "custom_providers:\n  - name: beans\n    base_url: http://beans.local/v1\n    api_key: k\n"
+const auxBeansCustomProviderYAML = "providers:\n  beans:\n    base_url: http://beans.local/v1\n    api_key: k\n"
 
 func TestResolveProviderClientMainAliasMainResolvesToNamedCustomProvider(t *testing.T) {
 	ctx := auxMainTestHome(t, "model:\n  default: my-model\n  provider: beans\n"+auxBeansCustomProviderYAML)

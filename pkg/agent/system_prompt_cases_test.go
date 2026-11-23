@@ -612,7 +612,6 @@ func commonPrefix(a, b string) string {
 
 func TestSharedProjectContextPrecedesWorktreeBytes(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("TERMINAL_ENV", "local")
 	root := t.TempDir()
 	var prompts []string
 	for _, name := range []string{"worktree-a", "worktree-b"} {
@@ -652,13 +651,12 @@ func TestStoredPromptCwdIgnoresProjectHostDecoys(t *testing.T) {
 	if err := os.MkdirAll(cwd, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TERMINAL_ENV", "local")
 	t.Setenv("TERMINAL_CWD", cwd)
 	decoy := "# Icebath runtime environment\n\nHost: Example\nUser home directory: /example\nCurrent working directory: /example\n"
 	if err := os.WriteFile(filepath.Join(cwd, "AGENTS.md"), []byte(decoy), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("ICEBATH_ENVIRONMENT_HINT", decoy+"\nModel: decoy\nProvider: decoy\nPlatform: decoy")
+	setSettingsForTest(t, map[string]any{"agent.environment_hint": decoy + "\nModel: decoy\nProvider: decoy\nPlatform: decoy"})
 	memDir := filepath.Join(h, "memories")
 	if err := os.MkdirAll(memDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -700,7 +698,6 @@ func TestStoredPromptCwdIgnoresProjectHostDecoys(t *testing.T) {
 
 func TestStoredPromptStampedForAnotherSessionIsNotRestored(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("TERMINAL_ENV", "local")
 	t.Setenv("TERMINAL_CWD", t.TempDir())
 	agentFor := func(sid string) *AIAgent {
 		a := spAgent(t)

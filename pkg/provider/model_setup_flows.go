@@ -238,12 +238,7 @@ func modelFlowMoA(r *ModelFlowRun) error {
 		rows = append(rows, fmt.Sprintf("%s  (acting: %s, %d refs)%s", n, aggLabel, len(refs), suffix))
 	}
 	title := "Select a Mixture of Agents preset:"
-	hosted := hostedAsker() != nil
-	shown := rows
-	if hosted {
-		shown = append(append([]string{}, rows...), hostedMoAConfigureRow)
-	}
-	idx, ok := cursesChoice(title, shown, defaultIdx)
+	idx, ok := cursesChoice(title, rows, defaultIdx)
 	if !ok {
 		printNumbered(r.Out, title, rows, defaultIdx)
 		raw, answered := flowAskFn(r.Out, fmt.Sprintf("  Choice [1-%d]: ", len(rows)), flowAskOptions{Raw: true, CancelMsg: optStr(flowNoChange)})
@@ -264,9 +259,6 @@ func modelFlowMoA(r *ModelFlowRun) error {
 	if idx < 0 {
 		fmt.Fprintln(r.Out, flowNoChange)
 		return nil
-	}
-	if hosted && idx == len(names) {
-		return hostedMoAConfigure(r)
 	}
 	selectedName := names[idx]
 	cfg, model, err := loadConfigModelSection(r.home())
@@ -1036,10 +1028,6 @@ func externalProcessLoginGate(r *ModelFlowRun, profile Profile, status map[strin
 
 // Runs the CLI login on the terminal, false when it could not start or Ctrl-C interrupted it
 func runLoginCommand(ctx context.Context, login []string) bool {
-	if ask := hostedAsker(); ask != nil {
-		ran, err := askHostedCommand(ask, login)
-		return ran && err == nil
-	}
 	cmd := exec.CommandContext(ctx, login[0], login[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	interrupts := make(chan os.Signal, 1)
@@ -1117,7 +1105,7 @@ func pluginFlowExternalProcess(r *ModelFlowRun, providerID string, profile Profi
 	return &pluginFlowCredentials{baseURL: baseURL}, nil
 }
 
-// OAuth plugin provider credential step from the pool or auth status, a TUI flow signing in first when needed
+// OAuth plugin provider credential step from the pool or auth status, naming the sign in command when signed out
 func pluginFlowOAuth(r *ModelFlowRun, providerID string, profile Profile) (*pluginFlowCredentials, error) {
 	status := GetAuthStatus(r.Env, providerID)
 	if !truthy(status["logged_in"]) {
@@ -1125,24 +1113,14 @@ func pluginFlowOAuth(r *ModelFlowRun, providerID string, profile Profile) (*plug
 		if name == "" {
 			name = providerID
 		}
-		ask := hostedAsker()
-		if ask == nil {
-			hint := anyString(status["hint"])
-			if missing := pluginMissingAuthHandlerError(providerID, "add"); missing != nil {
-				hint = missing.Error()
-			} else if hint == "" {
-				hint = fmt.Sprintf("Run `icebath auth add %s` to sign in.", providerID)
-			}
-			flowSay(r.Out, fmt.Sprintf("  ⚠ Not signed in to %s.", name), fmt.Sprintf("  %s", hint))
-			return nil, nil
+		hint := anyString(status["hint"])
+		if missing := pluginMissingAuthHandlerError(providerID, "add"); missing != nil && !profileHasDeviceLogin(profile) {
+			hint = missing.Error()
+		} else if hint == "" {
+			hint = fmt.Sprintf("Run `icebath auth add %s` to sign in.", providerID)
 		}
-		if !hostedPluginSignIn(r, ask, providerID, name, profile) {
-			return nil, nil
-		}
-		if status = GetAuthStatus(r.Env, providerID); !truthy(status["logged_in"]) {
-			flowSay(r.Out, fmt.Sprintf("  ⚠ The sign-in finished but %s still holds no live credential.", name))
-			return nil, nil
-		}
+		flowSay(r.Out, fmt.Sprintf("  ⚠ Not signed in to %s.", name), fmt.Sprintf("  %s", hint))
+		return nil, nil
 	}
 	baseURL, apiKey := "", ""
 	if entry, ok := flowLoadPoolFn(r.Env, providerID).Select(""); ok {

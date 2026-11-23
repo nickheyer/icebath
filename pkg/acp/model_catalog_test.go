@@ -56,13 +56,3 @@ func TestNamedCustomProviderCatalogsNoCredentialAndNoDeclaredModelsSkipped(t *te
 		t.Fatalf("catalogs %#v", cats)
 	}
 }
-
-func TestNamedCustomProviderCatalogsLegacyCustomProvidersListIncluded(t *testing.T) {
-	t.Setenv("SOME_KEY", "k")
-	withConfig(t, "custom_providers:\n- name: Legacy Endpoint\n  base_url: https://legacy.example/v1\n  key_env: SOME_KEY\n  model: legacy-model\n")
-	withLiveModels(t, nil, false)
-	cats := namedCustomProviderCatalogs(context.Background())
-	if len(cats) != 1 || cats[0].slug != "custom:legacy-endpoint" || cats[0].label != "Legacy Endpoint" || !reflect.DeepEqual(cats[0].models, [][2]string{{"legacy-model", ""}}) {
-		t.Fatalf("catalogs %#v", cats)
-	}
-}

@@ -23,17 +23,11 @@ func TestNewSessionIsCreatedOnTheGatewayAndItsIdAdopted(t *testing.T) {
 	if sid != "local-new" {
 		t.Fatalf("sid %q", sid)
 	}
-	var first *fakeCall
-	for _, call := range client.all() {
-		if call.method != "runtime.describe" {
-			first = &call
-			break
-		}
+	calls := client.all()
+	if len(calls) == 0 || calls[0].method != "session.create" {
+		t.Fatalf("calls %v", calls)
 	}
-	if first == nil || first.method != "session.create" {
-		t.Fatalf("first call %v", first)
-	}
-	params := first.params
+	params := calls[0].params
 	wantEqual(t, params["model"], "m1")
 	wantEqual(t, params["toolsets"], []any{"file", "web"})
 	wantEqual(t, params["source"], "cli")

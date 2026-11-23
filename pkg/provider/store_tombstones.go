@@ -42,14 +42,15 @@ func (s *Store) tombstonedIDs(data AuthData, providerID string) map[string]bool 
 	return out
 }
 
-// Rows whose id the store recorded as removed dropped, a stale writer's copy of a removed login never written back
-func withoutTombstoned(entries []map[string]any, stones map[string]bool) []map[string]any {
+// Rows whose id was recorded as removed and that the store no longer holds dropped, a stale writer's copy of a removed login never written back
+func withoutTombstoned(entries []map[string]any, stones map[string]bool, held map[string]map[string]any) []map[string]any {
 	if len(stones) == 0 {
 		return entries
 	}
 	kept := make([]map[string]any, 0, len(entries))
 	for _, e := range entries {
-		if !stones[entryID(e)] {
+		id := entryID(e)
+		if _, stored := held[id]; stored || !stones[id] {
 			kept = append(kept, e)
 		}
 	}

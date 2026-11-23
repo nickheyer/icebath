@@ -119,31 +119,37 @@ func TestGmiDoctorRunDoctorChecksGmiModelsEndpoint(t *testing.T) {
 	}
 }
 
-// Stores an OAuth login of one provider in the auth store of a home
-func doctorSeedOAuth(t *testing.T, h, providerID string, state map[string]any) {
+// Stores one signed in OAuth login of a provider in the auth store of a home, the row a sign in from the named source leaves
+func doctorSeedOAuth(t *testing.T, h, providerID, source, accessToken string) {
 	t.Helper()
-	if _, err := provider.NewStore(h).SaveActiveProviderState(providerID, state); err != nil {
+	row := map[string]any{"id": "doctor", "label": "doctor", "auth_type": provider.AuthTypeOAuth, "priority": 0,
+		"source": source, "access_token": accessToken, "refresh_token": accessToken + "-refresh"}
+	err := provider.NewStore(h).Update(func(data provider.AuthData) (bool, error) {
+		pool, _ := data["credential_pool"].(map[string]any)
+		if pool == nil {
+			pool = map[string]any{}
+			data["credential_pool"] = pool
+		}
+		pool[providerID] = []any{row}
+		return true, nil
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestRunDoctorIgnoresInvalidDirectKeysWhenOauthFallbackIsHealthy(t *testing.T) {
 	cases := []struct {
-		envKey, badKey, failingHost, oauthProvider string
-		oauthState                                 map[string]any
-		unexpectedIssue                            string
+		envKey, badKey, failingHost, oauthProvider, oauthSource, oauthToken, unexpectedIssue string
 	}{
-		{"MINIMAX_API_KEY", "bad-minimax-key", "minimax.io", "minimax-oauth",
-			map[string]any{"access_token": "minimax-access", "region": "global"}, "Check MINIMAX_API_KEY in .env"},
-		{"XAI_API_KEY", "bad-xai-key", "api.x.ai", "xai-oauth",
-			map[string]any{"tokens": map[string]any{"access_token": "xai-access", "refresh_token": "xai-refresh"}, "auth_mode": "oauth_pkce"},
-			"Check XAI_API_KEY in .env"},
+		{"MINIMAX_API_KEY", "bad-minimax-key", "minimax.io", "minimax-oauth", "manual:minimax_oauth", "minimax-access", "Check MINIMAX_API_KEY in .env"},
+		{"XAI_API_KEY", "bad-xai-key", "api.x.ai", "xai-oauth", provider.SourceManualDeviceCode, "xai-access", "Check XAI_API_KEY in .env"},
 	}
 	for _, c := range cases {
 		t.Run(c.envKey, func(t *testing.T) {
 			d, buf := doctorRawHome(t, "model:\n  provider: openrouter\n  default: moonshotai/kimi-k2.6\nnetwork:\n  force_ipv4: true\n", "")
 			t.Setenv(c.envKey, c.badKey)
-			doctorSeedOAuth(t, d.Home, c.oauthProvider, c.oauthState)
+			doctorSeedOAuth(t, d.Home, c.oauthProvider, c.oauthSource, c.oauthToken)
 			doctorFakeDefaultTransport(t, func(target string) int {
 				if strings.Contains(target, c.failingHost) {
 					return 401
@@ -162,8 +168,7 @@ var doctorAuthEntry = doctorCheckEntry{"Auth Providers", checkAuthProviders}
 
 func TestDoctorXaiOAuthStatusLoggedInDoesNotEmitNotLoggedInOnXaiLine(t *testing.T) {
 	d, buf := doctorRawHome(t, "memory: {}\n", "")
-	doctorSeedOAuth(t, d.Home, "xai-oauth", map[string]any{
-		"tokens": map[string]any{"access_token": "xai-access", "refresh_token": "xai-refresh"}, "auth_mode": "oauth_pkce"})
+	doctorSeedOAuth(t, d.Home, "xai-oauth", provider.SourceManualDeviceCode, "xai-access")
 	out, _ := doctorWalk(t, d, buf, map[string]any{"fix": false}, doctorAuthEntry)
 	xaiLine := ""
 	for _, line := range strings.Split(out, "\n") {
@@ -259,30 +264,6 @@ func TestDoctorCliProcessStatusMatchesSummary(t *testing.T) {
 		})
 	}
 }
-
-// Records catalog installs through the plugin manager hooks, every one failing at the catalog repo
-func doctorFailingInstalls(t *testing.T) *[]string {
-	t.Helper()
-	calls := &[]string{}
-	base := provider.PluginManagerHooks{
-		CatalogEntry: func(name string) (string, bool) { return name, true },
-		Install: func(context.Context, string, bool) (map[string]any, error) {
-			return nil, errors.New("doctor tests install no plugins")
-		},
-		LoadError:       func(string) string { return "" },
-		DependencyHomes: func() ([]string, error) { return nil, nil },
-	}
-	hooks := base
-	hooks.Install = func(_ context.Context, name string, consent bool) (map[string]any, error) {
-		*calls = append(*calls, fmt.Sprintf("%s:%v", name, consent))
-		return map[string]any{"ok": false, "error": "fatal: unable to access the catalog repo"}, nil
-	}
-	provider.InstallPluginManagerHooks(hooks)
-	t.Cleanup(func() { provider.InstallPluginManagerHooks(base) })
-	return calls
-}
-
-const doctorCopilotAuxConfig = "model:\n  provider: openrouter\nauxiliary:\n  vision:\n    provider: copilot\n    model: gpt-4.1\n"
 
 func TestNpmAuditOnlyFindingDoesNotOfferDoctorFix(t *testing.T) {
 	out := &bytes.Buffer{}

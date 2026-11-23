@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,15 +78,49 @@ type saveURLOptions struct {
 	EmptyError              string
 	Headers                 map[string]string
 	RequireKnownContentType bool
-	TrustedOrigin           bool
+	// API endpoint the profile is configured to call for the provider that produced the URL, empty when the URL has no such endpoint
+	ProviderBase string
 }
 
-// Streams a provider URL into the media cache with every hop SSRF checked and no partial file left
+// Scheme, host and port a URL is served from, the scheme's own port filled in, false for anything that is not an http URL with a host
+func urlOrigin(raw string) (string, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Hostname() == "" {
+		return "", false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	port := u.Port()
+	switch {
+	case scheme != "http" && scheme != "https":
+		return "", false
+	case port == "" && scheme == "http":
+		port = "80"
+	case port == "":
+		port = "443"
+	}
+	return scheme + "://" + net.JoinHostPort(strings.ToLower(u.Hostname()), port), true
+}
+
+// Whether a download URL with an unambiguous authority is served from the very endpoint the provider's API was called on
+func sameProviderOrigin(rawURL, providerBase string) bool {
+	base, ok := urlOrigin(providerBase)
+	if !ok {
+		return false
+	}
+	if reason, err := tools.AuthorityAmbiguity(rawURL, false); err != nil || reason != "" {
+		return false
+	}
+	target, ok := urlOrigin(rawURL)
+	return ok && target == base
+}
+
+// Streams a provider URL into the media cache with no partial file left, every hop SSRF checked except one on the provider's own configured endpoint, where only cloud metadata addresses stay refused and the only place the request headers are sent
 func saveURL(ctx context.Context, env *tools.Env, kind, rawURL string, o saveURLOptions) (string, error) {
-	current, hopHeaders, trusted := rawURL, o.Headers, o.TrustedOrigin
+	current, hopHeaders := rawURL, o.Headers
 	for range maxSaveURLRedirects + 1 {
 		var client *http.Client
-		if trusted {
+		onProvider := sameProviderOrigin(current, o.ProviderBase)
+		if onProvider {
 			if tools.IsAlwaysBlockedURL(env, current) {
 				return "", fmt.Errorf("%s URL targets an always-blocked address: %s", o.Label, current)
 			}
@@ -100,8 +136,10 @@ func saveURL(ctx context.Context, env *tools.Env, kind, rawURL string, o saveURL
 		if err != nil {
 			return "", err
 		}
-		for k, v := range hopHeaders {
-			req.Header.Set(k, v)
+		if onProvider {
+			for k, v := range hopHeaders {
+				req.Header.Set(k, v)
+			}
 		}
 		resp, err := client.Do(req)
 		if err != nil {
@@ -117,7 +155,7 @@ func saveURL(ctx context.Context, env *tools.Env, kind, rawURL string, o saveURL
 			if err != nil {
 				return "", err
 			}
-			current, hopHeaders, trusted = next, nil, false
+			current, hopHeaders = next, nil
 			continue
 		}
 		path, err := writeSavedURLBody(env, kind, rawURL, current, resp, o)

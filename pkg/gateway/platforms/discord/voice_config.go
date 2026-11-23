@@ -2,23 +2,21 @@ package discord
 
 import (
 	"context"
-	"fmt"
-)
 
-const (
-	voiceTimeoutDefault    = 300
-	playbackTimeoutDefault = 120
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/home"
 )
 
 // Defaults of discord.voice_fx overlaid with the non null keys config.yaml sets
 func loadVoiceFXConfig(ctx context.Context) map[string]any {
 	defaults := map[string]any{"enabled": false, "ambient_enabled": true, "ambient_path": "", "ambient_gain": 0.18, "duck_gain": 0.06,
 		"speech_gain": 1.0, "lead_silence_ms": 200, "ack_enabled": true, "ack_phrases": nil}
-	section, ok := rawSection(ctx, "discord")
-	if !ok {
-		pkgLog().Debug("Could not load discord.voice_fx config: 'discord' is not a mapping")
+	cfg, err := config.ReadRawConfig(ctx, home.Dir(ctx))
+	if err != nil {
+		pkgLog().Debug("Could not load discord.voice_fx config: " + err.Error())
 		return defaults
 	}
+	section, _ := cfg["discord"].(map[string]any)
 	fx, isMap := section["voice_fx"].(map[string]any)
 	if !isMap {
 		return defaults
@@ -29,33 +27,4 @@ func loadVoiceFXConfig(ctx context.Context) map[string]any {
 		}
 	}
 	return defaults
-}
-
-// Non secret integer of the top level discord config, floored at minimum, the default when unreadable
-func loadDiscordIntConfig(ctx context.Context, key string, def, minimum int) int {
-	section, ok := rawSection(ctx, "discord")
-	if !ok {
-		pkgLog().Debug(fmt.Sprintf("Could not load discord.%s config: 'discord' is not a mapping", key))
-		return def
-	}
-	raw, present := section[key]
-	if !present {
-		raw = def
-	}
-	n, ok, err := configInt(raw)
-	if err != nil || !ok || !n.IsInt64() {
-		pkgLog().Debug(fmt.Sprintf("Could not load discord.%s config: %v", key, raw))
-		return def
-	}
-	return max(minimum, int(n.Int64()))
-}
-
-// Voice channel inactivity timeout seconds, zero disabling it
-func loadVoiceTimeout(ctx context.Context) int {
-	return loadDiscordIntConfig(ctx, "voice_channel_inactivity_timeout_seconds", voiceTimeoutDefault, 0)
-}
-
-// Minimum playback wait seconds for voice channel audio
-func loadPlaybackTimeout(ctx context.Context) int {
-	return loadDiscordIntConfig(ctx, "voice_playback_timeout_seconds", playbackTimeoutDefault, 1)
 }

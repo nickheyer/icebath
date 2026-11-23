@@ -6,8 +6,8 @@ import (
 
 func TestThreadStarterDedupThreadStarterDuplicateDropped(t *testing.T) {
 	a, f, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "false")
-	t.Setenv("DISCORD_AUTO_THREAD", "true")
+	setDiscord(t, "require_mention", false)
+	setDiscord(t, "auto_thread", true)
 	ch := textChannel(t, a, "100")
 	f.thread = func(map[string]any) string { return `{"id":"55555","type":11,"parent_id":"100","name":"hello bot"}` }
 	m := makeMessage(ch, "hello bot")
@@ -26,8 +26,8 @@ func TestThreadStarterDedupThreadStarterDuplicateDropped(t *testing.T) {
 
 func TestThreadStarterDedupNoDedupSeedWhenThreadCreationFails(t *testing.T) {
 	a, f, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "false")
-	t.Setenv("DISCORD_AUTO_THREAD", "true")
+	setDiscord(t, "require_mention", false)
+	setDiscord(t, "auto_thread", true)
 	ch := textChannel(t, a, "100")
 	f.fail = func(call fakeCall, _ int) (int, string) {
 		if call.Method == "POST" && len(call.Path) > 8 && call.Path[len(call.Path)-8:] == "/threads" {
@@ -48,8 +48,8 @@ func TestThreadStarterDedupNoDedupSeedWhenThreadCreationFails(t *testing.T) {
 
 func TestDirectDoubleDispatchSameMessageIDNotDispatchedTwiceViaDedup(t *testing.T) {
 	a, _, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "false")
-	t.Setenv("DISCORD_AUTO_THREAD", "false")
+	setDiscord(t, "require_mention", false)
+	setDiscord(t, "auto_thread", false)
 	m := makeMessage(textChannel(t, a, "100"), "hello")
 	m.ID = "42"
 	if a.dedup.IsDuplicate(m.ID) {
@@ -66,8 +66,8 @@ func TestDirectDoubleDispatchSameMessageIDNotDispatchedTwiceViaDedup(t *testing.
 
 func TestDedupCacheIntegrityPreseedDoesNotBlockLegitimateNewMessages(t *testing.T) {
 	a, f, c := inboundAdapter(t)
-	t.Setenv("DISCORD_REQUIRE_MENTION", "false")
-	t.Setenv("DISCORD_AUTO_THREAD", "true")
+	setDiscord(t, "require_mention", false)
+	setDiscord(t, "auto_thread", true)
 	ch := textChannel(t, a, "100")
 	f.thread = func(map[string]any) string { return `{"id":"22222","type":11,"parent_id":"100","name":"first"}` }
 	first := makeMessage(ch, "first")

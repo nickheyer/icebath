@@ -145,20 +145,20 @@ func TestIgnoreUserConfigEnvGateFlagIgnoredWhenSetToOtherValue(t *testing.T) {
 	}
 }
 
-func TestMergeFileConfigPromotesModelAndLegacyMaxTurns(t *testing.T) {
+func TestMergeFileConfigMergesSectionsKeyByKey(t *testing.T) {
 	defaults := cliConfigDefaults()
-	mergeFileConfig(defaults, map[string]any{"model": map[string]any{"model": "m1", "base_url": "http://x"}, "max_turns": 9,
+	mergeFileConfig(defaults, map[string]any{"model": map[string]any{"default": "m1", "base_url": "http://x"},
 		"display": map[string]any{"compact": true}, "memory": map[string]any{"provider": "p"}, "agent": nil})
 	model := sectionOf(defaults, "model")
-	if model["default"] != "m1" || model["base_url"] != "http://x" || sectionOf(defaults, "agent")["max_turns"] != 9 {
+	if model["default"] != "m1" || model["base_url"] != "http://x" || defaults["agent"] == nil {
 		t.Fatalf("defaults %v", defaults)
 	}
 	if sectionOf(defaults, "display")["compact"] != true || sectionOf(defaults, "display")["skin"] != "default" || defaults["memory"] == nil {
 		t.Fatalf("merge %v", defaults)
 	}
 	plain := cliConfigDefaults()
-	mergeFileConfig(plain, map[string]any{"model": "m2", "agent": map[string]any{"max_turns": 3}, "max_turns": 9})
-	if sectionOf(plain, "model")["default"] != "m2" || sectionOf(plain, "agent")["max_turns"] != 3 {
+	mergeFileConfig(plain, map[string]any{"model": "m2", "agent": map[string]any{"max_turns": 3}})
+	if _, isSection := plain["model"].(map[string]any); !isSection || sectionOf(plain, "model")["default"] == "m2" || sectionOf(plain, "agent")["max_turns"] != 3 {
 		t.Fatalf("plain %v", plain)
 	}
 }
@@ -199,27 +199,6 @@ func loadFromYAML(t *testing.T, yaml string) map[string]any {
 	home := tempHome(t)
 	os.WriteFile(filepath.Join(home, "config.yaml"), []byte(yaml), 0o600)
 	return LoadCLIConfig(context.Background())
-}
-
-func TestRootLevelProviderOverrideModelProviderWinsOverRootProvider(t *testing.T) {
-	cfg := loadFromYAML(t, "provider: opencode-go\nmodel:\n  default: google/gemini-3-flash-preview\n  provider: openrouter\n")
-	if sectionOf(cfg, "model")["provider"] != "openrouter" {
-		t.Fatalf("model %v", cfg["model"])
-	}
-}
-
-func TestRootLevelProviderOverrideRootProviderUsedAsFallbackWhenModelProviderMissing(t *testing.T) {
-	cfg := loadFromYAML(t, "provider: opencode-go\nmodel:\n  default: google/gemini-3-flash-preview\n")
-	if sectionOf(cfg, "model")["provider"] != "opencode-go" {
-		t.Fatalf("model %v", cfg["model"])
-	}
-}
-
-func TestRootLevelProviderOverrideRootBaseUrlUsedAsFallbackWhenModelBaseUrlMissing(t *testing.T) {
-	cfg := loadFromYAML(t, "base_url: https://example.com/v1\nmodel:\n  default: google/gemini-3-flash-preview\n")
-	if sectionOf(cfg, "model")["base_url"] != "https://example.com/v1" {
-		t.Fatalf("model %v", cfg["model"])
-	}
 }
 
 func TestRootLevelProviderOverrideTerminalVercelRuntimeKept(t *testing.T) {

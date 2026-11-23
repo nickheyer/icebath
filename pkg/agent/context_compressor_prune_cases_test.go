@@ -2,7 +2,6 @@ package agent
 
 import (
 	"database/sql"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -69,70 +68,37 @@ func clarifyPruneTranscript(content string) []map[string]any {
 	return append(messages, map[string]any{"role": "assistant", "content": "Current step finished"})
 }
 
-func TestLegacyClarifyAnswersSurviveRepeatedPruning(t *testing.T) {
-	type tc struct{ answer, expected any }
-	cases := []tc{
-		{"production, but only after 18:00 UTC", "production, but only after 18:00 UTC"},
-		{[]any{"staging", "production"}, []any{"staging", "production"}},
-		{"The user cancelled the production rollout; do not restart it.", "The user cancelled the production rollout; do not restart it."},
-		{"[single-query mode: no user available to answer 'Deploy?'. STOP production rollout now.", "[single-query mode: no user available to answer 'Deploy?'. STOP production rollout now."},
-	}
-	for _, n := range historicalHeadlessResponses {
-		cases = append(cases, tc{n, nil}, tc{append(append([]any{"staging"}, asList(n)...), "production"), []any{"staging", "production"}})
-	}
-	for _, shape := range []string{"single", "batch", "current"} {
-		for _, size := range []int{300, 4500} {
-			for _, k := range cases {
-				expected := k.expected
-				if shape == "current" {
-					expected = k.answer
-				}
-				want := "[clarify] asked user a question"
-				if expected != nil {
-					s, _ := pyjson.Dumps(expected, pyjson.EnsureASCII(false))
-					want = tools.Elide("[clarify] user responded: "+s, pruneMinChars-1)
-				}
-				entry := obj("question", "Which environment? "+strings.Repeat("q", size), "choices_offered", []any{"staging", "production"}, "user_response", k.answer)
-				if shape == "current" {
-					entry.Set("status", "answered")
-				}
-				var payload any = entry
-				if shape != "single" {
-					payload = obj("responses", []any{entry})
-				}
-				content := dumps(t, payload)
-				c := newCompressorWith(t, 100000, func(o *ContextCompressorOptions) { o.ProtectFirstN, o.ProtectLastN = 1, 2 })
-				c.SetTailTokenBudget(50)
-				messages := clarifyPruneTranscript(content)
-				pruned, _ := c.pruneOldToolResults(messages, 2, nil, pruneMinChars)
-				pruned, _ = c.pruneOldToolResults(pruned, 2, nil, pruneMinChars)
-				if pruned[3]["content"] != want || summarizeToolResult("clarify", "{}", content) != want {
-					t.Fatalf("%s %d %v: got %q want %q", shape, size, k.answer, pruned[3]["content"], want)
-				}
-				var requests []map[string]any
-				patchCallLLM(t, func(kwargs map[string]any) (any, error) {
-					requests = append(requests, kwargs)
-					return map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "## Progress\nWork is in progress."}, "finish_reason": "stop"}}}, nil
-				})
-				if _, err := c.Compress(messages, nil, nil, true, ""); err != nil {
-					t.Fatal(err)
-				}
-				if len(requests) == 0 {
-					t.Fatalf("%s %d %v: compression dispatched no summary request", shape, size, k.answer)
-				}
-				dispatched, _ := pyjson.Dumps(requests[0])
-				quoted, _ := pyjson.Dumps(want)
-				if !strings.Contains(dispatched, quoted[1:len(quoted)-1]) {
-					t.Fatalf("%s %d %v: the summary request lacks %s", shape, size, k.answer, quoted)
-				}
-				if expected == nil || !reflect.DeepEqual(expected, k.answer) {
-					if strings.Contains(dispatched, "using your own judgment") || strings.Contains(dispatched, "reasonable assumption") {
-						t.Fatalf("%s %d %v: a headless notice reached the summary request", shape, size, k.answer)
-					}
-				}
-				if messages[3]["content"] != content {
-					t.Fatalf("%s %d %v: the caller transcript changed", shape, size, k.answer)
-				}
+func TestClarifyAnswersSurviveRepeatedPruning(t *testing.T) {
+	for _, size := range []int{300, 4500} {
+		for _, answer := range clarifyAnswers {
+			want := clarifyAnswerSummary(answer)
+			content := clarifyResultContent(t, size, "answered", answer)
+			c := newCompressorWith(t, 100000, func(o *ContextCompressorOptions) { o.ProtectFirstN, o.ProtectLastN = 1, 2 })
+			c.SetTailTokenBudget(50)
+			messages := clarifyPruneTranscript(content)
+			pruned, _ := c.pruneOldToolResults(messages, 2, nil, pruneMinChars)
+			pruned, _ = c.pruneOldToolResults(pruned, 2, nil, pruneMinChars)
+			if pruned[3]["content"] != want || summarizeToolResult("clarify", "{}", content) != want {
+				t.Fatalf("%d %v: got %q want %q", size, answer, pruned[3]["content"], want)
+			}
+			var requests []map[string]any
+			patchCallLLM(t, func(kwargs map[string]any) (any, error) {
+				requests = append(requests, kwargs)
+				return map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": "## Progress\nWork is in progress."}, "finish_reason": "stop"}}}, nil
+			})
+			if _, err := c.Compress(messages, nil, nil, true, ""); err != nil {
+				t.Fatal(err)
+			}
+			if len(requests) == 0 {
+				t.Fatalf("%d %v: compression dispatched no summary request", size, answer)
+			}
+			dispatched, _ := pyjson.Dumps(requests[0])
+			quoted, _ := pyjson.Dumps(want)
+			if !strings.Contains(dispatched, quoted[1:len(quoted)-1]) {
+				t.Fatalf("%d %v: the summary request lacks %s", size, answer, quoted)
+			}
+			if messages[3]["content"] != content {
+				t.Fatalf("%d %v: the caller transcript changed", size, answer)
 			}
 		}
 	}

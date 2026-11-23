@@ -18,16 +18,16 @@ import (
 // Followup a failed configured feature dependency install is owed under
 const featureDependenciesFollowup = "feature_dependencies"
 
-// Feature dependency install and home migrations both update tails run, replaced by tests
+// Feature dependency install and memory provider plugin install both update tails run, replaced by tests
 var featureRefreshSteps = struct {
-	featureDeps   func(ctx context.Context, projectRoot string) error
-	memoryMigrate func(ctx context.Context, say func(string)) ([]string, error)
+	featureDeps     func(ctx context.Context, projectRoot string) error
+	memoryProviders func(ctx context.Context, say func(string)) ([]string, error)
 }{
-	featureDeps:   pm.InstallConfiguredFeaturesMissingDeps,
-	memoryMigrate: memory.MigrateAllMemoryHomes,
+	featureDeps:     pm.InstallConfiguredFeaturesMissingDeps,
+	memoryProviders: memory.MigrateAllMemoryHomes,
 }
 
-// Installs missing configured feature dependencies and memory provider plugins then migrates plugins that left core, only the install failing
+// Installs the missing dependencies of configured features, then the plugin of each configured memory provider a profile lacks, only the dependency install failing
 func refreshConfiguredFeatures(ctx context.Context, projectRoot string, out io.Writer) error {
 	var failure error
 	if err := featureRefreshSteps.featureDeps(ctx, projectRoot); err != nil {
@@ -39,11 +39,11 @@ func refreshConfiguredFeatures(ctx context.Context, projectRoot string, out io.W
 		failure = errors.New("feature dependencies: " + text)
 	}
 	say := func(message string) { fmt.Fprintln(out, message) }
-	if _, err := featureRefreshSteps.memoryMigrate(ctx, say); err != nil {
+	if _, err := featureRefreshSteps.memoryProviders(ctx, say); err != nil {
 		if isInterrupt(err) {
 			return err
 		}
-		fmt.Fprintf(out, "  ⚠ Memory provider migration skipped: %v\n", err)
+		fmt.Fprintf(out, "  ⚠ Could not install the configured memory provider plugins: %v\n", err)
 	}
 	return failure
 }

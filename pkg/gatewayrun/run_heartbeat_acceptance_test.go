@@ -53,7 +53,7 @@ func TestInflightHeartbeatOnTheLogicalOwnerBlocksAnother(t *testing.T) {
 			agent.SaveHeartbeat(ctx, "tip", heartbeat)
 			r := allocGatewayRunner()
 			r.config = gateway.DefaultGatewayConfig(ctx)
-			r.SetSessionAuthority(gateway.NewSessionAuthority(r, "default", "test", db, epoch))
+			r.SetSessionAuthority(gateway.NewSessionAuthority(r, storeHome(t, db), "test", db, epoch))
 			source := &gateway.SessionSource{Platform: gateway.PlatformTelegram, ChatID: "1"}
 			user := "1"
 			source.UserID = &user

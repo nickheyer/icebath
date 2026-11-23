@@ -36,11 +36,11 @@ func NewDiscordAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Disco
 	a.textBatchDelaySeconds = config.EnvFloat("ICEBATH_DISCORD_TEXT_BATCH_DELAY_SECONDS", 0.6)
 	a.textBatchSplitDelaySeconds = config.EnvFloat("ICEBATH_DISCORD_TEXT_BATCH_SPLIT_DELAY_SECONDS", 2.0)
 	a.SetTextBatchDelays(a.textBatchDelaySeconds, a.textBatchSplitDelaySeconds)
-	a.voiceTimeoutSeconds = loadVoiceTimeout(ctx)
-	a.playbackTimeoutSeconds = loadPlaybackTimeout(ctx)
+	sctx := gateway.SettingsContext(ctx)
+	a.voiceTimeoutSeconds = max(int(settings.DiscordVoiceChannelInactivityTimeoutSeconds.Get(sctx).Seconds()), 0)
+	a.playbackTimeoutSeconds = max(int(settings.DiscordVoicePlaybackTimeoutSeconds.Get(sctx).Seconds()), 1)
 	a.voiceFXCfg = loadVoiceFXConfig(ctx)
 	a.threads = gateway.NewThreadParticipationTracker(ctx, "discord", 500)
-	sctx := gateway.SettingsContext(ctx)
 	a.livenessIntervalSeconds = livenessSeconds(settings.DiscordWebsocketLivenessIntervalSeconds.Get(sctx))
 	a.livenessFailureThreshold = max(settings.DiscordWebsocketLivenessFailureThreshold.Get(sctx), 0)
 	a.heartbeatAckMaxAgeSeconds = livenessSeconds(settings.DiscordWebsocketHeartbeatAckMaxAgeSeconds.Get(sctx))
@@ -100,13 +100,14 @@ func (a *DiscordAdapter) connect(ctx context.Context, token string) (bool, error
 		return false, nil
 	}
 	a.bindProfile(ctx)
+	stamp := a.allowlistSettingsText(ctx)
 	allowedUsers := a.getAllowedUsers(ctx)
 	allowedRoles, err := a.getAllowedRoles(ctx)
 	if err != nil {
 		return false, err
 	}
 	a.mu.Lock()
-	a.allowedUserIDs, a.allowedRoleIDs = allowedUsers, allowedRoles
+	a.allowedUserIDs, a.allowedRoleIDs, a.allowlistStamp = allowedUsers, allowedRoles, stamp
 	a.mu.Unlock()
 	intents := discordgo.IntentGuilds | discordgo.IntentGuildModeration | discordgo.IntentGuildEmojis | discordgo.IntentGuildIntegrations |
 		discordgo.IntentGuildWebhooks | discordgo.IntentGuildInvites | discordgo.IntentGuildVoiceStates | discordgo.IntentGuildMessages |
@@ -172,8 +173,8 @@ func (a *DiscordAdapter) connect(ctx context.Context, token string) (bool, error
 		a.handleBotTaskDone(runCtx, task)
 	}()
 	timeout := time.Duration(-1)
-	if readyTimeout := discordReadyTimeoutSeconds(); readyTimeout > 0 {
-		timeout = time.Duration(readyTimeout * float64(time.Second))
+	if wait := settings.GatewayPlatformConnectTimeout.Get(a.sctx(ctx)); wait > 0 {
+		timeout = wait
 	}
 	if err := waitForReadyOrBotExit(ctx, a.readyEvent.Done(), task, timeout); err != nil {
 		return false, err

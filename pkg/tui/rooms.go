@@ -44,8 +44,8 @@ func registerRoomKeys(km *keys.Map) {
 		{ID: "tui.rooms.rename", Context: roomsContext, Label: "rename", Doc: "rename the room", Default: []string{"r"}},
 		{ID: "tui.rooms.stop", Context: roomsContext, Label: "stop", Doc: "stop the work running in the room", Default: []string{"s"}},
 		{ID: "tui.rooms.disband", Context: roomsContext, Label: "disband", Doc: "disband the room for good after a confirmation", Default: []string{"x"}},
-		{ID: "tui.rooms.peers", Context: roomsContext, Label: "peers", Doc: "share the room with peer gateways or stop sharing it", Default: []string{"p"}},
-		{ID: "tui.rooms.promote", Context: roomsContext, Label: "continue here", Doc: "continue a room shared by a gateway that is gone on this gateway", Default: []string{"c"}},
+		{ID: "tui.rooms.peers", Context: roomsContext, Label: "peers", Doc: "share the room with peers or stop sharing it", Default: []string{"p"}},
+		{ID: "tui.rooms.promote", Context: roomsContext, Label: "continue here", Doc: "continue here a room whose icebath is gone", Default: []string{"c"}},
 		{ID: "tui.rooms.history", Context: roomsContext, Label: "disbanded", Doc: "show or hide disbanded rooms", Default: []string{"h"}},
 		{ID: "tui.room.attach", Context: roomContext, Label: "attach", Doc: "attach a file to the next message"},
 		{ID: "tui.room.files", Context: roomContext, Label: "files", Doc: "save a file of the room log to the project folder"},
@@ -514,7 +514,7 @@ func (p *roomsPanel) disband(l *cards.List, i int) tea.Cmd {
 	return nil
 }
 
-// Lists the peer gateways with this room's share state, picking one shares or stops sharing
+// Lists the peers with this room's share state, picking one shares or stops sharing
 func (p *roomsPanel) peers(_ *cards.List, i int) tea.Cmd {
 	r, ok := p.selected(i)
 	if !ok || r.Disbanded {

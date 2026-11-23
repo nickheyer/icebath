@@ -22,9 +22,6 @@ import (
 // AuthData is the parsed auth.json document in its exact on disk schema
 type AuthData map[string]any
 
-// ProviderWriteHook observes every provider state replacement so guest handoff records can be kept
-type ProviderWriteHook func(providerID string, previous, next map[string]any) error
-
 // Store persists auth.json for one icebath home with the global root as read only fallback
 type Store struct {
 	home       string
@@ -34,8 +31,6 @@ type Store struct {
 	gcacheKey  string
 	gcacheSig  string
 	gcache     AuthData
-	hooksMu    sync.Mutex
-	hooks      []ProviderWriteHook
 	Log        *slog.Logger
 }
 
@@ -58,13 +53,6 @@ func (s *Store) Path() string { return s.path }
 
 // GlobalPath is the global root auth.json or empty when the store is the global root itself
 func (s *Store) GlobalPath() string { return s.globalPath }
-
-// OnProviderWrite registers a hook invoked before any provider state is stored
-func (s *Store) OnProviderWrite(h ProviderWriteHook) {
-	s.hooksMu.Lock()
-	defer s.hooksMu.Unlock()
-	s.hooks = append(s.hooks, h)
-}
 
 func samePath(a, b string) bool {
 	ra, errA := filepath.EvalSymlinks(a)
@@ -512,125 +500,9 @@ func (s *Store) ProviderState(data AuthData, providerID string) map[string]any {
 	return st
 }
 
-// ProviderTxn is one locked provider state transaction
-type ProviderTxn struct {
-	Data       AuthData
-	State      map[string]any
-	SourcePath string
-	store      *Store
-	providerID string
-}
-
-// ProviderTransaction locks the active store then the global source and runs fn with the fresh state
-func (s *Store) ProviderTransaction(providerID string, timeout time.Duration, fn func(tx *ProviderTxn) error) error {
-	unlock, err := s.Lock(timeout)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	data, err := s.Load()
-	if err != nil {
-		return err
-	}
-	state, source := s.ProviderStateWithSource(data, providerID)
-	tx := &ProviderTxn{Data: data, State: state, SourcePath: source, store: s, providerID: providerID}
-	if source == "" || samePath(source, s.path) {
-		return fn(tx)
-	}
-	unlockSrc, err := s.fileLock(source, timeout)
-	if err != nil {
-		return err
-	}
-	defer unlockSrc()
-	srcData, err := s.LoadFile(source)
-	if err != nil {
-		return err
-	}
-	tx.State = ProviderStateIn(srcData, providerID)
-	return fn(tx)
-}
-
-// SaveState persists refreshed provider state back to the store it came from without changing the active provider
-func (tx *ProviderTxn) SaveState(state map[string]any) error {
-	return tx.store.SaveProviderStateToSource(tx.Data, tx.providerID, state, tx.SourcePath)
-}
-
-// StoreProviderState writes state under providers and optionally makes it the active provider
-func (s *Store) StoreProviderState(data AuthData, providerID string, state map[string]any, setActive bool) error {
-	s.hooksMu.Lock()
-	hooks := append([]ProviderWriteHook(nil), s.hooks...)
-	s.hooksMu.Unlock()
-	if len(hooks) > 0 {
-		previous := s.ProviderState(data, providerID)
-		for _, h := range hooks {
-			if err := h(providerID, previous, state); err != nil {
-				return err
-			}
-		}
-	}
+// StoreProviderState writes state under providers
+func (s *Store) StoreProviderState(data AuthData, providerID string, state map[string]any) {
 	section(data, "providers")[providerID] = state
-	if setActive {
-		data["active_provider"] = providerID
-	}
-	return nil
-}
-
-// SaveActiveProviderState locks loads writes the state as active provider and saves
-func (s *Store) SaveActiveProviderState(providerID string, state map[string]any) (string, error) {
-	unlock, err := s.Lock(AuthLockTimeout)
-	if err != nil {
-		return "", err
-	}
-	defer unlock()
-	data, err := s.Load()
-	if err != nil {
-		return "", err
-	}
-	if err := s.StoreProviderState(data, providerID, state, true); err != nil {
-		return "", err
-	}
-	return s.path, s.Save(data)
-}
-
-// PersistProviderStateToStore merges one provider into a specific auth store under that store's lock
-func (s *Store) PersistProviderStateToStore(providerID string, state map[string]any, target string, setActive bool) (string, error) {
-	unlock, err := s.fileLock(target, AuthLockTimeout)
-	if err != nil {
-		return "", err
-	}
-	defer unlock()
-	data, err := s.LoadFile(target)
-	if err != nil {
-		return "", err
-	}
-	if err := s.StoreProviderState(data, providerID, cloneMap(state), setActive); err != nil {
-		return "", err
-	}
-	return target, s.SaveTo(data, target)
-}
-
-// SaveProviderStateToSource persists provider state to the store it was read from leaving active_provider alone
-func (s *Store) SaveProviderStateToSource(data AuthData, providerID string, state map[string]any, source string) error {
-	if source == "" || samePath(source, s.path) {
-		if err := s.StoreProviderState(data, providerID, state, false); err != nil {
-			return err
-		}
-		return s.Save(data)
-	}
-	_, err := s.PersistProviderStateToStore(providerID, state, source, false)
-	return err
-}
-
-// MarkProviderActiveIfUnset sets active_provider only when none is set yet
-func (s *Store) MarkProviderActiveIfUnset(providerID string) error {
-	return s.Update(func(data AuthData) (bool, error) {
-		active, _ := data["active_provider"].(string)
-		if strings.TrimSpace(active) != "" {
-			return false, nil
-		}
-		data["active_provider"] = providerID
-		return true, nil
-	})
 }
 
 // Update runs fn under the store lock and saves when fn reports a change
@@ -905,11 +777,11 @@ func (s *Store) WriteCredentialPool(providerID string, entries []map[string]any,
 	pool := section(data, "credential_pool")
 	existing := poolEntries(pool[providerID])
 	existingByID := entryIDs(existing)
-	entries = withoutTombstoned(entries, s.tombstonedIDs(data, providerID))
+	entries = withoutTombstoned(entries, s.tombstonedIDs(data, providerID), existingByID)
 	merged := make([]map[string]any, 0, len(entries)+len(existing))
 	newIDs := map[string]bool{}
 	for _, e := range entries {
-		sanitized := SanitizeBorrowedCredentialPayload(e, providerID)
+		sanitized := SanitizeBorrowedCredentialPayload(e)
 		id := entryID(sanitized)
 		if id != "" {
 			newIDs[id] = true
@@ -924,7 +796,7 @@ func (s *Store) WriteCredentialPool(providerID string, entries []map[string]any,
 	for _, disk := range existing {
 		id := entryID(disk)
 		if id != "" && !newIDs[id] && !removed[id] {
-			merged = append(merged, SanitizeBorrowedCredentialPayload(disk, providerID))
+			merged = append(merged, SanitizeBorrowedCredentialPayload(disk))
 		}
 	}
 	list := make([]any, len(merged))
@@ -1053,59 +925,23 @@ func (s *Store) GetProviderAuthState(providerID string) (map[string]any, error) 
 	return s.ProviderState(data, providerID), nil
 }
 
-// ActiveProvider returns the active provider id from the store
-func (s *Store) ActiveProvider() (string, error) {
-	data, err := s.Load()
-	if err != nil {
-		return "", err
-	}
-	active, _ := data["active_provider"].(string)
-	return active, nil
-}
-
-// ActiveProviderIs reports whether the active provider equals the normalized id
-func (s *Store) ActiveProviderIs(normalized string) bool {
-	active, err := s.ActiveProvider()
-	if err != nil {
-		return false
-	}
-	active = strings.ToLower(strings.TrimSpace(active))
-	return active != "" && active == normalized
-}
-
-// ClearProviderAuth deletes provider and pool entries for the target and reports whether anything changed
+// ClearProviderAuth deletes the provider state and the logins of one provider and reports whether anything changed
 func (s *Store) ClearProviderAuth(providerID string) (bool, error) {
 	cleared := false
+	if providerID == "" {
+		return false, nil
+	}
 	err := s.Update(func(data AuthData) (bool, error) {
-		target := providerID
-		if target == "" {
-			target, _ = data["active_provider"].(string)
-		}
-		if target == "" {
-			return false, nil
-		}
 		for _, sec := range []string{"providers", "credential_pool"} {
 			entries := section(data, sec)
-			if _, ok := entries[target]; ok {
-				delete(entries, target)
+			if _, ok := entries[providerID]; ok {
+				delete(entries, providerID)
 				cleared = true
 			}
-		}
-		if data["active_provider"] == target {
-			data["active_provider"] = nil
-			cleared = true
 		}
 		return cleared, nil
 	})
 	return cleared, err
-}
-
-// DeactivateProvider clears active_provider without deleting credentials
-func (s *Store) DeactivateProvider() error {
-	return s.Update(func(data AuthData) (bool, error) {
-		data["active_provider"] = nil
-		return true, nil
-	})
 }
 
 // lastAuthErrorMarker builds the record persisted when dead OAuth material is quarantined

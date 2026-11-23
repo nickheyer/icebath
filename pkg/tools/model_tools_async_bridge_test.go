@@ -207,12 +207,12 @@ func TestTimeoutUsesNonblockingExecutorShutdown(t *testing.T) {
 	release := make(chan struct{})
 	defer close(release)
 	var started atomic.Int32
-	e, _, _ := registryExecutor(t, handlerDef("stuck_probe", func(context.Context, *Call) string {
+	e, host, _ := registryExecutor(t, handlerDef("stuck_probe", func(context.Context, *Call) string {
 		started.Add(1)
 		<-release
 		return "late"
 	}))
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "0.5")
+	setToolBatchLimit(t, host.env, "0.5")
 	for _, run := range []struct {
 		name string
 		fn   func(context.Context, []state.ToolCall, *[]*state.Message, string, bool) error
@@ -244,7 +244,7 @@ func TestTimeoutUsesNonblockingExecutorShutdown(t *testing.T) {
 
 func TestTimeoutCancelsCoroutineInWorkerLoop(t *testing.T) {
 	cancelObserved := make(chan string, 2)
-	e, _, _ := registryExecutor(t, handlerDef("cancellable_probe", func(ctx context.Context, call *Call) string {
+	e, host, _ := registryExecutor(t, handlerDef("cancellable_probe", func(ctx context.Context, call *Call) string {
 		select {
 		case <-ctx.Done():
 			cancelObserved <- call.ToolCallID
@@ -253,7 +253,7 @@ func TestTimeoutCancelsCoroutineInWorkerLoop(t *testing.T) {
 			return "finished"
 		}
 	}))
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "0.5")
+	setToolBatchLimit(t, host.env, "0.5")
 	for _, run := range []struct {
 		name string
 		fn   func(context.Context, []state.ToolCall, *[]*state.Message, string, bool) error

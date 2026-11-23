@@ -430,7 +430,6 @@ func TestStreamRechecksRedirectPolicy(t *testing.T) {
 
 // Loopback ClawHub registry answering 409 to every request lacking owner alice
 func clawhubRegistry(t *testing.T, fallback, mismatch bool) (*ClawHubSource, *[]*url.URL) {
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "true")
 	var mu sync.Mutex
 	var reqs []*url.URL
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -472,6 +471,7 @@ func clawhubRegistry(t *testing.T, fallback, mismatch bool) (*ClawHubSource, *[]
 	}))
 	t.Cleanup(srv.Close)
 	h, _ := newTestHub(t)
+	allowPrivateURLs(t, h.S.Home)
 	h.io.readIndexCache = func(string) (any, error) { return nil, nil }
 	h.io.writeIndexCache = func(string, any) error { return nil }
 	c := NewClawHubSource(h)

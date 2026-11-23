@@ -73,9 +73,10 @@ func TestNumericCoercion(t *testing.T) {
 			t.Fatalf("%s=%q saved %#v want %#v", key, value, got, want)
 		}
 	}
-	t.Run("test_negative_int", func(t *testing.T) { check(t, "agent.max_turns", "-5", -5, "agent", "max_turns") })
+	t.Run("test_negative_int", func(t *testing.T) {
+		check(t, "stt.cloud_trim_threshold_db", "-45", -45, "stt", "cloud_trim_threshold_db")
+	})
 	t.Run("test_whitespace_padded_int", func(t *testing.T) { check(t, "agent.max_turns", " 42 ", 42, "agent", "max_turns") })
-	t.Run("test_negative_float", func(t *testing.T) { check(t, "agent.max_turns", "-2.5", -2.5, "agent", "max_turns") })
 	t.Run("test_lossy_decimal_identifier_stays_string", func(t *testing.T) {
 		check(t, "mcp_servers.example.oauth.client_id", "123456789012.98765432109876", "123456789012.98765432109876",
 			"mcp_servers", "example", "oauth", "client_id")
@@ -83,10 +84,15 @@ func TestNumericCoercion(t *testing.T) {
 }
 
 func TestNullCoercion(t *testing.T) {
-	t.Run("test_null_tokens_coerce_to_none", func(t *testing.T) {
-		for _, token := range []string{"null", "none", "None", "~"} {
-			if got, ok := setAndRead(t, "agent.run_budget_seconds", token, "agent", "run_budget_seconds"); !ok || got != nil {
-				t.Fatalf("%q saved %#v", token, got)
+	t.Run("test_null_tokens_clear_the_stored_value", func(t *testing.T) {
+		for _, token := range []string{"null", "Null", "NULL", "~"} {
+			h, cfgPath := facadeHome(t, "agent:\n  run_budget_seconds: 90\n")
+			captureFacade(t)
+			if err := SetConfigValue(context.Background(), h, "agent.run_budget_seconds", token, testCommandSources()); err != nil {
+				t.Fatalf("%q: %v", token, err)
+			}
+			if got, ok := readSaved(t, cfgPath, "agent", "run_budget_seconds"); ok && got != nil {
+				t.Fatalf("%q left %#v", token, got)
 			}
 		}
 	})
@@ -114,7 +120,7 @@ func TestStringTypedGuardPreserved(t *testing.T) {
 
 func TestConfigGetMasksSecretsAndUnsetReportsMissing(t *testing.T) {
 	ctx := context.Background()
-	h, _ := facadeHome(t, "model:\n  api_key: sk-abcdefghijklmnop\n  token_count: 5\n")
+	h, _ := facadeHome(t, "model:\n  api_key: sk-abcdefghijklmnop\n  context_length: 5\n")
 	out, _ := captureFacade(t)
 	if err := GetConfigValue(ctx, h, "model.api_key", false, false, testCommandSources()); err != nil {
 		t.Fatal(err)
@@ -132,7 +138,7 @@ func TestConfigGetMasksSecretsAndUnsetReportsMissing(t *testing.T) {
 	if code := exitCode(UnsetConfigValue(ctx, h, "display.nothing_here", testCommandSources())); code != 1 {
 		t.Fatalf("unset missing exit %d", code)
 	}
-	if err := UnsetConfigValue(ctx, h, "model.token_count", testCommandSources()); err != nil {
+	if err := UnsetConfigValue(ctx, h, "model.context_length", testCommandSources()); err != nil {
 		t.Fatal(err)
 	}
 	if code := exitCode(ConfigCommand(ctx, h, ConfigArgs{Command: "bogus"}, testCommandSources())); code != 1 {

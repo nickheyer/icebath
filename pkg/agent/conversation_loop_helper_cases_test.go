@@ -112,13 +112,12 @@ func TestPartialStubContinuationSaysToolsRemainAvailable(t *testing.T) {
 	}
 }
 
-func TestNewAndLegacyStubNudgesAreRecognizedAsSynthetic(t *testing.T) {
+func TestStubNudgesAreRecognizedAsSynthetic(t *testing.T) {
 	caseHome(t)
 	for _, dropped := range [][]string{nil, {"write_file"}} {
-		for _, text := range []string{getContinuationPrompt(true, dropped), legacyLengthContinuationNetworkStub} {
-			if !state.IsSyntheticCompressionUserTurn(map[string]any{"role": "user", "content": text}) {
-				t.Fatalf("not recognized as synthetic %q", text)
-			}
+		text := getContinuationPrompt(true, dropped)
+		if !state.IsSyntheticCompressionUserTurn(map[string]any{"role": "user", "content": text}) {
+			t.Fatalf("not recognized as synthetic %q", text)
 		}
 	}
 }

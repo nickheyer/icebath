@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,10 +15,6 @@ import (
 
 func runBudgetAgent(t *testing.T, configBody string, edit func(*AIAgentOptions)) *AIAgent {
 	t.Helper()
-	for _, name := range []string{"ICEBATH_API_CALL_STALE_TIMEOUT", "ICEBATH_STREAM_STALE_TIMEOUT", "ICEBATH_LOCAL_STREAM_STALE_TIMEOUT"} {
-		t.Setenv(name, "")
-		os.Unsetenv(name)
-	}
 	if configBody == "" {
 		configBody = "{}\n"
 	}
@@ -112,9 +107,8 @@ func TestRunBudget(t *testing.T) {
 			t.Fatalf("timeout %v", got)
 		}
 	})
-	t.Run("test_explicit_env_var_wins_over_budget_cap", func(t *testing.T) {
-		a := runBudgetAgent(t, "", budgetOf(900))
-		t.Setenv("ICEBATH_API_CALL_STALE_TIMEOUT", "1200")
+	t.Run("test_explicit_setting_wins_over_budget_cap", func(t *testing.T) {
+		a := runBudgetAgent(t, "agent:\n  api_call_stale_timeout: 1200\n", budgetOf(900))
 		a.runBudgetStartedAt = nowSeconds() - 800
 		if got := a.computeNonStreamStaleTimeout(ctx, payload); got != 1200.0 {
 			t.Fatalf("timeout %v", got)
@@ -245,7 +239,7 @@ func TestRunBudget(t *testing.T) {
 		if got := a.computeNonStreamStaleTimeout(ctx, longDecode); got != 600.0*8 {
 			t.Fatalf("long decode timeout %v", got)
 		}
-		t.Setenv("ICEBATH_API_CALL_STALE_TIMEOUT", "120")
+		setSettingsForTest(t, map[string]any{"agent.api_call_stale_timeout": 120})
 		if got := a.computeNonStreamStaleTimeout(ctx, longDecode); got != 120.0 {
 			t.Fatalf("explicit timeout %v", got)
 		}

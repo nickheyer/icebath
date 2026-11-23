@@ -88,8 +88,8 @@ var urlImageContentTypes = map[string]string{
 	"image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg", "image/webp": "webp", "image/gif": "gif",
 }
 
-// Downloads a provider image URL into the generated images cache under the SSRF guard and size cap
-func saveURLImage(ctx context.Context, env *tools.Env, rawURL, prefix string, timeout time.Duration, maxBytes int64) (string, error) {
+// Downloads a provider image URL into the generated images cache under the SSRF guard and size cap, providerBase naming the API endpoint that returned it
+func saveURLImage(ctx context.Context, env *tools.Env, rawURL, prefix string, timeout time.Duration, maxBytes int64, providerBase string) (string, error) {
 	if prefix == "" {
 		prefix = "image"
 	}
@@ -103,6 +103,7 @@ func saveURLImage(ctx context.Context, env *tools.Env, rawURL, prefix string, ti
 		Prefix: prefix, Timeout: timeout, MaxBytes: maxBytes, ChunkSize: 64 * 1024,
 		ContentTypes: urlImageContentTypes, URLExtensions: []string{"png", "jpg", "jpeg", "webp", "gif"},
 		DefaultExtension: "png", Label: "Image", EmptyError: "Image at {url} returned 0 bytes; refusing to cache.",
+		ProviderBase: providerBase,
 	})
 }
 
@@ -171,7 +172,7 @@ func envContext(ctx context.Context, env *tools.Env) context.Context {
 // Configured provider even when unavailable, else the single available one, else an available fal
 func GetActiveImageGenProvider(ctx context.Context, env *tools.Env) ImageGenProvider {
 	ctx = envContext(ctx, env)
-	configured := provider.ConfiguredProviderName(ctx, "image_gen", pkgLog())
+	configured := tools.StoredProvider(&tools.Env{Home: home.Dir(ctx)}, "image_gen")
 	snapshot := imageGenRegistry.Merged(ctx, "")
 	if configured != "" {
 		if p, ok := snapshot.Get(configured); ok && p != nil {

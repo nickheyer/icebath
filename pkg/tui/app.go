@@ -346,6 +346,7 @@ func (a *app) update(m tea.Msg) tea.Cmd {
 		if !a.store.handleServerRequest(m.Request, a.events) {
 			m.Request.unhandled()
 		}
+		cmd = a.events.takeCmds()
 	case interruptReplyMsg:
 		a.turn.settleInterrupt(m)
 	case resumeScrollMsg:

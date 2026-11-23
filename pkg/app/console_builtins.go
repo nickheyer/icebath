@@ -265,7 +265,6 @@ func consoleConfigSet(e *ConsoleEngine, args []string) (string, error) {
 	})
 }
 
-
 // Refuses an export whose single session exceeds the per session budget, zero disabling it
 func consoleGuardExports(ctx context.Context, db *state.SessionDB, sessionIDs []string) error {
 	err := db.AssertExportsSafe(ctx, sessionIDs, nil)

@@ -85,18 +85,16 @@ func (b *codexFakeBackend) seen() []codexSeenRequest {
 func codexHomeEnv(t *testing.T) *tools.Env {
 	t.Helper()
 	env := openAIHomeEnv(t, nil)
-	for _, k := range []string{"ICEBATH_CODEX_BASE_URL", "ICEBATH_ALLOW_PRIVATE_URLS"} {
-		t.Setenv(k, "")
-		os.Unsetenv(k)
-	}
+	t.Setenv("ICEBATH_CODEX_BASE_URL", "")
+	os.Unsetenv("ICEBATH_CODEX_BASE_URL")
 	return env
 }
 
-// auth.json with the Codex OAuth singleton token and no credential pool
-func writeCodexSingleton(t *testing.T, h, token string) {
+// auth.json holding one ChatGPT sign in of openai-codex as the login a device code sign in stores
+func writeCodexLogin(t *testing.T, h, token string) {
 	t.Helper()
-	data := `{"version": 2, "active_provider": "openai-codex", "providers": {"openai-codex": {"tokens": {"access_token": "` + token +
-		`", "refresh_token": "rt"}, "last_refresh": "2026-09-24T00:00:00Z", "auth_mode": "chatgpt"}}}`
+	data := `{"version": 2, "providers": {}, "credential_pool": {"openai-codex": [{"id": "chatgpt", "label": "chatgpt", "auth_type": "oauth", ` +
+		`"priority": 0, "source": "` + provider.SourceManualDeviceCode + `", "access_token": "` + token + `", "refresh_token": "rt", "last_refresh": "2026-09-24T00:00:00Z"}]}}`
 	if err := os.WriteFile(filepath.Join(h, "auth.json"), []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +136,7 @@ func TestOpenAICodexAvailabilityFollowsCodexTokenOnly(t *testing.T) {
 	if p.IsAvailable() {
 		t.Fatal("OPENAI_API_KEY alone made the Codex backend available")
 	}
-	writeCodexSingleton(t, env.Home, "tok")
+	writeCodexLogin(t, env.Home, "tok")
 	if !p.IsAvailable() {
 		t.Fatal("unavailable with a Codex token")
 	}
@@ -147,7 +145,7 @@ func TestOpenAICodexAvailabilityFollowsCodexTokenOnly(t *testing.T) {
 func TestOpenAICodexCustomRouteKeepsImageRequestOnConfiguredHost(t *testing.T) {
 	for _, edit := range []bool{false, true} {
 		env := codexHomeEnv(t)
-		writeCodexSingleton(t, env.Home, "codex-token")
+		writeCodexLogin(t, env.Home, "codex-token")
 		b := newCodexFakeBackend(t)
 		t.Setenv("ICEBATH_CODEX_BASE_URL", "https://images.example.test/codex/")
 		req := ImageGenRequest{Prompt: "a cat"}
@@ -169,7 +167,7 @@ func TestOpenAICodexCustomRouteKeepsImageRequestOnConfiguredHost(t *testing.T) {
 func TestOpenAICodexBlankOverridePreservesOfficialRoute(t *testing.T) {
 	for _, override := range []string{"", "   "} {
 		env := codexHomeEnv(t)
-		writeCodexSingleton(t, env.Home, "codex-token")
+		writeCodexLogin(t, env.Home, "codex-token")
 		b := newCodexFakeBackend(t)
 		t.Setenv("ICEBATH_CODEX_BASE_URL", override)
 		if res, _ := newOpenAICodexImageGenProvider().Generate(context.Background(), env, ImageGenRequest{Prompt: "a cat"}); res["success"] != true {
@@ -184,7 +182,7 @@ func TestOpenAICodexBlankOverridePreservesOfficialRoute(t *testing.T) {
 
 func TestOpenAICodexProfileScopeRoutesEachRequestWithoutBorrowingProcessOverride(t *testing.T) {
 	env := codexHomeEnv(t)
-	writeCodexSingleton(t, env.Home, "codex-token")
+	writeCodexLogin(t, env.Home, "codex-token")
 	b := newCodexFakeBackend(t)
 	provider.SetMultiplexActive(true)
 	t.Cleanup(func() { provider.SetMultiplexActive(false) })
@@ -209,7 +207,7 @@ func TestOpenAICodexProfileScopeRoutesEachRequestWithoutBorrowingProcessOverride
 func TestOpenAICodexCustomRouteFailureNeverRetriesOnOfficialHost(t *testing.T) {
 	for _, failure := range []string{"http", "empty", "exception"} {
 		env := codexHomeEnv(t)
-		writeCodexSingleton(t, env.Home, "codex-token")
+		writeCodexLogin(t, env.Home, "codex-token")
 		b := newCodexFakeBackend(t)
 		t.Setenv("ICEBATH_CODEX_BASE_URL", "https://images.example.test/codex")
 		b.respond = func(req *http.Request) (*http.Response, error) {
@@ -243,7 +241,7 @@ func TestOpenAICodexReturnsAuthErrorWithoutCodexToken(t *testing.T) {
 
 func TestOpenAICodexTextToImagePostsGenerationsWithNoHostModel(t *testing.T) {
 	env := codexHomeEnv(t)
-	writeCodexSingleton(t, env.Home, "codex-token")
+	writeCodexLogin(t, env.Home, "codex-token")
 	b := newCodexFakeBackend(t)
 	res, _ := newOpenAICodexImageGenProvider().Generate(context.Background(), env, ImageGenRequest{Prompt: "a cat", AspectRatio: "portrait"})
 	if res["success"] != true || res["model"] != "gpt-image-2-medium" || res["provider"] != "openai-codex" || res["quality"] != "medium" ||
@@ -277,7 +275,7 @@ func TestOpenAICodexTextToImagePostsGenerationsWithNoHostModel(t *testing.T) {
 
 func TestOpenAICodexCustomBaseReceivesTheImageRequest(t *testing.T) {
 	env := codexHomeEnv(t)
-	writeCodexSingleton(t, env.Home, "codex-token")
+	writeCodexLogin(t, env.Home, "codex-token")
 	b := newCodexFakeBackend(t)
 	t.Setenv("ICEBATH_CODEX_BASE_URL", "https://codex-gw.example/backend-api/codex")
 	if res, _ := newOpenAICodexImageGenProvider().Generate(context.Background(), env, ImageGenRequest{Prompt: "a cat"}); res["success"] != true {
@@ -290,7 +288,7 @@ func TestOpenAICodexCustomBaseReceivesTheImageRequest(t *testing.T) {
 
 func TestOpenAICodexSourceImagesPostEditsWithInlineDataURLs(t *testing.T) {
 	env := codexHomeEnv(t)
-	writeCodexSingleton(t, env.Home, "codex-token")
+	writeCodexLogin(t, env.Home, "codex-token")
 	b := newCodexFakeBackend(t)
 	local := filepath.Join(t.TempDir(), "ref.png")
 	os.WriteFile(local, codexTestPNG, 0o644)
@@ -310,11 +308,11 @@ func TestOpenAICodexSourceImagesPostEditsWithInlineDataURLs(t *testing.T) {
 
 func TestOpenAICodexRemoteSourceURLIsFetchedAndInlined(t *testing.T) {
 	env := codexHomeEnv(t)
-	writeCodexSingleton(t, env.Home, "codex-token")
+	writeCodexLogin(t, env.Home, "codex-token")
 	b := newCodexFakeBackend(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(codexTestPNG) }))
 	defer srv.Close()
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "1")
+	setAllowPrivateURLs(t, env, true)
 	res, _ := newOpenAICodexImageGenProvider().Generate(context.Background(), env, ImageGenRequest{Prompt: "edit", ImageURL: srv.URL + "/ref.png"})
 	if res["success"] != true {
 		t.Fatal(res)
@@ -328,7 +326,7 @@ func TestOpenAICodexRemoteSourceURLIsFetchedAndInlined(t *testing.T) {
 
 func TestOpenAICodexRejectsNonImageLocalSource(t *testing.T) {
 	env := codexHomeEnv(t)
-	writeCodexSingleton(t, env.Home, "codex-token")
+	writeCodexLogin(t, env.Home, "codex-token")
 	b := newCodexFakeBackend(t)
 	textPath := filepath.Join(t.TempDir(), "not-image.txt")
 	os.WriteFile(textPath, []byte("hello"), 0o644)
@@ -341,7 +339,7 @@ func TestOpenAICodexRejectsNonImageLocalSource(t *testing.T) {
 
 func TestOpenAICodexHTTPErrorMessageSurfacesVerbatimAndBounded(t *testing.T) {
 	env := codexHomeEnv(t)
-	writeCodexSingleton(t, env.Home, "codex-token")
+	writeCodexLogin(t, env.Home, "codex-token")
 	b := newCodexFakeBackend(t)
 	raw, _ := json.Marshal(map[string]any{"metadata": strings.Repeat("x", 600),
 		"error": map[string]any{"message": "Missing required parameter: 'prompt'.", "type": "invalid_request_error"}})
@@ -361,7 +359,7 @@ func TestOpenAICodexHTTPErrorMessageSurfacesVerbatimAndBounded(t *testing.T) {
 
 func TestOpenAICodexMissingImageDataIsEmptyResponse(t *testing.T) {
 	env := codexHomeEnv(t)
-	writeCodexSingleton(t, env.Home, "codex-token")
+	writeCodexLogin(t, env.Home, "codex-token")
 	b := newCodexFakeBackend(t)
 	b.respond = func(req *http.Request) (*http.Response, error) {
 		return codexJSONResponse(req, 200, `{"created": 1, "data": []}`, nil), nil
@@ -403,7 +401,7 @@ func TestOpenAICodexRemoteImageRefusesInternalTargetsBeforeConnect(t *testing.T)
 	if out, err := codexRemoteImageToDataURL(context.Background(), env, srv.URL+"/img.png"); err == nil || out != "" || len(hits) != 0 {
 		t.Fatal("loopback fetched", err, hits)
 	}
-	t.Setenv("ICEBATH_ALLOW_PRIVATE_URLS", "1")
+	setAllowPrivateURLs(t, env, true)
 	if out, err := codexRemoteImageToDataURL(context.Background(), env, srv.URL+"/to-metadata/img.png"); err == nil || out != "" {
 		t.Fatal("redirect to metadata followed", err)
 	}

@@ -106,15 +106,23 @@ func TestMinimaxRequestUserCodeStateMismatchRaises(t *testing.T) {
 	}
 }
 
-func minimaxState(expiresIn time.Duration) map[string]any {
-	return map[string]any{"access_token": "old", "refresh_token": "r0", "portal_base_url": "https://portal.test", "client_id": "cid",
-		"inference_base_url": "https://api.minimax.io/anthropic/", "expires_at": epochToISO(nowEpoch() + expiresIn.Seconds())}
+// MiniMax login row a sign in stores, its access token expiring after the given time
+func minimaxLogin(expiresIn time.Duration) map[string]any {
+	return map[string]any{"id": "minimax-login", "label": "minimax", "auth_type": "oauth", "priority": 0, "source": SourceManual + ":minimax_oauth",
+		"access_token": "old", "refresh_token": "r0", "portal_base_url": "https://portal.test", "client_id": "cid",
+		"base_url": "https://api.minimax.io/anthropic/", "expires_at_ms": (nowEpoch() + expiresIn.Seconds()) * 1000}
+}
+
+// Replaces auth.json with one holding the MiniMax login row
+func writeMinimaxLogin(t *testing.T, h string, login map[string]any) {
+	t.Helper()
+	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{}, "credential_pool": map[string]any{"minimax-oauth": []any{login}}})
 }
 
 func TestMinimaxRefreshSkipsWhenNotExpiredAndRotatesNearExpiry(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openai-codex", "providers": map[string]any{"minimax-oauth": minimaxState(time.Hour)}})
+	writeMinimaxLogin(t, h, minimaxLogin(time.Hour))
 	calls := 0
 	var mu sync.Mutex
 	scriptClient(t, &minimaxHTTPClientFn, func(req *http.Request) (*http.Response, error) {
@@ -127,7 +135,7 @@ func TestMinimaxRefreshSkipsWhenNotExpiredAndRotatesNearExpiry(t *testing.T) {
 	if err != nil || creds["api_key"] != "old" || creds["base_url"] != "https://api.minimax.io/anthropic" || calls != 0 {
 		t.Fatalf("%v %v %d", creds, err, calls)
 	}
-	writeAuthStore(t, h, map[string]any{"version": 2, "active_provider": "openai-codex", "providers": map[string]any{"minimax-oauth": minimaxState(10 * time.Second)}})
+	writeMinimaxLogin(t, h, minimaxLogin(10*time.Second))
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
@@ -139,37 +147,36 @@ func TestMinimaxRefreshSkipsWhenNotExpiredAndRotatesNearExpiry(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	data := readAuthStore(t, h)
-	if calls != 1 || data["active_provider"] != "openai-codex" || data["providers"].(map[string]any)["minimax-oauth"].(map[string]any)["refresh_token"] != "r1" {
-		t.Fatalf("%d %v", calls, data)
+	if stored := poolRows(t, h, "minimax-oauth")[0]; calls != 1 || stored["refresh_token"] != "r1" || stored["access_token"] != "new" {
+		t.Fatalf("%d %v", calls, stored)
 	}
 	if src := CredentialSourceOf(BuildMinimaxOAuthTokenProvider(env)); src != CredentialSourceMinimaxOAuth {
 		t.Fatal(src)
 	}
 }
 
-func TestMinimaxResolveQuarantinesDeadTokensOnTerminalRefreshFailure(t *testing.T) {
+func TestMinimaxResolveMarksTheLoginDeadOnTerminalRefreshFailure(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
-	writeAuthStore(t, h, map[string]any{"version": 2, "providers": map[string]any{"minimax-oauth": minimaxState(0)}})
+	writeMinimaxLogin(t, h, minimaxLogin(0))
 	long := `{"error":"invalid_grant","pad":"` + strings.Repeat("x", 20000) + `"}`
 	scriptClient(t, &minimaxHTTPClientFn, func(*http.Request) (*http.Response, error) { return textResponse(400, long), nil })
 	_, err := resolveMinimaxOAuthRuntimeCredentials(env)
 	var ae *AuthError
-	if !errors.As(err, &ae) || ae.Code != "refresh_failed" || !ae.ReloginRequired || !strings.HasSuffix(ae.Message, "...[truncated]") ||
-		len(ae.Message) > minimaxOAuthErrorBodyLimit+100 {
+	if !errors.As(err, &ae) || ae.Code != "refresh_failed" || !ae.ReloginRequired {
 		t.Fatalf("%v", err)
 	}
-	state := readAuthStore(t, h)["providers"].(map[string]any)["minimax-oauth"].(map[string]any)
-	if _, has := state["access_token"]; has || state["last_auth_error"] == nil {
-		t.Fatalf("%v", state)
+	stored := poolRows(t, h, "minimax-oauth")[0]
+	reason := anyString(stored["last_error_message"])
+	if stored["last_status"] != StatusDead || !strings.HasSuffix(reason, "...[truncated]") || len(reason) > minimaxOAuthErrorBodyLimit+100 {
+		t.Fatalf("%v", stored)
 	}
 	if _, err = resolveMinimaxOAuthRuntimeCredentials(env); !errors.As(err, &ae) || ae.Code != "not_logged_in" {
 		t.Fatalf("%v", err)
 	}
 }
 
-func TestMinimaxOAuthLoginSetsActiveProvider(t *testing.T) {
+func TestMinimaxOAuthLoginStoresALogin(t *testing.T) {
 	h := newTestHome(t)
 	env := testEnv(t, h)
 	prevSleep := oauthSleep
@@ -194,10 +201,10 @@ func TestMinimaxOAuthLoginSetsActiveProvider(t *testing.T) {
 	if err := LoginMinimaxOAuth(env, &out, MinimaxLoginArgs{NoBrowser: true}); err != nil {
 		t.Fatal(err)
 	}
-	data := readAuthStore(t, h)
-	state := data["providers"].(map[string]any)["minimax-oauth"].(map[string]any)
-	if data["active_provider"] != "minimax-oauth" || state["access_token"] != "at" || state["region"] != "global" || state["inference_base_url"] != MinimaxOAuthGlobalInference {
-		t.Fatalf("%v", data)
+	rows := poolRows(t, h, "minimax-oauth")
+	if len(rows) != 1 || rows[0]["access_token"] != "at" || rows[0]["refresh_token"] != "rt" || rows[0]["base_url"] != MinimaxOAuthGlobalInference ||
+		rows[0]["source"] != SourceManual+":minimax_oauth" {
+		t.Fatalf("%v", rows)
 	}
 	if !strings.Contains(out.String(), "Note from MiniMax: hi") || !strings.Contains(out.String(), "MM-1") {
 		t.Fatal(out.String())

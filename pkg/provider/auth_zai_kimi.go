@@ -160,9 +160,7 @@ func resolveZaiBaseURLDetected(ctx context.Context, h, apiKey, defaultURL string
 			state = map[string]any{}
 		}
 		state["detected_endpoint"] = detectedEndpoint
-		if err := store.StoreProviderState(data, "zai", state, false); err != nil {
-			return err
-		}
+		store.StoreProviderState(data, "zai", state)
 		return store.Save(data)
 	}()
 	if err != nil {

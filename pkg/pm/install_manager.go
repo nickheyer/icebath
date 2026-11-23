@@ -81,15 +81,53 @@ func Activate(ctx context.Context, allowIncomplete bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ActivatePath(ctx); err != nil {
+		return nil, err
+	}
+	return problems, nil
+}
+
+// Puts the installed store's tool dirs at the front of the process PATH, checking nothing
+func ActivatePath(ctx context.Context) error {
 	path := os.Getenv("PATH")
 	first, err := StoreFirstPath(ctx, path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if first != path {
-		if err := os.Setenv("PATH", first); err != nil {
+		return os.Setenv("PATH", first)
+	}
+	return nil
+}
+
+// Required tools whose installed copy this version's lockfile has moved past, and the venv when it is behind its lock, never installing or fetching
+func Outdated(ctx context.Context) (*DriftReport, error) {
+	drift, err := Drift(ctx, true)
+	if err != nil {
+		return nil, err
+	}
+	report := &DriftReport{Reasons: map[string]string{}}
+	lockfile := currentLockfile()
+	target, err := CurrentTarget()
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range drift.Names {
+		if name == "venv" {
+			report.set(name, drift.Reasons[name])
+			continue
+		}
+		p, err := GetPackage(name)
+		if err != nil {
 			return nil, err
 		}
+		loc, err := InstalledLocation(ctx, p, lockfile, target, LocationOptions{AllowOutdated: true})
+		if err != nil {
+			return nil, err
+		}
+		if loc != nil {
+			report.set(name, "installed at an older pin")
+		}
 	}
-	return problems, nil
+	return report, nil
 }

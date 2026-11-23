@@ -63,7 +63,7 @@ func newContractLocalSession(t *testing.T, configYAML string) *contractLocalSess
 	if err != nil {
 		t.Fatal(err)
 	}
-	authority, err := gateway.InitializeSessionAuthority(ctx, runner, "default", "owner", nil, true)
+	authority, err := gateway.InitializeSessionAuthority(ctx, runner, storeHome(t, runner.SessionDB(ctx)), "owner", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}

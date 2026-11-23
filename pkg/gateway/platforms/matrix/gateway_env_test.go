@@ -25,10 +25,9 @@ func TestMatrixEnvE2EEModeAndEncryptionFlag(t *testing.T) {
 	cfg := emptyConfig(t)
 	t.Setenv("MATRIX_ACCESS_TOKEN", "tok")
 	t.Setenv("MATRIX_E2EE_MODE", " Prefer ")
-	t.Setenv("MATRIX_DEVICE_ID", "DEV")
 	applyEnv(t, cfg)
 	pc := cfg.Platforms[gateway.PlatformMatrix]
-	if pc == nil || !pc.Enabled || pc.Token != "tok" || pc.Extra["encryption"] != true || pc.Extra["e2ee_mode"] != "prefer" || pc.Extra["device_id"] != "DEV" || pc.Extra["homeserver"] != "" {
+	if pc == nil || !pc.Enabled || pc.Token != "tok" || pc.Extra["encryption"] != true || pc.Extra["e2ee_mode"] != "prefer" {
 		t.Fatalf("matrix config %+v", pc)
 	}
 	cfg = emptyConfig(t)

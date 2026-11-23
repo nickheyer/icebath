@@ -116,7 +116,7 @@ func (a *TelegramAdapter) sendChunkWithRetries(ctx context.Context, chatID, chun
 	effectiveThreadID := thread.MessageThreadID
 	for attempt := 0; attempt < 3; attempt++ {
 		kw := textSend{chatID: NormalizeTelegramChatID(chatID), replyTo: replyToID, thread: thread,
-			disableNote: notificationKwargs(a.notificationsMode, metadata)}
+			disableNote: notificationKwargs(a.notificationsMode(), metadata)}
 		msg, sendErr := a.sendChunkMarkdownOrPlain(ctx, chunk, kw)
 		if sendErr == nil {
 			return msg, usedThreadFallback, nil, nil
@@ -707,7 +707,7 @@ func (a *TelegramAdapter) sendOverflowContinuation(ctx context.Context, chatID, 
 	if finalize {
 		modes = []bool{true, false}
 	}
-	kw := textSend{chatID: NormalizeTelegramChatID(chatID), replyTo: replyToID, thread: thread, disableNote: notificationKwargs(a.notificationsMode, metadata)}
+	kw := textSend{chatID: NormalizeTelegramChatID(chatID), replyTo: replyToID, thread: thread, disableNote: notificationKwargs(a.notificationsMode(), metadata)}
 	for _, useMarkdown := range modes {
 		var text string
 		var mode models.ParseMode
@@ -997,7 +997,7 @@ func (a *TelegramAdapter) trySendRich(ctx context.Context, chatID, content strin
 	if thread.DirectMessagesTopicID != nil {
 		payload["direct_messages_topic_id"] = *thread.DirectMessagesTopicID
 	}
-	payload["disable_notification"] = notificationKwargs(a.notificationsMode, metadata)
+	payload["disable_notification"] = notificationKwargs(a.notificationsMode(), metadata)
 	if replyToID != nil {
 		payload["reply_parameters"] = map[string]any{"message_id": *replyToID}
 	}

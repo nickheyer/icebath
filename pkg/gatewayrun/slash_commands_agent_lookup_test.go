@@ -34,10 +34,11 @@ func TestStopReachesResidentAgentAfterRealCacheEviction(t *testing.T) {
 	r.agentCache = pydict.New[string, agentCacheEntry]()
 	r.agentCache.Set(key, agentCacheEntry{agent: resident, signature: "signature"})
 	r.runningAgents().Set(key, resident)
-	authority := gateway.NewSessionAuthority(r, "owned", "current", db, epoch)
+	owned := storeHome(t, db)
+	authority := gateway.NewSessionAuthority(r, owned, "current", db, epoch)
 	user := "human"
 	authority.Sessions["s"] = gateway.NewLiveSession(&gateway.SessionSource{UserID: &user}, key)
-	actor := gateway.Principal{Subject: "human", ProfileID: "owned", TransportID: "cli",
+	actor := gateway.Principal{Subject: "human", ProfileID: owned, TransportID: "cli",
 		Capabilities: map[string]bool{"session:submit": true, "session:control": true}}
 	if _, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: actor.Subject, SessionID: "s",
 		RequestID: "running", Payload: pyjson.ObjectOf("text", "work")}); err != nil {
@@ -55,7 +56,7 @@ func TestStopReachesResidentAgentAfterRealCacheEviction(t *testing.T) {
 		t.Fatalf("resident agent %v", found)
 	}
 	generation := gateway.RowInt(row, "generation")
-	if _, err := authority.Interrupt(ctx, actor, gateway.SessionRef{ProfileID: "owned", SessionID: "s"}, *generation); err != nil {
+	if _, err := authority.Interrupt(ctx, actor, gateway.SessionRef{ProfileID: owned, SessionID: "s"}, *generation); err != nil {
 		t.Fatal(err)
 	}
 	if !resident.IsInterrupted() {

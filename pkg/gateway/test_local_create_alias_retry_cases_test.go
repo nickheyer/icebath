@@ -15,11 +15,14 @@ import (
 )
 
 const aliasRetryConfig = "platform_toolsets: {cli: []}\n" +
-	"model: {provider: custom, default: m, base_url: http://default.invalid/v1}\n" +
-	"model_aliases:\n" +
-	"  alias-key: {model: model-alias, provider: custom, base_url: \"${P5_ENDPOINT}\", api_key: \"${P5_ALIAS_KEY}\"}\n" +
-	"  twin-key: {model: model-alias, provider: custom, base_url: \"${P5_ENDPOINT}\", api_key: \"${P5_ALIAS_KEY}\"}\n" +
-	"  same-name: {model: same-name, provider: custom, base_url: \"${P5_ENDPOINT}\"}\n"
+	"model:\n" +
+	"  provider: custom\n" +
+	"  default: m\n" +
+	"  base_url: http://default.invalid/v1\n" +
+	"  aliases:\n" +
+	"    alias-key: {model: model-alias, provider: custom, base_url: \"${P5_ENDPOINT}\", api_key: \"${P5_ALIAS_KEY}\"}\n" +
+	"    twin-key: {model: model-alias, provider: custom, base_url: \"${P5_ENDPOINT}\", api_key: \"${P5_ALIAS_KEY}\"}\n" +
+	"    same-name: {model: same-name, provider: custom, base_url: \"${P5_ENDPOINT}\"}\n"
 
 const aliasRetryPrompt = "ICEBATH_EPHEMERAL_SYSTEM_PROMPT"
 

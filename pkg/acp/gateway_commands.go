@@ -332,7 +332,7 @@ func gatewaySteer(ctx context.Context, a *GatewayACPAgent, sessionID, text strin
 // Applies a retained session mutation for a typed command and reports what it changed
 func gatewayMutate(ctx context.Context, a *GatewayACPAgent, link gatewayLink, sessionID, command, arg string) (string, error) {
 	operation, payload := "reset", pyjson.NewObject()
-	if command != "new" && command != "clear" {
+	if command != "new" {
 		var err error
 		if operation, payload, err = SlashMutation("/"+command, arg); err != nil {
 			return "", err
@@ -568,6 +568,5 @@ func init() {
 		"model":    {"session.mutate model", gatewayInfo},
 		"compress": {"session.mutate compress", gatewayMutation},
 		"new":      {"session.mutate reset", gatewayMutation},
-		"clear":    {"session.mutate reset", gatewayMutation},
 	}
 }

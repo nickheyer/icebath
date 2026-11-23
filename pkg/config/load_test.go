@@ -9,10 +9,10 @@ import (
 func TestStripDefaultsKeepsMappingOrder(t *testing.T) {
 	inner := map[string]any{"b": 2, "a": 1, "same": true}
 	SetMappingKeys(inner, []string{"b", "a", "same"})
-	doc := map[string]any{"zeta": inner, "alpha": 1, "_config_version": 9}
-	SetMappingKeys(doc, []string{"zeta", "alpha", "_config_version"})
-	out := StripDefaults(doc, map[string]any{"alpha": 1, "zeta": map[string]any{"same": true}, "_config_version": 9}, nil)
-	if got := MappingKeys(out); !reflect.DeepEqual(got, []string{"zeta", "_config_version"}) {
+	doc := map[string]any{"zeta": inner, "alpha": 1, "omega": 9}
+	SetMappingKeys(doc, []string{"zeta", "alpha", "omega"})
+	out := StripDefaults(doc, map[string]any{"alpha": 1, "zeta": map[string]any{"same": true}}, nil)
+	if got := MappingKeys(out); !reflect.DeepEqual(got, []string{"zeta", "omega"}) {
 		t.Fatalf("root order %v", got)
 	}
 	if got := MappingKeys(out["zeta"].(map[string]any)); !reflect.DeepEqual(got, []string{"b", "a"}) {

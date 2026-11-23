@@ -14,8 +14,8 @@ func sequentialInterruptExecutor(t *testing.T, run func() string) (*Executor, *f
 	old := sequentialInterruptPollInterval
 	sequentialInterruptPollInterval = 50 * time.Millisecond
 	t.Cleanup(func() { sequentialInterruptPollInterval = old })
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "0")
 	host := &fakeExecutorHost{env: newTestToolEnv(t)}
+	setToolBatchLimit(t, host.env, "0")
 	d := NewDispatcher(NewRegistry())
 	d.ToolExecutionMiddleware = []ToolExecutionMiddleware{func(context.Context, *Env, string, map[string]any, map[string]any, ToolHookIDs, func(map[string]any) (string, error)) (string, error) {
 		return run(), nil

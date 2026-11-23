@@ -3,7 +3,6 @@ package agent
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -62,13 +61,16 @@ func TestExplicitUserConfigOverridesDefault(t *testing.T) {
 	}
 }
 
-// Writes settings into the test home's config.yaml, giving the test a fresh home unless it already has a temporary one
+// Writes settings into the test home's config.yaml, giving the test a fresh home unless it already has its own
 func setSettingsForTest(t *testing.T, values map[string]any) {
 	t.Helper()
 	h := os.Getenv(home.EnvHome)
-	if h == "" || !strings.HasPrefix(h, os.TempDir()) {
+	if h == "" || h == sandboxHome {
 		h = t.TempDir()
 		t.Setenv(home.EnvHome, h)
+	}
+	if err := os.MkdirAll(h, 0o700); err != nil {
+		t.Fatal(err)
 	}
 	path := filepath.Join(h, "config.yaml")
 	doc := map[string]any{}

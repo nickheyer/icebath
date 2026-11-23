@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -363,7 +364,7 @@ func promptAllowlist(ctx context.Context, check *DiscordBotCheck) error {
 	if check != nil && !check.ServerMembers {
 		for _, uid := range extra {
 			if !pystr.StrIsDigit(uid) {
-				cli.PrintInfo("   Usernames are resolved when the gateway connects, which needs Server Members Intent: " + check.BotSettingsURL())
+				cli.PrintInfo("   Usernames are resolved when the background service connects, which needs Server Members Intent: " + check.BotSettingsURL())
 				break
 			}
 		}
@@ -375,9 +376,9 @@ func promptAllowlist(ctx context.Context, check *DiscordBotCheck) error {
 		cli.PrintSuccess("Discord allowlist configured")
 		return nil
 	}
-	cli.PrintInfo("⚠️  No allowlist set. Discord will deny messages until you set " +
-		"DISCORD_ALLOWED_USERS, DISCORD_ALLOWED_ROLES, DISCORD_ALLOWED_CHANNELS, " +
-		"or DISCORD_ALLOW_ALL_USERS=true for open access.")
+	cli.PrintInfo("⚠️  No allow list set. Discord will deny messages until you set " +
+		settings.DiscordAllowFrom.Key + ", " + settings.DiscordAllowedRoles.Key + " or " + settings.DiscordAllowedChannels.Key +
+		", or turn on " + settings.DiscordAllowAllUsers.Key + " for open access.")
 	return nil
 }
 
@@ -406,9 +407,8 @@ func InteractiveSetup(ctx context.Context) error {
 		if err != nil || allowed != "" {
 			return err
 		}
-		cli.PrintInfo("⚠️  Discord has no user allowlist. With the fail-closed default, " +
-			"messages are denied unless you configure allowed users, roles, " +
-			"or channels, or set DISCORD_ALLOW_ALL_USERS=true.")
+		cli.PrintInfo("⚠️  Discord has no allowed people. Messages are denied until you " +
+			"list allowed people, roles or channels, or turn on " + settings.DiscordAllowAllUsers.Key + ".")
 		if cli.PromptYesNo(ctx, "Add allowed users now?", true) {
 			token, err := cfg.GetEnvValue(ctx, "DISCORD_BOT_TOKEN")
 			if err != nil {

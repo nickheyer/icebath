@@ -18,9 +18,9 @@ const sharedRelayURL = "https://relay.example/v1"
 func namedCustomConfig() map[string]any {
 	return map[string]any{
 		"model": map[string]any{"default": "alpha-model", "provider": "custom:alpha"},
-		"custom_providers": []any{
-			map[string]any{"name": "alpha", "base_url": sharedRelayURL, "api_key": "sk-alpha", "model": "alpha-model"},
-			map[string]any{"name": "beta", "base_url": sharedRelayURL, "api_key": "sk-beta", "model": "beta-model"},
+		"providers": map[string]any{
+			"alpha": map[string]any{"base_url": sharedRelayURL, "api_key": "sk-alpha", "default_model": "alpha-model"},
+			"beta":  map[string]any{"base_url": sharedRelayURL, "api_key": "sk-beta", "default_model": "beta-model"},
 		},
 	}
 }

@@ -11,8 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -21,11 +19,6 @@ const SetupProviderHelp = "icebath model --help"
 
 // Seam over the shared provider picker, the setup tests patch
 var setupSelectProviderAndModel = SelectProviderAndModel
-
-// SetupAttributeError is a setup section refusing a config value of the wrong kind
-type SetupAttributeError struct{ Msg string }
-
-func (e *SetupAttributeError) Error() string { return e.Msg }
 
 // SetupTypeError is a setup section refusing to write into a config value that is not a mapping
 type SetupTypeError struct{ Msg string }
@@ -134,9 +127,6 @@ func ApplyDefaultAgentSettings(ctx context.Context, cfg config.Tree) error {
 		return err
 	}
 	agent["max_turns"] = 150
-	if _, err := config.RemoveHomeEnvValue(ctx, h, "ICEBATH_MAX_ITERATIONS"); err != nil {
-		return err
-	}
 	compression, err := SetdefaultDict(cfg, "compression")
 	if err != nil {
 		return err
@@ -179,81 +169,3 @@ func (setupTerminalUI) Println()                 { setupPrintln("") }
 
 // Installs the setup prompts as the console the terminal backend section of pkg/tools draws on
 func init() { tools.SetupTerminalConsole = setupTerminalUI{} }
-
-// Value of an env name for the setup sections, empty when unset, a failed scoped read returned as an error
-func setupEnvValue(ctx context.Context, key string) (string, error) {
-	v, _, err := config.GetEnvValue(ctx, home.Dir(ctx), key)
-	return v, err
-}
-
-// Reports any of a registry row's api key env names set, the ambient Claude Code token excepted
-func setupProviderHasKey(ctx context.Context, pconfig *Profile) (bool, error) {
-	for _, name := range pconfig.KeyEnv {
-		if name == "CLAUDE_CODE_OAUTH_TOKEN" {
-			continue
-		}
-		v, err := setupEnvValue(ctx, name)
-		if err != nil || v != "" {
-			return err == nil, err
-		}
-	}
-	return false, nil
-}
-
-// ModelSectionHasCredentials reports usable inference credentials from the auth store, the registry keys or the OpenRouter env vars
-func ModelSectionHasCredentials(ctx context.Context, cfg map[string]any) (bool, error) {
-	if active, err := NewStore(home.Dir(ctx)).ActiveProvider(); err == nil && active != "" {
-		return true, nil
-	}
-	items := providerRegistry().items(ctx)
-	anyOpenRouterKey := false
-	for _, name := range []string{"OPENROUTER_API_KEY", "OPENAI_API_KEY"} {
-		v, err := setupEnvValue(ctx, name)
-		if err != nil {
-			return false, err
-		}
-		if v != "" {
-			anyOpenRouterKey = true
-			break
-		}
-	}
-	if modelCfg, ok := cfg["model"].(map[string]any); ok {
-		providerID := ""
-		if raw := modelCfg["provider"]; pyrepr.Truthy(raw) {
-			text, isText := raw.(string)
-			if !isText {
-				return false, &SetupAttributeError{Msg: fmt.Sprintf("model.provider is %s, expected text", errchain.Kind(raw))}
-			}
-			providerID = pystr.Lower(pystr.Strip(text))
-		}
-		for _, it := range items {
-			if it.Key != providerID {
-				continue
-			}
-			has, err := setupProviderHasKey(ctx, it.Row)
-			if err != nil || has {
-				return has, err
-			}
-			break
-		}
-		if providerID == "openrouter" && anyOpenRouterKey {
-			return true, nil
-		}
-	}
-	if anyOpenRouterKey {
-		return true, nil
-	}
-	for _, it := range items {
-		has, err := setupProviderHasKey(ctx, it.Row)
-		if err != nil {
-			return false, err
-		}
-		if !has {
-			continue
-		}
-		if profile := getProviderProfile(ctx, it.Key); profile == nil || !profile.AmbientCredentials {
-			return true, nil
-		}
-	}
-	return false, nil
-}

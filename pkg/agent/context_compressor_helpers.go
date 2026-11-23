@@ -72,7 +72,6 @@ const (
 	maxKeepToolImages                  = 3
 	smallCtxWindowLimit                = 512_000
 	smallCtxThresholdPercent           = 0.75
-	legacyActiveTaskHeading            = "## Active Task"
 	prunedSkillReloadNoticeHeader      = "[Skills pruned during compression — reload before acting on these tasks]"
 	strippedToolScreenshotPlaceholder  = "[screenshot removed to save context]"
 	strippedAttachedImagePlaceholder   = "[Attached image — stripped after compression]"
@@ -121,7 +120,7 @@ var (
 	skillPrunedMarkerRE       = regexp.MustCompile(regexp.QuoteMeta(skillPrunedMarkerPrefix) + `[^\]]*?reload with skill_view\(name='([^']+)'\)`)
 	pathMentionRE             = mustPyRE(`(?:/|~/?|[A-Za-z]:\\)[^\s` + "`" + `'")\]}<>]+`)
 	mediaDirectiveRE          = mustPyRE(`MEDIA:\S+`)
-	historicalTaskSectionRE   = mustPyRE(`(?ms)^(?:` + regexp.QuoteMeta(state.HistoricalTaskHeading) + `|` + regexp.QuoteMeta(legacyActiveTaskHeading) + `)\s*\n.*?(?=^## |\Z)`)
+	historicalTaskSectionRE   = mustPyRE(`(?ms)^` + regexp.QuoteMeta(state.HistoricalTaskHeading) + `\s*\n.*?(?=^## |\Z)`)
 	ghTokenRE                 = mustPyRE(`\bgh[pousr]_[A-Za-z0-9_]{8,}\b`)
 	ghTokenTailRE             = mustPyRE(`\bgh[pousr]_[A-Za-z0-9_.-]+`)
 	whitespaceRunRE           = mustPyRE(`\s+`)

@@ -126,7 +126,6 @@ func TestFalRoutingEditSkipsUpscaler(t *testing.T) {
 }
 
 func TestFalRoutingLocalPathsReachFalAsDataURLs(t *testing.T) {
-	t.Setenv("TERMINAL_ENV", "local")
 	t.Setenv("FAL_KEY", "test-key")
 	env := imageEnv(t, config.Tree{"image_gen": map[string]any{"model": "fal-ai/flux-2-pro"}})
 	capture := captureFalSubmit(t)
@@ -157,7 +156,6 @@ func TestFalRoutingLocalPathsReachFalAsDataURLs(t *testing.T) {
 }
 
 func TestFalOversizedSourcesShrinkUnderGatewayBudget(t *testing.T) {
-	t.Setenv("TERMINAL_ENV", "local")
 	env := imageEnv(t, config.Tree{})
 	img := image.NewNRGBA(image.Rect(0, 0, 1600, 1600))
 	r := rand.New(rand.NewPCG(1, 2))

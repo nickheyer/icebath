@@ -311,7 +311,7 @@ func fakeBotScreen(t *testing.T, published map[string]string, holder *string) {
 
 func TestBuildEnvironmentHintsSuppressesHostOnDockerBackend(t *testing.T) {
 	env := promptTestEnv(t)
-	t.Setenv("TERMINAL_ENV", "docker")
+	setSettingsForTest(t, map[string]any{"terminal.backend": "docker"})
 	failRemoteProbe(t)
 	out := environmentHintsFor(t, env)
 	for _, host := range []string{"Host:", "User home directory:", "PowerShell"} {
@@ -331,8 +331,6 @@ func TestBuildEnvironmentHintsUsesTerminalCwdOverLaunchDir(t *testing.T) {
 	if err := os.MkdirAll(configured, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TERMINAL_ENV", "")
-	os.Unsetenv("TERMINAL_ENV")
 	t.Setenv("TERMINAL_CWD", configured)
 	t.Chdir(tmp)
 	if out := environmentHintsFor(t, env); !strings.Contains(out, "Current working directory: "+configured) {
@@ -343,8 +341,6 @@ func TestBuildEnvironmentHintsUsesTerminalCwdOverLaunchDir(t *testing.T) {
 func TestBuildEnvironmentHintsFallsBackToLaunchDir(t *testing.T) {
 	env := promptTestEnv(t)
 	tmp := t.TempDir()
-	t.Setenv("TERMINAL_ENV", "")
-	os.Unsetenv("TERMINAL_ENV")
 	t.Setenv("TERMINAL_CWD", "")
 	os.Unsetenv("TERMINAL_CWD")
 	t.Chdir(tmp)
@@ -355,8 +351,6 @@ func TestBuildEnvironmentHintsFallsBackToLaunchDir(t *testing.T) {
 
 func TestRunningBotScreenRidesTheEnvironmentHints(t *testing.T) {
 	env := promptTestEnv(t)
-	t.Setenv("TERMINAL_ENV", "")
-	os.Unsetenv("TERMINAL_ENV")
 	holder := "agent"
 	fakeBotScreen(t, map[string]string{"DISPLAY": ":20", "XAUTHORITY": "/run/x"}, &holder)
 	out := environmentHintsFor(t, env)
@@ -367,8 +361,6 @@ func TestRunningBotScreenRidesTheEnvironmentHints(t *testing.T) {
 
 func TestHumanHeldBotScreenSaysSo(t *testing.T) {
 	env := promptTestEnv(t)
-	t.Setenv("TERMINAL_ENV", "")
-	os.Unsetenv("TERMINAL_ENV")
 	holder := "human"
 	fakeBotScreen(t, map[string]string{"DISPLAY": ":20"}, &holder)
 	out := environmentHintsFor(t, env)
@@ -379,8 +371,6 @@ func TestHumanHeldBotScreenSaysSo(t *testing.T) {
 
 func TestStoppedBotScreenLeavesNoHint(t *testing.T) {
 	env := promptTestEnv(t)
-	t.Setenv("TERMINAL_ENV", "")
-	os.Unsetenv("TERMINAL_ENV")
 	fakeBotScreen(t, map[string]string{}, nil)
 	if out := environmentHintsFor(t, env); strings.Contains(out, "Bot Screen") {
 		t.Fatalf("hints %q", out)
@@ -389,7 +379,7 @@ func TestStoppedBotScreenLeavesNoHint(t *testing.T) {
 
 func TestRemoteBackendNeverSeesAHostBotScreen(t *testing.T) {
 	env := promptTestEnv(t)
-	t.Setenv("TERMINAL_ENV", "docker")
+	setSettingsForTest(t, map[string]any{"terminal.backend": "docker"})
 	failRemoteProbe(t)
 	fakeBotScreen(t, map[string]string{"DISPLAY": ":20"}, nil)
 	if out := environmentHintsFor(t, env); strings.Contains(out, "Bot Screen") {
@@ -397,11 +387,9 @@ func TestRemoteBackendNeverSeesAHostBotScreen(t *testing.T) {
 	}
 }
 
-func TestEnvironmentHintFromEnvVarIsAppended(t *testing.T) {
+func TestConfiguredEnvironmentHintIsAppended(t *testing.T) {
 	env := promptTestEnv(t)
-	t.Setenv("TERMINAL_ENV", "")
-	os.Unsetenv("TERMINAL_ENV")
-	t.Setenv("ICEBATH_ENVIRONMENT_HINT", "Running inside an OpenShell sandbox.")
+	setSettingsForTest(t, map[string]any{"agent.environment_hint": "Running inside an OpenShell sandbox."})
 	out := environmentHintsFor(t, env)
 	if !strings.Contains(out, "Running inside an OpenShell sandbox.") || !strings.Contains(out, "Host:") || strings.Index(out, "Host:") > strings.Index(out, "OpenShell") {
 		t.Fatalf("hints %q", out)

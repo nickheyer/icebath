@@ -11,7 +11,6 @@ func cwdDriftHostBlock(cwd string) string {
 func TestStoredPromptCwdDrift(t *testing.T) {
 	setup := func(t *testing.T, cwd string) *AIAgent {
 		caseHome(t)
-		t.Setenv("TERMINAL_ENV", "local")
 		t.Setenv("TERMINAL_CWD", cwd)
 		a := spAgent(t)
 		a.model, a.provider = "test/model", "openrouter"

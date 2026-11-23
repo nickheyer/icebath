@@ -392,7 +392,7 @@ func doctorReportHostGatewaySlot(w io.Writer, mgr doctorS6Manager, issues *[]str
 		return nil
 	}
 	doctorCheckOK(w, "Host gateway: "+topology.Describe(), "")
-	legacyUp := []string{}
+	duplicates := []string{}
 	for _, p := range slots {
 		if p == "default" {
 			continue
@@ -402,13 +402,13 @@ func doctorReportHostGatewaySlot(w io.Writer, mgr doctorS6Manager, issues *[]str
 			return err
 		}
 		if running {
-			legacyUp = append(legacyUp, p)
+			duplicates = append(duplicates, p)
 		}
 	}
-	if len(legacyUp) > 0 {
-		doctorCheckWarn(w, "LEGACY per-profile gateway slots still supervised: "+strings.Join(legacyUp, ", "),
-			"(multiplex-only: the host gateway already serves every profile from one process)")
-		*issues = append(*issues, "Fold the legacy per-profile gateways into the host gateway: "+
+	if len(duplicates) > 0 {
+		doctorCheckWarn(w, "Per-profile gateway slots run beside the host gateway: "+strings.Join(duplicates, ", "),
+			"(the host gateway already serves every profile from one process)")
+		*issues = append(*issues, "Fold the per-profile gateways into the host gateway: "+
 			"icebath --profile default gateway migrate --multiplex")
 	}
 	return nil
@@ -594,33 +594,7 @@ func checkOptionalCapabilities(ctx context.Context, d *Doctor, shouldFix bool) (
 var (
 	doctorRedundantAutostartEntries   = gateway.RedundantAutostartEntries
 	doctorReconcileAutostartLaunchers = gateway.ReconcileAutostartLaunchers
-	doctorRetiredGatewayServices      = gateway.RetiredGatewayServices
-	doctorMigrateRetiredGateway       = gateway.MigrateRetiredGatewayServices
 )
-
-// Reports gateway services left under a retired name and moves them to the current name with fix
-func doctorCheckRetiredGatewayServices(ctx context.Context, d *Doctor, shouldFix bool, f *Finding) error {
-	retired, err := doctorRetiredGatewayServices(ctx)
-	if err != nil || len(retired) == 0 {
-		return err
-	}
-	doctorSection(d.W, "Gateway Service Name")
-	if !shouldFix {
-		for _, svc := range retired {
-			doctorCheckWarn(d.W, "Gateway service under the retired name "+svc.Name, "("+svc.Path+")")
-		}
-		f.Issues = append(f.Issues, "Move the gateway service to its current name: icebath doctor --fix")
-		return nil
-	}
-	if _, err := doctorMigrateRetiredGateway(ctx, d.W); err != nil {
-		doctorCheckWarn(d.W, "Could not move the gateway service to its current name", "("+err.Error()+")")
-		f.ManualIssues = append(f.ManualIssues, "Move the gateway service to its current name: icebath gateway install")
-		return nil
-	}
-	doctorCheckOK(d.W, "Gateway service moved to its current name", "")
-	f.Fixed++
-	return nil
-}
 
 // Reports duplicate Windows gateway logon launchers and removes them with fix, silent elsewhere
 func doctorCheckWindowsGatewayAutostart(ctx context.Context, d *Doctor, shouldFix bool, f *Finding) error {
@@ -661,16 +635,13 @@ func doctorCheckWindowsGatewayAutostart(ctx context.Context, d *Doctor, shouldFi
 	return nil
 }
 
-// Reports systemd linger, s6 supervision, retired service names and Windows autostart of the gateway
+// Reports systemd linger, s6 supervision and Windows autostart of the gateway
 func checkGatewaySupervision(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		if err := doctorCheckGatewayServiceLinger(ctx, d, &f.Issues); err != nil {
 			return err
 		}
 		if err := doctorCheckS6Supervision(ctx, d, &f.Issues); err != nil {
-			return err
-		}
-		if err := doctorCheckRetiredGatewayServices(ctx, d, shouldFix, f); err != nil {
 			return err
 		}
 		return doctorCheckWindowsGatewayAutostart(ctx, d, shouldFix, f)

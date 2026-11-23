@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/settings"
 )
 
 // Points ICEBATH_HOME at a profile declaring the named custom provider llamacpp-k3
@@ -19,7 +20,7 @@ func writeReasoningEchoHome(t *testing.T, reasoningEcho bool) string {
 	}
 	lines := []string{"model:", "  default: kimi-k3", "  provider: llamacpp-k3"}
 	if reasoningEcho {
-		lines = append(lines, "  reasoning_echo: true")
+		lines = append(lines, "agent:", "  reasoning_echo: true")
 	}
 	lines = append(lines, "providers:", "  llamacpp-k3:", "    base_url: http://127.0.0.1:8098/v1", "    key_env: LLAMACPP_KEY")
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
@@ -29,11 +30,11 @@ func writeReasoningEchoHome(t *testing.T, reasoningEcho bool) string {
 	return h
 }
 
-// Agent whose echo flag is materialized by the init config read on the resolved custom route
+// Agent on the resolved custom route whose echo flag is the agent.reasoning_echo setting, as agent init reads it
 func reasoningEchoInitAgent() *AIAgent {
 	a := &AIAgent{apiMode: "chat_completions", provider: "custom", baseURL: "http://127.0.0.1:8098/v1", model: "kimi-k3"}
 	a.baseURLLower = a.baseURL
-	a.reasoningEchoFlag = readReasoningEchoFromConfig(context.Background())
+	a.reasoningEchoFlag = settings.AgentReasoningEcho.Get(context.Background())
 	return a
 }
 

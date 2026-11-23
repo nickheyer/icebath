@@ -129,26 +129,24 @@ func warnOncePerProvider(providerKey, signature, msg string, args ...any) {
 
 var placeholderTokenRe = regexp.MustCompile(`\{[^}]+\}`)
 
-// First usable URL among base_url, url, and api, with unresolved placeholders accepted unvalidated
+// The base_url of an entry when it is a usable URL, an unresolved placeholder accepted unvalidated
 func pickProviderBaseURL(entry map[string]any, providerKey string) string {
+	raw, ok := entry["base_url"].(string)
+	candidate := strings.TrimSpace(raw)
+	if !ok || candidate == "" {
+		return ""
+	}
+	if placeholderTokenRe.MatchString(candidate) {
+		return candidate
+	}
+	if parsed, err := url.Parse(candidate); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		return candidate
+	}
 	label := providerKey
 	if label == "" {
 		label = "?"
 	}
-	for _, urlKey := range []string{"base_url"} {
-		raw, ok := entry[urlKey].(string)
-		if !ok || strings.TrimSpace(raw) == "" {
-			continue
-		}
-		candidate := strings.TrimSpace(raw)
-		if placeholderTokenRe.MatchString(candidate) {
-			return candidate
-		}
-		if parsed, err := url.Parse(candidate); err == nil && parsed.Scheme != "" && parsed.Host != "" {
-			return candidate
-		}
-		pkgLog().Warn(fmt.Sprintf("providers.%s: '%s' value '%s' is not a valid URL (no scheme or host) — skipped", label, urlKey, candidate))
-	}
+	pkgLog().Warn(fmt.Sprintf("providers.%s: base_url '%s' is not a valid URL (no scheme or host), so the entry is skipped", label, candidate))
 	return ""
 }
 

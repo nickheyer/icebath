@@ -32,15 +32,15 @@ func (e *ConfigExit) Error() string { return "exit " + strconv.Itoa(e.Code) }
 // Readers and writers config set, get, unset, show and check reach outside this package
 type ConfigCommandSources struct {
 	// Registers the settings blocks plugins declare, so their keys are known before a lookup
-	LoadPluginSettings func()
-	IsEnvSettingKey      func(key string) bool
-	SaveEnvSetting       func(ctx context.Context, h, key, value string) error
-	ReadEnvSetting       func(h, key string) (string, bool)
-	RemoveEnvSetting     func(ctx context.Context, h, key string) (bool, error)
-	DropStaleModelRoute  func(modelCfg map[string]any, provider string, cfg map[string]any) (map[string]any, bool)
-	Language             LanguageCatalog
-	Show                 func(ctx context.Context, h string) (ShowSources, error)
-	CheckDiagnostics     CheckDiagnosticsSources
+	LoadPluginSettings  func()
+	IsEnvSettingKey     func(key string) bool
+	SaveEnvSetting      func(ctx context.Context, h, key, value string) error
+	ReadEnvSetting      func(h, key string) (string, bool)
+	RemoveEnvSetting    func(ctx context.Context, h, key string) (bool, error)
+	DropStaleModelRoute func(modelCfg map[string]any, provider string, cfg map[string]any) (map[string]any, bool)
+	Language            LanguageCatalog
+	Show                func(ctx context.Context, h string) (ShowSources, error)
+	CheckDiagnostics    CheckDiagnosticsSources
 }
 
 const (
@@ -332,6 +332,10 @@ func setRegisteredValue(ctx context.Context, h, key, value string, src ConfigCom
 	modelCfg, _ := Clone(userConfig["model"]).(map[string]any)
 	oldProvider := strings.TrimSpace(pyOrEmpty(modelCfg["provider"]))
 	stored, _, err := settingsHooks.Set(ctx, key, value)
+	var printed *ConfigExit
+	if errors.As(err, &printed) {
+		return true, err
+	}
 	if err != nil {
 		return true, exitInvalid("✗ " + err.Error())
 	}
@@ -596,15 +600,6 @@ func cmdConfigCheck(ctx context.Context, h string, src ConfigCommandSources) err
 			}
 		}
 	}
-	missingConfig, err := GetMissingConfigFields(ctx, h, EnvRefLookupContext(ctx))
-	if err != nil {
-		return err
-	}
-	if len(missingConfig) > 0 {
-		fmt.Fprintln(FacadeStdout)
-		fmt.Fprintln(FacadeStdout, colorize(fmt.Sprintf("  %d new config option(s) available", len(missingConfig)), ansiYellow))
-		fmt.Fprintln(FacadeStdout, "    Run 'icebath config migrate' to add them")
-	}
 	raw, err := ReadRawConfigReadonly(ctx, h)
 	if err != nil {
 		return err
@@ -641,8 +636,7 @@ const configUsageText = `Available commands:
   icebath config get <key>          Print a resolved config value
   icebath config set <key> <value>   Set a config value
   icebath config unset <key>        Remove a config value
-  icebath config check     Check for missing, outdated, or inactive config
-  icebath config migrate   Update config with new options
+  icebath config check     Check which keys are set and what the saved config leaves inactive
   icebath config path      Show config file path
   icebath config env-path  Show .env file path`
 
@@ -859,6 +853,9 @@ func UnsetConfigValue(ctx context.Context, h, key string, src ConfigCommandSourc
 		return unknownKeyRefusal(key)
 	}
 	ctx = home.WithOverride(ctx, h)
+	if _, err := RequireReadableConfigBeforeWrite(ctx, GetConfigPath(h)); err != nil {
+		return err
+	}
 	wasSet, _, err := settingsHooks.Reset(ctx, key)
 	if err != nil {
 		return exitInvalid("✗ " + err.Error())

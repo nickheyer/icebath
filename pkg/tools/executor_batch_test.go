@@ -9,50 +9,48 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
-func timeoutEnv(t *testing.T, tools map[string]any, envValue string) *Env {
+// Env of a fresh home whose config.yaml holds the given timeouts.tools lines
+func timeoutEnv(t *testing.T, tools ...string) *Env {
 	env := newTestToolEnv(t)
-	if tools != nil {
-		env.Config = config.Tree{"timeouts": map[string]any{"tools": tools}}
+	if len(tools) > 0 {
+		writeHomeConfig(t, env, "timeouts:\n  tools:\n    "+strings.Join(tools, "\n    ")+"\n")
 	}
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", envValue)
 	return env
 }
 
-func TestConcurrentToolTimeoutMigration(t *testing.T) {
-	if got := resolveConcurrentToolTimeout(timeoutEnv(t, nil, "60")); got != 60*time.Second {
-		t.Fatalf("env var %v", got)
+func TestConcurrentToolTimeoutSetting(t *testing.T) {
+	if got := resolveConcurrentToolTimeout(timeoutEnv(t)); got != 420*time.Second {
+		t.Fatalf("default %v", got)
 	}
-	if got := resolveConcurrentToolTimeout(timeoutEnv(t, nil, "0")); got != 0 {
-		t.Fatalf("env zero %v", got)
+	if got := resolveConcurrentToolTimeout(timeoutEnv(t, "concurrent_batch: 0")); got != 0 {
+		t.Fatalf("zero %v", got)
 	}
-	if got := resolveConcurrentToolTimeout(timeoutEnv(t, map[string]any{"concurrent_batch": 300}, "60")); got != 300*time.Second {
+	if got := resolveConcurrentToolTimeout(timeoutEnv(t, "concurrent_batch: 300")); got != 300*time.Second {
 		t.Fatalf("config key %v", got)
 	}
 }
 
 func TestSequentialToolTimeoutResolver(t *testing.T) {
-	env := timeoutEnv(t, nil, "")
+	env := timeoutEnv(t)
 	if got := resolveSequentialToolTimeout(env); got != resolveConcurrentToolTimeout(env) || got != 420*time.Second {
 		t.Fatalf("inherits default %v", got)
 	}
 	cases := []struct {
-		tools map[string]any
-		env   string
+		tools []string
 		want  time.Duration
 	}{
-		{nil, "60", 60 * time.Second},
-		{map[string]any{"concurrent_batch": 300, "sequential_call": 90}, "", 90 * time.Second},
-		{map[string]any{"concurrent_batch": 300, "sequential_call": 0}, "", 0},
-		{map[string]any{"concurrent_batch": 0}, "", 0},
+		{[]string{"concurrent_batch: 60"}, 60 * time.Second},
+		{[]string{"concurrent_batch: 300", "sequential_call: 90"}, 90 * time.Second},
+		{[]string{"concurrent_batch: 300", "sequential_call: 0"}, 0},
+		{[]string{"concurrent_batch: 0"}, 0},
 	}
 	for _, c := range cases {
-		if got := resolveSequentialToolTimeout(timeoutEnv(t, c.tools, c.env)); got != c.want {
-			t.Fatalf("%v env %q got %v want %v", c.tools, c.env, got, c.want)
+		if got := resolveSequentialToolTimeout(timeoutEnv(t, c.tools...)); got != c.want {
+			t.Fatalf("%v got %v want %v", c.tools, got, c.want)
 		}
 	}
 }

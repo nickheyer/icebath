@@ -20,15 +20,13 @@ import (
 
 // Sequences the IDE keybindings send, the modified keys of the kitty keyboard protocol the composer acts on
 const (
-	ideCopySequence       = "\x1b[99;13u"
-	ideShiftEnterSequence = "\x1b[13;2u"
-	ideCtrlEnterSequence  = "\x1b[13;5u"
-	ideSuperEnterSequence = "\x1b[13;9u"
-	ideUndoSequence       = "\x1b[122;9u"
-	ideRedoSequence       = "\x1b[122;10u"
-	// Multiline sequence earlier setups wrote, a backslash and a line break the composer saw as two keys
-	ideLegacyMultilineSequence = "\\\r\n"
-	ideSendSequenceCommand     = "workbench.action.terminal.sendSequence"
+	ideCopySequence        = "\x1b[99;13u"
+	ideShiftEnterSequence  = "\x1b[13;2u"
+	ideCtrlEnterSequence   = "\x1b[13;5u"
+	ideSuperEnterSequence  = "\x1b[13;9u"
+	ideUndoSequence        = "\x1b[122;9u"
+	ideRedoSequence        = "\x1b[122;10u"
+	ideSendSequenceCommand = "workbench.action.terminal.sendSequence"
 )
 
 // IDE whose integrated terminal the setup configures, by the name of its settings directory and the name shown
@@ -317,44 +315,6 @@ func ideBindingJSON(b ideBinding) json.RawMessage {
 	return out.Bytes()
 }
 
-// Rewrites the entries an earlier setup wrote with the legacy multiline sequence to the sequences sent now, every other member of an entry kept in place
-func migrateLegacyIDEBindings(entries []json.RawMessage) int {
-	replacements := map[string]string{"shift+enter": ideShiftEnterSequence, "ctrl+enter": ideCtrlEnterSequence, "cmd+enter": ideSuperEnterSequence}
-	command, when, legacy := ideSendSequenceCommand, "terminalFocus", ideLegacyMultilineSequence
-	migrated := 0
-	for i, raw := range entries {
-		b, ok := readIDEBinding(raw)
-		if !ok || b.key == nil || !sameText(b.command, &command) || !sameText(b.when, &when) || !sameText(b.text, &legacy) {
-			continue
-		}
-		replacement, known := replacements[*b.key]
-		if !known {
-			continue
-		}
-		members, _ := jsonMembers(raw)
-		var out bytes.Buffer
-		out.WriteByte('{')
-		for n, m := range members {
-			if n > 0 {
-				out.WriteByte(',')
-			}
-			out.Write(ideJSON(m.name))
-			out.WriteByte(':')
-			if m.name == "args" {
-				out.WriteString(`{"text":`)
-				out.Write(ideJSON(replacement))
-				out.WriteByte('}')
-				continue
-			}
-			out.Write(m.value)
-		}
-		out.WriteByte('}')
-		entries[i] = out.Bytes()
-		migrated++
-	}
-	return migrated
-}
-
 // Entries of a keybindings file, a file that does not exist or holds nothing but comments read as none
 func readIDEKeybindings(path string) (entries []json.RawMessage, exists bool, isArray bool, err error) {
 	content, err := os.ReadFile(path)
@@ -402,7 +362,6 @@ func configureTerminalKeybindings(terminal, goos string, env func(string) string
 	case !isArray:
 		return terminalSetupResult{message: tr(txt.LibTextTerminalSetupKeybindingsNotArray, meta.label, file)}
 	}
-	migrated := migrateLegacyIDEBindings(entries)
 	existing := make([]ideBinding, 0, len(entries))
 	for _, raw := range entries {
 		if b, ok := readIDEBinding(raw); ok {
@@ -429,7 +388,7 @@ func configureTerminalKeybindings(terminal, goos string, env func(string) string
 		return terminalSetupResult{message: tr(txt.LibTextTerminalSetupConflicts, file, strings.Join(conflicts, ", "))}
 	}
 	added := len(missing)
-	if added == 0 && migrated == 0 {
+	if added == 0 {
 		return terminalSetupResult{success: true, message: tr(txt.LibTextTerminalSetupAlreadyConfigured, meta.label)}
 	}
 	if exists {
@@ -455,22 +414,11 @@ func configureTerminalKeybindings(terminal, goos string, env func(string) string
 	if err := os.WriteFile(file, pretty.Bytes(), 0o644); err != nil {
 		return failed(err)
 	}
-	var parts []string
-	if added > 0 {
-		key := txt.LibTextTerminalSetupAddedOther
-		if added == 1 {
-			key = txt.LibTextTerminalSetupAddedOne
-		}
-		parts = append(parts, tr(key, strconv.Itoa(added), meta.label))
+	key := txt.LibTextTerminalSetupAddedOther
+	if added == 1 {
+		key = txt.LibTextTerminalSetupAddedOne
 	}
-	if migrated > 0 {
-		key := txt.LibTextTerminalSetupMigratedOther
-		if migrated == 1 {
-			key = txt.LibTextTerminalSetupMigratedOne
-		}
-		parts = append(parts, tr(key, strconv.Itoa(migrated)))
-	}
-	return terminalSetupResult{success: true, requiresRestart: true, message: tr(txt.LibTextTerminalSetupSummaryIn, strings.Join(parts, ", "), file)}
+	return terminalSetupResult{success: true, requiresRestart: true, message: tr(txt.LibTextTerminalSetupSummaryIn, tr(key, strconv.Itoa(added), meta.label), file)}
 }
 
 // Copies a file under another name with the same permissions

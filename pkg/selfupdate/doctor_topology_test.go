@@ -70,7 +70,7 @@ func TestDoctorReportsTheSingleHostGatewayNotPerProfileSlots(t *testing.T) {
 	}
 	text := out.String()
 	if strings.Contains(text, "Per-profile gateways:") || !strings.Contains(text, fmt.Sprintf("PID %d", os.Getpid())) || !strings.Contains(text, "served") ||
-		!strings.Contains(text, "LEGACY per-profile gateway slots still supervised: legacy") {
+		!strings.Contains(text, "Per-profile gateway slots run beside the host gateway: legacy") {
 		t.Fatalf("output:\n%s", text)
 	}
 	found := false

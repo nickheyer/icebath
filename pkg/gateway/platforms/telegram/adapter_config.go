@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -92,9 +91,9 @@ func extractRichReplyText(richMessage any) *string {
 	return &text
 }
 
-// Notification mode of the profile, all or important
-func resolveNotificationsMode(ctx context.Context) string {
-	return settings.TelegramNotifications.Get(gateway.SettingsContext(ctx))
+// Notification mode of the adapter's profile as set right now, all or important
+func (a *TelegramAdapter) notificationsMode() string {
+	return settings.TelegramNotifications.Get(a.settingsCtx)
 }
 
 // Generic shared config keys the platform map merge already applied, never re-emitted from telegram extra

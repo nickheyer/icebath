@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -105,8 +105,8 @@ func TestHeartbeatExitsOnceWorkerIsInterrupted(t *testing.T) {
 func TestSequentialTimeoutStopsAbandonedWorkersHeartbeat(t *testing.T) {
 	swapDuration(t, &toolActivityHeartbeatInterval, 50*time.Millisecond)
 	swapDuration(t, &sequentialInterruptPollInterval, 50*time.Millisecond)
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "0.3")
 	host := &fakeExecutorHost{env: newTestToolEnv(t)}
+	setToolBatchLimit(t, host.env, "0.3")
 	e := NewExecutor(host, NewDispatcher(NewRegistry()))
 	release := make(chan struct{})
 	defer close(release)
@@ -155,7 +155,7 @@ func TestSequentialToolTimeoutEmitsResultAndContinues(t *testing.T) {
 		mu.Unlock()
 		return state.FlushPersisted
 	}
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "1.0")
+	setToolBatchLimit(t, host.env, "1.0")
 	var messages []*state.Message
 	started := time.Now()
 	err := e.ExecuteToolCallsSequential(context.Background(), toolCallsFor("web_extract", "hung", "next"), &messages, "task", true)
@@ -197,7 +197,7 @@ func TestSequentialToolTimeoutSuppressesLateTerminalEvent(t *testing.T) {
 	firstReturned := make(chan struct{})
 	var mu sync.Mutex
 	count := 0
-	e, _, posts := registryExecutor(t, handlerDef("web_extract", func(context.Context, *Call) string {
+	e, host, posts := registryExecutor(t, handlerDef("web_extract", func(context.Context, *Call) string {
 		mu.Lock()
 		count++
 		n := count
@@ -209,7 +209,7 @@ func TestSequentialToolTimeoutSuppressesLateTerminalEvent(t *testing.T) {
 		}
 		return "second result"
 	}))
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "1.0")
+	setToolBatchLimit(t, host.env, "1.0")
 	var messages []*state.Message
 	err := e.ExecuteToolCallsSequential(context.Background(), toolCallsFor("web_extract", "hung", "next"), &messages, "task", true)
 	close(release)
@@ -238,7 +238,7 @@ func TestSequentialToolInterruptHidesLifecycleCancelDetail(t *testing.T) {
 		return "late result"
 	}))
 	swapDuration(t, &sequentialInterruptPollInterval, 50*time.Millisecond)
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "30")
+	setToolBatchLimit(t, host.env, "30")
 	go func() {
 		<-started
 		host.Interrupt("Lifecycle cancellation requested: PRIVATE_LIFECYCLE_REASON_DO_NOT_COPY", "subagent cancellation requested")
@@ -270,15 +270,14 @@ func (a slowClarifyAsker) Ask(_ context.Context, qs []Question) (FormResult, err
 }
 
 func TestSequentialTimeoutDoesNotCutClarifyHumanWait(t *testing.T) {
-	for _, clarifyTimeout := range []int{ResolveClarifyTimeout(config.Tree{}), 0} {
+	for _, clarifyTimeout := range []int{3600, 0} {
 		clarify := Def{Name: "clarify", Toolset: "clarify", Schema: clarifySchema, Check: func(*Env) bool { return true },
 			Handler: func(ctx context.Context, call *Call) string {
 				return clarifyTool(ctx, call.Env, call.Args["questions"])
 			}}
 		e, host, posts := registryExecutor(t, clarify, handlerDef("web_extract", func(context.Context, *Call) string { return "second result" }))
-		host.env.Config = config.Tree{"agent": map[string]any{"clarify_timeout": clarifyTimeout}}
+		writeHomeConfig(t, host.env, fmt.Sprintf("agent:\n  clarify_timeout: %d\ntimeouts:\n  tools:\n    concurrent_batch: 1.0\n", clarifyTimeout))
 		host.env.Ask = slowClarifyAsker{delay: 1300 * time.Millisecond}
-		t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "1.0")
 		calls := []state.ToolCall{{ID: "clarify-1", Type: "function", Function: state.ToolCallFunction{Name: "clarify",
 			Arguments: `{"questions": [{"question": "Pick one?", "choices": ["A", "B"]}]}`}}}
 		calls = append(calls, toolCallsFor("web_extract", "next")...)
@@ -318,7 +317,7 @@ func TestSequentialToolPollSurfacesWorkerErrorInsteadOfLooping(t *testing.T) {
 	if st := e.pollSequentialFuture(context.Background(), done, "some_tool", started.Add(2*time.Second), true, started, NewAuthorizationGate(host.env, 0)); st != "done" {
 		t.Fatalf("poll status %q", st)
 	}
-	t.Setenv("ICEBATH_CONCURRENT_TOOL_TIMEOUT_S", "2")
+	setToolBatchLimit(t, host.env, "2")
 	stalled := errors.New("tool stream stalled")
 	started = time.Now()
 	_, err := e.runSequentialToolExecutionMiddleware(context.Background(), managedInput{name: "some_tool", args: map[string]any{}, taskID: "t", toolCallID: "tc1",

@@ -88,19 +88,6 @@ func pickAfterEdit(t *testing.T, before, after func() map[string]any, providerNa
 	return out
 }
 
-// Custom provider entry of the config by name
-func customEntry(t *testing.T, cfg map[string]any, name string) map[string]any {
-	t.Helper()
-	entries, _ := cfg["custom_providers"].([]any)
-	for _, e := range entries {
-		if entry, ok := e.(map[string]any); ok && entry["name"] == name {
-			return entry
-		}
-	}
-	t.Fatalf("no custom provider %q in %v", name, cfg["custom_providers"])
-	return nil
-}
-
 // Provider names of a providers mapping in its order
 func providerKeys(cfg map[string]any) []string {
 	var keys []string
@@ -108,35 +95,6 @@ func providerKeys(cfg map[string]any) []string {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-func TestDisplacedUnchangedLegacyEntryKeepsItsKey(t *testing.T) {
-	x := func() map[string]any {
-		return map[string]any{"name": "x-prov", "base_url": "http://127.0.0.1:9/x", "api_key": "x-review-key"}
-	}
-	y := func() map[string]any {
-		return map[string]any{"name": "y-prov", "base_url": "http://127.0.0.1:9/y", "api_key": "y-review-key"}
-	}
-	before := func() map[string]any {
-		return map[string]any{"model": map[string]any{"provider": "custom:x-prov", "default": "original"}, "custom_providers": []any{x()},
-			"fallback_providers": []any{map[string]any{"provider": "custom:x-prov", "model": "original"}}}
-	}
-	after := func() map[string]any {
-		cfg := before()
-		cfg["custom_providers"] = []any{y(), x()}
-		return cfg
-	}
-	got := pickAfterEdit(t, before, after, "custom:y-prov")
-	for _, runtime := range []map[string]any{got.warm, got.cold} {
-		if runtime["base_url"] != "http://127.0.0.1:9/y" || runtime["api_key"] != "y-review-key" {
-			t.Fatalf("runtime %v", runtime)
-		}
-	}
-	for _, cfg := range []map[string]any{got.warmCfg, got.coldCfg} {
-		if key := customEntry(t, cfg, "x-prov")["api_key"]; key != "x-review-key" {
-			t.Fatalf("x-prov key %v", key)
-		}
-	}
 }
 
 func TestRespelledProvidersKeyReplacesTheStaleSpelling(t *testing.T) {

@@ -399,7 +399,7 @@ func boundaryAgent(t *testing.T, messages string) (*GatewayACPAgent, *editorFake
 
 func TestResetEmptiesTheEditorsContextIndicator(t *testing.T) {
 	a, editor := boundaryAgent(t, `[]`)
-	if _, err := promptWithin(t, a, "/reset"); err != nil {
+	if _, err := promptWithin(t, a, "/new"); err != nil {
 		t.Fatal(err)
 	}
 	if shown := contextShown(editor); !reflect.DeepEqual(shown, [][2]int{{200000, 0}}) {

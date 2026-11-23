@@ -42,10 +42,7 @@ func TestAdmittedMessageCarriesWhetherItWasAddressed(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.id, func(t *testing.T) {
-			a, captured := ignoreAdapter(t)
-			for k, v := range c.extra {
-				a.Config.Extra[k] = v
-			}
+			a, captured := ignoreAdapter(t, c.extra)
 			a.mentionedThreads[replyThread] = true
 			if err := a.handleSlackMessage(context.Background(), c.event, nil); err != nil {
 				t.Fatal(err)

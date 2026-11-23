@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 )
@@ -43,14 +42,11 @@ func auxAssertCodexIdentity(t *testing.T, headers map[string]string, accountID s
 	}
 }
 
-// Home whose Codex auth store holds one singleton token and no usable pool entry
-func auxCodexSingletonHome(t *testing.T, token string) context.Context {
+// Home whose auth.json holds one ChatGPT login of openai-codex with the token
+func auxCodexLoginHome(t *testing.T, token string) context.Context {
 	t.Helper()
 	ctx := auxMainTestHome(t, "")
-	writeCodexStore(t, home.Dir(ctx), map[string]any{"access_token": token, "refresh_token": "rt"}, time.Now().UTC().Format(time.RFC3339), nil)
-	prev := auxSelectPoolEntryFn
-	t.Cleanup(func() { auxSelectPoolEntryFn = prev })
-	auxSelectPoolEntryFn = func(context.Context, string) (bool, *PooledCredential) { return false, nil }
+	writeAuthStore(t, home.Dir(ctx), codexLoginStore(map[string]any{"access_token": token, "refresh_token": "rt"}))
 	return ctx
 }
 
@@ -111,7 +107,7 @@ func TestCodexCloudflareHeadersNoResidencyClaimOmitsHeader(t *testing.T) {
 
 func TestAuxiliaryClientWiringBuildCodexClientPassesCodexHeaders(t *testing.T) {
 	token := auxMakeCodexJWT("acct-aux-try-codex", "", "")
-	ctx := auxCodexSingletonHome(t, token)
+	ctx := auxCodexLoginHome(t, token)
 	client, _, err := auxBuildCodexClient(ctx, "gpt-5.4")
 	if err != nil || client == nil {
 		t.Fatalf("codex client %v %v", client, err)
@@ -121,7 +117,7 @@ func TestAuxiliaryClientWiringBuildCodexClientPassesCodexHeaders(t *testing.T) {
 
 func TestAuxiliaryClientWiringResolveProviderClientRawCodexPassesCodexHeaders(t *testing.T) {
 	token := auxMakeCodexJWT("acct-aux-raw-codex", "", "")
-	ctx := auxCodexSingletonHome(t, token)
+	ctx := auxCodexLoginHome(t, token)
 	client, _, err := ResolveProviderClient(ctx, "openai-codex", "gpt-5.4", ProviderClientOptions{RawCodex: true})
 	if err != nil || client == nil {
 		t.Fatalf("raw codex client %v %v", client, err)

@@ -93,12 +93,8 @@ type slashConfirmView struct {
 
 // Slash confirmation view with the configured prompt timeout and localized buttons
 func (a *DiscordAdapter) newSlashConfirmView(ctx context.Context, sessionKey, confirmID string, users, roles strSet) (*slashConfirmView, error) {
-	timeout, err := ReadDiscordPromptTimeout(ctx)
-	if err != nil {
-		return nil, err
-	}
 	v := &slashConfirmView{sessionKey: sessionKey, confirmID: confirmID}
-	v.initView(a, "SlashConfirmView", v, users, roles, float64(timeout))
+	v.initView(a, "SlashConfirmView", v, users, roles, a.promptTimeoutSeconds(ctx))
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for _, b := range []struct {
@@ -167,14 +163,11 @@ type updatePromptView struct {
 
 // Update prompt view with the configured prompt timeout and localized buttons
 func (a *DiscordAdapter) newUpdatePromptView(ctx context.Context, sessionKey string, users, roles strSet) (*updatePromptView, error) {
-	timeout, err := ReadDiscordPromptTimeout(ctx)
-	if err != nil {
-		return nil, err
-	}
 	v := &updatePromptView{sessionKey: sessionKey}
-	v.initView(a, "UpdatePromptView", v, users, roles, float64(timeout))
+	v.initView(a, "UpdatePromptView", v, users, roles, a.promptTimeoutSeconds(ctx))
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	var err error
 	if v.yesBtn, err = v.addButtonLocked("Yes", discordgo.SuccessButton, "✓", "", func(ctx context.Context, i *discordgo.Interaction) error {
 		return v.respond(ctx, i, "y", colorGreen, "platform.discord.prompt.affirm")
 	}); err != nil {
@@ -609,12 +602,8 @@ type clarifyChoiceView struct {
 
 // Clarify view of up to 24 numbered choice buttons and the Other button
 func (a *DiscordAdapter) newClarifyChoiceView(ctx context.Context, choices []string, clarifyID string, users, roles strSet) (*clarifyChoiceView, error) {
-	timeout, err := ReadDiscordPromptTimeout(ctx)
-	if err != nil {
-		return nil, err
-	}
 	v := &clarifyChoiceView{choices: append([]string(nil), choices[:min(len(choices), 24)]...), clarifyID: clarifyID}
-	v.initView(a, "ClarifyChoiceView", v, users, roles, float64(timeout))
+	v.initView(a, "ClarifyChoiceView", v, users, roles, a.promptTimeoutSeconds(ctx))
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	for index, choice := range v.choices {

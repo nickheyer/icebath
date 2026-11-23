@@ -31,28 +31,19 @@ func quickPrompt(t *testing.T, cfg *GatewayConfig, name string) any {
 	return cmd["prompt"]
 }
 
-func TestGatewayFileLayersPreserveUnicodeAndFallback(t *testing.T) {
+func TestGatewayFileLayerPreservesUnicodeAndABrokenFileLeavesDefaults(t *testing.T) {
 	for _, bom := range []string{"", "\xef\xbb\xbf"} {
 		ctx, h := yamlHome(t, "")
 		t.Setenv("ICEBATH_HOME", h)
-		legacy, yamlPath := filepath.Join(h, "gateway.json"), filepath.Join(h, "config.yaml")
-		writeBytes(t, legacy, bom+`{"reset_triggers": ["/départ"], "quick_commands": {"salut": {"type": "prompt", "prompt": "héritage 世界"}}}`)
+		yamlPath := filepath.Join(h, "config.yaml")
+		writeBytes(t, yamlPath, bom+"gateway:\n  reset_triggers: [\"/départ\"]\nquick_commands:\n  salut:\n    type: prompt\n    prompt: bonjour 世界\n")
 		cfg := loadFull(t, ctx)
-		if !reflect.DeepEqual(cfg.ResetTriggers, []any{"/départ"}) || quickPrompt(t, cfg, "salut") != "héritage 世界" {
-			t.Fatalf("legacy layer %v %v", cfg.ResetTriggers, cfg.QuickCommands)
-		}
-		writeBytes(t, yamlPath, bom+"quick_commands:\n  salut:\n    type: prompt\n    prompt: bonjour 世界\n")
-		cfg = loadFull(t, ctx)
 		if !reflect.DeepEqual(cfg.ResetTriggers, []any{"/départ"}) || quickPrompt(t, cfg, "salut") != "bonjour 世界" {
 			t.Fatalf("yaml layer %v %v", cfg.ResetTriggers, cfg.QuickCommands)
 		}
 		writeBytes(t, yamlPath, bom+"quick_commands: [")
-		if got := quickPrompt(t, loadFull(t, ctx), "salut"); got != "héritage 世界" {
-			t.Fatalf("broken yaml falls back to legacy, got %v", got)
-		}
-		writeBytes(t, legacy, bom+"{broken")
 		if got := loadFull(t, ctx).QuickCommands; len(got) != 0 {
-			t.Fatalf("broken legacy %v", got)
+			t.Fatalf("a broken config.yaml must leave the defaults, got %v", got)
 		}
 	}
 }

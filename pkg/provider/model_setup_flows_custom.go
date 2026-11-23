@@ -488,7 +488,7 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		pyDictSet(model, "provider", "custom")
 		pyDictSet(model, "base_url", effectiveURL)
 		delete(model, "key_env")
-			if customKeyEnv != "" {
+		if customKeyEnv != "" {
 			pyDictSet(model, "api_key", "${"+customKeyEnv+"}")
 		}
 		if apiMode != "" {
@@ -517,11 +517,6 @@ func modelFlowCustom(r *ModelFlowRun) error {
 		pyDictSet(r.Config, "model", copied)
 		fmt.Fprintf(r.Out, "Default model set to: %s (via %s)\n", modelName, effectiveURL)
 	} else {
-		if baseURL != "" || apiKey != "" {
-			if err := r.store().DeactivateProvider(); err != nil {
-				return err
-			}
-		}
 		callerModel, ok := r.Config["model"].(map[string]any)
 		if !ok {
 			callerModel = map[string]any{}

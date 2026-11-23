@@ -247,22 +247,20 @@ func TestPolicyIdentityPreservesPreEditorCredentialBinding(t *testing.T) {
 func TestDisableDroppedSecretsReturnsTasksAndDropsFallbacks(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	config := map[string]any{
-		"auxiliary":          map[string]any{"vision": map[string]any{"provider": "openrouter", "api_key": nil, "timeout": int64(30), "fallback_chain": []any{}}},
-		"providers":          map[string]any{"team": map[string]any{"base_url": "http://team/v1", "api_key": nil}},
-		"fallback_providers": []any{map[string]any{"provider": "team", "model": "m"}, map[string]any{"provider": "openrouter", "model": "x"}},
-		"fallback_model":     map[string]any{"provider": "openrouter", "model": "y", "api_key": nil},
+		"auxiliary": map[string]any{"vision": map[string]any{"provider": "openrouter", "api_key": nil, "timeout": int64(30), "fallback_chain": []any{}}},
+		"providers": map[string]any{"team": map[string]any{"base_url": "http://team/v1", "api_key": nil}},
+		"fallback_providers": []any{map[string]any{"provider": "team", "model": "m"}, map[string]any{"provider": "openrouter", "model": "x"},
+			map[string]any{"provider": "openrouter", "model": "y", "api_key": nil}},
 	}
-	dropped := []secretPath{{"auxiliary", "vision", "api_key"}, {"providers", "team", "api_key"}, {"fallback_model", "api_key"}}
+	dropped := []secretPath{{"auxiliary", "vision", "api_key"}, {"providers", "team", "api_key"}, {"fallback_providers", 2, "api_key"}}
 	out := disableDroppedSecrets(context.Background(), config, dropped, "s")
 	vision := out["auxiliary"].(map[string]any)["vision"].(map[string]any)
 	if vision["provider"] != "main" || vision["timeout"] != int64(30) || vision["api_key"] != nil || vision["fallback_chain"] != nil {
 		t.Fatalf("vision %v", vision)
 	}
-	if chain := out["fallback_providers"].([]any); len(chain) != 1 || chain[0].(map[string]any)["provider"] != "openrouter" {
+	chain := out["fallback_providers"].([]any)
+	if len(chain) != 1 || chain[0].(map[string]any)["provider"] != "openrouter" || chain[0].(map[string]any)["model"] != "x" {
 		t.Fatalf("chain %v", chain)
-	}
-	if _, kept := out["fallback_model"]; kept {
-		t.Fatal("fallback_model must be removed")
 	}
 }
 
@@ -407,7 +405,7 @@ func TestEffectiveFollowingSessionRunsTheProfile(t *testing.T) {
 }
 
 func TestFrozenAccessors(t *testing.T) {
-	policy := frozenPolicy(`{"checkpoints": true, "agent": {"max_turns": 7, "reasoning_effort": "high"}}`)
+	policy := frozenPolicy(`{"checkpoints": {"enabled": true}, "agent": {"max_turns": 7, "reasoning_effort": "high"}}`)
 	if !policy.CheckpointsEnabled() || policy.MaxTurns() != 7 {
 		t.Fatalf("checkpoints %v turns %d", policy.CheckpointsEnabled(), policy.MaxTurns())
 	}

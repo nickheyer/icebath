@@ -417,9 +417,9 @@ func IsNoninteractive() bool {
 	return false
 }
 
-// Yes or no answer, headless runs taking the default, inside setup and the TUI through the menu
+// Yes or no answer, headless runs taking the default, inside setup through the menu
 func PromptYesNo(question string, def bool, description string) bool {
-	if IsNoninteractive() && hostedAsker() == nil {
+	if IsNoninteractive() {
 		return def
 	}
 	if currentSetupNavigation() != nil {

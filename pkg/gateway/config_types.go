@@ -999,12 +999,12 @@ func (c *GatewayConfig) GetNoticeDelivery(platform Platform) string {
 	return "public"
 }
 
-// Gateway config from env over config.yaml over legacy gateway.json over defaults
+// Gateway config from env over config.yaml over defaults
 func LoadGatewayConfig(ctx context.Context) (*GatewayConfig, error) {
 	h := home.Dir(ctx)
-	gwData := LoadLegacyGatewayJSON(h)
-	if err := LoadYAMLLayerAny(ctx, h, gwData); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to process config.yaml — falling back to .env / gateway.json values. Check %s for syntax errors. Error: %s",
+	gwData := map[string]any{}
+	if err := LoadYAMLLayer(ctx, h, gwData); err != nil {
+		pkgLog().Warn(fmt.Sprintf("Failed to process config.yaml, so only .env values and defaults apply. Check %s for syntax errors. Error: %s",
 			filepath.Join(h, "config.yaml"), err))
 	}
 	cfg, err := GatewayConfigFromDict(ctx, gwData)

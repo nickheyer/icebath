@@ -615,10 +615,8 @@ type SessionUsagePayload struct {
 }
 
 type GatewayReadyPayload struct {
-	Skin         *SkinPayloadModel `json:"skin,omitzero"`
-	ChangeEvents bool              `json:"change_events"`
-	ReplayEpoch  string            `json:"replay_epoch"`
-	Heartbeat    *bool             `json:"heartbeat,omitzero"`
+	Skin        *SkinPayloadModel `json:"skin,omitzero"`
+	ReplayEpoch string            `json:"replay_epoch"`
 	// Go build ID of the service
 	Build string `json:"build"`
 }

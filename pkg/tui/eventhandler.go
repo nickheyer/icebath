@@ -114,6 +114,13 @@ func (h *eventHandler) queue(cmd tea.Cmd) {
 	}
 }
 
+// Commands queued while the handler served something other than a message of its own, such as the bell of a prompt a server request opened
+func (h *eventHandler) takeCmds() tea.Cmd {
+	cmds := h.cmds
+	h.cmds = nil
+	return tea.Batch(cmds...)
+}
+
 // Runs fn after the current dispatch, the way a resolved promise continues
 func (h *eventHandler) later(fn func() tea.Cmd) { h.microtasks = append(h.microtasks, fn) }
 

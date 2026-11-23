@@ -156,7 +156,7 @@ func (s *systemHub) sections() []systemSection {
 		{id: "computer-use", title: tr(txt.SystemComputerTitle), covers: tr(txt.SystemComputerCovers), open: s.openComputerUse, paths: []string{"computer-use status"}},
 		{id: "proxy", title: tr(txt.SystemProxyTitle), covers: tr(txt.SystemProxyCovers), open: s.openProxy, paths: []string{"proxy status"}},
 		{id: "migrations", title: tr(txt.SystemMigrationsTitle), covers: tr(txt.SystemMigrationsCovers), open: s.openMigrations,
-			paths: []string{"config migrate", "migrate xai", "codex-runtime migrate"}},
+			paths: []string{"migrate xai", "codex-runtime migrate"}},
 		{id: "after-exit", title: tr(txt.HubsTitleAfterExit), covers: tr(txt.HubsShortAfterExit), state: afterExitState, open: a.openAfterExit},
 	}
 }
@@ -518,14 +518,12 @@ func (s *systemHub) openProxy() tea.Cmd {
 	)
 }
 
-// Config and setting migrations that rewrite old keys in place
+// Rewrites of config files: the xAI models that retire and the block icebath keeps in the codex config
 func (s *systemHub) openMigrations() tea.Cmd {
 	detail := func() []string { return []string{tr(txt.SystemMigrationsAbout)} }
 	return s.section(tr(txt.SystemMigrationsTitle), detail,
-		s.cmd(txt.SystemMigrationsConfig, txt.SystemMigrationsConfigDoes, []string{"config", "migrate"}, tr(txt.SystemMigrationsConfigConfirm)),
 		s.cmd(txt.SystemMigrationsXaiCheck, txt.SystemMigrationsXaiCheckDoes, []string{"migrate", "xai"}, ""),
 		s.cmd(txt.SystemMigrationsXai, txt.SystemMigrationsXaiDoes, []string{"migrate", "xai", "--apply"}, tr(txt.SystemMigrationsXaiConfirm)),
-		s.cmd(txt.SystemMigrationsRelay, txt.SystemMigrationsRelayDoes, []string{"migrate", "relay"}, tr(txt.SystemMigrationsRelayConfirm)),
 		s.cmd(txt.SystemMigrationsCodexCheck, txt.SystemMigrationsCodexCheckDoes, []string{"codex-runtime", "migrate", "--dry-run"}, ""),
 		s.cmd(txt.SystemMigrationsCodex, txt.SystemMigrationsCodexDoes, []string{"codex-runtime", "migrate"}, tr(txt.SystemMigrationsCodexConfirm)),
 	)

@@ -299,54 +299,6 @@ func (c *authCLI) normalizeProvider(provider string) string {
 	return normalized
 }
 
-// Moves a keyed provider's old custom: pool into its runtime slug and drops the legacy models cache
-func (c *authCLI) migrateLegacyCustomPoolKey(provider, legacyKey string) error {
-	migrated := false
-	err := c.env.Store.Update(func(data AuthData) (bool, error) {
-		pool, ok := data["credential_pool"].(map[string]any)
-		if !ok {
-			return false, nil
-		}
-		legacyEntries, ok := pool[legacyKey].([]any)
-		if !ok || len(legacyEntries) == 0 {
-			return false, nil
-		}
-		var merged []any
-		if current, ok := pool[provider].([]any); ok {
-			merged = append(merged, current...)
-		}
-		knownIDs := map[string]bool{}
-		for _, e := range merged {
-			if m, ok := e.(map[string]any); ok && authTextOr(m["id"]) != "" {
-				knownIDs[authTextOr(m["id"])] = true
-			}
-		}
-		for _, e := range legacyEntries {
-			entryID := ""
-			if m, ok := e.(map[string]any); ok {
-				entryID = authTextOr(m["id"])
-			}
-			if entryID == "" || !knownIDs[entryID] {
-				merged = append(merged, e)
-				if entryID != "" {
-					knownIDs[entryID] = true
-				}
-			}
-		}
-		pool[provider] = merged
-		delete(pool, legacyKey)
-		migrated = true
-		return true, nil
-	})
-	if err != nil {
-		return err
-	}
-	if migrated {
-		ClearProviderModelsCache(c.ctx, legacyKey)
-	}
-	return nil
-}
-
 func (c *authCLI) providerBaseURL(provider string) string {
 	if provider == "openrouter" {
 		return home.OpenRouterBaseURL
@@ -500,15 +452,20 @@ func (c *authCLI) anthropicOAuthLogin() (map[string]any, error) {
 	return creds, nil
 }
 
+// Qwen login from the Qwen CLI credentials file, a device code sign in writing that file first when it holds no login
 func (c *authCLI) qwenOAuthLogin() (map[string]any, error) {
 	creds, err := resolveQwenRuntimeCredentials(c.env, false)
-	if err != nil {
+	if err == nil {
+		return creds, nil
+	}
+	var missing *AuthError
+	if !errors.As(err, &missing) || (missing.Code != "qwen_auth_missing" && missing.Code != "qwen_access_token_missing") {
 		return nil, err
 	}
-	if err := markQwenOAuthActive(c.env, creds); err != nil {
+	if err := qwenDeviceCodeLogin(c.env, c.out, !nsFlag(c.ns, "no_browser")); err != nil {
 		return nil, err
 	}
-	return creds, nil
+	return resolveQwenRuntimeCredentials(c.env, false)
 }
 
 func (c *authCLI) codexLogin() (map[string]any, error) {
@@ -536,12 +493,11 @@ func authNested(creds map[string]any, keys ...string) any {
 
 // Per provider parameters of the generic icebath auth add <provider> --type oauth path
 type authOAuthAddSpec struct {
-	login         func(c *authCLI) (map[string]any, error)
-	token         func(creds map[string]any) string
-	source        func(creds map[string]any) string
-	fields        func(c *authCLI, creds map[string]any, provider string, entry *PooledCredential)
-	activateFirst bool
-	authType      string
+	login    func(c *authCLI) (map[string]any, error)
+	token    func(creds map[string]any) string
+	source   func(creds map[string]any) string
+	fields   func(c *authCLI, creds map[string]any, provider string, entry *PooledCredential)
+	authType string
 }
 
 func authConstSource(source string) func(map[string]any) string {
@@ -566,8 +522,7 @@ var authOAuthAddSpecs = map[string]authOAuthAddSpec{
 			entry.RefreshToken = authTextOr(authNested(creds, "tokens", "refresh_token"))
 			entry.BaseURL = authTextOr(creds["base_url"])
 			entry.LastRefresh = authTextOr(creds["last_refresh"])
-		},
-		activateFirst: true},
+		}},
 	"xai-oauth": {
 		login: func(c *authCLI) (map[string]any, error) {
 			return xaiOAuthDeviceCodeLoginFn(c.env, c.out, authTimeout(c.ns, 20*time.Second), !nsFlag(c.ns, "no_browser"))
@@ -581,8 +536,7 @@ var authOAuthAddSpecs = map[string]authOAuthAddSpec{
 				entry.BaseURL = DefaultXAIOAuthBaseURL
 			}
 			entry.LastRefresh = authTextOr(creds["last_refresh"])
-		},
-		activateFirst: true},
+		}},
 	"qwen-oauth": {
 		login:  (*authCLI).qwenOAuthLogin,
 		token:  func(creds map[string]any) string { return authTextOr(creds["api_key"]) },
@@ -670,13 +624,10 @@ func (c *authCLI) add() error {
 	if !c.isKnownProvider(provider, configured) {
 		return c.unknownProviderExit(provider)
 	}
-	if err := pluginMissingAuthHandlerError(provider, "add"); err != nil {
+	profile, hasProfile := pluginProfile(provider)
+	deviceLogin := hasProfile && profileHasDeviceLogin(profile)
+	if err := pluginMissingAuthHandlerError(provider, "add"); err != nil && !deviceLogin {
 		return err
-	}
-	if configured != nil {
-		if err := c.migrateLegacyCustomPoolKey(provider, configured["pool_key"].(string)); err != nil {
-			return err
-		}
 	}
 	isCustom := strings.HasPrefix(provider, CustomPoolPrefix)
 	requestedType := strings.ToLower(strings.TrimSpace(authTextOr(c.ns["auth_type"])))
@@ -688,6 +639,9 @@ func (c *authCLI) add() error {
 		if authOAuthDefaultProviders[provider] && !isCustom {
 			requestedType = AuthTypeOAuth
 		}
+	}
+	if deviceLogin && !isCustom && (requestedType == AuthTypeOAuth || registryAuthType(profile) != AuthTypeAPIKey) {
+		return profileDeviceLogin(c.ctx, c.out, profile.Label(), profile, !nsFlag(c.ns, "no_browser"))
 	}
 	if provider == "vertex" && requestedType != AuthTypeOAuth {
 		return c.addVertexServiceAccount()
@@ -843,11 +797,6 @@ func (c *authCLI) storeOAuthCredential(provider string, pool *Pool, creds map[st
 	entry, err := pool.AddEntry(entry)
 	if err != nil {
 		return PooledCredential{}, err
-	}
-	if spec.activateFirst && len(existing) == 0 {
-		if err := c.env.Store.MarkProviderActiveIfUnset(provider); err != nil {
-			return PooledCredential{}, err
-		}
 	}
 	fmt.Fprintf(c.out, "Added %s OAuth credential #%d: \"%s\"\n", provider, len(pool.Entries()), entry.Label)
 	if provider == "openai-codex" {

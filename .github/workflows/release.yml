@@ -32,7 +32,6 @@ jobs:
           REPO_GPG_KEY: ${{ secrets.REPO_GPG_KEY }}
           APK_RSA_KEY: ${{ secrets.APK_RSA_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
           CHOCOLATEY_API_KEY: ${{ secrets.CHOCOLATEY_API_KEY }}
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
@@ -56,7 +55,10 @@ jobs:
           [ "$(gh api repos/nickheyer/winget-pkgs -q '.fork and .parent.full_name == "microsoft/winget-pkgs" and .permissions.push')" = true ] \
             || { echo "::error::WINGET_TOKEN cannot push to nickheyer/winget-pkgs, a fork of microsoft/winget-pkgs"; exit 1; }
       - run: go vet -tags goolm ./...
-      - run: go test -tags goolm ./...
+      # The terminal UI tests drive the real binary in a terminal emulator on a private X display and skip without these
+      - name: Install the display server and terminal emulators of the terminal UI tests
+        run: sudo apt-get -o Acquire::Retries=3 update -qq && sudo apt-get -o Acquire::Retries=3 install -qq -y --no-install-recommends xvfb xterm konsole
+      - run: make test
       # Termux deletes superseded archives, so each release carries its own copy of every pool pin
       - name: Fetch the Termux pool archives the pm pins name
         run: packaging/termux/fetch.sh "$RUNNER_TEMP/termux-pool"
@@ -110,25 +112,6 @@ jobs:
           SCOOP_BUCKET_KEY: ${{ secrets.SCOOP_BUCKET_KEY }}
           NIXPKG_KEY: ${{ secrets.NIXPKG_KEY }}
           TERMUX_POOL_DIR: ${{ runner.temp }}/termux-pool
-      # - uses: actions/upload-artifact@v7
-      #   with:
-      #     name: snaps
-      #     path: dist/*.snap
-      #     if-no-files-found: error
-
-  # snap:
-  #   needs: goreleaser
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/download-artifact@v8
-  #       with:
-  #         name: snaps
-  #         path: snaps
-  #     - run: sudo snap install snapcraft --classic
-  #     - name: Upload to the stable channel
-  #       env:
-  #         SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-  #       run: for s in snaps/*.snap; do snapcraft upload --release=stable "$s"; done
 
   chocolatey:
     needs: goreleaser
@@ -170,24 +153,13 @@ jobs:
 
   winget:
     needs: goreleaser
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Render the manifests from the release checksums and publish date
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release download "$GITHUB_REF_NAME" -p checksums.txt -D "$RUNNER_TEMP" --clobber
-          published=$(gh release view "$GITHUB_REF_NAME" --json publishedAt -q .publishedAt)
-          packaging/winget/render.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/checksums.txt" "${published%%T*}" "$RUNNER_TEMP/winget"
-      - name: Validate the manifests against the WinGet schemas of the version they declare
-        run: |
-          pipx install check-jsonschema
-          packaging/winget/validate.sh "$RUNNER_TEMP/winget"
-      - name: Submit the manifests to microsoft/winget-pkgs
-        env:
-          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        run: packaging/winget/submit.sh "$RUNNER_TEMP/winget"
+    uses: ./.github/workflows/winget.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
+    permissions:
+      contents: read
+      actions: read
 
   pypi:
     needs: goreleaser
@@ -216,15 +188,6 @@ jobs:
     with:
       tag: ${{ github.ref_name }}
     secrets: inherit
-
-  # verify-snap:
-  #   needs: snap
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: snap
-  #       run: |
-  #         for _ in $(seq 20); do sudo snap install icebath --classic && break; sleep 15; done
-  #         /snap/bin/icebath -version | grep -Fx "icebath $GITHUB_REF_NAME"
 
   verify-docker:
     needs: goreleaser

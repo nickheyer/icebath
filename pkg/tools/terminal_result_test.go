@@ -105,7 +105,6 @@ func runTransformTerminal(t *testing.T, output string, returncode int, hook func
 	dir := t.TempDir()
 	env := newTerminalTestEnv(t, dir)
 	env.Secrets = config.NewSecrets(env.Home)
-	env.Secrets.Set("ICEBATH_REDACT_SECRETS", "1")
 	if approval.Approved || approval.Description != "" {
 		checkAllGuardsFn = func(context.Context, *Env, string, string, bool) GuardResult { return approval }
 	}
@@ -203,7 +202,6 @@ func TestSmallOutputHasNoMetadata(t *testing.T) {
 
 func TestSpillIsRedacted(t *testing.T) {
 	env, _ := spillEnv(t)
-	env.Secrets.Set("ICEBATH_REDACT_SECRETS", "1")
 	r := runTerminal(t, env, TerminalRequest{Command: "python3 -c \"print('sk-proj-' + 'a1B2c3D4e5F6g7H8i9J0' * 3); [print('pad', 'y'*90) for i in range(200)]\"", TaskID: "t-spill-3"})
 	full, err := os.ReadFile(resultString(r, "full_output_path"))
 	if err != nil {

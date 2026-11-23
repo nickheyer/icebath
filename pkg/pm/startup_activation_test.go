@@ -73,6 +73,25 @@ func TestSVActivateMovesStoreDirsAheadOfUserDirs(t *testing.T) {
 	}
 }
 
+func TestSVActivatePathMovesStoreDirsFirstWithoutAVerdict(t *testing.T) {
+	binaries, _, checks := svCheckedStore(t)
+	userDir := string(os.PathSeparator) + filepath.Join("user", "bin")
+	t.Setenv("PATH", userDir)
+	if err := os.Remove(binaries[1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivatePath(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(*checks) != 0 {
+		t.Fatalf("checks %v", *checks)
+	}
+	want := []string{filepath.Dir(binaries[0]), filepath.Dir(binaries[2]), userDir}
+	if got := strings.Split(os.Getenv("PATH"), string(os.PathListSeparator)); !reflect.DeepEqual(got, want) {
+		t.Fatalf("PATH %v", got)
+	}
+}
+
 func TestSVDriftActivatesIntactChainsAndReportsTheLiveVerdict(t *testing.T) {
 	binaries, registered, checks := svCheckedStore(t)
 	t.Setenv("PATH", os.Getenv("PATH"))

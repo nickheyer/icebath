@@ -3,6 +3,8 @@ package gateway_test
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -23,32 +25,38 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
-// Every platform wizard and the primary env var its shared reconfigure gate keys on
+// Every platform wizard and the primary name its shared reconfigure gate keys on, with the config.yaml that sets it where the name is a setting
 var gatedWizards = []struct {
 	id, envVar string
 	setup      func(context.Context) error
+	settings   string
 }{
-	{"buzz", "BUZZ_RELAY_URL", buzz.InteractiveSetup},
-	{"dingtalk", "DINGTALK_CLIENT_ID", dingtalk.InteractiveSetup},
-	{"discord", "DISCORD_BOT_TOKEN", discord.InteractiveSetup},
-	{"feishu", "FEISHU_APP_ID", feishu.InteractiveSetup},
-	{"google_chat", "GOOGLE_CHAT_SUBSCRIPTION_NAME", googlechat.InteractiveSetup},
-	{"irc", "IRC_SERVER", irc.InteractiveSetup},
-	{"line", "LINE_CHANNEL_ACCESS_TOKEN", line.InteractiveSetup},
-	{"matrix", "MATRIX_PASSWORD", matrix.InteractiveSetup},
-	{"mattermost", "MATTERMOST_TOKEN", mattermost.InteractiveSetup},
-	{"raft", "RAFT_PROFILE", raft.InteractiveSetup},
-	{"simplex", "SIMPLEX_WS_URL", simplex.InteractiveSetup},
-	{"slack", "SLACK_BOT_TOKEN", slack.InteractiveSetup},
-	{"teams", "TEAMS_CLIENT_ID", teams.InteractiveSetup},
-	{"wecom", "WECOM_BOT_ID", wecom.InteractiveSetup},
+	{"buzz", "BUZZ_RELAY_URL", buzz.InteractiveSetup, ""},
+	{"dingtalk", "DINGTALK_CLIENT_ID", dingtalk.InteractiveSetup, ""},
+	{"discord", "DISCORD_BOT_TOKEN", discord.InteractiveSetup, ""},
+	{"feishu", "FEISHU_APP_ID", feishu.InteractiveSetup, ""},
+	{"google_chat", "GOOGLE_CHAT_SUBSCRIPTION_NAME", googlechat.InteractiveSetup, ""},
+	{"irc", "IRC_SERVER", irc.InteractiveSetup, ""},
+	{"line", "LINE_CHANNEL_ACCESS_TOKEN", line.InteractiveSetup, ""},
+	{"matrix", "MATRIX_PASSWORD", matrix.InteractiveSetup, ""},
+	{"mattermost", "MATTERMOST_TOKEN", mattermost.InteractiveSetup, ""},
+	{"raft", "RAFT_PROFILE", raft.InteractiveSetup, ""},
+	{"simplex", "SIMPLEX_WS_URL", simplex.InteractiveSetup, ""},
+	{"slack", "SLACK_BOT_TOKEN", slack.InteractiveSetup, ""},
+	{"teams", "TEAMS_CLIENT_ID", teams.InteractiveSetup, ""},
+	{"wecom", "WECOM_BOT_ID", wecom.InteractiveSetup, "wecom:\n  bot_id: already-set\n"},
 }
 
 func TestDecliningReconfigureGoesThroughSharedGate(t *testing.T) {
 	for _, w := range gatedWizards {
 		t.Run(w.id, func(t *testing.T) {
-			t.Setenv("ICEBATH_HOME", t.TempDir())
-			t.Setenv(w.envVar, "already-set")
+			h := t.TempDir()
+			t.Setenv("ICEBATH_HOME", h)
+			if w.settings == "" {
+				t.Setenv(w.envVar, "already-set")
+			} else if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte(w.settings), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			var out bytes.Buffer
 			t.Cleanup(provider.WithSetupOutput(&out))
 			savedSetup, savedCLI, savedConfig, savedPlatform := gateway.WizardSetup, gateway.WizardCLI, gateway.WizardConfig, gateway.PlatformSetup

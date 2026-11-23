@@ -178,7 +178,7 @@ func TestAtomicWriteThenKeyUpdateKeepsLayoutAndValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	initial, _ := os.ReadFile(path)
-	if err := atomicRoundtripYAMLUpdate(context.Background(), path, "approvals.mode", "off"); err != nil {
+	if err := atomicRoundtripYAMLApply(context.Background(), path, []KeyValue{{Key: "approvals.mode", Value: "off"}}, nil); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)

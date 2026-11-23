@@ -317,7 +317,7 @@ func (f fakePickerPool) HasAvailable(_ string) bool { return f.available }
 
 func writeOpencodePoolStore(t *testing.T) {
 	t.Helper()
-	store := `{"version": 2, "providers": {}, "active_provider": null, "credential_pool": {"opencode-go": {"entries": [{"id": "x"}]}}}`
+	store := `{"version": 2, "providers": {}, "credential_pool": {"opencode-go": {"entries": [{"id": "x"}]}}}`
 	if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "auth.json"), []byte(store), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -13,7 +13,7 @@ func TestACustomEndpointCarriesOnlyItsOwnEntrysHeaders(t *testing.T) {
 	} {
 		auxIsolateClientCache(t)
 		auxUnsetEnv(t, "OPENAI_API_KEY")
-		ctx := auxMainTestHome(t, "custom_providers:\n  - name: routed\n    base_url: https://gw.example.com/v1\n    extra_headers:\n      X-Route-Token: tok\n")
+		ctx := auxMainTestHome(t, "providers:\n  routed:\n    base_url: https://gw.example.com/v1\n    extra_headers:\n      X-Route-Token: tok\n")
 		client, _, err := ResolveProviderClient(ctx, "custom", "m", ProviderClientOptions{ExplicitBaseURL: tc.baseURL, ExplicitAPIKey: "sk-x"})
 		if err != nil || client == nil {
 			t.Fatalf("%s: no client was built (%v, %v)", tc.baseURL, client, err)

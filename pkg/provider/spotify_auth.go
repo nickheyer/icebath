@@ -485,21 +485,16 @@ func SpotifyResolveRuntimeCredentials(ctx context.Context, h string, forceRefres
 		refreshed, err := spotifyRefreshOAuthState(ctx, h, state, 20.0)
 		if err == nil {
 			state = refreshed
-			if err = store.StoreProviderState(data, SpotifyProvider, state, false); err == nil {
-				err = store.Save(data)
-			}
-			if err == nil {
+			store.StoreProviderState(data, SpotifyProvider, state)
+			if err = store.Save(data); err == nil {
 				return state, nil
 			}
 		}
 		var authErr *AuthError
 		if errors.As(err, &authErr) && authErr.ReloginRequired && pyrepr.Truthy(state["refresh_token"]) {
 			quarantineFlatOAuthState(state, SpotifyProvider, authErr)
-			saveErr := store.StoreProviderState(data, SpotifyProvider, state, false)
-			if saveErr == nil {
-				saveErr = store.Save(data)
-			}
-			if saveErr != nil {
+			store.StoreProviderState(data, SpotifyProvider, state)
+			if saveErr := store.Save(data); saveErr != nil {
 				store.Log.Debug(fmt.Sprintf("Spotify OAuth: failed to persist quarantined state: %v", saveErr))
 			}
 		}
@@ -722,9 +717,7 @@ func SpotifyLogin(ctx context.Context, h string, opts SpotifyLoginOptions, out i
 	if err != nil {
 		return err
 	}
-	if err := store.StoreProviderState(data, SpotifyProvider, spotifyState, false); err != nil {
-		return err
-	}
+	store.StoreProviderState(data, SpotifyProvider, spotifyState)
 	if err := store.Save(data); err != nil {
 		return err
 	}

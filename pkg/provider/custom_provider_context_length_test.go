@@ -108,7 +108,7 @@ func TestGetModelContextLengthHonorsOverrideNoOverrideFallsThroughToDefault(t *t
 func TestOverrideHonoredWhenCallerPassesNoCustomProviders(t *testing.T) {
 	ctx, _, dir := metaTest(t)
 	baseURL, model, override := "https://cp-ctx-selfresolve.invalid/v1", "router/auto", 999_999
-	cfg := "custom_providers:\n  - name: test-route\n    base_url: " + baseURL + "\n    key_env: TEST_FAKE_CONTEXT_ENV\n    model: " + model +
+	cfg := "providers:\n  test-route:\n    base_url: " + baseURL + "\n    key_env: TEST_FAKE_CONTEXT_ENV\n    default_model: " + model +
 		"\n    api_mode: chat_completions\n    models:\n      " + model + ":\n        context_length: 999999\n"
 	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)

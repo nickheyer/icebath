@@ -19,7 +19,7 @@ func feedbackMessages(count int) []map[string]any {
 }
 
 func TestFailureReasonRedactionIsForcedAtUIBoundary(t *testing.T) {
-	t.Setenv("ICEBATH_REDACT_SECRETS", "false")
+	setSettingsForTest(t, map[string]any{"security.redact_secrets": false})
 	messages := feedbackMessages(12)
 	secret := "sk-proj-" + strings.Repeat("X", 40)
 	fb := SummarizeManualCompression(messages, append([]map[string]any(nil), messages...), 120_000, 120_000,

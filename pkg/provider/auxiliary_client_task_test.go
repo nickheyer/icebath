@@ -146,7 +146,7 @@ func TestGetTaskExtraBodyFoldsReasoningEffort(t *testing.T) {
 }
 
 func TestCustomEndpointExtraBodyInheritance(t *testing.T) {
-	ctx := auxMainTestHome(t, "custom_providers:\n  - name: gw\n    base_url: https://gw.example/v1/\n    extra_body:\n      user: svc\n      tier: a\n")
+	ctx := auxMainTestHome(t, "providers:\n  gw:\n    base_url: https://gw.example/v1/\n    extra_body:\n      user: svc\n      tier: a\n")
 	got := auxWithCustomEndpointExtraBody(ctx, map[string]any{"tier": "b"}, "custom", "m", "https://gw.example/v1")
 	if got["user"] != "svc" || got["tier"] != "b" {
 		t.Fatalf("inherited body %v", got)

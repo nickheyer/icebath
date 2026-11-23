@@ -245,17 +245,6 @@ func guardedGlobalRoot(globalPath string) string {
 	return globalPath
 }
 
-// Persists a rotated OAuth state into the global root auth.json, failures only logged
-func writeThroughProviderStateToGlobalRoot(env PoolEnv, providerID string, state map[string]any) {
-	globalPath := guardedGlobalRoot(env.Store.globalPath)
-	if globalPath == "" {
-		return
-	}
-	if _, err := env.Store.PersistProviderStateToStore(providerID, state, globalPath, false); err != nil {
-		env.log().Debug(fmt.Sprintf("%s pool refresh: write-through to global root failed: %v", providerID, err))
-	}
-}
-
 // True when an already loaded store has its own rows for the provider
 func storeOwnsPoolProvider(data AuthData, provider string) bool {
 	return len(poolEntries(poolMap(data)[provider])) > 0
@@ -352,12 +341,6 @@ func PersistPoolEntries(env PoolEnv, provider string, payloads []map[string]any,
 		return nil, false
 	}
 	return written, true
-}
-
-// True when a profile that owns its own pool rows would seed providers state from root
-func ownedProfileReadsRootState(env PoolEnv, data AuthData, providerID, sourcePath string) bool {
-	globalRoot := env.Store.globalPath
-	return sourcePath != "" && globalRoot != "" && samePath(sourcePath, globalRoot) && storeOwnsPoolProvider(data, providerID)
 }
 
 // ---- seeding ----
@@ -851,7 +834,7 @@ func pruneStaleSeededEntries(entries *[]PooledCredential, activeSources map[stri
 		if strings.HasPrefix(e.Source, "env:") {
 			return pruneEnvSources
 		}
-		return IsBorrowedCredentialSource(e.Source, e.Provider) || e.Source == IcebathPKCESource
+		return IsBorrowedCredentialSource(e.Source)
 	}
 	kept := (*entries)[:0:0]
 	for _, e := range *entries {
@@ -922,7 +905,7 @@ func LoadPool(env PoolEnv, provider string) *Pool {
 	}
 	changed := false
 	for _, row := range raw {
-		if !sameAnyMap(SanitizeBorrowedCredentialPayload(row, provider), row) {
+		if !sameAnyMap(SanitizeBorrowedCredentialPayload(row), row) {
 			changed = true
 		}
 	}
@@ -1021,7 +1004,6 @@ func LoadPool(env PoolEnv, provider string) *Pool {
 // ---- explicit configuration ----
 
 var implicitEnvVars = map[string]bool{"CLAUDE_CODE_OAUTH_TOKEN": true}
-var explicitPoolSources = map[string]bool{"device_code": true, "loopback_pkce": true, IcebathPKCESource: true, "manual": true}
 var vertexProviderIDs = map[string]bool{"vertex": true, "google-vertex": true, "vertex-ai": true, "gcp-vertex": true, "vertexai": true}
 
 // True when the env var resolves to a usable secret in the active profile scope
@@ -1103,7 +1085,7 @@ func poolEntryIsExplicit(env PoolEnv, row map[string]any) bool {
 		envVar := strings.TrimSpace(anyString(row["source"])[len("env:"):])
 		return envVar != "" && envSecretPresent(env, envVar)
 	}
-	return source != "" && (explicitPoolSources[source] || strings.HasPrefix(source, "manual:"))
+	return isManualSource(source)
 }
 
 // Vertex and Bedrock count as explicit only through icebath scoped routing config
@@ -1121,12 +1103,6 @@ func keylessProviderHasExplicitConfig(env PoolEnv, normalized string) bool {
 // IsProviderExplicitlyConfigured is true only when the user configured the provider through an explicit flow
 func IsProviderExplicitlyConfigured(env PoolEnv, providerID string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(providerID))
-	if data, err := env.Store.Load(); err == nil {
-		active := strings.ToLower(strings.TrimSpace(anyString(data["active_provider"])))
-		if active != "" && active == normalized {
-			return true
-		}
-	}
 	if configSelectsProvider(env.config(), normalized) {
 		return true
 	}

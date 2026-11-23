@@ -290,7 +290,7 @@ var UpdatesPreUpdateBackup = Register(&Enum{Meta: Meta{Key: "updates.pre_update_
 var UpdatesRefreshCuaDriver = Register(&Bool{Meta: Meta{Key: "updates.refresh_cua_driver", Label: "Refresh computer driver", Short: "Update the computer-control helper along with the app.", Group: GroupSystem, Order: 1860, Advanced: true}, Default: true})
 
 // Labels attached to exported health data, only service, cloud and environment names kept
-var MonitoringGatewayHealthExportResourceAttributes = Register(&Map{Meta: Meta{Key: "monitoring.gateway_health_export.resource_attributes", Label: "Export labels", Short: "Labels such as an environment name attached to exported health data.", Help: "Only service, cloud and environment names are sent; the service name is always icebath.", Group: GroupSystem, Order: 1705, Advanced: true}})
+var MonitoringGatewayHealthExportResourceAttributes = Register(&Map{Meta: Meta{Key: "monitoring.gateway_health_export.resource_attributes", Label: "Export labels", Short: "Labels such as an environment name attached to exported health data.", Help: "Only service, cloud and environment names are sent; the service name is always icebath-gateway.", Group: GroupSystem, Order: 1705, Advanced: true}, Default: map[string]any{"deployment.environment.name": "production", "service.name": "icebath-gateway"}})
 
 // Pages of the session database kept in memory
 var DatabaseCacheSize = Register(&Int{Meta: Meta{Key: "database.cache_size", Label: "Database cache", Short: "Memory the session database keeps for recent pages.", Help: "A positive number counts pages, a negative one counts KiB.", Group: GroupSystem, Order: 1342, Advanced: true, Apply: Restart}, Null: "database default"})

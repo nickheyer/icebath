@@ -7,16 +7,14 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// Adapter admitting every human sender with the given bot mode and extra config
-func inlineMentionAdapter(t *testing.T, allowBots string, extra map[string]any) *DiscordAdapter {
+// Adapter admitting every human sender with the given bot mode and discord settings
+func inlineMentionAdapter(t *testing.T, allowBots string, block map[string]any) *DiscordAdapter {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
-	t.Setenv("DISCORD_BOTS_REQUIRE_INLINE_MENTION", "")
-	t.Setenv("DISCORD_ALLOW_BOTS", "")
-	if extra == nil {
-		extra = map[string]any{}
+	if block == nil {
+		block = map[string]any{}
 	}
-	extra["allow_bots"] = allowBots
-	a := newTestAdapter(t, extra)
+	block["allow_bots"] = allowBots
+	a := newTestAdapter(t, block)
 	a.allowedUserIDs = newStrSet("*")
 	a.textBatchDelaySeconds, a.textBatchSplitDelaySeconds = 0.6, 2.0
 	attachClient(t, a, "99", nil)

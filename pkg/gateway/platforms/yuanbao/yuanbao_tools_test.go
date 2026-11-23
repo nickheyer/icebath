@@ -170,7 +170,7 @@ func TestSendDMToolResolvesTheRecipientAndSendsMedia(t *testing.T) {
 	backend := startCOSBackend(t, pyjson.ObjectOf("bucketName", "bucket-1", "region", "ap-test", "location", "media/doc.txt",
 		"encryptTmpSecretId", "sid", "encryptTmpSecretKey", "skey", "encryptToken", "session", "resourceUrl", "https://cdn.example.com/res/2"))
 	adapter, server := connectGroupAdapter(t)
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
+	allowAllUsers(t)
 	adapter.accessPolicy = makePolicy(t, "open", nil, "pairing", nil)
 	t.Setenv("ICEBATH_SESSION_CHAT_ID", "group:grp-1")
 	ambiguous := callTool(t, "yb_send_dm", map[string]any{"name": "ali", "message": "hi"})

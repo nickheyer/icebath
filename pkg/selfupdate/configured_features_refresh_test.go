@@ -22,7 +22,7 @@ import (
 // Sets the feature refresh steps to no ops for a re-executed test child
 func frNoSteps() {
 	featureRefreshSteps.featureDeps = func(context.Context, string) error { return nil }
-	featureRefreshSteps.memoryMigrate = func(context.Context, func(string)) ([]string, error) { return nil, nil }
+	featureRefreshSteps.memoryProviders = func(context.Context, func(string)) ([]string, error) { return nil, nil }
 }
 
 // Sets the feature refresh steps to no ops for one test
@@ -33,7 +33,7 @@ func frQuiet(t *testing.T) {
 	t.Cleanup(func() { featureRefreshSteps = prev })
 }
 
-// Feature refresh steps appending their names to calls, each failing with its given error and the migrations speaking once
+// Feature refresh steps appending their names to calls, each failing with its given error and the memory step speaking once
 func frRecording(t *testing.T, calls *[]string, depsErr, memoryErr error) {
 	t.Helper()
 	prev := featureRefreshSteps
@@ -42,9 +42,9 @@ func frRecording(t *testing.T, calls *[]string, depsErr, memoryErr error) {
 		*calls = append(*calls, "feature_deps")
 		return depsErr
 	}
-	featureRefreshSteps.memoryMigrate = func(_ context.Context, say func(string)) ([]string, error) {
+	featureRefreshSteps.memoryProviders = func(_ context.Context, say func(string)) ([]string, error) {
 		*calls = append(*calls, "memory")
-		say("  memory provider migrated")
+		say("  memory provider installed")
 		return nil, memoryErr
 	}
 }
@@ -72,7 +72,7 @@ func frStage(receipt *pyjson.Object, name string) any {
 	return nil
 }
 
-func TestFeatureRefreshRunsTheInstallThenTheMemoryMigration(t *testing.T) {
+func TestFeatureRefreshRunsTheDependencyInstallThenTheMemoryProviders(t *testing.T) {
 	var calls []string
 	frRecording(t, &calls, nil, nil)
 	var out bytes.Buffer
@@ -82,25 +82,25 @@ func TestFeatureRefreshRunsTheInstallThenTheMemoryMigration(t *testing.T) {
 	if !reflect.DeepEqual(calls, []string{"feature_deps", "memory"}) {
 		t.Fatalf("calls %v", calls)
 	}
-	if out.String() != "  memory provider migrated\n" {
+	if out.String() != "  memory provider installed\n" {
 		t.Fatalf("out %q", out.String())
 	}
 }
 
-func TestFeatureRefreshMigrationFailuresAreSkippedNotFailed(t *testing.T) {
+func TestFeatureRefreshMemoryProviderFailureIsReportedNotFailed(t *testing.T) {
 	var calls []string
 	frRecording(t, &calls, nil, errors.New("catalog unreachable"))
 	var out bytes.Buffer
 	if err := refreshConfiguredFeatures(context.Background(), t.TempDir(), &out); err != nil {
 		t.Fatalf("err %v", err)
 	}
-	want := "  memory provider migrated\n  ⚠ Memory provider migration skipped: catalog unreachable\n"
+	want := "  memory provider installed\n  ⚠ Could not install the configured memory provider plugins: catalog unreachable\n"
 	if out.String() != want || len(calls) != 2 {
 		t.Fatalf("calls %v out %q", calls, out.String())
 	}
 }
 
-func TestFeatureRefreshInstallFailureStillRunsBothMigrations(t *testing.T) {
+func TestFeatureRefreshDependencyFailureStillRunsTheMemoryProviders(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		err  error
@@ -159,7 +159,7 @@ func TestSourceCompletionRunsFeatureRefreshBetweenTheHookAndMaintenance(t *testi
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls %v", calls)
 	}
-	if stdout.String() != "  memory provider migrated\nannounced\n" {
+	if stdout.String() != "  memory provider installed\nannounced\n" {
 		t.Fatalf("stdout %q", stdout.String())
 	}
 }
@@ -181,7 +181,7 @@ func TestSourceCompletionOwesFailedFeatureDependenciesAndFinishesTheTail(t *test
 	if err != nil || ok || !reflect.DeepEqual(owed, want) {
 		t.Fatalf("ok %v err %v owed %v", ok, err, owed)
 	}
-	if !maintained || len(calls) != 3 || scStampExists(root) {
+	if !maintained || !reflect.DeepEqual(calls, []string{"feature_deps", "memory"}) || scStampExists(root) {
 		t.Fatalf("maintained %v calls %v stamp %v", maintained, calls, scStampExists(root))
 	}
 	if got := frFollowups(t, updaterecord.CurrentReceipt(ctx).Data); !reflect.DeepEqual(got, want) {
@@ -245,7 +245,7 @@ func TestUpdateFinishRunsFeatureRefreshBeforeMaintenance(t *testing.T) {
 	if want := []string{"feature_deps", "memory", "maintenance", "stamp", "restart"}; !reflect.DeepEqual(calls, want) {
 		t.Fatalf("calls %v", calls)
 	}
-	if !strings.Contains(stdout.String(), "  memory provider migrated\n") {
+	if !strings.Contains(stdout.String(), "  memory provider installed\n") {
 		t.Fatalf("stdout %q", stdout.String())
 	}
 	receipt := updaterecord.FinalizedReceipt("fr-finish-ok")

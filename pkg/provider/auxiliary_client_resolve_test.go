@@ -162,7 +162,7 @@ func TestLocalAliasNeverBorrowsOpenAIKey(t *testing.T) {
 }
 
 func TestNamedCustomProviderComposesUnderExplicitEndpoint(t *testing.T) {
-	ctx := auxResolveHome(t, "custom_providers:\n  - name: my-proxy\n    base_url: https://proxy.example.com/v1\n    api_key: sk-proxy\n    model: proxy-model\n    extra_headers:\n      X-Route: blue\n")
+	ctx := auxResolveHome(t, "providers:\n  my-proxy:\n    base_url: https://proxy.example.com/v1\n    api_key: sk-proxy\n    default_model: proxy-model\n    extra_headers:\n      X-Route: blue\n")
 	client, model, err := ResolveProviderClient(ctx, "my-proxy", "", ProviderClientOptions{})
 	if err != nil || client == nil {
 		t.Fatalf("named custom %v %v", client, err)
@@ -171,7 +171,7 @@ func TestNamedCustomProviderComposesUnderExplicitEndpoint(t *testing.T) {
 	if !ok || model != "proxy-model" || oc.BaseURL() != "https://proxy.example.com/v1/" || oc.APIKey() != "sk-proxy" || oc.customHeaders["X-Route"] != "blue" {
 		t.Fatalf("named custom client %T model %q headers %v", client, model, oc.customHeaders)
 	}
-	mainCtx := auxResolveHome(t, "model:\n  default: main-model\ncustom_providers:\n  - name: my-proxy\n    base_url: https://proxy.example.com/v1\n    api_key: sk-proxy\n    model: proxy-model\n")
+	mainCtx := auxResolveHome(t, "model:\n  default: main-model\nproviders:\n  my-proxy:\n    base_url: https://proxy.example.com/v1\n    api_key: sk-proxy\n    default_model: proxy-model\n")
 	if _, mainModel, err := ResolveProviderClient(mainCtx, "my-proxy", "", ProviderClientOptions{}); err != nil || mainModel != "main-model" {
 		t.Fatalf("configured main model did not prefill the request %q %v", mainModel, err)
 	}

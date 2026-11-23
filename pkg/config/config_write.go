@@ -230,8 +230,152 @@ func mappingDelete(node *yaml.Node, key string) {
 	}
 }
 
-// Sets one dotted key in a YAML file keeping comments, order and quoting, nil removing the key
-func atomicRoundtripYAMLUpdate(ctx context.Context, path, keyPath string, value any) error {
+// Node an alias stands for, the node itself otherwise
+func rtResolve(node *yaml.Node) *yaml.Node {
+	for node.Kind == yaml.AliasNode && node.Alias != nil {
+		node = node.Alias
+	}
+	return node
+}
+
+// Keys of a mapping node in file order
+func mappingKeyNames(node *yaml.Node) []string {
+	names := make([]string, 0, len(node.Content)/2)
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		names = append(names, node.Content[i].Value)
+	}
+	return names
+}
+
+// Literal key of a mapping node matching the longest prefix of parts, with the segments it consumes
+func rtLiteral(node *yaml.Node, parts []string) (string, int, bool) {
+	names := mappingKeyNames(node)
+	present := make(map[string]any, len(names))
+	for _, name := range names {
+		present[name] = nil
+	}
+	return greedyLiteral(present, parts)
+}
+
+// Sets the value at a dotted path under a YAML node the way Tree.Set does: list items by index, literal dotted keys first, and no nested key beside a dotted sibling it would shadow
+func rtSet(root *yaml.Node, path string, value any) error {
+	node, err := rtNode(value, yaml.SingleQuotedStyle)
+	if err != nil {
+		return err
+	}
+	parts := SplitPath(path)
+	current := root
+	for i := 0; i < len(parts); {
+		remaining := parts[i:]
+		atLeaf := len(remaining) == 1
+		current = rtResolve(current)
+		switch current.Kind {
+		case yaml.SequenceNode:
+			part := remaining[0]
+			idx, perr := listIndex(part, len(current.Content))
+			if atLeaf {
+				if perr != nil {
+					return perr
+				}
+				replaceKeepingComments(current, idx, node)
+				return nil
+			}
+			if perr != nil && perr.Kind == "ValueError" {
+				return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into list at key %s: segment %s is not a numeric index", PyRepr(path), PyRepr(part))}
+			}
+			if perr != nil {
+				return perr
+			}
+			current = current.Content[idx]
+			i++
+		case yaml.MappingNode:
+			if seg, n, ok := rtLiteral(current, remaining); ok {
+				at := mappingIndex(current, seg)
+				if i+n == len(parts) {
+					replaceKeepingComments(current, at, node)
+					return nil
+				}
+				if kind := rtResolve(current.Content[at]).Kind; kind != yaml.MappingNode && kind != yaml.SequenceNode {
+					replaceKeepingComments(current, at, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"})
+				}
+				current = current.Content[at]
+				i += n
+				continue
+			}
+			part := remaining[0]
+			if atLeaf {
+				mappingSet(current, part, node)
+				return nil
+			}
+			for _, name := range mappingKeyNames(current) {
+				if strings.HasPrefix(name, part+".") {
+					return &PhantomKeyError{Part: part, Path: path, Shadowed: name, Escaped: strings.ReplaceAll(name, ".", `\.`)}
+				}
+			}
+			next := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			mappingSet(current, part, next)
+			current = next
+			i++
+		default:
+			var held any
+			if err := current.Decode(&held); err != nil {
+				return err
+			}
+			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %s", PyTypeName(held), PyRepr(path))}
+		}
+	}
+	return nil
+}
+
+// Removes the value at a dotted path under a YAML node and every mapping it leaves empty, the way Tree.Unset does, reporting whether the path named a value
+func rtUnset(root *yaml.Node, path string) bool {
+	type step struct {
+		container *yaml.Node
+		// Index of the value node inside the container's content
+		at int
+	}
+	parts := SplitPath(path)
+	var steps []step
+	current := root
+	for i := 0; i < len(parts); {
+		current = rtResolve(current)
+		at, consumed := -1, 1
+		switch current.Kind {
+		case yaml.SequenceNode:
+			idx, perr := listIndex(parts[i], len(current.Content))
+			if perr != nil {
+				return false
+			}
+			at = idx
+		case yaml.MappingNode:
+			seg, n, ok := rtLiteral(current, parts[i:])
+			if !ok {
+				return false
+			}
+			at, consumed = mappingIndex(current, seg), n
+		default:
+			return false
+		}
+		steps = append(steps, step{current, at})
+		current = current.Content[at]
+		i += consumed
+	}
+	for j := len(steps) - 1; j >= 0; j-- {
+		container, at := steps[j].container, steps[j].at
+		if container.Kind == yaml.MappingNode {
+			container.Content = append(container.Content[:at-1], container.Content[at+1:]...)
+		} else {
+			container.Content = append(container.Content[:at], container.Content[at+1:]...)
+		}
+		if container.Kind != yaml.MappingNode || len(container.Content) != 0 {
+			break
+		}
+	}
+	return true
+}
+
+// Sets and then removes dotted keys of a YAML file in one rewrite that keeps comments, order and quoting; nothing is written when a key cannot be set or nothing changes
+func atomicRoundtripYAMLApply(ctx context.Context, path string, set []KeyValue, unset []string) error {
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
@@ -239,40 +383,23 @@ func atomicRoundtripYAMLUpdate(ctx context.Context, path, keyPath string, value 
 	if err != nil {
 		return err
 	}
-	current := doc.Content[0]
-	keys := SplitPath(keyPath)
-	for i := 0; ; {
-		remaining := keys[i:]
-		present := map[string]any{}
-		for j := 0; j+1 < len(current.Content); j += 2 {
-			present[current.Content[j].Value] = nil
+	root := doc.Content[0]
+	changed := false
+	for _, kv := range set {
+		if kv.Value == nil {
+			changed = rtUnset(root, kv.Key) || changed
+			continue
 		}
-		seg, consumed, ok := greedyLiteral(present, remaining)
-		if !ok {
-			seg, consumed = remaining[0], 1
+		if err := rtSet(root, kv.Key, kv.Value); err != nil {
+			return err
 		}
-		if i+consumed == len(keys) {
-			if value == nil {
-				mappingDelete(current, seg)
-				break
-			}
-			node, err := rtNode(value, yaml.SingleQuotedStyle)
-			if err != nil {
-				return err
-			}
-			mappingSet(current, seg, node)
-			break
-		}
-		idx := mappingIndex(current, seg)
-		if idx < 0 || current.Content[idx].Kind != yaml.MappingNode {
-			if value == nil {
-				return nil
-			}
-			mappingSet(current, seg, &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"})
-			idx = mappingIndex(current, seg)
-		}
-		current = current.Content[idx]
-		i += consumed
+		changed = true
+	}
+	for _, key := range unset {
+		changed = rtUnset(root, key) || changed
+	}
+	if !changed {
+		return nil
 	}
 	return roundtripDump(ctx, path, doc, source, "")
 }

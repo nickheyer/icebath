@@ -97,7 +97,7 @@ func TestConnectBindsSendsAndDispatchesInboundPushes(t *testing.T) {
 		t.Fatalf("sent %d c2c frames", len(sends))
 	}
 	eventually(t, "the finish heartbeat", func() bool { return len(server.sent("send_private_heartbeat")) == 1 })
-	t.Setenv("GATEWAY_ALLOW_ALL_USERS", "true")
+	allowAllUsers(t)
 	adapter.accessPolicy = makePolicy(t, "open", nil, "open", nil)
 	adapter.connection.debounceWindow = 0.03
 	events := captureEvents(t)

@@ -16,8 +16,8 @@ func TestRunDoctorWalksEveryCheckOfTheTable(t *testing.T) {
 			t.Fatalf("the doctor walk panicked: %v\n%s", r, buf.String())
 		}
 	}()
-	out, code := doctorWalk(t, d, buf, map[string]any{"fix": false}, doctorChecks...)
-	for _, entry := range doctorChecks {
+	out, code := doctorWalk(t, d, buf, map[string]any{"fix": false}, doctorChecks()...)
+	for _, entry := range doctorChecks() {
 		if entry.Title != "" && !strings.Contains(out, "◆ "+entry.Title) {
 			t.Fatalf("section %q missing from %q", entry.Title, out)
 		}

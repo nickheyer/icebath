@@ -653,10 +653,10 @@ func (a *SlackAdapter) connectLocked(ctx context.Context, appToken, proxyURL str
 func (a *SlackAdapter) fatalMissingEnv(ctx context.Context, envName string) {
 	pkgLog().Error(fmt.Sprintf("[Slack] %s not set — this is a permanent config error; set %s via `icebath "+
 		"gateway setup` or in the active profile's ICEBATH_HOME/.env file, then restart the "+
-		"gateway.", envName, envName))
+		"background service.", envName, envName))
 	a.SetFatalError(ctx, "missing_"+strings.ToLower(envName),
 		envName+" not configured. Use `icebath gateway setup` "+
-			"or add it to your active profile's ICEBATH_HOME/.env file, then restart the gateway.", false)
+			"or add it to your active profile's ICEBATH_HOME/.env file, then restart the background service.", false)
 }
 
 // Startup hint for the plumbing bot to bot interop also needs when allow_bots is on

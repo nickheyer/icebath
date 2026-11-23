@@ -19,7 +19,7 @@ func buildArt(source string) (*art, error) {
 	return &art{src: src}, nil
 }
 
-// Writes every target under out, reports each one, then verifies what landed and fails on any error
+// Writes every target under out, then reads each one back and reports its size, failing on any error
 func cmdWrite(stdout io.Writer, targets []target, a *art, out string) int {
 	written, failures := 0, 0
 	for _, t := range targets {
@@ -41,15 +41,15 @@ func cmdWrite(stdout io.Writer, targets []target, a *art, out string) int {
 	fmt.Fprintln(stdout, "\n[verify]")
 	for _, t := range targets {
 		data, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(t.rel)))
-		if err == nil {
-			var desc string
-			if desc, err = describe(t.want, data); err == nil {
-				fmt.Fprintf(stdout, "  %s: %s\n", t.rel, desc)
-				continue
-			}
+		if err == nil && len(data) == 0 {
+			err = errors.New("empty")
 		}
-		failures++
-		fmt.Fprintf(stdout, "  %s: VERIFY FAILED (%v)\n", t.rel, err)
+		if err != nil {
+			failures++
+			fmt.Fprintf(stdout, "  %s: VERIFY FAILED (%v)\n", t.rel, err)
+			continue
+		}
+		fmt.Fprintf(stdout, "  %s: %d bytes\n", t.rel, len(data))
 	}
 	if failures > 0 {
 		return 1
@@ -57,7 +57,7 @@ func cmdWrite(stdout io.Writer, targets []target, a *art, out string) int {
 	return 0
 }
 
-// Regenerates every target in memory and checks the files under out against their declared shape
+// Regenerates every target in memory and checks the file under out is byte for byte what the art renders
 func cmdCheck(stdout io.Writer, targets []target, a *art, out string) int {
 	var problems []string
 	for _, t := range targets {
@@ -75,16 +75,12 @@ func cmdCheck(stdout io.Writer, targets []target, a *art, out string) int {
 			problems = append(problems, fmt.Sprintf("%s: UNREADABLE (%v)", t.rel, err))
 			continue
 		}
-		if t.want.format == "TEXT" && !bytes.Equal(fresh, data) {
+		if !bytes.Equal(fresh, data) {
 			problems = append(problems, fmt.Sprintf("%s: STALE (differs from the regenerated source)", t.rel))
-			continue
-		}
-		if err := inspect(t.want, data); err != nil {
-			problems = append(problems, fmt.Sprintf("%s: %v", t.rel, err))
 		}
 	}
 	if len(problems) == 0 {
-		fmt.Fprintf(stdout, "[ok] all %d targets generate and pass structural checks\n", len(targets))
+		fmt.Fprintf(stdout, "[ok] all %d targets are what the art renders\n", len(targets))
 		return 0
 	}
 	fmt.Fprintf(stdout, "[check] %d problem(s):\n", len(problems))
@@ -106,7 +102,7 @@ func findRoot(dir string) (string, error) {
 	}
 }
 
-// Parses flags, resolves the identity, then writes or checks every target and returns the exit code
+// Parses flags, resolves the checkout root and the output root, then writes or checks every target and returns the exit code
 func run(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("brand", flag.ContinueOnError)
 	fs.SetOutput(stderr)
