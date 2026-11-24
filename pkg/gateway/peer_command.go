@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	term "github.com/charmbracelet/x/term"
 	"github.com/google/uuid"
@@ -35,6 +36,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -227,12 +230,12 @@ var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOpt
 	if err != nil {
 		return nil, err
 	}
-	payload := pystr.DecodeUTF8Replace(raw)
+	payload := strings.ToValidUTF8(string(raw), "\uFFFD")
 	parsed, err := pyjson.Loads(payload)
 	if err != nil {
 		var de *pyjson.DecodeError
 		if errors.As(err, &de) {
-			return nil, &peerRuntimeError{"Peer returned non-JSON response: " + tools.SanitizeDisplayText(pystr.Slice(payload, 0, 200))}
+			return nil, &peerRuntimeError{"Peer returned non-JSON response: " + tools.SanitizeDisplayText(textutil.First(payload, 200))}
 		}
 		return nil, err
 	}
@@ -390,7 +393,7 @@ func peerLacksProfile(err error) (bool, error) {
 		}
 		return false, readErr
 	}
-	parsed, loadErr := pyjson.Loads(pystr.DecodeUTF8Replace(raw))
+	parsed, loadErr := pyjson.Loads(strings.ToValidUTF8(string(raw), "\uFFFD"))
 	if loadErr != nil {
 		var de *pyjson.DecodeError
 		if errors.As(loadErr, &de) {
@@ -555,7 +558,7 @@ func peerHTTPErrorDetail(e *peerHTTPError) string {
 	if err != nil {
 		return tools.SanitizeDisplayText(e.Error())
 	}
-	body := pystr.DecodeUTF8Replace(raw)
+	body := strings.ToValidUTF8(string(raw), "\uFFFD")
 	parsed, err := pyjson.Loads(body)
 	if err != nil {
 		return tools.SanitizeDisplayText(e.Error())
@@ -573,7 +576,7 @@ func peerHTTPErrorDetail(e *peerHTTPError) string {
 	if pyrepr.Truthy(message) {
 		return tools.SanitizeDisplayText(pyrepr.Str(message))
 	}
-	return tools.SanitizeDisplayText(pystr.Slice(body, 0, 200))
+	return tools.SanitizeDisplayText(textutil.First(body, 200))
 }
 
 // Name, profile, registry entry and key of a registered target
@@ -867,7 +870,7 @@ func peerRun(c *peerCLI, ns map[string]any, message, peerName, profile, base, ke
 	if err != nil {
 		return 1, err
 	}
-	if idempotencyKey == "" || pystr.Len(idempotencyKey) > 255 || strings.ContainsAny(idempotencyKey, "\r\n\x00") {
+	if idempotencyKey == "" || utf8.RuneCountInString(idempotencyKey) > 255 || strings.ContainsAny(idempotencyKey, "\r\n\x00") {
 		c.eprintln("Idempotency key must be 1-255 characters without control newlines.")
 		return 2, nil
 	}

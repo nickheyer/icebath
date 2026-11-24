@@ -1,12 +1,11 @@
 package agent
 
 import (
-	"unicode"
-
 	"fmt"
 	"reflect"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"

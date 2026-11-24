@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -144,12 +143,12 @@ func runSetupSSH(ctx context.Context, argv []string) (int, string, error) {
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return exitErr.ExitCode(), pystr.DecodeUTF8Replace([]byte(stderr.String())), nil
+		return exitErr.ExitCode(), strings.ToValidUTF8(string([]byte(stderr.String())), "\uFFFD"), nil
 	}
 	if err != nil {
 		return 0, "", err
 	}
-	return 0, pystr.DecodeUTF8Replace([]byte(stderr.String())), nil
+	return 0, strings.ToValidUTF8(string([]byte(stderr.String())), "\uFFFD"), nil
 }
 
 // Runs a plugin backend's setup lines and post setup hook, any failure printed as a warning

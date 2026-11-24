@@ -1,15 +1,14 @@
 package app
 
 import (
-	"strings"
-	"unicode"
-
 	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"

@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Gateway session key namespace builder, the agent prefix a profile's keys carry, wired by the host
@@ -336,8 +338,8 @@ func (d *SessionDB) ImportMovedSession(ctx context.Context, payload *SessionMove
 				return err
 			}
 			if taken != nil {
-				suffix := " (" + pystr.Slice(sessionID, -12, pystr.Len(sessionID)) + ")"
-				session.Set("title", pystr.Slice(pyStr(title), 0, MaxTitleLength-pystr.Len(suffix))+suffix)
+				suffix := " (" + textutil.Last(sessionID, 12) + ")"
+				session.Set("title", textutil.First(pyStr(title), MaxTitleLength-utf8.RuneCountInString(suffix))+suffix)
 			}
 		}
 		hash, err := storeSystemPrompt(ctx, conn, payload.SystemPrompt)
@@ -346,7 +348,7 @@ func (d *SessionDB) ImportMovedSession(ctx context.Context, payload *SessionMove
 		}
 		session.Set("system_prompt_hash", hash)
 		toolNames, _ := rowValue(session, "tool_names").(string)
-		if payload.ToolPin != nil || pystr.Len(toolNames) == 64 {
+		if payload.ToolPin != nil || utf8.RuneCountInString(toolNames) == 64 {
 			pin, err := storeSystemPrompt(ctx, conn, payload.ToolPin)
 			if err != nil {
 				return err

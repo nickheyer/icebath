@@ -2,11 +2,12 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type modelsFetcher func(ctx context.Context, apiKey, baseURL string, timeout time.Duration) ([]string, bool)

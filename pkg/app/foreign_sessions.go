@@ -1,8 +1,6 @@
 package app
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/google/uuid"

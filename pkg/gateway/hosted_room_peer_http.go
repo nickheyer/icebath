@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -144,7 +143,7 @@ func peerReadBody(resp *http.Response, maxBytes int, deadline float64, kind stri
 	raw, err := peerReadBoundedResponse(resp, maxBytes, deadline)
 	switch {
 	case err == nil:
-		return pystr.DecodeUTF8Replace(raw), nil
+		return strings.ToValidUTF8(string(raw), "\uFFFD"), nil
 	case errors.Is(err, errPeerResponseTooLarge):
 		return "", newPeerRunsHTTPError(fmt.Sprintf("peer%s response exceeded the RoomLink size limit", kind), flags, err)
 	case errors.Is(err, errPeerResponseDeadline):

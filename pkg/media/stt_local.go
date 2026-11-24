@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -59,7 +60,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 	shapeValid := utf8.RuneCountInString(candidate) == 2 || threeLetterWhisperCodes[candidate]
 	alpha := candidate != ""
 	for _, r := range candidate {
-		if r >= utf8.RuneSelf || !pystr.IsAlpha(r) {
+		if r >= utf8.RuneSelf || !unicode.IsLetter(r) {
 			alpha = false
 		}
 	}

@@ -1,14 +1,13 @@
 package agent
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

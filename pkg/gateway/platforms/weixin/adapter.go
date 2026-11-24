@@ -1,14 +1,13 @@
 package weixin
 
 import (
-	"strings"
-
 	"context"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 

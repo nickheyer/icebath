@@ -15,8 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/spf13/pflag"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // An option string that carries over a relaunch and whether a value follows it
@@ -121,7 +122,7 @@ func readHead(path string, size int) ([]byte, bool) {
 
 // Interpreter path and flags of a shebang line
 func shebangTokens(shebang string) []string {
-	return pystr.SplitWhitespace(strings.TrimSpace(shebang[2:]), -1)
+	return strings.Fields(strings.TrimSpace(shebang[2:]))
 }
 
 // Whether a python shebang resolves outside the directory of the running executable
@@ -156,7 +157,7 @@ func needsInterpreter(binPath string) bool {
 	if !ok || !strings.HasPrefix(string(head), "#!") {
 		return false
 	}
-	lines := pystr.Splitlines(strings.ToValidUTF8(string(head), "�"), false)
+	lines := textutil.Lines(strings.ToValidUTF8(string(head), "�"))
 	shebang := strings.TrimSpace(lines[0])
 	if !strings.Contains(strings.ToLower(shebang), "python") {
 		return false

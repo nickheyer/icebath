@@ -7,11 +7,13 @@ import (
 	"io"
 	"math/big"
 	"slices"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Largest framed line either side of the managed worker pipe carries
@@ -39,7 +41,7 @@ func managedScalar(value any) bool {
 	case nil, bool, int, int64, float64, *big.Int:
 		return true
 	case string:
-		return pystr.Len(typed) <= 4096
+		return utf8.RuneCountInString(typed) <= 4096
 	}
 	return false
 }
@@ -76,7 +78,7 @@ func ResultFrame(result *pyjson.Object) *pyjson.Object {
 			continue
 		}
 		if text, isText := value.(string); isText && key != "final_response" {
-			value = pystr.Slice(text, 0, 4096)
+			value = textutil.First(text, 4096)
 		}
 		frame.Set(key, value)
 	}
@@ -92,7 +94,7 @@ func ResultFrame(result *pyjson.Object) *pyjson.Object {
 				continue
 			}
 			if text, isText := value.(string); isText {
-				value = pystr.Slice(text, 0, 4096)
+				value = textutil.First(text, 4096)
 			}
 			kept.Set(name, value)
 		}

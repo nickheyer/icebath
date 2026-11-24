@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -958,12 +959,12 @@ func ParseSystemdDurationToUS(raw string) *big.Int {
 	}
 	for _, ch := range raw + " " {
 		switch {
-		case pystr.IsDigit(ch) || ch == '.':
+		case unicode.IsDigit(ch) || ch == '.':
 			if token != "" && !flush() {
 				return nil
 			}
 			digits += string(ch)
-		case pystr.IsAlpha(ch):
+		case unicode.IsLetter(ch):
 			token += string(ch)
 		default:
 			if digits != "" && !flush() {

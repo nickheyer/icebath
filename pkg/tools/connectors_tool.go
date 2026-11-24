@@ -1,9 +1,8 @@
 package tools
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 )
 
 // ManageOptions are manage_connections' keyword arguments, empty strings standing for None

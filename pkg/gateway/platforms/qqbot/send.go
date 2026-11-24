@@ -14,8 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // File extension sets of the shared standalone senders
@@ -86,7 +87,7 @@ func qqbotAPIJSON(ctx context.Context, client *http.Client, headers map[string]s
 			return nil, notDictErr(data)
 		}
 		if !pyrepr.Truthy(detail) {
-			detail = pystr.Slice(resp.Text(), 0, 200)
+			detail = textutil.First(resp.Text(), 200)
 		}
 		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, pyrepr.Str(detail)), BizCode: bizCodeOf(dict)}
 	}
@@ -124,14 +125,14 @@ func qqbotUploadURL(ctx context.Context, client *http.Client, headers map[string
 func qqbotSendMediaMessage(ctx context.Context, client *http.Client, headers map[string]string, chatType, chatID string, fileInfo any, caption string) (map[string]any, error) {
 	body := obj("msg_type", int64(MsgTypeMedia), "media", obj("file_info", fileInfo), "msg_seq", int64(wallClock()*1000)%1_000_000_000)
 	if stripped := strings.TrimSpace(caption); stripped != "" {
-		body.Set("content", pystr.Slice(stripped, 0, MaxMessageLength))
+		body.Set("content", textutil.First(stripped, MaxMessageLength))
 	}
 	return qqbotAPIJSON(ctx, client, headers, http.MethodPost, messagesPath(chatType, chatID), body, 30.0)
 }
 
 // Sends text through the channel, C2C and group endpoints in turn, the first accepted one winning
 func qqbotSendTextMessage(ctx context.Context, client *http.Client, headers map[string]string, chatID, message string, timeout float64) (map[string]any, error) {
-	payload, err := jsonBody(obj("content", pystr.Slice(message, 0, 4000), "msg_type", int64(0)))
+	payload, err := jsonBody(obj("content", textutil.First(message, 4000), "msg_type", int64(0)))
 	if err != nil {
 		return nil, err
 	}

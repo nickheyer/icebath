@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"database/sql"
 	"errors"
@@ -11,6 +9,7 @@ import (
 	"math/big"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 

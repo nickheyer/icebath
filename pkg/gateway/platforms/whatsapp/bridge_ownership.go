@@ -1,13 +1,12 @@
 package whatsapp
 
 import (
-	"strings"
-
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )

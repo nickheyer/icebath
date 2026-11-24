@@ -2,10 +2,10 @@ package gateway
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -38,7 +38,7 @@ func admitCLITurn(params map[string]any) (*pyjson.Object, error) {
 	}
 	if raw := params["api_text"]; raw != nil {
 		text, ok := raw.(string)
-		if !ok || pystr.Len(text) > apiTextLimit {
+		if !ok || utf8.RuneCountInString(text) > apiTextLimit {
 			return nil, runtimeRefusal("invalid_params")
 		}
 		if text != "" {

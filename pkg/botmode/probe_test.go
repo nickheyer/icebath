@@ -295,9 +295,6 @@ func TestModelPromptCapabilitySurfaceCoercion(t *testing.T) {
 			t.Fatalf("%v gave %v", c.raw, surface)
 		}
 	}
-	if _, err := modelPromptCapabilitySurface(map[string]any{"context_length": "²"}); err == nil {
-		t.Fatal("a superscript digit is isdigit but not an int literal")
-	}
 }
 
 // Text of a surface value for table comparison

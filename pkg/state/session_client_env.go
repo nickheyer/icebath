@@ -7,10 +7,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -279,7 +279,7 @@ func clientEnvFlatMap(value any) (map[string]string, error) {
 	}
 	total := 0
 	for k, v := range out {
-		total += pystr.Len(k) + pystr.Len(v)
+		total += utf8.RuneCountInString(k) + utf8.RuneCountInString(v)
 	}
 	if total > clientEnvMaxBytes {
 		return nil, errClientEnvNotFlatMap

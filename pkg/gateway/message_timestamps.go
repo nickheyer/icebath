@@ -1,9 +1,8 @@
 package gateway
 
 import (
-	"strings"
-
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/dlclark/regexp2/v2"

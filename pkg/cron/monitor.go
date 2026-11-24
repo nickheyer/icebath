@@ -18,6 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -45,7 +47,7 @@ func hashMonitorOutput(output string) string {
 
 // Unified diff of old and new output capped at the diff character budget
 func buildMonitorDiff(oldText, newText string) string {
-	lines := tools.UnifiedDiff(pystr.Splitlines(oldText, false), pystr.Splitlines(newText, false), "previous", "current", 3)
+	lines := tools.UnifiedDiff(textutil.Lines(oldText), textutil.Lines(newText), "previous", "current", 3)
 	for i, line := range lines {
 		lines[i] = strings.TrimSuffix(line, "\n")
 	}
@@ -127,7 +129,7 @@ func fetchMonitorURL(ctx context.Context, url string) (bool, string) {
 	if len(body) > monitorMaxURLBytes {
 		body = body[:monitorMaxURLBytes]
 	}
-	return true, pystr.DecodeUTF8Replace(body)
+	return true, strings.ToValidUTF8(string(body), "\uFFFD")
 }
 
 // Stripped string value of an optional job field

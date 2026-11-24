@@ -1,16 +1,17 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // CgroupCleanupEntry is the hidden argument the unit ExecStopPost runs to reap orphans left in the service cgroup
@@ -58,7 +59,7 @@ func readCgroupPids(cgroupPath string) ([]int, error) {
 		return nil, err
 	}
 	var pids []int
-	for _, line := range pystr.Splitlines(raw, false) {
+	for _, line := range textutil.Lines(raw) {
 		n, ok := pystr.IntText(line)
 		if !ok {
 			continue

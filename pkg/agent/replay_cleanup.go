@@ -1,13 +1,12 @@
 package agent
 
 import (
-	"unicode"
-
 	"fmt"
 	"math"
 	"reflect"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

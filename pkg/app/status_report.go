@@ -1,16 +1,16 @@
 package app
 
 import (
-	"strings"
-
 	"context"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const statusStamp = "%Y-%m-%d %H:%M"
@@ -102,7 +102,7 @@ func buildStatusFields(in statusFieldsInput) map[string]any {
 		"provider":      firstNonEmpty(in.agentProvider, in.provider),
 		"created":       pydatetime.Strftime(created, statusStamp),
 		"last_activity": pydatetime.Strftime(lastActivity, statusStamp),
-		"tokens":        pystr.GroupThousands(int64(in.agentTokens)),
+		"tokens":        textutil.Thousands(int64(in.agentTokens)),
 		"agent_running": in.agentRunning,
 	}
 }

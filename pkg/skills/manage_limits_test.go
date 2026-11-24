@@ -6,8 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"unicode/utf8"
 )
 
 func sizedSkillContent(bodyChars int) string {
@@ -30,7 +29,7 @@ func TestSkillSizeLimits(t *testing.T) {
 		t.Fatal(r)
 	}
 	front := "---\nname: edge-skill\ndescription: Edge case\n---\n# Edge\n\n"
-	edge := front + strings.Repeat("x", MaxSkillContentChars-pystr.Len(front))
+	edge := front + strings.Repeat("x", MaxSkillContentChars-utf8.RuneCountInString(front))
 	if r := manageCall(t, s, map[string]any{"action": "create", "name": "edge-skill", "content": edge}); !ok(r) {
 		t.Fatal(r)
 	}
@@ -62,7 +61,7 @@ func TestSkillSizeLimits(t *testing.T) {
 	os.WriteFile(filepath.Join(giant, "SKILL.md"), []byte(strings.Replace(sizedSkillContent(200_000), "name: test-skill", "name: manual-giant", 1)), 0o644)
 	var view map[string]any
 	decodeJSON(t, s.SkillView(context.Background(), "manual-giant", "", "", false), &view)
-	if c, _ := view["content"].(string); pystr.Len(c) <= MaxSkillContentChars {
-		t.Fatal(pystr.Len(c))
+	if c, _ := view["content"].(string); utf8.RuneCountInString(c) <= MaxSkillContentChars {
+		t.Fatal(utf8.RuneCountInString(c))
 	}
 }

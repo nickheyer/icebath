@@ -3,8 +3,6 @@ package tools
 import (
 	"fmt"
 	"sort"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // One matching block of size elements starting at i in a and j in b
@@ -36,7 +34,7 @@ func newSequenceMatcher[T comparable](isjunk func(T) bool, a, b []T, autojunk bo
 
 // Matcher over the characters of two strings with default autojunk
 func newStringMatcher(a, b string) *sequenceMatcher[rune] {
-	return newSequenceMatcher[rune](nil, pystr.Runes(a), pystr.Runes(b), true)
+	return newSequenceMatcher[rune](nil, []rune(a), []rune(b), true)
 }
 
 // Indexes b, then purges junk and, past 200 elements, elements above one percent popularity

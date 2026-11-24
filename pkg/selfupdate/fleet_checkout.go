@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -49,7 +50,7 @@ func CheckoutContains(ctx context.Context, sha string) (bool, error) {
 	result, err := RunGit(ctx, []string{"git"}, []string{"merge-base", "--is-ancestor", sha, "HEAD"},
 		ChildOptions{Dir: fleetProjectRoot(), Capture: true, Text: true, Timeout: 10 * time.Second, Env: offlineGitEnv()})
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Checkout ancestry probe for %s failed: %s", pystr.Slice(sha, 0, 10), err))
+		pkgLog().Debug(fmt.Sprintf("Checkout ancestry probe for %s failed: %s", textutil.First(sha, 10), err))
 		return false, nil
 	}
 	return result.ReturnCode == 0, nil

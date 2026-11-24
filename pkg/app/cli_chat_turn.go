@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -15,11 +16,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -350,7 +352,7 @@ func (c *CLI) writeInterruptDebugLog(msg any) {
 	}
 	defer f.Close()
 	_, _ = fmt.Fprintf(f, "%s interrupt fired: msg=%s, children=0, parent._interrupt=%s\n", pydatetime.Strftime(time.Now(), "%H:%M:%S"),
-		pystr.Slice(pyrepr.Str(msg), 0, 60), errchain.Show(c.agentRef().InterruptRequested()))
+		textutil.First(pyrepr.Str(msg), 60), errchain.Show(c.agentRef().InterruptRequested()))
 }
 
 // Transcript rows of a turn result, false when the result carries no messages key
@@ -444,8 +446,8 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 		c.requeueInterruptedInput(pendingMessage)
 	}
 	if steer := cliStr(result["pending_steer"], ""); steer != "" {
-		preview := pystr.Slice(steer, 0, 60)
-		if pystr.Len(steer) > 60 {
+		preview := textutil.First(steer, 60)
+		if utf8.RuneCountInString(steer) > 60 {
 			preview += "..."
 		}
 		cprint("\n" + c.t("cli.chat.delivering_leftover_steer", map[string]any{"preview": preview}))
@@ -481,8 +483,8 @@ func (c *CLI) requeueInterruptedInput(pendingMessage any) {
 	if len(imageParts) > 0 {
 		payload = queuedInput{Text: combined, Images: imageParts}
 	}
-	preview := pystr.Slice(combined, 0, 50)
-	if pystr.Len(combined) > 50 {
+	preview := textutil.First(combined, 50)
+	if utf8.RuneCountInString(combined) > 50 {
 		preview += "..."
 	}
 	if len(allParts) > 1 {
@@ -543,9 +545,9 @@ func (c *CLI) chatPrintReasoningBox(turn *chatTurn) {
 	}
 	w := scrollbackBoxWidth()
 	label := " " + c.t("cli.chat.reasoning_label", nil) + " "
-	top := dimANSI + "┌─" + label + strings.Repeat("─", max(w-3-pystr.Len(label), 0)) + "┐" + resetANSI
+	top := dimANSI + "┌─" + label + strings.Repeat("─", max(w-3-utf8.RuneCountInString(label), 0)) + "┐" + resetANSI
 	bottom := dimANSI + "└" + strings.Repeat("─", max(w-2, 0)) + "┘" + resetANSI
-	lines := pystr.Splitlines(strings.TrimSpace(reasoning), false)
+	lines := textutil.Lines(strings.TrimSpace(reasoning))
 	display := strings.TrimSpace(reasoning)
 	if len(lines) > 10 && !c.reasoningFull {
 		display = strings.Join(lines[:10], "\n") + "\n" + dimANSI + "  " + c.t("cli.chat.reasoning_more_lines", map[string]any{"count": len(lines) - 10}) + resetANSI
@@ -574,7 +576,7 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 	lastTurnInterrupted := c.lastTurnInterrupted
 	c.uiMu.Unlock()
 	interruptedStreamed := lastTurnInterrupted && strings.TrimSpace(response) != "" &&
-		strings.Contains(strings.Join(pystr.SplitWhitespace(streamedText, -1), " "), strings.Join(pystr.SplitWhitespace(response, -1), " "))
+		strings.Contains(strings.Join(strings.Fields(streamedText), " "), strings.Join(strings.Fields(response), " "))
 	alreadyStreamed := ((streamStarted && streamBoxOpened) || interruptedStreamed) && !isErrorResponse
 	mode := c.finalResponseMarkdown
 	if result["failure_reason"] == "gateway_connection" {

@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -363,7 +362,7 @@ func PresenceFor(ctx context.Context, names []string) ([]NamedPresence, error) {
 
 // Whitespace runs collapsed to single spaces like a split and join
 func collapseSpace(text string) string {
-	return strings.Join(pystr.SplitWhitespace(text, -1), " ")
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // First sentence after the description Disclosure marker, empty when absent

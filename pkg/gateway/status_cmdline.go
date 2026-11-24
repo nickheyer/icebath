@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Seams over the three command line sources, procfs, the process table and ps
@@ -39,12 +38,12 @@ func psCommandLive(pid int) (int, string, error) {
 		return 0, "", ctx.Err()
 	}
 	if exitErr, ok := err.(*exec.ExitError); ok {
-		return exitErr.ExitCode(), pystr.DecodeUTF8Replace(out.Bytes()), nil
+		return exitErr.ExitCode(), strings.ToValidUTF8(string(out.Bytes()), "\uFFFD"), nil
 	}
 	if err != nil {
 		return 0, "", err
 	}
-	return 0, pystr.DecodeUTF8Replace(out.Bytes()), nil
+	return 0, strings.ToValidUTF8(string(out.Bytes()), "\uFFFD"), nil
 }
 
 // Command line of pid as one string from procfs, the process table, then ps
@@ -68,7 +67,7 @@ func readProcessCmdlineLive(pid int) (string, bool) {
 func gatewayRawTokens(command string) []string {
 	raw, err := pyshlex.SplitNonPOSIX(command)
 	if err != nil {
-		return pystr.SplitWhitespace(command, -1)
+		return strings.Fields(command)
 	}
 	return raw
 }
@@ -190,7 +189,7 @@ func profileNameForHomeDir(profileHome string) (string, bool) {
 
 // Lower cased -p or --profile argument of a case preserving command line, false when absent
 func ProfileFlagValue(command string) (string, bool) {
-	split := pystr.SplitWhitespace(command, -1)
+	split := strings.Fields(command)
 	src := split
 	if argv, ok := InlineBootstrapArgv(split); ok && len(argv) > 0 {
 		src = argv

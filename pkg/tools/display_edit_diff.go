@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
@@ -103,13 +104,13 @@ func diffANSI(ctx context.Context) map[string]string {
 		for key, spec := range diffFG {
 			h := skin.GetColor(spec.skinKey, "")
 			rgb := spec.fallback
-			if h != "" && pystr.Len(h) == 7 && h[0] == '#' {
+			if h != "" && utf8.RuneCountInString(h) == 7 && h[0] == '#' {
 				rgb = hexRGB(h)
 			}
 			colors[key] = fgEscape(rgb)
 		}
 		for key, spec := range diffBG {
-			if h := skin.GetColor(spec.skinKey, spec.defaultHex); h != "" && pystr.Len(h) == 7 {
+			if h := skin.GetColor(spec.skinKey, spec.defaultHex); h != "" && utf8.RuneCountInString(h) == 7 {
 				colors[key] = tintedBG(hexRGB(h), spec.dominant)
 			}
 		}

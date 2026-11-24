@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/botmode"

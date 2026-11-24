@@ -28,7 +28,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -84,7 +83,7 @@ func spotifyScopeString(raw string) string {
 	}
 	seen := map[string]bool{}
 	var out []string
-	for _, s := range pystr.SplitWhitespace(raw, -1) {
+	for _, s := range strings.Fields(raw) {
 		if !seen[s] {
 			seen[s] = true
 			out = append(out, s)

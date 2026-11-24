@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -14,17 +15,18 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Single line quote of a background prompt clipped to the limit with an ellipsis
 func bgPromptPreview(prompt string, limit int) string {
-	text := strings.Join(pystr.SplitWhitespace(prompt, -1), " ")
-	if pystr.Len(text) <= limit {
+	text := strings.Join(strings.Fields(prompt), " ")
+	if utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	return strings.TrimRightFunc(pystr.Slice(text, 0, limit-1), unicode.IsSpace) + "…"
+	return strings.TrimRightFunc(textutil.First(text, limit-1), unicode.IsSpace) + "…"
 }
 
 // Runs a background task inside the source's profile scope

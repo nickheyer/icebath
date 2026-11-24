@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -69,7 +70,7 @@ func NewWXBizMsgCrypt(token, encodingAESKey, receiveID string) (*WXBizMsgCrypt, 
 		msg string
 	}{
 		{token == "", "token is required"}, {encodingAESKey == "", "encoding_aes_key is required"},
-		{pystr.Len(encodingAESKey) != 43, "encoding_aes_key must be 43 chars"}, {receiveID == "", "receive_id is required"},
+		{utf8.RuneCountInString(encodingAESKey) != 43, "encoding_aes_key must be 43 chars"}, {receiveID == "", "receive_id is required"},
 	} {
 		if c.bad {
 			return nil, fmt.Errorf("%s", c.msg)

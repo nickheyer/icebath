@@ -13,13 +13,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -337,7 +337,7 @@ func (c *WorkerControls) control(frame *pyjson.Object) error {
 	kind, _ := frame.Vals["type"].(string)
 	promptID, idOK := frame.Vals["prompt_id"].(string)
 	value, valueOK := frame.Vals["value"].(string)
-	if !sameKeySet(frame, "type", "prompt_id", "value") || (kind != "approval" && kind != "clarify") || !idOK || !valueOK || pystr.Len(value) > 16384 {
+	if !sameKeySet(frame, "type", "prompt_id", "value") || (kind != "approval" && kind != "clarify") || !idOK || !valueOK || utf8.RuneCountInString(value) > 16384 {
 		return invalid
 	}
 	if kind == "approval" {

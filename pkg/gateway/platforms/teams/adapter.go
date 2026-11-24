@@ -11,12 +11,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -55,7 +55,7 @@ func strIsDigit(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}

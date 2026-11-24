@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Post admission plugin hook once per inbound message, never while an admitted row executes
@@ -92,7 +91,7 @@ func hmExpandAliasQuickCommand(event *gateway.MessageEvent, qcmd map[string]any)
 	if targetCommand == "" {
 		return targetCommand, true
 	}
-	fields := pystr.SplitWhitespace(targetCommand, -1)
+	fields := strings.Fields(targetCommand)
 	if len(fields) == 0 {
 		return "", true
 	}

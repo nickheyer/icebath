@@ -2,6 +2,7 @@ package agent
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -15,6 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 type toolResultSummarizer func(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error)
@@ -66,10 +69,10 @@ func getArgText(args *pyjson.Object, key, def string) string {
 
 // First n code points of s followed by an ellipsis once s exceeds limit code points
 func clipWithEllipsis(s string, limit, keep int) string {
-	if pystr.Len(s) <= limit {
+	if utf8.RuneCountInString(s) <= limit {
 		return s
 	}
-	return pystr.Slice(s, 0, keep) + "..."
+	return textutil.First(s, keep) + "..."
 }
 
 // Swappable unguarded summary builder so the guard is testable
@@ -81,7 +84,7 @@ func summarizeToolResult(toolName string, toolArgs, toolContent any) (out string
 		pkgLog().Debug(fmt.Sprintf("Tool-result summary failed for %s: %v", toolName, err))
 		n := 0
 		if s, ok := toolContent.(string); ok {
-			n = pystr.Len(s)
+			n = utf8.RuneCountInString(s)
 		}
 		return "[" + toolName + "] (" + groupedInt(n) + " chars result)"
 	}
@@ -156,8 +159,8 @@ func sumWebExtract(name string, args *pyjson.Object, content string, contentLen,
 		case string:
 			first = f + more
 		case []any:
-			for _, r := range pystr.Runes(more) {
-				f = append(f, pystr.FromRunes([]rune{r}))
+			for _, r := range []rune(more) {
+				f = append(f, string([]rune{r}))
 			}
 			first = f
 		default:
@@ -174,8 +177,8 @@ func sumDelegateTask(name string, args *pyjson.Object, content string, contentLe
 
 func sumExecuteCode(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
 	code := strArg(args, "code", "")
-	preview := strings.ReplaceAll(pystr.Slice(code, 0, 60), "\n", " ")
-	if pystr.Len(code) > 60 {
+	preview := strings.ReplaceAll(textutil.First(code, 60), "\n", " ")
+	if utf8.RuneCountInString(code) > 60 {
 		preview += "..."
 	}
 	return fmt.Sprintf("[execute_code] `%s` (%d lines output)", preview, lineCount), nil
@@ -337,7 +340,7 @@ func sumTemplate(template string, defaults map[string]any) toolResultSummarizer 
 }
 
 func sumVisionAnalyze(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
-	question := pystr.Slice(strArg(args, "question", ""), 0, 50)
+	question := textutil.First(strArg(args, "question", ""), 50)
 	return "[vision_analyze] '" + question + "' (" + groupedInt(contentLen) + " chars)" + resultFailureSuffix(content), nil
 }
 
@@ -404,7 +407,7 @@ func summarizeRefusedToolResult(toolName string, args *pyjson.Object, content st
 	if target != "" {
 		target = " `" + clipWithEllipsis(target, 60, 57) + "`"
 	}
-	return pystr.Slice("["+toolName+"]"+target+" "+outcome, 0, pruneMinChars-1), true
+	return textutil.First("["+toolName+"]"+target+" "+outcome, pruneMinChars-1), true
 }
 
 // Summary line of a tool call and result, failing where a malformed historical call breaks a branch
@@ -420,7 +423,7 @@ func summarizeToolResultUnguardedImpl(toolName string, toolArgs, toolContent any
 	if refused, ok := summarizeRefusedToolResult(toolName, args, content); ok {
 		return refused, nil
 	}
-	contentLen := pystr.Len(content)
+	contentLen := utf8.RuneCountInString(content)
 	lineCount := 0
 	if strings.TrimSpace(content) != "" {
 		lineCount = strings.Count(content, "\n") + 1
@@ -430,7 +433,7 @@ func summarizeToolResultUnguardedImpl(toolName string, toolArgs, toolContent any
 	}
 	firstArg := ""
 	for _, k := range args.Keys[:min(2, len(args.Keys))] {
-		firstArg += " " + k + "=" + pystr.Slice(pyrepr.Str(args.Vals[k]), 0, 40)
+		firstArg += " " + k + "=" + textutil.First(pyrepr.Str(args.Vals[k]), 40)
 	}
 	return "[" + toolName + "]" + firstArg + " (" + groupedInt(contentLen) + " chars result)" + resultFailureSuffix(content), nil
 }

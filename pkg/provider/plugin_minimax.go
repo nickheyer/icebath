@@ -1,8 +1,9 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Profiles the bundled minimax plugin registers

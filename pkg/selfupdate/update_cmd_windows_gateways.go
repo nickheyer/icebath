@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -136,9 +135,9 @@ func scExe(ctx context.Context, verb, name string, service gatewaycli.WinService
 	if status == settledStatus {
 		return nil
 	}
-	detail := pystr.DecodeUTF8Replace(result.Stderr)
+	detail := strings.ToValidUTF8(string(result.Stderr), "\uFFFD")
 	if detail == "" {
-		detail = pystr.DecodeUTF8Replace(result.Stdout)
+		detail = strings.ToValidUTF8(string(result.Stdout), "\uFFFD")
 	}
 	if detail = strings.TrimSpace(detail); detail == "" {
 		detail = fmt.Sprintf("sc.exe %s failed with %d", verb, result.Returncode)

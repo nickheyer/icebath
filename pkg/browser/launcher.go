@@ -249,7 +249,7 @@ func readDevtoolsFile(userDataDir string) (int, string, bool, error) {
 		lines = append(lines, "")
 	}
 	port, path := strings.TrimSpace(lines[0]), strings.TrimSpace(lines[1])
-	if port == "" || strings.IndexFunc(port, func(r rune) bool { return !pystr.IsDigit(r) }) >= 0 || !strings.HasPrefix(path, "/devtools/browser/") {
+	if port == "" || strings.IndexFunc(port, func(r rune) bool { return !unicode.IsDigit(r) }) >= 0 || !strings.HasPrefix(path, "/devtools/browser/") {
 		return 0, "", false, nil
 	}
 	n := 0
@@ -275,7 +275,7 @@ func logTail(userDataDir string) string {
 	if len(raw) > stderrTailChars {
 		raw = raw[len(raw)-stderrTailChars:]
 	}
-	return strings.TrimSpace(pystr.DecodeUTF8Replace(raw))
+	return strings.TrimSpace(strings.ToValidUTF8(string(raw), "\uFFFD"))
 }
 
 // Hostname and pid Chromium wrote into the profile's SingletonLock symlink

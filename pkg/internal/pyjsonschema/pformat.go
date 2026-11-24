@@ -1,10 +1,13 @@
 package pyjsonschema
 
 import (
+	"slices"
+	"unicode"
+	"unicode/utf8"
+
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const pformatWidth = 72
@@ -44,7 +47,7 @@ func reprFrames(st *state, v any) string {
 func pformatValue(st *state, b *strings.Builder, v any, indent, allowance, level int) {
 	defer st.call()()
 	rep := reprFrames(st, v)
-	if pystr.Len(rep) > pformatWidth-indent-allowance {
+	if utf8.RuneCountInString(rep) > pformatWidth-indent-allowance {
 		switch x := v.(type) {
 		case *pyjson.Object:
 			pformatDict(st, b, x, indent, allowance, level+1)
@@ -76,7 +79,7 @@ func pformatDict(st *state, b *strings.Builder, d *pyjson.Object, indent, allowa
 			if last {
 				a = allowance
 			}
-			pformatValue(st, b, d.Vals[k], indent+pystr.Len(rep)+2, a, level)
+			pformatValue(st, b, d.Vals[k], indent+utf8.RuneCountInString(rep)+2, a, level)
 			if !last {
 				b.WriteString(delim)
 			}
@@ -112,7 +115,7 @@ func pformatStr(st *state, b *strings.Builder, s, rep string, indent, allowance,
 		b.WriteString(rep)
 		return
 	}
-	lines := pystr.Splitlines(s, true)
+	lines := slices.Collect(strings.Lines(s))
 	if level == 1 {
 		indent++
 		allowance++
@@ -125,7 +128,7 @@ func pformatStr(st *state, b *strings.Builder, s, rep string, indent, allowance,
 		if i == len(lines)-1 {
 			maxWidth1 -= allowance
 		}
-		if pystr.Len(rep) <= maxWidth1 {
+		if utf8.RuneCountInString(rep) <= maxWidth1 {
 			chunks = append(chunks, rep)
 			continue
 		}
@@ -138,7 +141,7 @@ func pformatStr(st *state, b *strings.Builder, s, rep string, indent, allowance,
 			if j == len(parts)-1 && i == len(lines)-1 {
 				maxWidth2 -= allowance
 			}
-			if pystr.Len(repr(candidate)) > maxWidth2 {
+			if utf8.RuneCountInString(repr(candidate)) > maxWidth2 {
 				if current != "" {
 					chunks = append(chunks, repr(current))
 				}
@@ -172,16 +175,16 @@ func pformatStr(st *state, b *strings.Builder, s, rep string, indent, allowance,
 // Alternating non space then space runs re.findall of \S*\s* yields without its empty tail
 func wordParts(line string) []string {
 	var parts []string
-	rs := pystr.Runes(line)
+	rs := []rune(line)
 	for i := 0; i < len(rs); {
 		j := i
-		for j < len(rs) && !pystr.IsSpace(rs[j]) {
+		for j < len(rs) && !unicode.IsSpace(rs[j]) {
 			j++
 		}
-		for j < len(rs) && pystr.IsSpace(rs[j]) {
+		for j < len(rs) && unicode.IsSpace(rs[j]) {
 			j++
 		}
-		parts = append(parts, pystr.FromRunes(rs[i:j]))
+		parts = append(parts, string(rs[i:j]))
 		i = j
 	}
 	return parts

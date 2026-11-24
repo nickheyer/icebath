@@ -17,8 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Env var for the socket read timeout of a streaming request in seconds
@@ -466,7 +467,7 @@ func (s *ccStreamState) handleChunk(chunk map[string]any) (bool, error) {
 		if p, ok := chunk["provider"].(string); ok && p != "" {
 			s.upstreamProvider = p
 			if s.diag != nil {
-				s.diag.ServingProvider = pystr.Slice(strings.TrimSpace(p), 0, 64)
+				s.diag.ServingProvider = textutil.First(strings.TrimSpace(p), 64)
 			}
 		}
 	}

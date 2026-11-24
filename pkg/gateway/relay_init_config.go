@@ -1,13 +1,13 @@
 package gateway
 
 import (
+	"context"
 	"strings"
 
-	"context"
-
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const relayStockAgentName = "Icebath Agent"
@@ -74,7 +74,7 @@ func RelayDisplayName(ctx context.Context) string {
 			value = ""
 		}
 	}
-	return pystr.Slice(value, 0, 64)
+	return textutil.First(value, 64)
 }
 
 // Branded agent name of the active skin, empty when the skin cannot be read

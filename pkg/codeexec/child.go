@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -119,5 +118,5 @@ func returnCode(state *os.ProcessState) int {
 
 // UTF-8 text with invalid bytes replaced and every line ending turned into a newline
 func textMode(b []byte) string {
-	return strings.ReplaceAll(strings.ReplaceAll(pystr.DecodeUTF8Replace(b), "\r\n", "\n"), "\r", "\n")
+	return strings.ReplaceAll(strings.ReplaceAll(strings.ToValidUTF8(string(b), "\uFFFD"), "\r\n", "\n"), "\r", "\n")
 }

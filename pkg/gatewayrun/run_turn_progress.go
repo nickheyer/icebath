@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -19,9 +20,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Progress queue item asking the sender to bump the repeat counter of the last line
@@ -241,13 +243,13 @@ func (t *TurnRunner) progressTerminalBlocks(adapter gateway.PlatformAdapter, too
 		header = i18n.T(t.turnCtx, "gateway.progress.tool_head", "", map[string]any{"emoji": emoji, "tool": toolName}) + "\n"
 	}
 	limit := previewCap()
-	lines := pystr.Splitlines(cmdFull, false)
+	lines := textutil.Lines(cmdFull)
 	cmdShort := cmdFull
 	if len(lines) > 0 {
 		cmdShort = lines[0]
 	}
-	if pystr.Len(cmdShort) > limit {
-		cmdShort = pystr.Slice(cmdShort, 0, limit-3) + "..."
+	if utf8.RuneCountInString(cmdShort) > limit {
+		cmdShort = textutil.First(cmdShort, limit-3) + "..."
 	} else if len(lines) > 1 {
 		cmdShort += " ..."
 	}

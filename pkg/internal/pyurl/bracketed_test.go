@@ -1,6 +1,8 @@
 package pyurl
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestSplitBracketedNetlocMatchesCPython(t *testing.T) {
 	cases := []struct{ url, err string }{
@@ -34,15 +36,5 @@ func TestSplitBracketedNetlocMatchesCPython(t *testing.T) {
 		if got != c.err {
 			t.Errorf("Split(%q) error %q, want %q", c.url, got, c.err)
 		}
-	}
-}
-
-func TestHostnameLowersLikePythonStr(t *testing.T) {
-	u, err := Split("http://İX.example/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := u.Hostname(); got != "i̇x.example" {
-		t.Fatalf("hostname %q", got)
 	}
 }

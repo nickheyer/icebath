@@ -2,9 +2,11 @@ package provider
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // MaxHistorySeedChars caps the rendered history codex resends on every request of a fresh thread
@@ -74,8 +76,8 @@ func codexSeedRenderRow(msg map[string]any) string {
 		}
 		return strings.Join(lines, "\n")
 	case "tool":
-		if pystr.Len(text) > codexToolResultPreviewChars {
-			text = pystr.Slice(text, 0, codexToolResultPreviewChars) + " …"
+		if utf8.RuneCountInString(text) > codexToolResultPreviewChars {
+			text = textutil.First(text, codexToolResultPreviewChars) + " …"
 		}
 		if text != "" {
 			return "[TOOL RESULT]\n" + text
@@ -103,8 +105,8 @@ func RenderHistorySeed(messages []map[string]any) string {
 		return ""
 	}
 	body := strings.Join(rendered, "\n\n")
-	if pystr.Len(body) > MaxHistorySeedChars {
-		body = "[… earlier turns omitted …]\n\n" + pystr.Slice(body, -MaxHistorySeedChars, pystr.Len(body))
+	if utf8.RuneCountInString(body) > MaxHistorySeedChars {
+		body = "[… earlier turns omitted …]\n\n" + textutil.Last(body, MaxHistorySeedChars)
 	}
 	return codexHistorySeedHeader + "\n\n" + body
 }

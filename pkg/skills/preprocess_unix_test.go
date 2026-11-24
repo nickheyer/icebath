@@ -28,7 +28,7 @@ func TestInlineShellSubprocessSemantics(t *testing.T) {
 	if got := s.RunInlineShell(ctx, `printf 'a\r\nb\rc\n'`, t.TempDir(), 5); got != "a\nb\nc" {
 		t.Fatalf("newlines got %q", got)
 	}
-	if got := s.RunInlineShell(ctx, `printf '\377\376ok'`, t.TempDir(), 5); got != "��ok" {
+	if got := s.RunInlineShell(ctx, `printf '\377\376ok'`, t.TempDir(), 5); got != "�ok" {
 		t.Fatalf("replace got %q", got)
 	}
 }

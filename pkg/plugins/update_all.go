@@ -12,8 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var updateKind = map[string]string{"catalog": "catalog re-pin", "git": "git pull"}
@@ -76,7 +77,7 @@ func shortReason(reason string) string {
 	if stripped == "" {
 		return ""
 	}
-	first := []rune(pystr.Splitlines(stripped, false)[0])
+	first := []rune(textutil.Lines(stripped)[0])
 	if len(first) <= 200 {
 		return string(first)
 	}

@@ -7,12 +7,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Literal keywords hold instance data rather than schemas
@@ -130,8 +133,8 @@ func validationError(message, path, constraint string, parameters any) string {
 func validationCollapseSpace(s string) string {
 	var b strings.Builder
 	inSpace := false
-	for _, r := range pystr.Runes(s) {
-		if pystr.IsSpace(r) {
+	for _, r := range []rune(s) {
+		if unicode.IsSpace(r) {
 			if !inSpace {
 				b.WriteByte(' ')
 			}
@@ -139,7 +142,7 @@ func validationCollapseSpace(s string) string {
 			continue
 		}
 		inSpace = false
-		b.WriteString(pystr.FromRunes([]rune{r}))
+		b.WriteString(string([]rune{r}))
 	}
 	return b.String()
 }
@@ -258,8 +261,8 @@ func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args
 		constraint = s
 	}
 	detail := strings.TrimSpace(validationCollapseSpace(best.Message))
-	if pystr.Len(detail) > 600 {
-		detail = pystr.Slice(detail, 0, 597) + "..."
+	if utf8.RuneCountInString(detail) > 600 {
+		detail = textutil.First(detail, 597) + "..."
 	}
 	return validationError(
 		fmt.Sprintf("tool_call to '%s' failed argument validation at %s (%s): %s. The tool was NOT invoked.", name, path, constraint, detail),
@@ -351,7 +354,7 @@ func LocalBatchError(entries []ToolCallEntry) string {
 // Batch rejection restating the retry shape with the first entry's own name and arguments in json.dumps form
 func localBatchError(name, arguments any, count int) string {
 	args := pyDumps(arguments, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
-	if pystr.Len(args) > toolSearchEchoArgsMaxChars {
+	if utf8.RuneCountInString(args) > toolSearchEchoArgsMaxChars {
 		args = "{...}"
 	}
 	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, pyDumps(name, pyjson.EnsureASCII(false)), args)

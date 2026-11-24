@@ -2411,7 +2411,7 @@ func (r *ProcessRegistry) writeStdinDict(env *Env, sessionID, data string) *pyjs
 			return p.Write(raw)
 		},
 		func(p *ExecProcess) error { return errPipeStdinClosed },
-		Dict("status", "ok", "bytes_written", pystr.Len(data)))
+		Dict("status", "ok", "bytes_written", utf8.RuneCountInString(data)))
 }
 
 // Ordered dict form of the exported method result, keys in insertion order

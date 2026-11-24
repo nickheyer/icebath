@@ -16,6 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Consent question before the setup flow installs the gateway service
@@ -367,7 +369,7 @@ func printSystemScopeRemediation(ctx context.Context, con *cliui.Console, action
 
 // Emits every line of text indented by two spaces
 func printIndented(text string, emit func(string)) {
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		emit("  " + line)
 	}
 }

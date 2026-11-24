@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
@@ -14,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Built in platform names a webhook route may deliver to
@@ -154,7 +154,7 @@ func webhookPositiveNumber(number any) (bool, error) {
 		return false, nil
 	}
 	for _, r := range text {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false, nil
 		}
 	}

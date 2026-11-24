@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Icebath surfaces documented for plugin authors, module entries or module:Name entries
@@ -278,8 +277,8 @@ func privateAttributeFindings(files []parsedSource) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			if runes := pystr.Runes(expr); len(runes) > 80 {
-				expr = pystr.FromRunes(runes[:80])
+			if runes := []rune(expr); len(runes) > 80 {
+				expr = string(runes[:80])
 			}
 			found[site{f.rel, node.Lineno, expr}] = true
 		}

@@ -13,7 +13,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Tools the agent loop intercepts because they need live agent state
@@ -51,8 +52,8 @@ func SanitizeToolError(errorMsg string) string {
 	for _, p := range toolErrorStripRes {
 		sanitized = p.ReplaceAllString(sanitized, "")
 	}
-	if len(pystr.Runes(sanitized)) > toolErrorMaxLen {
-		sanitized = pystr.Slice(sanitized, 0, toolErrorMaxLen-3) + "..."
+	if len([]rune(sanitized)) > toolErrorMaxLen {
+		sanitized = textutil.First(sanitized, toolErrorMaxLen-3) + "..."
 	}
 	return "[TOOL_ERROR] " + sanitized
 }

@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -93,7 +92,7 @@ func matchBlueprint(ctx context.Context, query string) (*AutomationBlueprint, []
 		for _, r := range catalog {
 			key := strings.ToLower(r.Key)
 			hit := strings.HasPrefix(key, q) || strings.HasPrefix(key[strings.LastIndex(key, ":")+1:], q)
-			for _, w := range pystr.SplitWhitespace(r.Title, -1) {
+			for _, w := range strings.Fields(r.Title) {
 				hit = hit || strings.HasPrefix(strings.ToLower(w), q)
 			}
 			if hit {
@@ -224,7 +223,7 @@ func blueprintManageHint(surface string) string {
 func HandleBlueprintCommand(ctx context.Context, h, args string, origin map[string]any, surface string) (BlueprintCommandResult, error) {
 	tokens, err := pyshlex.SplitPOSIX(args, false)
 	if err != nil {
-		tokens = pystr.SplitWhitespace(args, -1)
+		tokens = strings.Fields(args)
 	}
 	if len(tokens) == 0 {
 		return BlueprintCommandResult{Text: blueprintFmtCatalog(ctx)}, nil

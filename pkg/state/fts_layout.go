@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var ftsDDLTables = []string{"messages_fts", "messages_fts_trigram"}
@@ -19,7 +17,7 @@ var (
 
 // Stored definition with whitespace collapsed, none around parentheses and commas, and the object name unquoted
 func storedForm(sql string) string {
-	collapsed := storedFormPunct.ReplaceAllString(strings.Join(pystr.SplitWhitespace(sql, -1), " "), "$1")
+	collapsed := storedFormPunct.ReplaceAllString(strings.Join(strings.Fields(sql), " "), "$1")
 	return storedFormQuoted.ReplaceAllString(collapsed, "CREATE $1 $2")
 }
 

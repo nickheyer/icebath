@@ -856,7 +856,7 @@ func (s *PairingStore) ApproveCode(ctx context.Context, platform, code string) (
 	if err := s.cleanupExpired(ctx, platform); err != nil {
 		return nil, err
 	}
-	code = strings.Join(pystr.SplitWhitespace(strings.ToUpper(code), -1), "")
+	code = strings.Join(strings.Fields(strings.ToUpper(code)), "")
 	if lockedOut, err := s.isLockedOut(platform); err != nil || lockedOut {
 		return nil, err
 	}

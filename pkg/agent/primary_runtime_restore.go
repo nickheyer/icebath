@@ -1,11 +1,10 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"

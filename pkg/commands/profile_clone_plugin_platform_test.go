@@ -10,9 +10,10 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Compiled-in platform plugin registering sharedplat with the SHP_ shared prefix, the sharedplat fixture plugin
@@ -60,7 +61,7 @@ func TestPluginPlatformSharedEnvPrefixesFollowTheOwnershipRule(t *testing.T) {
 				t.Fatal(err)
 			}
 			keys := []string{}
-			for _, line := range pystr.Splitlines(string(raw), false) {
+			for _, line := range textutil.Lines(string(raw)) {
 				if strings.Contains(line, "=") && !strings.HasPrefix(line, "#") {
 					keys = append(keys, strings.SplitN(line, "=", 2)[0])
 				}

@@ -48,8 +48,8 @@ func TestSurfaceIdentityLineValueReadsOnlyTheTrailer(t *testing.T) {
 	if IdentityLineValue(noTrailerLabel, "Platform") != "" {
 		t.Fatal("earlier paragraphs are never identity")
 	}
-	if IdentityLineValue("a\n\nPlatform: one\rPlatform: two", "Platform") != "two" {
-		t.Fatal("the last trailer match wins over Python line boundaries")
+	if IdentityLineValue("a\n\nPlatform: one\nPlatform: two", "Platform") != "two" {
+		t.Fatal("the last trailer match wins")
 	}
 }
 

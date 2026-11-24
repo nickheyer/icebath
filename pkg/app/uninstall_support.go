@@ -1,12 +1,11 @@
 package app
 
 import (
-	"strings"
-
 	"fmt"
 	"io"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"

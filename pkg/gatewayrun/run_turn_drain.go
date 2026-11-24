@@ -7,7 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -35,7 +36,7 @@ func isControlInterruptMessage(message any) bool {
 	if !pyrepr.Truthy(message) {
 		return false
 	}
-	normalized := strings.Join(pystr.SplitWhitespace(strings.TrimSpace(pyrepr.Str(message)), -1), " ")
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(pyrepr.Str(message))), " ")
 	return controlInterruptMessages[strings.ToLower(normalized)]
 }
 
@@ -86,7 +87,7 @@ func (r *GatewayRunner) runAgentDrainPending(ctx context.Context, result map[str
 	}
 	pendingEvent, pending = r.mergeLeftoverSteer(result, adapter, source, sessionKey, pendingEvent, pending)
 	if pending != "" && strings.HasPrefix(strings.TrimSpace(pending), "/") {
-		cmdWord := strings.ToLower(strings.TrimPrefix(pystr.SplitWhitespace(strings.TrimSpace(pending), 1)[0], "/"))
+		cmdWord := strings.ToLower(strings.TrimPrefix(textutil.FieldsN(strings.TrimSpace(pending), 1)[0], "/"))
 		if cmdWord != "" {
 			if _, known := ResolveCommand(cmdWord); known {
 				pkgLog().Info(fmt.Sprintf("Discarding command '/%s' from pending queue — commands must not be passed as agent input", cmdWord))

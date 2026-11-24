@@ -2,11 +2,11 @@ package agent
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"reflect"
 	"runtime"
 	"strings"
@@ -20,13 +20,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -214,9 +215,6 @@ func startTitleUpgrade(upgrade any) {
 	t.Start()
 }
 
-// Code points of s from start to the end
-func titleFrom(s string, start int) string { return pystr.Slice(s, start, math.MaxInt) }
-
 // Python re.sub of every match with an empty string
 func titleReSub(re *regexp2.Regexp, s string) string {
 	out, _ := re.Replace(s, "", -1, -1)
@@ -246,12 +244,12 @@ func stripOneWrapper(text string) string {
 		}
 		at := strings.Index(lowered, closeTag)
 		if at == -1 {
-			return strings.TrimSpace(titleFrom(text, len(openTag)))
+			return strings.TrimSpace(textutil.DropFirst(text, len(openTag)))
 		}
-		end := pystr.Len(lowered[:at])
-		kept := strings.TrimSpace(titleFrom(text, end+len(closeTag)))
+		end := utf8.RuneCountInString(lowered[:at])
+		kept := strings.TrimSpace(textutil.DropFirst(text, end+len(closeTag)))
 		if kept == "" {
-			kept = strings.TrimSpace(pystr.Slice(text, len(openTag), end))
+			kept = strings.TrimSpace(textutil.Between(text, len(openTag), end))
 		}
 		return strings.TrimSpace(kept)
 	}
@@ -283,18 +281,18 @@ func buildTitleInput(userMessage string, titlePreview *string) string {
 		preview = strings.TrimSpace(*titlePreview)
 	}
 	if preview == "" {
-		return pystr.Slice(message, 0, maxTitleInputChars)
+		return textutil.First(message, maxTitleInputChars)
 	}
 	message = strings.TrimSpace(titleReSub(contextFooterRe, message))
 	if strings.TrimSpace(titleReSub(attachmentRefRe, message)) == "" {
-		return pystr.Slice(preview, 0, maxTitleInputChars)
+		return textutil.First(preview, maxTitleInputChars)
 	}
-	messageBudget := min(pystr.Len(message), maxTitleInputChars/2)
-	previewBudget := maxTitleInputChars - messageBudget - pystr.Len(pastePreviewLabel)
+	messageBudget := min(utf8.RuneCountInString(message), maxTitleInputChars/2)
+	previewBudget := maxTitleInputChars - messageBudget - utf8.RuneCountInString(pastePreviewLabel)
 	if previewBudget <= 0 {
-		return pystr.Slice(message, 0, maxTitleInputChars)
+		return textutil.First(message, maxTitleInputChars)
 	}
-	return pystr.Slice(message, 0, messageBudget) + pastePreviewLabel + pystr.Slice(preview, 0, previewBudget)
+	return textutil.First(message, messageBudget) + pastePreviewLabel + textutil.First(preview, previewBudget)
 }
 
 // False for machine authored openers, scaffolding only turns and attachment only openers
@@ -316,15 +314,15 @@ func deriveTitle(userMessage string, titlePreview *string) string {
 	if (titlePreview == nil || *titlePreview == "") && attachmentOnlyOpener(userMessage) {
 		return ""
 	}
-	line := strings.Join(pystr.SplitWhitespace(titleFirstLine(buildTitleInput(userMessage, titlePreview)), -1), " ")
-	if pystr.Len(line) > maxDerivedTitleChars {
-		cut := pystr.Slice(line, 0, maxDerivedTitleChars)
+	line := strings.Join(strings.Fields(titleFirstLine(buildTitleInput(userMessage, titlePreview))), " ")
+	if utf8.RuneCountInString(line) > maxDerivedTitleChars {
+		cut := textutil.First(line, maxDerivedTitleChars)
 		space := -1
 		if at := strings.LastIndex(cut, " "); at >= 0 {
-			space = pystr.Len(cut[:at])
+			space = utf8.RuneCountInString(cut[:at])
 		}
 		if space > maxDerivedTitleChars/2 {
-			cut = pystr.Slice(cut, 0, space)
+			cut = textutil.First(cut, space)
 		}
 		line = strings.TrimRight(cut, " ,.;:—-") + "…"
 	}
@@ -334,14 +332,14 @@ func deriveTitle(userMessage string, titlePreview *string) string {
 // Text without a leading case insensitive Title prefix
 func stripTitlePrefix(text string) string {
 	if strings.HasPrefix(strings.ToLower(text), "title:") {
-		return strings.TrimSpace(titleFrom(text, 6))
+		return strings.TrimSpace(textutil.DropFirst(text, 6))
 	}
 	return text
 }
 
 // First non blank line stripped, empty when there is none
 func titleFirstLine(text string) string {
-	for _, ln := range pystr.Splitlines(text, false) {
+	for _, ln := range textutil.Lines(text) {
 		if s := strings.TrimSpace(ln); s != "" {
 			return s
 		}
@@ -417,10 +415,10 @@ func titleFromReasoning(message any) string {
 
 // Normalized model title capped at 80 characters, empty when nothing usable remains
 func cleanTitle(text string) string {
-	collapsed := strings.Join(pystr.SplitWhitespace(text, -1), " ")
+	collapsed := strings.Join(strings.Fields(text), " ")
 	title := strings.TrimRight(stripTitlePrefix(strings.TrimSpace(strings.Trim(collapsed, "\"'"))), ".!,;:")
-	if pystr.Len(title) > 80 {
-		title = strings.TrimRightFunc(pystr.Slice(title, 0, 77), unicode.IsSpace) + "..."
+	if utf8.RuneCountInString(title) > 80 {
+		title = strings.TrimRightFunc(textutil.First(title, 77), unicode.IsSpace) + "..."
 	}
 	return title
 }
@@ -553,7 +551,7 @@ func requestTitle(ctx context.Context, prompt, snippet string, o generateTitleOp
 		text = titleFromReasoning(message)
 	}
 	title := cleanTitle(text)
-	if words := len(pystr.SplitWhitespace(title, -1)); title != "" && words > maxTitleWords {
+	if words := len(strings.Fields(title)); title != "" && words > maxTitleWords {
 		pkgLog().Debug(fmt.Sprintf("Rejecting answer-shaped title output (%d words > %d)", words, maxTitleWords))
 		return "", nil
 	}

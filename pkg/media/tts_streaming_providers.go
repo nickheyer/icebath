@@ -27,8 +27,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Per sentence PCM byte ceiling matching the 16 MiB bounded body of the sync providers
@@ -516,7 +517,7 @@ func responseLines(resp *http.Response) iter.Seq2[string, error] {
 			if havePending {
 				text = pending + text
 			}
-			lines := pystr.Splitlines(text, false)
+			lines := textutil.Lines(text)
 			pending, havePending = "", false
 			if n := len(lines); n > 0 && lines[n-1] != "" {
 				last, _ := utf8.DecodeLastRuneInString(lines[n-1])

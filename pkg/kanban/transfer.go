@@ -21,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -270,7 +272,7 @@ func availableSlug(preferred string) string {
 	if !BoardExists(&preferred) {
 		return preferred
 	}
-	stem := strings.TrimRight(pystr.Slice(preferred, 0, 58), "-_")
+	stem := strings.TrimRight(textutil.First(preferred, 58), "-_")
 	if stem == "" {
 		stem = "board"
 	}

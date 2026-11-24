@@ -1,13 +1,13 @@
 package goals
 
 import (
-	"strings"
-
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Outcome of one goal command, the prompt nil when no turn should follow
@@ -71,7 +71,7 @@ func goalUnwait(m Manager, arg string, render GoalRender) (GoalCommandResult, er
 }
 
 // Python split of text on whitespace into at most two parts
-func splitOnce(text string) []string { return pystr.SplitWhitespace(text, 1) }
+func splitOnce(text string) []string { return textutil.FieldsN(text, 1) }
 
 // Parks the goal on the pid the command names, a usage error for a missing or non integer pid
 func goalWait(m Manager, arg string) (GoalCommandResult, error) {

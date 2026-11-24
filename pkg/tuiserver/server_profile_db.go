@@ -1,13 +1,12 @@
 package tuiserver
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/state"
 )

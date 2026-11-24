@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -19,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Rows per agents section before the overflow line
@@ -67,7 +70,7 @@ func agentCount(a *agent.AIAgent, read func(*agent.AIAgent) int) int {
 }
 
 // Integer with thousands separators
-func fmtThousands(n int) string { return pystr.GroupThousands(int64(n)) }
+func fmtThousands(n int) string { return textutil.Thousands(int64(n)) }
 
 // Result of a call that may fail, the fallback when it does
 func quiet[T any](call func() (T, error), fallback T) (out T) {
@@ -103,8 +106,8 @@ func occupancyPct(used, total int) float64 {
 
 // Text cut to limit characters with an ellipsis
 func clipText(text string, limit int) string {
-	if pystr.Len(text) > limit {
-		return pystr.Slice(text, 0, limit-3) + "..."
+	if utf8.RuneCountInString(text) > limit {
+		return textutil.First(text, limit-3) + "..."
 	}
 	return text
 }

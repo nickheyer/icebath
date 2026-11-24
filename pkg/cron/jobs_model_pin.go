@@ -1,10 +1,9 @@
 package cron
 
 import (
-	"strings"
-
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"

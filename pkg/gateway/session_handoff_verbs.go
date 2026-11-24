@@ -8,8 +8,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Handoff verbs of a local session, queueing it for a messaging platform's home channel and polling the row
@@ -109,7 +110,7 @@ func requestHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 			return false, err
 		}
 		if row == nil || row.Len() == 0 {
-			if _, err := a.DB.SetSessionTitle(ctx, ref.SessionID, "handoff-"+pystr.Slice(ref.SessionID, 0, 8)); err != nil {
+			if _, err := a.DB.SetSessionTitle(ctx, ref.SessionID, "handoff-"+textutil.First(ref.SessionID, 8)); err != nil {
 				return false, err
 			}
 		}

@@ -2,6 +2,7 @@ package slack
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"bytes"
 	"context"
@@ -20,7 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -348,7 +350,7 @@ func (a *SlackAdapter) sendSlashEphemeral(ctx context.Context, sc *slashContext,
 		if resp.StatusCode != http.StatusOK {
 			body := readErrorTextLimited(resp.Body, slackErrorBodyLimitBytes)
 			resp.Body.Close()
-			pkgLog().Warn(fmt.Sprintf("[Slack] response_url POST returned %d: %s", resp.StatusCode, pystr.Slice(body, 0, 200)))
+			pkgLog().Warn(fmt.Sprintf("[Slack] response_url POST returned %d: %s", resp.StatusCode, textutil.First(body, 200)))
 			return gateway.SendResult{Success: false, Error: fmt.Sprintf("response_url POST returned %d", resp.StatusCode)}
 		}
 		resp.Body.Close()
@@ -614,7 +616,7 @@ func (a *SlackAdapter) SendNativeTaskCardProgress(ctx context.Context, chatID st
 				return gateway.SendResult{}, err
 			}
 		}
-		chunks := []any{map[string]any{"type": "plan_update", "title": pystr.Slice(title, 0, 256)}}
+		chunks := []any{map[string]any{"type": "plan_update", "title": textutil.First(title, 256)}}
 		for _, task := range tasks {
 			chunks = append(chunks, taskUpdateChunk(task))
 		}
@@ -1045,7 +1047,7 @@ func (a *SlackAdapter) SendDraft(ctx context.Context, chatID string, draftID int
 				return gateway.SendResult{}, err
 			}
 			pkgLog().Info(fmt.Sprintf("[Slack] Native draft stream %s expired (message_not_in_streaming_state); reopening a fresh stream for chat %s", stream.ts, chatID))
-			return a.startStream(ctx, client, *key, draftID, text, metadata, pystr.Len(sent))
+			return a.startStream(ctx, client, *key, draftID, text, metadata, utf8.RuneCountInString(sent))
 		}
 		stream.sent = text
 		return gateway.SendResult{Success: true, MessageID: stream.ts}, nil
@@ -1092,7 +1094,7 @@ func (a *SlackAdapter) startStream(ctx context.Context, client *webClient, key t
 	if teamID != "" {
 		kwargs["recipient_team_id"] = teamID
 	}
-	tail := pystr.Slice(text, base, pystr.Len(text))
+	tail := textutil.DropFirst(text, base)
 	if strings.TrimSpace(tail) != "" {
 		kwargs["markdown_text"] = tail
 	}
@@ -1187,7 +1189,7 @@ func (a *SlackAdapter) tryFinalizeStream(ctx context.Context, chatID, content st
 		}
 		return a.commitStream(ctx, *key, stream, text, metadata, "", true)
 	}
-	if kind == "extends" && pystr.Len(delta) > maxMessageLength {
+	if kind == "extends" && utf8.RuneCountInString(delta) > maxMessageLength {
 		a.dropActiveStream(*key)
 		a.sealStream(ctx, *key, stream, "")
 		return nil
@@ -1209,7 +1211,7 @@ func (a *SlackAdapter) commitStream(ctx context.Context, key threadKey, stream *
 	} else {
 		shown := text
 		if !replace {
-			shown = pystr.Slice(text, stream.base, pystr.Len(text))
+			shown = textutil.DropFirst(text, stream.base)
 		}
 		edited := a.editMessage(ctx, chatID, ts, shown, true, metadata)
 		committed = edited.Success || (sealed && !replace)

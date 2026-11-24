@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 )
 
@@ -72,13 +71,13 @@ func RedactBoundedWith(raw any, limit int, empty, unavailable string) (out strin
 	if text == "" {
 		text = empty
 	}
-	rs := pystr.Runes(text)
+	rs := []rune(text)
 	end := limit
 	if end < 0 {
 		end = max(len(rs)+end, 0)
 	}
 	if end < len(rs) {
-		text = pystr.FromRunes(rs[:end])
+		text = string(rs[:end])
 	}
 	return text
 }

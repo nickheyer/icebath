@@ -10,7 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -87,10 +88,10 @@ func ParseLoopArgs(text string) LoopArgs {
 		until = strings.TrimSpace(m.GroupByNumber(1).String())
 		raw = strings.TrimSpace(string(runes[:m.RuneIndex]))
 	}
-	tokens := pystr.SplitWhitespace(raw, 1)
+	tokens := textutil.FieldsN(raw, 1)
 	if len(tokens) > 0 && strings.ToLower(tokens[0]) == "every" && len(tokens) > 1 {
 		raw = tokens[1]
-		tokens = pystr.SplitWhitespace(raw, 1)
+		tokens = textutil.FieldsN(raw, 1)
 	}
 	var interval *int64
 	if len(tokens) > 0 {

@@ -1,14 +1,13 @@
 package tuihost
 
 import (
-	"unicode"
-
 	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"

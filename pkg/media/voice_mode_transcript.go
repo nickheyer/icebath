@@ -5,9 +5,9 @@ package media
 import (
 	"context"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -52,7 +52,7 @@ func normalizeForEchoCompare(text string) string {
 	var b strings.Builder
 	inSpace := false
 	for _, r := range text {
-		if pystr.IsSpace(r) {
+		if unicode.IsSpace(r) {
 			if !inSpace {
 				b.WriteByte(' ')
 			}
@@ -67,7 +67,7 @@ func normalizeForEchoCompare(text string) string {
 
 // Whether a transcript reads as speaker bleed of the spoken reply by whole or sliding window similarity
 func isTTSEcho(transcript, spokenText string, threshold float64) bool {
-	a, b := pystr.Runes(normalizeForEchoCompare(transcript)), pystr.Runes(normalizeForEchoCompare(spokenText))
+	a, b := []rune(normalizeForEchoCompare(transcript)), []rune(normalizeForEchoCompare(spokenText))
 	if len(a) == 0 || len(b) == 0 {
 		return false
 	}

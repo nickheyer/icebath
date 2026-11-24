@@ -10,9 +10,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Appends a run scoped worker_lost event for a card attempt, dropped once the card moved past the run, never failing
@@ -76,7 +77,7 @@ func writeWorkerLoss(ctx context.Context, policy *LocalSessionPolicy, reason str
 				return err
 			}
 			return kanban.AppendTaskEvent(ctx, conn, pyrepr.Str(taskID), "worker_lost",
-				pyjson.ObjectOf("reason", pystr.Slice(reason, 0, 200), "claim_lock", claim, "run_id", runID, "pid", pid, "bound", bound), &runID)
+				pyjson.ObjectOf("reason", textutil.First(reason, 200), "claim_lock", claim, "run_id", runID, "pid", pid, "bound", bound), &runID)
 		})
 	})
 }

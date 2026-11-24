@@ -10,7 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Python repr of a decoded value for a percent r log argument
@@ -325,7 +326,7 @@ func (a *WeComAdapter) RaiseForWeComError(response *pyjson.Object, operation str
 
 // Markdown message body capped at the message length limit
 func markdownBody(content string) []any {
-	return []any{"msgtype", "markdown", "markdown", obj("content", pystr.Slice(content, 0, maxMessageLength))}
+	return []any{"msgtype", "markdown", "markdown", obj("content", textutil.First(content, maxMessageLength))}
 }
 
 // Sends markdown as a passive reply to an inbound req id, an error for a refused reply

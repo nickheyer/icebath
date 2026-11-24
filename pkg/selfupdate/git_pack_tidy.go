@@ -179,7 +179,7 @@ func pinned(pack string, cutoff float64) bool {
 	if err != nil {
 		return !errors.Is(err, fs.ErrNotExist)
 	}
-	text := pystr.DecodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
+	text := strings.ToValidUTF8(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))), "\uFFFD")
 	fetchKeep := strings.HasPrefix(text, "fetch-pack ") || strings.HasPrefix(text, "index-pack ")
 	return !(fetchKeep && tidyMtime(st) < cutoff)
 }

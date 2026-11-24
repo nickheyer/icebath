@@ -2,6 +2,7 @@ package app
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"fmt"
 	"os"
@@ -23,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const pyWSClass = `[\t\n\v\f\r \x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
@@ -152,11 +155,11 @@ func (c *CLI) emitReasoningPreview(reasoningText string) {
 		return
 	}
 	prefix := c.thinkingPrefix()
-	wrapWidth := max(30, terminalColumns()-pystr.Len(prefix)-2)
+	wrapWidth := max(30, terminalColumns()-utf8.RuneCountInString(prefix)-2)
 	paragraphs := []string{}
 	for _, paragraph := range reasoningParagraphRe.Split(strings.ReplaceAll(previewText, "\r\n", "\n"), -1) {
 		kept := []string{}
-		for _, line := range pystr.Splitlines(paragraph, false) {
+		for _, line := range textutil.Lines(paragraph) {
 			if s := strings.TrimSpace(line); s != "" {
 				kept = append(kept, s)
 			}
@@ -173,7 +176,7 @@ func (c *CLI) emitReasoningPreview(reasoningText string) {
 		cprint(dimANSI + prefix + previewText + resetANSI)
 		return
 	}
-	lines := pystr.Splitlines(previewText, false)
+	lines := textutil.Lines(previewText)
 	preview := previewText
 	if len(lines) > 5 {
 		preview = strings.Join(lines[:5], "\n") + "\n  " + c.t("cli.stream.thinking_more_lines", map[string]any{"count": len(lines) - 5})
@@ -186,8 +189,8 @@ func (c *CLI) flushReasoningPreview(force bool) {
 	if c.reasoningPreviewBuf == "" {
 		return
 	}
-	buf := pystr.Runes(c.reasoningPreviewBuf)
-	targetWidth := max(40, terminalColumns()-pystr.Len(c.thinkingPrefix())-4)
+	buf := []rune(c.reasoningPreviewBuf)
+	targetWidth := max(40, terminalColumns()-utf8.RuneCountInString(c.thinkingPrefix())-4)
 	var flush []rune
 	flushed := false
 	if force {
@@ -222,13 +225,13 @@ func (c *CLI) flushReasoningPreview(force bool) {
 			}
 		}
 	}
-	flushText := pystr.FromRunes(flush)
+	flushText := string(flush)
 	if flushed && flushText != "" {
-		c.reasoningPreviewBuf = strings.TrimLeftFunc(pystr.FromRunes(buf), unicode.IsSpace)
+		c.reasoningPreviewBuf = strings.TrimLeftFunc(string(buf), unicode.IsSpace)
 		c.emitReasoningPreview(flushText)
 		return
 	}
-	c.reasoningPreviewBuf = pystr.FromRunes(buf)
+	c.reasoningPreviewBuf = string(buf)
 }
 
 // Buffers intermediate reasoning during tool call loops and flushes it at natural boundaries
@@ -279,7 +282,7 @@ func (c *CLI) renderReasoningDelta(text string) {
 		c.reasoningBoxOpened = true
 		w := scrollbackBoxWidth()
 		label := " " + c.t("cli.chat.reasoning_label", nil) + " "
-		fill := w - 2 - pystr.Len(label)
+		fill := w - 2 - utf8.RuneCountInString(label)
 		cprint("\n" + dimANSI + "┌─" + label + strings.Repeat("─", max(fill-1, 0)) + "┐" + resetANSI)
 	}
 	c.reasoningBuf += text
@@ -288,7 +291,7 @@ func (c *CLI) renderReasoningDelta(text string) {
 		head, c.reasoningBuf, _ = strings.Cut(c.reasoningBuf, "\n")
 		cprint(line(head))
 	}
-	if pystr.Len(c.reasoningBuf) > 80 {
+	if utf8.RuneCountInString(c.reasoningBuf) > 80 {
 		cprint(line(c.reasoningBuf))
 		c.reasoningBuf = ""
 	}
@@ -394,8 +397,8 @@ func (c *CLI) streamDeltaText(text string) {
 	c.streamStarted = true
 	c.streamPrefilt += text
 	if !c.inReasoningBlock {
-		prefilt := pystr.Runes(c.streamPrefilt)
-		lower := pystr.Runes(strings.ToLower(c.streamPrefilt))
+		prefilt := []rune(c.streamPrefilt)
+		lower := []rune(strings.ToLower(c.streamPrefilt))
 		clamp := func(i int) int { return max(0, min(i, len(prefilt))) }
 		for _, tag := range streamOpenTags {
 			searchStart := 0
@@ -412,15 +415,15 @@ func (c *CLI) streamDeltaText(text string) {
 						break
 					}
 				}
-				boundary := strings.TrimSpace(pystr.FromRunes(preceding[lastNewline+1:])) == "" && (lastNewline != -1 || !c.streamMidLine)
+				boundary := strings.TrimSpace(string(preceding[lastNewline+1:])) == "" && (lastNewline != -1 || !c.streamMidLine)
 				if boundary {
 					if len(preceding) > 0 {
-						c.emitStreamText(pystr.FromRunes(preceding))
+						c.emitStreamText(string(preceding))
 						c.streamMidLine = preceding[len(preceding)-1] != '\n'
 					}
 					c.inReasoningBlock = true
 					prefilt = prefilt[clamp(idx+len(tag)):]
-					c.streamPrefilt = pystr.FromRunes(prefilt)
+					c.streamPrefilt = string(prefilt)
 					break
 				}
 				searchStart = idx + 1
@@ -440,15 +443,15 @@ func (c *CLI) streamDeltaText(text string) {
 				}
 			}
 			if len(safe) > 0 {
-				c.emitStreamText(pystr.FromRunes(safe))
+				c.emitStreamText(string(safe))
 				c.streamMidLine = safe[len(safe)-1] != '\n'
-				c.streamPrefilt = pystr.FromRunes(prefilt[len(safe):])
+				c.streamPrefilt = string(prefilt[len(safe):])
 			}
 			return
 		}
 	}
-	prefilt := pystr.Runes(c.streamPrefilt)
-	lower := pystr.Runes(strings.ToLower(c.streamPrefilt))
+	prefilt := []rune(c.streamPrefilt)
+	lower := []rune(strings.ToLower(c.streamPrefilt))
 	clamp := func(i int) int { return max(0, min(i, len(prefilt))) }
 	for _, tag := range streamCloseTags {
 		idx := runeFind(lower, tag, 0)
@@ -458,10 +461,10 @@ func (c *CLI) streamDeltaText(text string) {
 		c.inReasoningBlock = false
 		if c.showReasoning {
 			if inner := prefilt[:clamp(idx)]; len(inner) > 0 {
-				c.streamReasoning(pystr.FromRunes(inner))
+				c.streamReasoning(string(inner))
 			}
 		}
-		after := pystr.FromRunes(prefilt[clamp(idx+len(tag)):])
+		after := string(prefilt[clamp(idx+len(tag)):])
 		c.streamPrefilt = ""
 		if after != "" {
 			c.streamDeltaText(after)
@@ -470,9 +473,9 @@ func (c *CLI) streamDeltaText(text string) {
 	}
 	if len(prefilt) > streamMaxCloseTagLen {
 		if c.showReasoning {
-			c.streamReasoning(pystr.FromRunes(prefilt[:len(prefilt)-streamMaxCloseTagLen]))
+			c.streamReasoning(string(prefilt[:len(prefilt)-streamMaxCloseTagLen]))
 		}
-		c.streamPrefilt = pystr.FromRunes(prefilt[len(prefilt)-streamMaxCloseTagLen:])
+		c.streamPrefilt = string(prefilt[len(prefilt)-streamMaxCloseTagLen:])
 	}
 }
 
@@ -531,7 +534,7 @@ func (c *CLI) renderStreamText(text string) {
 		var rgb [3]string
 		parsed := true
 		for i, start := range []int{1, 3, 5} {
-			n, ok := pyint.ParseBase(pystr.Slice(textHex, start, start+2), 16)
+			n, ok := pyint.ParseBase(textutil.Between(textHex, start, start+2), 16)
 			if !ok {
 				parsed = false
 				break
@@ -577,8 +580,8 @@ func (c *CLI) renderStreamText(text string) {
 		}
 		c.emitStreamLine(line)
 	}
-	if c.streamBuf != "" && !c.inStreamTable && !strings.HasPrefix(strings.TrimLeftFunc(c.streamBuf, unicode.IsSpace), "|") && pystr.Len(c.streamBuf) >= 80 {
-		buf := pystr.Runes(c.streamBuf)
+	if c.streamBuf != "" && !c.inStreamTable && !strings.HasPrefix(strings.TrimLeftFunc(c.streamBuf, unicode.IsSpace), "|") && utf8.RuneCountInString(c.streamBuf) >= 80 {
+		buf := []rune(c.streamBuf)
 		preview := buf[len(buf)-streamPartialPreviewLen:]
 		cut := -1
 		for i, r := range preview {
@@ -590,7 +593,7 @@ func (c *CLI) renderStreamText(text string) {
 		if cut > 0 && cut < len(preview)-1 {
 			preview = preview[cut+1:]
 		}
-		c.setSpinnerText("… " + pystr.FromRunes(preview))
+		c.setSpinnerText("… " + string(preview))
 	}
 }
 
@@ -860,8 +863,8 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 	if label == "" {
 		label = functionName
 	}
-	if pl := tools.GetToolPreviewMaxLen(); pl > 0 && pystr.Len(label) > pl {
-		label = pystr.Slice(label, 0, pl-3) + "..."
+	if pl := tools.GetToolPreviewMaxLen(); pl > 0 && utf8.RuneCountInString(label) > pl {
+		label = textutil.First(label, pl-3) + "..."
 	}
 	spinner := tools.ToolRowEmoji(c.ctx, c.env, functionName, functionArgs, "") + " " + label
 	if functionArgs == nil {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
@@ -18,10 +19,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -349,7 +351,7 @@ func normalizeIDList(value any) map[string]bool {
 	case nil:
 		return out
 	case string:
-		parts = strings.FieldsFunc(strings.TrimSpace(t), func(r rune) bool { return r == ',' || pystr.IsSpace(r) })
+		parts = strings.FieldsFunc(strings.TrimSpace(t), func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
 	case []any:
 		for _, p := range t {
 			parts = append(parts, strings.TrimSpace(pyrepr.Str(p)))
@@ -426,7 +428,7 @@ func apiJSON(ctx context.Context, method, path string, timeout time.Duration, pa
 		if terr != nil {
 			text = ""
 		} else {
-			text = pystr.Slice(text, 0, 500)
+			text = textutil.First(text, 500)
 		}
 		message := text
 		if message == "" {

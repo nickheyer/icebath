@@ -1,8 +1,6 @@
 package telegram
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -14,11 +12,11 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Measured geometry of a local video, the duration only when the probe read one
@@ -124,7 +122,7 @@ func runProbe(ctx context.Context, timeout time.Duration, name string, args ...s
 	if err != nil {
 		return "", -1, err
 	}
-	return pystr.DecodeUTF8Replace(out.Bytes()), 0, nil
+	return strings.ToValidUTF8(string(out.Bytes()), "\uFFFD"), 0, nil
 }
 
 // Whole second audio length from the WAVE header then ffprobe, false when unreadable

@@ -287,7 +287,7 @@ func boundedInt(text string, limit uint64) (uint64, bool) {
 
 // Parses marker bytes under the shared corpus contract, mtime marking a young empty marker in flight
 func parseMarker(raw []byte, mtime *float64) marker {
-	text := strings.TrimPrefix(pystr.DecodeUTF8Replace(raw), "\ufeff")
+	text := strings.TrimPrefix(strings.ToValidUTF8(string(raw), "\uFFFD"), "\ufeff")
 	var lines []string
 	for _, line := range strings.Split(text, "\n") {
 		lines = append(lines, strings.Trim(strings.TrimSuffix(line, "\r"), " \t"))

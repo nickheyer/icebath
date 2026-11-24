@@ -1,17 +1,14 @@
 package config
 
 import (
-	"strings"
-
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Multiplex predicate of agent.secret_scope that pkg/provider installs, nil in a process without a multiplexer
@@ -27,62 +24,8 @@ var (
 	tzCache   = map[[2]string]timezoneEntry{}
 )
 
-// Locale text made UTF-8 safe, escaped bytes decoded with encoding or the locale codec, other surrogates replaced
-func RepairSurrogates(text, encoding string) string {
-	rs := pystr.Runes(text)
-	ascii, surrogate, escapedOnly := true, false, true
-	for _, r := range rs {
-		if r >= 0x80 {
-			ascii = false
-		}
-		if pystr.IsSurrogate(r) {
-			surrogate = true
-		}
-		if r >= 0x80 && (r < 0xdc80 || r > 0xdcff) {
-			escapedOnly = false
-		}
-	}
-	if ascii || !surrogate {
-		return text
-	}
-	if escapedOnly {
-		if raw, err := pystr.SurrogateEscapeEncode(text); err == nil {
-			if encoding == "" {
-				encoding = pycodecs.LocaleEncoding()
-			}
-			if out, err := pycodecs.Decode(raw, encoding); err == nil {
-				return out
-			}
-		}
-	}
-	for i, r := range rs {
-		if pystr.IsSurrogate(r) {
-			rs[i] = '�'
-		}
-	}
-	return pystr.FromRunes(rs)
-}
-
-// strftime that renders a surrogate zone name repaired, the UnicodeEncodeError returned for a format holding surrogates
-func SafeStrftimeChecked(value time.Time, format string) (string, error) {
-	if err := pystr.StrictUTF8EncodeError(format); err != nil {
-		return "", err
-	}
-	if zone := pydatetime.TZName(value); pystr.StrictUTF8EncodeError(zone) != nil {
-		_, offset := value.Zone()
-		value = value.In(time.FixedZone(RepairSurrogates(zone, ""), offset))
-	}
-	return RepairSurrogates(pydatetime.Strftime(value, format), ""), nil
-}
-
-// strftime of a literal format with the zone name repaired, panicking on a format holding surrogates
-func SafeStrftime(value time.Time, format string) string {
-	out, err := SafeStrftimeChecked(value, format)
-	if err != nil {
-		panic(err)
-	}
-	return out
-}
+// Time written in a strftime format
+func SafeStrftime(value time.Time, format string) string { return pydatetime.Strftime(value, format) }
 
 // ICEBATH_TIMEZONE when it speaks for the active profile, empty under multiplexing where each profile reads its config
 func envTimezone(ctx context.Context) string {

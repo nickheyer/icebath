@@ -16,6 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var removableKinds = map[string]bool{"scratch": true, "worktree": true}
@@ -69,8 +71,8 @@ func wsGit(repoRoot string, timeout time.Duration, args ...string) (*gitResult, 
 	if err != nil {
 		return nil, err
 	}
-	return &gitResult{r.Returncode, pystr.TranslateNewlines(pystr.DecodeUTF8Replace(r.Stdout)),
-		pystr.TranslateNewlines(pystr.DecodeUTF8Replace(r.Stderr))}, nil
+	return &gitResult{r.Returncode, pystr.TranslateNewlines(strings.ToValidUTF8(string(r.Stdout), "\uFFFD")),
+		pystr.TranslateNewlines(strings.ToValidUTF8(string(r.Stderr), "\uFFFD"))}, nil
 }
 
 // Stripped stderr, or stdout when stderr is empty
@@ -633,7 +635,7 @@ func cleanupWorkerTmux(ctx context.Context, conn state.SQLiteConn, taskID string
 	if err != nil {
 		return
 	}
-	if strings.TrimSpace(pystr.DecodeUTF8Replace(out.Stdout)) == "1" {
+	if strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD")) == "1" {
 		if _, err := pysubprocess.RunWith(context.Background(), []string{"tmux", "kill-session", "-t", session}, pysubprocess.Options{Timeout: 5 * time.Second}); err != nil {
 			return
 		}
@@ -736,7 +738,7 @@ func isLinkedWorktreeCheckout(path string) (bool, error) {
 	out := gitOut(path, 30*time.Second, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir")
 	var lines []string
 	if out != nil {
-		lines = pystr.Splitlines(*out, false)
+		lines = textutil.Lines(*out)
 	}
 	if len(lines) != 2 {
 		return false, nil

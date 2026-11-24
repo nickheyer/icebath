@@ -1,12 +1,11 @@
 package selfupdate
 
 import (
-	"strings"
-
 	"bytes"
 	"errors"
 	"io/fs"
 	"os"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

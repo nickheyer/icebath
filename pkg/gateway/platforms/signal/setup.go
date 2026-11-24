@@ -1,11 +1,10 @@
 package signal
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"

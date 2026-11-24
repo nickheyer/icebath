@@ -75,7 +75,7 @@ func readTextReplace(path string, sig bool) (string, error) {
 	if sig {
 		raw = stripBOM(raw)
 	}
-	return pystr.DecodeUTF8Replace(raw), nil
+	return strings.ToValidUTF8(string(raw), "\uFFFD"), nil
 }
 
 // Parsed plugin modules, unparseable ones dropped while read failures and parser limits propagate

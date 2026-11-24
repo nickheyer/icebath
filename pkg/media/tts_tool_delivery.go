@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 )
 
@@ -192,7 +191,7 @@ func packUnderCap(pieces []string, maxChars int, sliceOversized bool) []string {
 
 // Splits one over limit sentence on word boundaries then hard boundaries
 func splitOversizedSentence(sentence string, maxChars int) []string {
-	return packUnderCap(pystr.SplitWhitespace(sentence, -1), maxChars, true)
+	return packUnderCap(strings.Fields(sentence), maxChars, true)
 }
 
 // Splits text under a provider cap at sentence punctuation without dropping normalized content
@@ -200,7 +199,7 @@ func splitTextForTTS(text string, maxChars int) []string {
 	if maxChars <= 0 {
 		maxChars = fallbackMaxTextLength
 	}
-	normalized := strings.Join(pystr.SplitWhitespace(text, -1), " ")
+	normalized := strings.Join(strings.Fields(text), " ")
 	if normalized == "" {
 		return []string{}
 	}

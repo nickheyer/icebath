@@ -3,8 +3,7 @@ package agent
 import (
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"unicode/utf8"
 )
 
 // test_subagent_failure_notice.py TestCleanErrorText
@@ -27,8 +26,8 @@ func TestCleanErrorText(t *testing.T) {
 	})
 	t.Run("test_caps_length", func(t *testing.T) {
 		out := cleanErrorText(strings.Repeat("x", 500), 100)
-		if pystr.Len(out) != 100 || !strings.HasSuffix(out, "...") {
-			t.Fatalf("got %d chars %q", pystr.Len(out), out)
+		if utf8.RuneCountInString(out) != 100 || !strings.HasSuffix(out, "...") {
+			t.Fatalf("got %d chars %q", utf8.RuneCountInString(out), out)
 		}
 	})
 	t.Run("test_empty_and_none", func(t *testing.T) {

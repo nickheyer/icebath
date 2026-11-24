@@ -14,8 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"unicode"
 )
 
 // Anchors maps each extra the binary carries to the imports that prove it installed
@@ -346,7 +345,7 @@ func recordDeclinedExtras(ctx context.Context, add, remove []string, reasons map
 		merged[name] = text
 	}
 	for name, text := range reasons {
-		merged[ExtraKey(name)] = pyPrefix(strings.Join(strings.FieldsFunc(text, pystr.IsSpace), " "), 300)
+		merged[ExtraKey(name)] = pyPrefix(strings.Join(strings.FieldsFunc(text, unicode.IsSpace), " "), 300)
 	}
 	noted := map[string]string{}
 	for name, text := range merged {

@@ -28,7 +28,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -254,7 +253,7 @@ func (b *boundedBuffer) drain() string {
 	chunks := b.chunks
 	b.chunks, b.total = nil, 0
 	b.mu.Unlock()
-	return pystr.DecodeUTF8Replace(bytes.Join(chunks, nil))
+	return strings.ToValidUTF8(string(bytes.Join(chunks, nil)), "\uFFFD")
 }
 
 // Unbounded FIFO of decoded reply frames with a timed get
@@ -572,7 +571,7 @@ func (k *sessionKernel) stdoutReader(stream *os.File) {
 				body = append(body, more...)
 			}
 			end := pyBound(length, len(body))
-			if decoded, err := pyjson.Loads(pystr.DecodeUTF8Replace(body[:end])); err == nil {
+			if decoded, err := pyjson.Loads(strings.ToValidUTF8(string(body[:end]), "\uFFFD")); err == nil {
 				k.responses.put(decoded)
 			} else {
 				k.responses.put(statusObject("protocol-error"))
@@ -583,7 +582,7 @@ func (k *sessionKernel) stdoutReader(stream *os.File) {
 }
 
 // int() of bytes decodes them as UTF-8 first, so undecodable header bytes are no frame
-func utf8Header(b []byte) bool { return pystr.DecodeUTF8Replace(b) == string(b) }
+func utf8Header(b []byte) bool { return strings.ToValidUTF8(string(b), "\uFFFD") == string(b) }
 
 func (k *sessionKernel) stderrReader(stream *os.File) {
 	defer stream.Close()

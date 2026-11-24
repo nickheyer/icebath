@@ -20,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -393,7 +395,7 @@ func ledgerErrorArg(errText string) any {
 	if errText == "" {
 		return nil
 	}
-	return pystr.Slice(errText, 0, ledgerLastErrorCodePoints)
+	return textutil.First(errText, ledgerLastErrorCodePoints)
 }
 
 // Returns this process's unsent runtime claim to failed without spending an attempt

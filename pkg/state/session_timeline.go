@@ -2,6 +2,7 @@ package state
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"database/sql"
@@ -12,7 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Prompts the agent loop synthesizes itself, never shown as human timeline entries
@@ -57,14 +59,14 @@ func promptPreview(content, displayKind, summary any) (string, error) {
 	if !ok {
 		return "", nil
 	}
-	text := strings.Join(pystr.SplitWhitespace(raw, -1), " ")
+	text := strings.Join(strings.Fields(raw), " ")
 	if text == "" || syntheticPromptRE.MatchString(text) {
 		return "", nil
 	}
-	if pystr.Len(text) <= 120 {
+	if utf8.RuneCountInString(text) <= 120 {
 		return text, nil
 	}
-	return strings.TrimRightFunc(pystr.Slice(text, 0, 119), unicode.IsSpace) + "…", nil
+	return strings.TrimRightFunc(textutil.First(text, 119), unicode.IsSpace) + "…", nil
 }
 
 // Runs fn inside one read transaction so a count and its page see the same compaction generation

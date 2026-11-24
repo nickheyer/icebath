@@ -1,11 +1,10 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"

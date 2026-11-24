@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
 )
 
@@ -140,7 +139,7 @@ func wrapToWidth(text string, width int) []string {
 	if width <= 0 || text == "" {
 		return []string{text}
 	}
-	words := pystr.SplitWhitespace(text, -1)
+	words := strings.Fields(text)
 	if len(words) == 0 {
 		return []string{""}
 	}

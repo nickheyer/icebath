@@ -27,8 +27,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Websocket URL of the relay, http mapped to ws and https to wss
@@ -775,7 +776,7 @@ func parseImetaAttachments(event map[string]any) ([]attachmentMeta, int) {
 		}
 		totalDeclared += size
 		attachments = append(attachments, attachmentMeta{url: rawURL, sha256: digest, size: size,
-			filename: safeAttachmentFilename(fields["filename"]), mimeType: pystr.Slice(fields["m"], 0, 255)})
+			filename: safeAttachmentFilename(fields["filename"]), mimeType: textutil.First(fields["m"], 255)})
 	}
 	return attachments, rejected
 }
@@ -916,7 +917,7 @@ func (a *BuzzAdapter) handleEvent(ctx context.Context, channelID string, st *cha
 				return err
 			}
 		}
-		pkgLog().Debug(fmt.Sprintf("Buzz: ignoring message from unauthorized pubkey %s…", pystr.Slice(pubkey, 0, 8)))
+		pkgLog().Debug(fmt.Sprintf("Buzz: ignoring message from unauthorized pubkey %s…", textutil.First(pubkey, 8)))
 		return nil
 	}
 	dispatchText := a.stripMention(content)
@@ -1098,7 +1099,7 @@ func (a *BuzzAdapter) resolveUserName(ctx context.Context, pubkey string) (strin
 		if fallback == "" {
 			fallback = pubkey
 		}
-		name = pystr.Slice(fallback, 0, 16)
+		name = textutil.First(fallback, 16)
 	}
 	a.mu.Lock()
 	a.userNames[pubkey] = name
@@ -1118,7 +1119,7 @@ func (a *BuzzAdapter) localizeInboundMedia(ctx context.Context, text, messageID,
 			who = "?"
 		}
 		pkgLog().Warn(fmt.Sprintf("Buzz: not localizing %d media reference(s) in message %s — sender %s… is not explicitly authorized",
-			len(urls), pystr.Slice(messageID, 0, 12), pystr.Slice(who, 0, 8)))
+			len(urls), textutil.First(messageID, 12), textutil.First(who, 8)))
 		return text, nil, nil, gateway.MessageTypeText, nil
 	}
 	cleaned := replaceMediaRefs(text, replacements)
@@ -1155,7 +1156,7 @@ func (a *BuzzAdapter) localizeInboundMedia(ctx context.Context, text, messageID,
 		kinds[cached.Kind] = true
 	}
 	if len(mediaURLs) > 0 {
-		pkgLog().Info(fmt.Sprintf("Buzz: localized %d inbound media attachment(s) for message %s", len(mediaURLs), pystr.Slice(messageID, 0, 12)))
+		pkgLog().Info(fmt.Sprintf("Buzz: localized %d inbound media attachment(s) for message %s", len(mediaURLs), textutil.First(messageID, 12)))
 	}
 	messageType := gateway.MessageTypeText
 	if len(kinds) > 0 {
@@ -1290,7 +1291,7 @@ func (a *BuzzAdapter) dispatchMessage(ctx context.Context, in inboundMessage) er
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pkgLog().Debug(fmt.Sprintf("Buzz: reaction failed for message %s", pystr.Slice(in.messageID, 0, 12)), "error", err)
+		pkgLog().Debug(fmt.Sprintf("Buzz: reaction failed for message %s", textutil.First(in.messageID, 12)), "error", err)
 	}
 	return nil
 }

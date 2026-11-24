@@ -9,6 +9,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Stripped stdout of a git query in the checkout, empty on a failure, a nonzero exit or no output
@@ -18,7 +20,7 @@ func runGitQueryText(repoDir string, args ...string) string {
 	if err != nil || out.Returncode != 0 {
 		return ""
 	}
-	return strings.TrimSpace(pystr.DecodeUTF8Replace(out.Stdout))
+	return strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD"))
 }
 
 // Version the nearest CalVer release shipped and the commits since it, false without such a release
@@ -87,10 +89,10 @@ func GitVersionInfo(repoDir string, includeUntracked bool) VersionInfo {
 	}
 	dirty := false
 	if out, err := pysubprocess.RunWith(context.Background(), status, pysubprocess.Options{Dir: repoDir, Timeout: 3 * time.Second}); err == nil && out.Returncode == 0 {
-		dirty = strings.TrimSpace(pystr.DecodeUTF8Replace(out.Stdout)) != ""
+		dirty = strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD")) != ""
 	}
 	var releases []string
-	for _, tag := range pystr.Splitlines(runGitQueryText(repoDir, "tag", "--merged", "HEAD", "--list", "v[0-9]*"), false) {
+	for _, tag := range textutil.Lines(runGitQueryText(repoDir, "tag", "--merged", "HEAD", "--list", "v[0-9]*")) {
 		if StableTagRE.MatchString(tag) {
 			releases = append(releases, tag[1:])
 		}

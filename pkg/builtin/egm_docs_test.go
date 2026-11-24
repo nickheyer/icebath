@@ -14,8 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Compiles a Python re pattern or fails the test
@@ -235,7 +236,7 @@ func TestEGMArtifactDirectoryOverrideDocumentedForEachHarness(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		text := strings.Join(pystr.SplitWhitespace(string(raw), -1), " ")
+		text := strings.Join(strings.Fields(string(raw)), " ")
 		if !strings.Contains(text, marker) {
 			t.Errorf("%s does not document `%s<path>`", c.guide, marker)
 		}
@@ -247,7 +248,7 @@ func TestEGMArtifactDirectoryOverrideDocumentedForEachHarness(t *testing.T) {
 		}
 	}
 	guide, _ := payloadFile(egmRoot + "/docs/claude.md")
-	if !strings.Contains(strings.Join(pystr.SplitWhitespace(string(guide), -1), " "), "name the artifact directory you are using in its task") {
+	if !strings.Contains(strings.Join(strings.Fields(string(guide)), " "), "name the artifact directory you are using in its task") {
 		t.Error("docs/claude.md does not tell the main context to name the artifact directory")
 	}
 	synth, _ := payloadFile(egmRoot + "/agents/synthesizer.md")
@@ -331,7 +332,7 @@ func TestEGMTablesHaveNoMultilineContinuationRows(t *testing.T) {
 			return strings.Repeat("\n", strings.Count(m, "\n"))
 		})
 		previous := ""
-		for number, line := range pystr.Splitlines(content, false) {
+		for number, line := range textutil.Lines(content) {
 			if ok, _ := continuation.MatchString(line); ok && (strings.HasPrefix(previous, "|") || strings.HasPrefix(previous, ":")) {
 				rel, _ := filepath.Rel(root, md)
 				failures = append(failures, rel+":"+strconv.Itoa(number+1))

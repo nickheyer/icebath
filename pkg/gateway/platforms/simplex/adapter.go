@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	_ "image/gif"
 	"image/jpeg"
 	"image/png"
 	"math/rand"
@@ -17,8 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	_ "image/gif"
 
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
@@ -35,6 +34,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -415,7 +416,7 @@ func (a *SimplexAdapter) readEvents(ctx context.Context, ws *pywebsockets.Conn) 
 		}
 		var decodeErr *pyjson.DecodeError
 		if errors.As(perr, &decodeErr) {
-			pkgLog().Debug(fmt.Sprintf("SimpleX WS: invalid JSON: %s", pystr.Slice(pyrepr.Str(raw), 0, 100)))
+			pkgLog().Debug(fmt.Sprintf("SimpleX WS: invalid JSON: %s", textutil.First(pyrepr.Str(raw), 100)))
 			continue
 		}
 		pkgLog().Error("SimpleX WS: error handling event", "error", perr)
@@ -867,7 +868,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		id := pyrepr.Str(itemID)
 		msgEvent.MessageID = &id
 	}
-	pkgLog().Debug(fmt.Sprintf("SimpleX: message from %s in %s: %s", redactID(senderID), pystr.Slice(chatID, 0, 20), pystr.Slice(body, 0, 50)))
+	pkgLog().Debug(fmt.Sprintf("SimpleX: message from %s in %s: %s", redactID(senderID), textutil.First(chatID, 20), textutil.First(body, 50)))
 	if msgType == gateway.MessageTypeText && body != "" {
 		return a.EnqueueTextEvent(ctx, msgEvent)
 	}
@@ -961,7 +962,7 @@ func (a *SimplexAdapter) sendCommand(ctx context.Context, command string, timeou
 		err = ws.Send(frame)
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("SimpleX: command failed: %s — %s", pystr.Slice(command, 0, 50), err.Error()))
+		pkgLog().Warn(fmt.Sprintf("SimpleX: command failed: %s — %s", textutil.First(command, 50), err.Error()))
 		forget()
 		return nil, nil
 	}
@@ -971,7 +972,7 @@ func (a *SimplexAdapter) sendCommand(ctx context.Context, command string, timeou
 	case result := <-pending.result:
 		return result, nil
 	case <-timer.C:
-		pkgLog().Warn(fmt.Sprintf("SimpleX: command timed out: %s", pystr.Slice(command, 0, 50)))
+		pkgLog().Warn(fmt.Sprintf("SimpleX: command timed out: %s", textutil.First(command, 50)))
 		forget()
 		return nil, nil
 	case <-pending.cancelled:

@@ -15,9 +15,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	slackapi "github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Acknowledges a Socket Mode envelope with an optional response payload
@@ -683,7 +684,7 @@ func (a *SlackAdapter) CreateHandoffThread(ctx context.Context, parentChatID, na
 	if name == "" {
 		name = i18n.T(ctx, "platform.shared.handoff.default_name", "", nil)
 	}
-	seed := i18n.T(ctx, "platform.slack.handoff.seed", "", map[string]any{"name": pystr.Slice(strings.TrimSpace(name), 0, 80)})
+	seed := i18n.T(ctx, "platform.slack.handoff.seed", "", map[string]any{"name": textutil.First(strings.TrimSpace(name), 80)})
 	result, err := client.call(ctx, "chat.postMessage", map[string]any{"channel": parentChatID, "text": seed})
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("[%s] Handoff thread: seed-post failed for channel %s: %v", a.Name(), parentChatID, err))

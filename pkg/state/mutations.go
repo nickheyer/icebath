@@ -1,10 +1,9 @@
 package state
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

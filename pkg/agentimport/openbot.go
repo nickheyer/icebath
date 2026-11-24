@@ -266,7 +266,7 @@ func customCron(schedule *pyjson.Object) (string, bool) {
 		return "", false
 	}
 	expression := strings.TrimSpace(pyStr(e))
-	for _, f := range pystr.SplitWhitespace(expression, -1) {
+	for _, f := range strings.Fields(expression) {
 		if reMatch(bareStepRe, f) {
 			return "", false
 		}

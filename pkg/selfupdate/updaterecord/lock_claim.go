@@ -1,8 +1,6 @@
 package updaterecord
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -14,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"

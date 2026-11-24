@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"fmt"
 	"unicode"
 
 	"maps"
@@ -10,7 +11,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -448,7 +448,7 @@ func renderTable(rows []string) string {
 	for ri, r := range parsed {
 		cells := make([]string, ncols)
 		for c := range cells {
-			cells[c] = pystr.Ljust(r[c], widths[c])
+			cells[c] = fmt.Sprintf("%-*s", widths[c], r[c])
 		}
 		out = append(out, strings.TrimRightFunc(strings.Join(cells, " | "), unicode.IsSpace))
 		if ri == 0 {

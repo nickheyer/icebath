@@ -14,13 +14,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Registry command a typed name resolves to, with the busy policy and mid run variant key of its definition
@@ -180,7 +181,7 @@ func kanbanFirstToken(arg string) (string, error) {
 
 // First whitespace separated word lowercased
 func commandFirstWord(arg string) string {
-	words := pystr.SplitWhitespace(arg, 1)
+	words := textutil.FieldsN(arg, 1)
 	if len(words) == 0 {
 		return ""
 	}
@@ -378,7 +379,7 @@ func parseCommandParams(params *pyjson.Object, dispatch bool) (string, string, e
 		field = "name"
 	}
 	text, _ := params.GetOr(field, "").(string)
-	parts := pystr.SplitWhitespace(strings.TrimLeft(strings.TrimSpace(text), "/"), 1)
+	parts := textutil.FieldsN(strings.TrimLeft(strings.TrimSpace(text), "/"), 1)
 	if len(parts) == 0 || (dispatch && len(parts) != 1) {
 		return "", "", runtimeRefusal("invalid_params")
 	}
@@ -442,7 +443,7 @@ func resolveCommandAlias(ctx context.Context, name, arg string) (string, string,
 		if !isStr || strings.TrimSpace(target) == "" {
 			return "", "", runtimeRefusal("invalid_params")
 		}
-		parts := pystr.SplitWhitespace(strings.TrimLeft(strings.TrimSpace(target), "/"), 1)
+		parts := textutil.FieldsN(strings.TrimLeft(strings.TrimSpace(target), "/"), 1)
 		if len(parts) == 0 {
 			return "", "", &PyError{Kind: "IndexError", Msg: fmt.Sprintf("quick command %s is an alias with an empty target", name)}
 		}

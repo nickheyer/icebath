@@ -16,16 +16,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	_ "modernc.org/sqlite"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -319,11 +321,11 @@ func safeResultFilename(toolUseID string) string {
 
 // GeneratePreview truncates at the last newline within maxChars and reports whether more follows
 func GeneratePreview(content string, maxChars int) (string, bool) {
-	if pystr.Len(content) <= maxChars {
+	if utf8.RuneCountInString(content) <= maxChars {
 		return content, false
 	}
-	head := pystr.Slice(content, 0, maxChars)
-	if cut := strings.LastIndex(head, "\n"); cut >= 0 && pystr.Len(head[:cut]) > maxChars/2 {
+	head := textutil.First(content, maxChars)
+	if cut := strings.LastIndex(head, "\n"); cut >= 0 && utf8.RuneCountInString(head[:cut]) > maxChars/2 {
 		return head[:cut+1], true
 	}
 	return head, true
@@ -424,7 +426,7 @@ func BuildPersistedMessage(preview string, hasMore bool, originalSize int, fileP
 		"remote API; the archive is kept while this session's transcript references " +
 		"it. If it is missing, inspect the current state before retrying — the call " +
 		"that produced it may already have taken effect.\n\n" +
-		fmt.Sprintf("Preview (first %d chars):\n", pystr.Len(preview)) +
+		fmt.Sprintf("Preview (first %d chars):\n", utf8.RuneCountInString(preview)) +
 		preview + more + "\n" + PersistedOutputClosingTag
 }
 
@@ -445,15 +447,15 @@ func MaybePersistToolResult(ctx context.Context, env *Env, sandbox Environment, 
 	if threshold == ThresholdResolve {
 		threshold = cfg.ResolveThreshold(env, toolName)
 	}
-	if threshold == BudgetUnlimited || pystr.Len(content) <= threshold {
+	if threshold == BudgetUnlimited || utf8.RuneCountInString(content) <= threshold {
 		return content
 	}
 	persistedContent := pageableText(content)
 	filename := safeResultFilename(toolUseID)
 	preview, hasMore := GeneratePreview(persistedContent, cfg.PreviewSize)
 	persisted := func(path, hostSuffix string) string {
-		envLog(env).Info(fmt.Sprintf("Persisted large tool result: %s (%s, %d chars -> %s%s)", toolName, toolUseID, pystr.Len(persistedContent), path, hostSuffix))
-		return BuildPersistedMessage(preview, hasMore, pystr.Len(persistedContent), path)
+		envLog(env).Info(fmt.Sprintf("Persisted large tool result: %s (%s, %d chars -> %s%s)", toolName, toolUseID, utf8.RuneCountInString(persistedContent), path, hostSuffix))
+		return BuildPersistedMessage(preview, hasMore, utf8.RuneCountInString(persistedContent), path)
 	}
 	hostPath := writeToSpillover(env, persistedContent, filename)
 	hostSide := isHostSideEnvironment(sandbox)
@@ -473,22 +475,22 @@ func MaybePersistToolResult(ctx context.Context, env *Env, sandbox Environment, 
 			return persisted(remotePath, "")
 		}
 	}
-	envLog(env).Info(fmt.Sprintf("Inline-truncating large tool result: %s (%d chars, no sandbox write)", toolName, pystr.Len(content)))
-	return fmt.Sprintf("%s\n\n[Truncated: tool response was %s chars. Full output could not be saved to sandbox.]", preview, commaInt(pystr.Len(content)))
+	envLog(env).Info(fmt.Sprintf("Inline-truncating large tool result: %s (%d chars, no sandbox write)", toolName, utf8.RuneCountInString(content)))
+	return fmt.Sprintf("%s\n\n[Truncated: tool response was %s chars. Full output could not be saved to sandbox.]", preview, commaInt(utf8.RuneCountInString(content)))
 }
 
 // Characters of text a tool message carries, text parts summed for a multimodal list
 func contentTextSize(content any) int {
 	switch t := content.(type) {
 	case string:
-		return pystr.Len(t)
+		return utf8.RuneCountInString(t)
 	case []any:
 		total := 0
 		for _, p := range t {
 			if part, ok := p.(map[string]any); ok {
 				if kind, _ := part["type"].(string); kind == "text" {
 					text, _ := part["text"].(string)
-					total += pystr.Len(text)
+					total += utf8.RuneCountInString(text)
 				}
 			}
 		}
@@ -512,7 +514,7 @@ func spillLargestTextPart(ctx context.Context, env *Env, sandbox Environment, pa
 		if !ok || strings.Contains(text, PersistedOutputTag) {
 			continue
 		}
-		if n := pystr.Len(text); n > bestLen {
+		if n := utf8.RuneCountInString(text); n > bestLen {
 			bestIdx, bestLen = i, n
 		}
 	}
@@ -532,7 +534,7 @@ func spillLargestTextPart(ctx context.Context, env *Env, sandbox Environment, pa
 	}
 	replaced["text"] = replacement
 	out[bestIdx] = replaced
-	return out, pystr.Len(text) - pystr.Len(replacement)
+	return out, utf8.RuneCountInString(text) - utf8.RuneCountInString(replacement)
 }
 
 // EnforceTurnBudget persists the largest non persisted results until the turn's aggregate fits
@@ -582,7 +584,7 @@ func EnforceTurnBudget(ctx context.Context, env *Env, sandbox Environment, toolM
 		content, _ := msg.Content.(string)
 		replacement := MaybePersistToolResult(ctx, env, sandbox, content, budgetToolName, toolUseID, cfg, 0)
 		if replacement != content {
-			total += pystr.Len(replacement) - c.size
+			total += utf8.RuneCountInString(replacement) - c.size
 			msg.Content = replacement
 			envLog(env).Info(fmt.Sprintf("Budget enforcement: persisted tool result %s (%d chars)", toolUseID, c.size))
 		}
@@ -640,7 +642,7 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 	if maxChars <= 0 {
 		maxChars = settings.HooksOutputSpillMaxChars.Default
 	}
-	if pystr.Len(text) <= maxChars {
+	if utf8.RuneCountInString(text) <= maxChars {
 		return text
 	}
 	head, tail := c.PreviewHead, c.PreviewTail
@@ -660,7 +662,7 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 			savedPath = spillPath
 		}
 	}
-	total := pystr.Len(text)
+	total := utf8.RuneCountInString(text)
 	first := fmt.Sprintf("[%s output truncated — %s chars; full content ", source, commaInt(total))
 	if savedPath != "" {
 		first += "saved to " + savedPath + "]"
@@ -669,10 +671,10 @@ func SpillIfOversized(env *Env, text, sessionID, source string, cfg *SpillConfig
 	}
 	parts := []string{first}
 	if head > 0 && total > 0 {
-		parts = append(parts, "--- head ---", pystr.Slice(text, 0, head))
+		parts = append(parts, "--- head ---", textutil.First(text, head))
 	}
 	if tail > 0 && total > head {
-		parts = append(parts, "--- tail ---", pystr.Slice(text, max(total-tail, 0), total))
+		parts = append(parts, "--- tail ---", textutil.Last(text, tail))
 	}
 	return strings.Join(parts, "\n")
 }

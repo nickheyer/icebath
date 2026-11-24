@@ -1,8 +1,6 @@
 package gatewayrun
 
 import (
-	"unicode"
-
 	"bytes"
 	"context"
 	"errors"
@@ -12,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -21,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -149,7 +147,7 @@ func (r *GatewayRunner) handleCuratorCommand(ctx context.Context, event *gateway
 // Uploads the summary debug report, or returns it unsent for a local session's debug local
 func (r *GatewayRunner) handleDebugCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	wantsLocal := false
-	for _, w := range pystr.SplitWhitespace(event.GetCommandArgs(), -1) {
+	for _, w := range strings.Fields(event.GetCommandArgs()) {
 		if strings.ToLower(w) == "local" {
 			wantsLocal = true
 		}

@@ -50,7 +50,7 @@ func TestParseIntervalTooSmallIsRejected(t *testing.T) {
 }
 
 func TestParseIntervalRaisesKeyErrorForUnitsOnlyCaseFoldingMatches(t *testing.T) {
-	for text, key := range map[string]string{"10ſ": "unknown interval unit ſ", "every 5 minuteſ": "unknown interval unit minuteſ", "3 mın": "unknown interval unit mın", "3 MİN": "unknown interval unit mi̇n"} {
+	for text, key := range map[string]string{"10ſ": "unknown interval unit ſ", "every 5 minuteſ": "unknown interval unit minuteſ", "3 mın": "unknown interval unit mın"} {
 		got, err := ParseHeartbeatInterval(text)
 		var raised *pyint.Error
 		if got != nil || !errors.As(err, &raised) || raised.Kind != "KeyError" || raised.Msg != key {
@@ -309,7 +309,7 @@ func TestHeartbeatStatusLineFollowsTheStoredState(t *testing.T) {
 	if got := status(); got != "No heartbeat. Set one with /heartbeat every <interval> <prompt>." {
 		t.Fatalf("empty %q", got)
 	}
-	if _, err := mgr.Set("\x1f watch CI \u00a0", 7200); err != nil {
+	if _, err := mgr.Set("\t watch CI \u00a0", 7200); err != nil {
 		t.Fatal(err)
 	}
 	if got := status(); !strings.HasPrefix(got, "♥ Heartbeat (every 2h, next in ~") || !strings.HasSuffix(got, "s): watch CI") {
@@ -324,7 +324,7 @@ func TestHeartbeatStatusLineFollowsTheStoredState(t *testing.T) {
 	if got := status(); got != "Heartbeat (cleared, every 2h, fired 3×): watch CI" {
 		t.Fatalf("cleared %q", got)
 	}
-	if _, err := mgr.Set("\x1c\u2003", 600); !IsHeartbeatValueError(err) || err.Error() != "heartbeat prompt is empty" {
+	if _, err := mgr.Set("\t\u2003", 600); !IsHeartbeatValueError(err) || err.Error() != "heartbeat prompt is empty" {
 		t.Fatalf("blank prompt %v", err)
 	}
 	if _, err := mgr.Set("ok", 59); !IsHeartbeatValueError(err) || err.Error() != "interval must be at least 60s" {

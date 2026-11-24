@@ -24,8 +24,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -530,7 +531,7 @@ func boundedCLIMessage(message, redactPath string) string {
 	if utf8.RuneCountInString(message) <= maxCLIMessageChars {
 		return message
 	}
-	return pystr.Slice(message, 0, maxCLIMessageChars-3) + "..."
+	return textutil.First(message, maxCLIMessageChars-3) + "..."
 }
 
 // Bounded human readable message from the CLI error contract on stderr

@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/tiff"
@@ -30,7 +31,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -81,11 +81,11 @@ func boundsUnknown(b [4]int) bool {
 
 // Python slice prefix of the first n code points
 func pyPrefix(s string, n int) string {
-	rs := pystr.Runes(s)
+	rs := []rune(s)
 	if len(rs) <= n {
 		return s
 	}
-	return pystr.FromRunes(rs[:n])
+	return string(rs[:n])
 }
 
 // Bounds tuple as a JSON list
@@ -105,7 +105,7 @@ func elementToDict(e UIElement) *pyjson.Object {
 		o.Set("bounds", boundsList(e.Bounds))
 	}
 	o.Set("app", e.App)
-	if pystr.Len(e.Label) > cuMaxElementLabelChars {
+	if utf8.RuneCountInString(e.Label) > cuMaxElementLabelChars {
 		o.Set("label_truncated", true)
 	}
 	return o
@@ -195,7 +195,7 @@ func newCaptureView(ctx context.Context, env *tools.Env, c *CaptureResult, maxEl
 	scale, note := boundsHints(visible, width, height)
 	lostDetail := len(c.Elements) > len(visible)
 	for _, e := range visible {
-		if pystr.Len(e.Label) > cuMaxElementLabelChars {
+		if utf8.RuneCountInString(e.Label) > cuMaxElementLabelChars {
 			lostDetail = true
 		}
 	}

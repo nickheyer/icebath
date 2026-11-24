@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -20,11 +21,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -73,7 +75,7 @@ func ParseContract(text string) (string, GoalContract) {
 	}
 	var headline []string
 	fields := map[string][]string{}
-	for _, rawLine := range pystr.Splitlines(text, false) {
+	for _, rawLine := range textutil.Lines(text) {
 		line := strings.TrimSpace(rawLine)
 		if line == "" {
 			continue
@@ -118,12 +120,7 @@ func gateWorkspace(ctx context.Context) (cwd, refusal string) {
 }
 
 // Last limit characters of text
-func textTail(text string, limit int) string {
-	if n := pystr.Len(text); n > limit {
-		return pystr.Slice(text, n-limit, n)
-	}
-	return text
-}
+func textTail(text string, limit int) string { return textutil.Last(text, limit) }
 
 // Output a gate wrote so far, safe to read while its pipe readers still run
 type gateOutput struct {
@@ -141,7 +138,7 @@ func (g *gateOutput) Write(p []byte) (int, error) {
 func (g *gateOutput) text() string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return pystr.DecodeUTF8Replace(g.buf)
+	return strings.ToValidUTF8(string(g.buf), "\uFFFD")
 }
 
 // Starts copying one child pipe into its buffer, returning the read end and the channel closed at end of file
@@ -230,10 +227,10 @@ func RunGate(ctx context.Context, gate GoalGate, cwd string) (passed bool, exitC
 
 // Text cut to limit characters with a truncation mark, empty for empty text
 func goalTruncate(text string, limit int) string {
-	if text == "" || pystr.Len(text) <= limit {
+	if text == "" || utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	return pystr.Slice(text, 0, limit) + "… [truncated]"
+	return textutil.First(text, limit) + "… [truncated]"
 }
 
 // True when the pid names a live process, false for any pid this host cannot hold
@@ -669,11 +666,11 @@ func GoalKickPrompt(goal string, lastUserMessage any) string {
 		content = strings.Join(texts, " ")
 	}
 	normalize := func(v any) string {
-		return strings.Join(pystr.SplitWhitespace(pyrepr.Str(pyrepr.Or(v, "")), -1), " ")
+		return strings.Join(strings.Fields(pyrepr.Str(pyrepr.Or(v, ""))), " ")
 	}
 	goalNorm, lastNorm := normalize(goal), normalize(content)
-	if pystr.Len(goalNorm) >= goalRepasteMinChars && strings.Contains(lastNorm, goalNorm) &&
-		float64(pystr.Len(goalNorm)) >= goalRepasteMinShare*float64(pystr.Len(lastNorm)) {
+	if utf8.RuneCountInString(goalNorm) >= goalRepasteMinChars && strings.Contains(lastNorm, goalNorm) &&
+		float64(utf8.RuneCountInString(goalNorm)) >= goalRepasteMinShare*float64(utf8.RuneCountInString(lastNorm)) {
 		return GoalAlreadySeenKick
 	}
 	return goal

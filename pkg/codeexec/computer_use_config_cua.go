@@ -23,10 +23,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const cuaLSRegister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
@@ -65,7 +66,7 @@ func cuaPrintOutputTail(con *cliui.Console, result *completedProcess, printer fu
 	if text == "" {
 		text = result.Stdout
 	}
-	lines := pystr.Splitlines(strings.TrimSpace(text), false)
+	lines := textutil.Lines(strings.TrimSpace(text))
 	if len(lines) > 3 {
 		lines = lines[len(lines)-3:]
 	}
@@ -92,7 +93,7 @@ func cuaPostSetupNoWindow(streamsToConsole bool) bool {
 
 // First non blank line of a version banner, stripped and bounded to limit characters
 func cuaVersionSummary(raw string, limit int) string {
-	for _, line := range pystr.Splitlines(raw, false) {
+	for _, line := range textutil.Lines(raw) {
 		if s := strings.TrimSpace(line); s != "" {
 			r := []rune(s)
 			if len(r) > limit {

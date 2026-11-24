@@ -6,8 +6,8 @@ package ruamelyaml
 import (
 	"fmt"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Position in the input, with the decoded buffer when the mark can print a snippet
@@ -52,10 +52,10 @@ func (m *Mark) Snippet() (string, bool) {
 	var b strings.Builder
 	b.WriteString(strings.Repeat(" ", indent))
 	b.WriteString(head)
-	b.WriteString(pystr.FromRunes(pySlice(m.Buffer, start, end)))
+	b.WriteString(string(pySlice(m.Buffer, start, end)))
 	b.WriteString(tail)
 	b.WriteByte('\n')
-	b.WriteString(strings.Repeat(" ", indent+m.Pointer-start+pystr.Len(head)))
+	b.WriteString(strings.Repeat(" ", indent+m.Pointer-start+utf8.RuneCountInString(head)))
 	fmt.Fprintf(&b, "^ (line: %d)", m.Line+1)
 	return b.String(), true
 }
@@ -142,7 +142,7 @@ func isSpaceLine(l string) bool {
 		return false
 	}
 	for _, r := range l {
-		if !pystr.IsSpace(r) {
+		if !unicode.IsSpace(r) {
 			return false
 		}
 	}

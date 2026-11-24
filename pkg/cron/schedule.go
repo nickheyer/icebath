@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -125,7 +124,7 @@ func parseClockTime(text string) (int, int, bool) {
 
 // Five field cron expression for a day spec plus clock time phrase, false to fall back to intervals
 func naturalEveryToCron(rest string) (string, bool) {
-	tokens := pystr.SplitWhitespace(strings.ReplaceAll(strings.ToLower(rest), ",", " "), -1)
+	tokens := strings.Fields(strings.ReplaceAll(strings.ToLower(rest), ",", " "))
 	if len(tokens) == 0 {
 		return "", false
 	}
@@ -207,7 +206,7 @@ func (s *Store) parseSchedule(schedule string) (*Schedule, error) {
 		}
 		return intervalSchedule(minutes), nil
 	}
-	parts := pystr.SplitWhitespace(schedule, -1)
+	parts := strings.Fields(schedule)
 	if len(parts) >= 5 {
 		all := true
 		for _, p := range parts[:5] {

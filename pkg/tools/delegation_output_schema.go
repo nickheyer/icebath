@@ -1,14 +1,13 @@
 package tools
 
 import (
-	"unicode"
-
 	"cmp"
 	"errors"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"

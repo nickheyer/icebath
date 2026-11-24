@@ -1,12 +1,11 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"

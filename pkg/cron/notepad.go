@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -100,7 +101,7 @@ func validateNote(jobID, key, value string) error {
 	if key == "" {
 		return &NoteRejectedError{"key must be non-empty"}
 	}
-	if pystr.Len(key) > NotepadMaxKeyChars {
+	if utf8.RuneCountInString(key) > NotepadMaxKeyChars {
 		return &NoteRejectedError{fmt.Sprintf("key too long (max %d characters)", NotepadMaxKeyChars)}
 	}
 	if err := pystr.StrictUTF8EncodeError(value); err != nil {

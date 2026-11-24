@@ -1,12 +1,11 @@
 package agent
 
 import (
-	"unicode"
-
 	"context"
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"

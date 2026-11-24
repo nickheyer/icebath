@@ -1,13 +1,12 @@
 package skills
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"

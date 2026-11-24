@@ -1,19 +1,19 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -132,7 +132,7 @@ func runToolRound(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict, 
 	}
 	if a.verboseLogging {
 		for _, tc := range msg.ToolCalls {
-			pkgLog().Debug(fmt.Sprintf("Tool call: %s with args: %s...", tc.Function.Name, pystr.Slice(tc.Function.Arguments, 0, 200)))
+			pkgLog().Debug(fmt.Sprintf("Tool call: %s with args: %s...", tc.Function.Name, textutil.First(tc.Function.Arguments, 200)))
 		}
 	}
 

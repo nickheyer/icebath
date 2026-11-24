@@ -16,7 +16,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Streaming request on the agent wire firing the delta callbacks, the non streaming response shape on return
@@ -281,7 +282,7 @@ func (c *streamingCall) observeChunkIdentity(diag *StreamDiag, chunk map[string]
 	if p, ok := chunk["provider"].(string); ok && p != "" && id.upstream == "" {
 		id.upstream = p
 		c.mu.Lock()
-		diag.ServingProvider = pystr.Slice(strings.TrimSpace(p), 0, 64)
+		diag.ServingProvider = textutil.First(strings.TrimSpace(p), 64)
 		c.mu.Unlock()
 	}
 }

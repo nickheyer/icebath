@@ -17,7 +17,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Automatic repairs stop after this many failed attempts so a broken network cannot retry every launch
@@ -34,7 +35,7 @@ func readMarkerAttempts(marker string) *big.Int {
 	if err != nil {
 		return new(big.Int)
 	}
-	raw := strings.TrimSpace(strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\ufeff"))
+	raw := strings.TrimSpace(strings.TrimPrefix(strings.ToValidUTF8(string(data), "\uFFFD"), "\ufeff"))
 	if raw == "" {
 		return new(big.Int)
 	}
@@ -52,7 +53,7 @@ func readMarkerAttempts(marker string) *big.Int {
 			}
 		}
 	}
-	lines := pystr.Splitlines(raw, false)
+	lines := textutil.Lines(raw)
 	for i := len(lines) - 1; i >= 0; i-- {
 		key, value, found := strings.Cut(lines[i], "=")
 		if found && strings.TrimSpace(key) == "attempts" {
@@ -96,8 +97,8 @@ func markerOwnerIsLive(marker string) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
-	body := strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\ufeff")
-	for _, line := range pystr.Splitlines(body, false) {
+	body := strings.TrimPrefix(strings.ToValidUTF8(string(data), "\uFFFD"), "\ufeff")
+	for _, line := range textutil.Lines(body) {
 		key, value, found := strings.Cut(line, "=")
 		if found && strings.TrimSpace(key) == "pid" {
 			pid, ok := pyint.Parse(strings.TrimSpace(value))
@@ -139,8 +140,8 @@ func countFailedAttempt(marker string) {
 	if err != nil {
 		return
 	}
-	body := strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\ufeff")
-	lines := pystr.Splitlines(body, false)
+	body := strings.TrimPrefix(strings.ToValidUTF8(string(data), "\uFFFD"), "\ufeff")
+	lines := textutil.Lines(body)
 	legacy := false
 	for _, line := range lines {
 		if strings.HasPrefix(line, "pid=") {

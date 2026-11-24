@@ -19,9 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Options are the settings of one batch run
@@ -170,8 +171,8 @@ func New(ctx context.Context, o Options, out io.Writer) (*Runner, error) {
 	r.printf("   Workers: %d\n", o.NumWorkers)
 	if o.EphemeralSystemPrompt != "" {
 		preview := o.EphemeralSystemPrompt
-		if pystr.Len(preview) > 60 {
-			preview = pystr.Slice(preview, 0, 60) + "..."
+		if utf8.RuneCountInString(preview) > 60 {
+			preview = textutil.First(preview, 60) + "..."
 		}
 		r.printf("   🔒 Ephemeral system prompt: '%s'\n", preview)
 	}
@@ -453,10 +454,10 @@ func (r *Runner) applyResume() (bool, error) {
 	}
 	r.batches = chunk(remaining, r.o.BatchSize)
 	r.banner("📊 RESUME SUMMARY")
-	r.printf("   Original dataset size:     %s prompts\n", pystr.GroupThousands(int64(len(r.dataset))))
-	r.printf("   Already completed:         %s prompts\n", pystr.GroupThousands(int64(len(skipped))))
+	r.printf("   Original dataset size:     %s prompts\n", textutil.Thousands(int64(len(r.dataset))))
+	r.printf("   Already completed:         %s prompts\n", textutil.Thousands(int64(len(skipped))))
 	r.printf("   ─────────────────────────────────────────\n")
-	r.printf("   🎯 RESUMING WITH:          %s prompts\n", pystr.GroupThousands(int64(len(remaining))))
+	r.printf("   🎯 RESUMING WITH:          %s prompts\n", textutil.Thousands(int64(len(remaining))))
 	r.printf("   New batches created:       %d\n", len(r.batches))
 	r.printf("%s\n\n", strings.Repeat("=", 70))
 	return true, nil

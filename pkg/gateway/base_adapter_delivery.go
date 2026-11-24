@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -15,9 +16,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Seconds the one shot post delivery callback may run before it is abandoned
@@ -294,7 +296,7 @@ func (b *BasePlatformAdapter) sendImageBatch(ctx context.Context, event *Message
 // Ledger bracket of a final text on the current transport, returning the result with the adapter that sent it
 func (b *BasePlatformAdapter) SendFinalLedgered(ctx context.Context, event *MessageEvent, sessionKey, textContent string, metadata map[string]any, replyTo *string, isEphemeral bool) (SendResult, PlatformAdapter, error) {
 	deliveryAdapter := b.finalDeliveryAdapter(ctx, event.Source)
-	pkgLog().Info(fmt.Sprintf("[%s] Sending response (%d chars) to %s", deliveryAdapter.Name(), pystr.Len(textContent), event.Source.ChatID))
+	pkgLog().Info(fmt.Sprintf("[%s] Sending response (%d chars) to %s", deliveryAdapter.Name(), utf8.RuneCountInString(textContent), event.Source.ChatID))
 	var obligationID *string
 	if recorder, overridden := b.Self().(deliveryObligationRecorder); overridden {
 		obligationID = recorder.RecordDeliveryObligation(ctx, event, sessionKey, textContent, deliveryAdapter, isEphemeral)
@@ -363,7 +365,7 @@ func (b *BasePlatformAdapter) notifyTurnError(ctx context.Context, event *Messag
 		threadMetadata = threadMetadataForEvent(event)
 		detail := pyrepr.ExceptionMessage(turnErr)
 		if detail != "" {
-			detail = pystr.Slice(detail, 0, 300)
+			detail = textutil.First(detail, 300)
 		} else {
 			detail = i18n.T(ctx, "gateway.notify.turn_error_no_details", "", nil)
 		}
@@ -407,7 +409,7 @@ func (b *BasePlatformAdapter) deliverAttachments(ctx context.Context, event *Mes
 		pkgLog().Error(fmt.Sprintf("[%s] response_delivery_dropped: non-empty response "+
 			"(%d chars) produced no delivered message or attachment "+
 			"for %s (empty after extract, recovery yielded nothing).", b.Self().Name(),
-			pystr.Len(extracted.preExtract), event.Source.ChatID))
+			utf8.RuneCountInString(extracted.preExtract), event.Source.ChatID))
 	}
 	return nil
 }
@@ -446,7 +448,7 @@ func (b *BasePlatformAdapter) extractResponseContent(ctx context.Context, respon
 		}
 		text = strings.TrimSpace(text)
 		if len(images) > 0 {
-			pkgLog().Info(fmt.Sprintf("[%s] extract_images found %d image(s) in response (%d chars)", name, len(images), pystr.Len(rest)))
+			pkgLog().Info(fmt.Sprintf("[%s] extract_images found %d image(s) in response (%d chars)", name, len(images), utf8.RuneCountInString(rest)))
 		}
 		var localFiles []string
 		if !isEphemeral {
@@ -492,7 +494,7 @@ func (b *BasePlatformAdapter) extractResponseContent(ctx context.Context, respon
 		if recovered = strings.TrimSpace(recovered); recovered != "" {
 			pkgLog().Warn(fmt.Sprintf("[%s] response_delivery_recovered: extract pipeline "+
 				"reduced a non-empty response (%d chars) to empty with "+
-				"no attachment; delivering recovered original to %s", name, pystr.Len(preExtract), event.Source.ChatID))
+				"no attachment; delivering recovered original to %s", name, utf8.RuneCountInString(preExtract), event.Source.ChatID))
 			textContent = recovered
 		}
 	}

@@ -126,17 +126,6 @@ func (s *shellFileOps) MoveFile(src, dst string) *WriteResult {
 	return &WriteResult{}
 }
 
-// Refusal before any subprocess of content holding a surrogate outside the surrogateescape range
-func rejectUnencodable(path, content string) *WriteResult {
-	r, found := pystr.FirstUnencodableSurrogate(content)
-	if !found {
-		return nil
-	}
-	return &WriteResult{Error: "Refusing to write '" + path + "': content contains a lone " +
-		"surrogate character (" + pyReprStr(pystr.FromRunes([]rune{r})) + ") that cannot be " +
-		"encoded as UTF-8. The file was NOT created or modified."}
-}
-
 // Pre write refusal of JSON, YAML or TOML candidate content that does not parse
 func failClosedSyntaxError(path, ext, content string) *WriteResult {
 	if !failClosedInprocExts[ext] {
@@ -287,9 +276,6 @@ func (s *shellFileOps) WriteFile(path, content string, preContent *string) *Writ
 	path = s.expandPath(path)
 	if denied := writeDeniedError(s.env, path, "Write", false); denied != "" {
 		return &WriteResult{Error: denied}
-	}
-	if refused := rejectUnencodable(path, content); refused != nil {
-		return refused
 	}
 	ext := pyLower(pySplitextExt(path))
 	if refused := failClosedSyntaxError(path, ext, content); refused != nil {

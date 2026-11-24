@@ -18,10 +18,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -118,7 +119,7 @@ func kreaHeaders(token string, jsonBody bool) map[string]string {
 
 // Error message of a failed submit body, the first 300 characters of the text when it names none
 func kreaSubmitErrorMessage(_ int, body []byte) string {
-	fallback := pystr.Slice(strings.ToValidUTF8(string(body), "�"), 0, 300)
+	fallback := textutil.First(strings.ToValidUTF8(string(body), "�"), 300)
 	parsed, err := pyjson.LoadsBytes(body)
 	if err != nil {
 		return fallback

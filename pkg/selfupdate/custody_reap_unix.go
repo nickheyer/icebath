@@ -14,8 +14,6 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Inherited lock descriptors as extra files that keep each at its own number in a child
@@ -213,7 +211,7 @@ func processTable() map[int]psRow {
 		return map[int]psRow{}
 	}
 	rows := map[int]psRow{}
-	for _, line := range strings.Split(pystr.DecodeUTF8Replace(out), "\n") {
+	for _, line := range strings.Split(strings.ToValidUTF8(string(out), "\uFFFD"), "\n") {
 		parts := splitWhitespace(line, 3)
 		if len(parts) != 4 || !isASCIIDigits(parts[0]) || !isASCIIDigits(parts[1]) || strings.HasPrefix(parts[2], "Z") {
 			continue

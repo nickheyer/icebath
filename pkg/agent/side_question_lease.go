@@ -1,12 +1,11 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"weak"
 

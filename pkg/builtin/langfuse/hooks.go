@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // String keyword of a hook call, empty when missing or None
@@ -165,7 +167,7 @@ func onPreLLMRequest(ctx context.Context, kw map[string]any) (any, error) {
 		if !truthy(content) {
 			content = ""
 		}
-		systemChars = pystr.Len(pyStr(content))
+		systemChars = utf8.RuneCountInString(pyStr(content))
 	}
 	reqKey := requestKey(apiCallCount)
 	safeBaseURL := tools.RedactSensitiveTextWith(nil, kwStr(kw, "base_url"), tools.RedactOptions{Force: true, URLCredentials: true})
@@ -356,7 +358,7 @@ func onPostToolCall(ctx context.Context, kw map[string]any) (any, error) {
 		if !truthy(reason) {
 			reason = kwOr(kw, "status", "")
 		}
-		statusMessage = pystr.Slice(pyStr(reason), 0, 200)
+		statusMessage = textutil.First(pyStr(reason), 200)
 	}
 	endObservation(o, endArgs{output: safeResult, metadata: obj("tool_name", kwOr(kw, "tool_name", ""), "args", captureContent(args, true, nil)),
 		level: level, statusMessage: statusMessage})
@@ -417,7 +419,7 @@ func onAPIRequestError(ctx context.Context, kw map[string]any) (any, error) {
 			if label == "" {
 				label = "api_request_error"
 			}
-			generation.update(obsFields{level: "ERROR", statusMessage: pystr.Slice(label, 0, 200)})
+			generation.update(obsFields{level: "ERROR", statusMessage: textutil.First(label, 200)})
 		})
 		endObservation(generation, endArgs{metadata: errorMetadata})
 	}

@@ -1,10 +1,9 @@
 package config
 
 import (
-	"strings"
-
 	"math"
 	"math/big"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )

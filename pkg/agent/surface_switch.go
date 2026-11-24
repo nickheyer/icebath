@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -40,7 +41,7 @@ func runtimeHostValue(prompt, label string) string {
 	if marker != "" {
 		source, _, _ = strings.Cut(runtime, "\n\n")
 	}
-	lines := pystr.Splitlines(source, false)
+	lines := textutil.Lines(source)
 	for idx, line := range lines {
 		if !strings.HasPrefix(line, "User home directory:") {
 			continue
@@ -63,7 +64,7 @@ func IdentityLineValue(prompt, label string) string {
 		trailer = identity[i+2:]
 	}
 	value := ""
-	for _, line := range pystr.Splitlines(trailer, false) {
+	for _, line := range textutil.Lines(trailer) {
 		if strings.HasPrefix(line, prefix) {
 			value = strings.TrimSpace(line[len(prefix):])
 		}

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -67,7 +67,7 @@ func nativeMetadata(event *MessageEvent) (*pyjson.Object, bool) {
 	kind, native := metadata["whatsapp_native_type"], metadata["whatsapp_native"]
 	if kind != nil {
 		name, isName := kind.(string)
-		if !isName || pystr.Len(name) == 0 || pystr.Len(name) > 64 {
+		if !isName || utf8.RuneCountInString(name) == 0 || utf8.RuneCountInString(name) > 64 {
 			return nil, false
 		}
 	}

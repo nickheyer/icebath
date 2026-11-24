@@ -2,6 +2,7 @@ package state
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"context"
 	"math/big"
@@ -10,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Longest sanitized title a session may carry, counted in code points
@@ -120,7 +120,7 @@ func SanitizeTitle(title string) (string, error) {
 	if cleaned == "" {
 		return "", nil
 	}
-	if n := pystr.Len(cleaned); n > MaxTitleLength {
+	if n := utf8.RuneCountInString(cleaned); n > MaxTitleLength {
 		return "", &pyint.Error{Kind: "ValueError", Msg: "Title too long (" + big.NewInt(int64(n)).String() + " chars, max " + big.NewInt(MaxTitleLength).String() + ")"}
 	}
 	return cleaned, nil

@@ -72,14 +72,6 @@ func TestEnvWriteDenylistWindowsEnvAssignmentMatchingIsCaseInsensitive(t *testin
 	}
 }
 
-func TestEnvVarPolicyNameUppercasesLikePythonStr(t *testing.T) {
-	withEnvPolicy(t, true, func() {
-		if got := envVarPolicyName("stra\u00dfe"); got != "STRASSE" {
-			t.Fatalf("policy name %q", got)
-		}
-	})
-}
-
 func TestConfigNormalizationDoesNotOverwriteUserValuesSaveConfigDoesNotInjectMaxTurnsWhenUnset(t *testing.T) {
 	h, path, _ := moduleHome(t, "")
 	moduleDump(t, path, map[string]any{"memory": map[string]any{"user_char_limit": 2200}})

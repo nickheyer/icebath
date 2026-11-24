@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const RestartWaitReason = "restart_wait"
@@ -73,7 +72,7 @@ var CurrentInstantiationEpoch = func() string {
 	}
 	if b, err := procReadFile("/proc/1/stat"); err == nil {
 		if i := strings.LastIndex(string(b), ")"); i >= 0 {
-			if fields := pystr.SplitWhitespace(string(b)[i+1:], -1); len(fields) > 19 {
+			if fields := strings.Fields(string(b)[i+1:]); len(fields) > 19 {
 				pid1Start = fields[19]
 			}
 		}

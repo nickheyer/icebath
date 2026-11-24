@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"golang.org/x/text/encoding/ianaindex"
 )
 
@@ -55,15 +54,15 @@ func DecodeText(h http.Header, body []byte) string {
 	}
 	switch charset {
 	case "", "utf-8", "utf8", "u8", "utf":
-		return pystr.DecodeUTF8Replace(body)
+		return strings.ToValidUTF8(string(body), "\uFFFD")
 	}
 	enc, err := ianaindex.IANA.Encoding(charset)
 	if err != nil || enc == nil {
-		return pystr.DecodeUTF8Replace(body)
+		return strings.ToValidUTF8(string(body), "\uFFFD")
 	}
 	out, err := enc.NewDecoder().Bytes(body)
 	if err != nil {
-		return pystr.DecodeUTF8Replace(body)
+		return strings.ToValidUTF8(string(body), "\uFFFD")
 	}
 	return string(out)
 }

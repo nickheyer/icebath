@@ -1,11 +1,10 @@
 package provider
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"

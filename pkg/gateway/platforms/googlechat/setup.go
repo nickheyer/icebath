@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // GCP walkthrough the wizard prints before asking for the Pub/Sub settings
@@ -35,7 +36,7 @@ func InteractiveSetup(ctx context.Context) error {
 	if err != nil || declined {
 		return err
 	}
-	for _, line := range pystr.Splitlines(setupWalkthrough, false) {
+	for _, line := range textutil.Lines(setupWalkthrough) {
 		cli.PrintInfo(line)
 	}
 	for _, q := range []struct {

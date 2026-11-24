@@ -5,9 +5,9 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Proxy URL variables rewritten to canonical forms, both casings
@@ -49,7 +49,7 @@ func bareIPv6Literal(entry string) string {
 
 // Bypass list with bracketed and CIDR IPv6 entries rewritten to bare literals, the input itself when nothing changed
 func SanitizeNoProxyEntries(noProxyValue string) string {
-	entries := strings.FieldsFunc(strings.TrimSpace(noProxyValue), func(r rune) bool { return r == ',' || pystr.IsSpace(r) })
+	entries := strings.FieldsFunc(strings.TrimSpace(noProxyValue), func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
 	if len(entries) == 0 || slices.Contains(entries, "*") {
 		return noProxyValue
 	}

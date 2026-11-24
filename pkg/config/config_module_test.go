@@ -175,7 +175,7 @@ func TestLegacyTemplateSoulsCoverEveryEarlierSeed(t *testing.T) {
 		t.Fatalf("%d legacy texts", len(legacyTemplateSouls))
 	}
 	for i, text := range legacyTemplateSouls {
-		if !IsLegacyTemplateSoul("\uFEFF\uFEFF" + strings.ReplaceAll(text, "\n", "\r\n") + "\x1f\n") {
+		if !IsLegacyTemplateSoul("\uFEFF\uFEFF" + strings.ReplaceAll(text, "\n", "\r\n") + " \n") {
 			t.Fatalf("legacy text %d not recognised", i)
 		}
 		if IsLegacyTemplateSoul(text + " x") {

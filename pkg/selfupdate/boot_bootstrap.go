@@ -57,7 +57,7 @@ func ReadGitHead(ctx context.Context, root string) string {
 	if err != nil || out.Returncode != 0 {
 		return ""
 	}
-	sha := strings.TrimSpace(pystr.DecodeUTF8Replace(out.Stdout))
+	sha := strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD"))
 	if len(sha) < 7 {
 		return ""
 	}

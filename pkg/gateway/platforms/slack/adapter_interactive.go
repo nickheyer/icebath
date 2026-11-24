@@ -7,15 +7,17 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Action ids of the model picker select menus and buttons
@@ -183,10 +185,10 @@ func (a *SlackAdapter) EASmartDenyLine(ctx context.Context) string {
 
 // Command preview budget left under the section cap once every fixed part is measured
 func (a *SlackAdapter) ExecApprovalCmdBudget(ctx context.Context, description string, smartDenied bool) int {
-	fixed := pystr.Len(a.EAHeader(ctx)) + pystr.Len(a.Traits.EACodeOpen) + pystr.Len(a.Traits.EACodeClose) +
-		pystr.Len(a.EAReasonLabel(ctx)) + pystr.Len(description) + pystr.Len("...") + pystr.Len(a.EADeadlineLine(ctx))
+	fixed := utf8.RuneCountInString(a.EAHeader(ctx)) + utf8.RuneCountInString(a.Traits.EACodeOpen) + utf8.RuneCountInString(a.Traits.EACodeClose) +
+		utf8.RuneCountInString(a.EAReasonLabel(ctx)) + utf8.RuneCountInString(description) + utf8.RuneCountInString("...") + utf8.RuneCountInString(a.EADeadlineLine(ctx))
 	if smartDenied {
-		fixed += pystr.Len(a.EASmartDenyLine(ctx))
+		fixed += utf8.RuneCountInString(a.EASmartDenyLine(ctx))
 	}
 	return max(0, eaSectionCap-fixed)
 }
@@ -201,7 +203,7 @@ func (a *SlackAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gatew
 		blocks := []any{
 			map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": prompt.Text}},
 			map[string]any{"type": "actions", "elements": actions}}
-		return i18n.T(ctx, "platform.slack.approval.fallback_text", "", map[string]any{"command": pystr.Slice(prompt.Command, 0, 100)}), blocks
+		return i18n.T(ctx, "platform.slack.approval.fallback_text", "", map[string]any{"command": textutil.First(prompt.Command, 100)}), blocks
 	}
 	return a.sendInteractivePrompt(ctx, prompt.ChatID, prompt.Metadata, build, "send_exec_approval", a.approvalResolved, approvalResolvedMax, true, true), nil
 }
@@ -213,21 +215,21 @@ func (a *SlackAdapter) SendSlashConfirm(ctx context.Context, chatID, title, mess
 		if t == "" {
 			t = i18n.T(ctx, "platform.slack.confirm.default_title", "", nil)
 		}
-		t = pystr.Slice(t, 0, 150)
-		budget := 3000 - pystr.Len("*"+t+"*\n\n") - pystr.Len("...")
+		t = textutil.First(t, 150)
+		budget := 3000 - utf8.RuneCountInString("*"+t+"*\n\n") - utf8.RuneCountInString("...")
 		body := message
-		if pystr.Len(message) > budget {
-			body = pystr.Slice(message, 0, budget) + "..."
+		if utf8.RuneCountInString(message) > budget {
+			body = textutil.First(message, budget) + "..."
 		}
 		value := sessionKey + "|" + confirmID
-		label := func(key string) string { return pystr.Slice(i18n.T(ctx, key, "", nil), 0, 75) }
+		label := func(key string) string { return textutil.First(i18n.T(ctx, key, "", nil), 75) }
 		blocks := []any{
 			map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": "*" + t + "*\n\n" + body}},
 			map[string]any{"type": "actions", "elements": []any{
 				button(label("platform.slack.confirm.approve_once"), "icebath_confirm_once", value, "primary", false),
 				button(label("platform.slack.confirm.always_approve"), "icebath_confirm_always", value, "", false),
 				button(label("platform.slack.confirm.cancel"), "icebath_confirm_cancel", value, "danger", false)}}}
-		return t + ": " + pystr.Slice(body, 0, 100), blocks
+		return t + ": " + textutil.First(body, 100), blocks
 	}
 	return a.sendInteractivePrompt(ctx, chatID, metadata, build, "send_slash_confirm", nil, 0, true, true), nil
 }
@@ -240,7 +242,7 @@ func pickerOption(text string, idx int) map[string]any {
 // Danger styled cancel button of the model picker
 func pickerCancelButton(ctx context.Context) map[string]any {
 	return map[string]any{"type": "button",
-		"text":  map[string]any{"type": "plain_text", "text": pystr.Slice(i18n.T(ctx, "platform.slack.picker.cancel", "", nil), 0, 75), "emoji": true},
+		"text":  map[string]any{"type": "plain_text", "text": textutil.First(i18n.T(ctx, "platform.slack.picker.cancel", "", nil), 75), "emoji": true},
 		"style": "danger", "action_id": modelPickerCancelAction, "value": "cancel"}
 }
 
@@ -259,7 +261,7 @@ func (a *SlackAdapter) buildModelPickerProviderBlocks(ctx context.Context, provi
 		if idx >= 100 {
 			break
 		}
-		options = append(options, pickerOption(pystr.Slice(fmt.Sprintf("%s (%s models)", pyrepr.Str(p["name"]), pyrepr.Str(providerModelCount(p))), 0, 75), idx))
+		options = append(options, pickerOption(textutil.First(fmt.Sprintf("%s (%s models)", pyrepr.Str(p["name"]), pyrepr.Str(providerModelCount(p))), 75), idx))
 	}
 	extra := ""
 	if len(providers) > 100 {
@@ -271,10 +273,10 @@ func (a *SlackAdapter) buildModelPickerProviderBlocks(ctx context.Context, provi
 	}
 	sectionText := i18n.T(ctx, "platform.slack.picker.provider_header", "", map[string]any{"model": model, "provider": providerLabel, "extra": extra})
 	return []any{
-		map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": pystr.Slice(sectionText, 0, 3000)}},
+		map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": textutil.First(sectionText, 3000)}},
 		map[string]any{"type": "actions", "elements": []any{
 			map[string]any{"type": "static_select",
-				"placeholder": map[string]any{"type": "plain_text", "text": pystr.Slice(i18n.T(ctx, "platform.slack.picker.choose_provider", "", nil), 0, 150), "emoji": true},
+				"placeholder": map[string]any{"type": "plain_text", "text": textutil.First(i18n.T(ctx, "platform.slack.picker.choose_provider", "", nil), 150), "emoji": true},
 				"action_id":   modelPickerProviderAction, "options": options},
 			pickerCancelButton(ctx)}}}
 }
@@ -316,7 +318,7 @@ func (a *SlackAdapter) buildModelPickerModelBlocks(ctx context.Context, provider
 			parts := strings.Split(modelID, "/")
 			short = parts[len(parts)-1]
 		}
-		options = append(options, pickerOption(pystr.Slice(short, 0, 75), idx))
+		options = append(options, pickerOption(textutil.First(short, 75), idx))
 	}
 	total := int64(len(models))
 	if provider != nil {
@@ -334,16 +336,16 @@ func (a *SlackAdapter) buildModelPickerModelBlocks(ctx context.Context, provider
 	}
 	sectionText := planLine + i18n.T(ctx, "platform.slack.picker.model_header", "", map[string]any{"provider": pname, "extra": extra})
 	elements := []any{map[string]any{"type": "static_select",
-		"placeholder": map[string]any{"type": "plain_text", "text": pystr.Slice(i18n.T(ctx, "platform.slack.picker.choose_model", "", map[string]any{"provider": pname}), 0, 150), "emoji": true},
+		"placeholder": map[string]any{"type": "plain_text", "text": textutil.First(i18n.T(ctx, "platform.slack.picker.choose_model", "", map[string]any{"provider": pname}), 150), "emoji": true},
 		"action_id":   modelPickerModelAction, "options": options}}
 	if providerSlug != "" {
 		elements = append(elements, map[string]any{"type": "button",
-			"text":      map[string]any{"type": "plain_text", "text": pystr.Slice(i18n.T(ctx, "platform.slack.picker.back", "", nil), 0, 75), "emoji": true},
+			"text":      map[string]any{"type": "plain_text", "text": textutil.First(i18n.T(ctx, "platform.slack.picker.back", "", nil), 75), "emoji": true},
 			"action_id": modelPickerBackAction, "value": providerSlug})
 	}
 	elements = append(elements, pickerCancelButton(ctx))
 	return []any{
-		map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": pystr.Slice(sectionText, 0, 3000)}},
+		map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": textutil.First(sectionText, 3000)}},
 		map[string]any{"type": "actions", "elements": elements}}
 }
 
@@ -390,7 +392,7 @@ func (a *SlackAdapter) SendModelPicker(ctx context.Context, chatID string, provi
 
 // Replaces the picker message body with a plain section without controls
 func (a *SlackAdapter) updatePickerMessage(ctx context.Context, channelID, teamID, msgTS, sectionText string) {
-	text := pystr.Slice(sectionText, 0, 3000)
+	text := textutil.First(sectionText, 3000)
 	_, err := a.getClient(channelID, teamID).call(ctx, "chat.update", map[string]any{"channel": channelID, "ts": msgTS, "text": text,
 		"blocks": SanitizeBlocks([]any{map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": text}}})})
 	if err != nil {
@@ -532,9 +534,9 @@ func (a *SlackAdapter) SendClarify(ctx context.Context, chatID, question string,
 	build := func() (string, []any) {
 		q := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;").Replace(question)
 		body := "❓ " + q
-		budget := 3000 - pystr.Len("...")
-		if pystr.Len(body) > budget {
-			body = pystr.Slice(body, 0, budget) + "..."
+		budget := 3000 - utf8.RuneCountInString("...")
+		if utf8.RuneCountInString(body) > budget {
+			body = textutil.First(body, budget) + "..."
 		}
 		var elements []any
 		for idx, choice := range choices {
@@ -542,9 +544,9 @@ func (a *SlackAdapter) SendClarify(ctx context.Context, chatID, question string,
 			if label == "" {
 				label = i18n.T(ctx, "platform.slack.clarify.option_n", "", map[string]any{"n": strconv.Itoa(idx + 1)})
 			}
-			elements = append(elements, button(pystr.Slice(label, 0, 75), fmt.Sprintf("icebath_clarify_choice_%d", idx), fmt.Sprintf("%s|%d", clarifyID, idx), "", true))
+			elements = append(elements, button(textutil.First(label, 75), fmt.Sprintf("icebath_clarify_choice_%d", idx), fmt.Sprintf("%s|%d", clarifyID, idx), "", true))
 		}
-		elements = append(elements, button(pystr.Slice(i18n.T(ctx, "platform.slack.clarify.other", "", nil), 0, 75), clarifyOtherActionID, clarifyID+"|other", "", true))
+		elements = append(elements, button(textutil.First(i18n.T(ctx, "platform.slack.clarify.other", "", nil), 75), clarifyOtherActionID, clarifyID+"|other", "", true))
 		blocks := []any{map[string]any{"type": "section", "text": map[string]any{"type": "mrkdwn", "text": body}}}
 		for start := 0; start < len(elements); start += 5 {
 			blocks = append(blocks, map[string]any{"type": "actions", "elements": elements[start:min(start+5, len(elements))]})
@@ -660,7 +662,7 @@ func sectionText(message map[string]any, limit int) string {
 		}
 	}
 	if limit >= 0 {
-		return pystr.Slice(original, 0, limit)
+		return textutil.First(original, limit)
 	}
 	return original
 }
@@ -838,7 +840,7 @@ func (a *SlackAdapter) handleClarifyAction(ctx context.Context, ack ackFunc, bod
 		a.updateClarifyMessage(ctx, in.channelID, in.msgTS, originalText,
 			i18n.T(ctx, "platform.slack.clarify.resolved", "", map[string]any{"user": in.userName, "choice": displayText}))
 		pkgLog().Info(fmt.Sprintf("Slack button resolved clarify (id=%s, choice_index=%d, user=%s)", clarifyID, idx, in.userName))
-		pkgLog().Debug(fmt.Sprintf("Slack clarify choice text (id=%s): %s", clarifyID, pystr.Slice(pyrepr.Repr(*resolvedText), 0, 100)))
+		pkgLog().Debug(fmt.Sprintf("Slack clarify choice text (id=%s): %s", clarifyID, textutil.First(pyrepr.Repr(*resolvedText), 100)))
 		return
 	}
 	a.updateClarifyMessage(ctx, in.channelID, in.msgTS, originalText, expiredText)

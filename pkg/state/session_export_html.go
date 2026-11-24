@@ -14,6 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -210,13 +212,13 @@ func sidebarItemHTML(s *pyjson.Object) string {
 		}
 	}
 	if utf8.RuneCountInString(title) > 50 {
-		title = pystr.Slice(title, 0, 47) + "..."
+		title = textutil.First(title, 47) + "..."
 	}
 	date, _, _ := strings.Cut(htmlFormatTimestamp(htmlGetOr(s, "started_at", 0)), " ")
 	return "\n            <a class=\"session-item\" data-id=\"" + escapeHTML(sid) + "\" href=\"#" + pyurl.Quote(sid, "") + "\">\n" +
 		"                <div class=\"session-item-title\">" + escapeHTML(title) + "</div>\n" +
 		"                <div class=\"session-item-meta\">\n" +
-		"                    <span>" + escapeHTML(pystr.Slice(sid, 0, min(8, utf8.RuneCountInString(sid)))) + "</span>\n" +
+		"                    <span>" + escapeHTML(textutil.First(sid, min(8, utf8.RuneCountInString(sid)))) + "</span>\n" +
 		"                    <span>" + date + "</span>\n" +
 		"                </div>\n" +
 		"            </a>\n" +

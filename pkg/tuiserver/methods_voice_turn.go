@@ -3,11 +3,10 @@
 package tuiserver
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"

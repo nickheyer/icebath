@@ -1,20 +1,20 @@
 package acp
 
 import (
-	"unicode"
-
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Tool name to ACP tool kind, unlisted tools are other
@@ -174,7 +174,7 @@ func pyIntValue(v any) int64 {
 
 func runeLen(s string) int { return utf8.RuneCountInString(s) }
 
-func runePrefix(s string, n int) string { return pystr.Slice(s, 0, n) }
+func runePrefix(s string, n int) string { return textutil.First(s, n) }
 
 type formatter func(toolName string, result *string, args *pyjson.Object) (string, bool)
 
@@ -409,7 +409,7 @@ var formatSearchFilesResult = structured(false, func(toolName string, data, args
 			lines = append(lines, "- "+path)
 		}
 		if content := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(match, "content"), dget(match, "text")), ""))); content != "" {
-			lines = append(lines, "  "+truncateText(strings.Join(pystr.SplitWhitespace(content, -1), " "), 300))
+			lines = append(lines, "  "+truncateText(strings.Join(strings.Fields(content), " "), 300))
 		}
 	}
 	if truthy(dget(data, "truncated")) || len(matches) > shown {
@@ -427,7 +427,7 @@ var formatExecuteCodeResult = structured(true, func(toolName string, data, args 
 		total, captured, omitted := dget(data, "stdout_bytes_total"), dget(data, "stdout_bytes_captured"), dget(data, "stdout_bytes_omitted")
 		if isPyInt(captured) && isPyInt(total) && isPyInt(omitted) {
 			parts = append(parts, "", fmt.Sprintf("Output truncated: captured %s of %s bytes (%s omitted).",
-				pystr.GroupThousands(pyIntValue(captured)), pystr.GroupThousands(pyIntValue(total)), pystr.GroupThousands(pyIntValue(omitted))))
+				textutil.Thousands(pyIntValue(captured)), textutil.Thousands(pyIntValue(total)), textutil.Thousands(pyIntValue(omitted))))
 		} else {
 			parts = append(parts, "", "Output truncated.")
 		}
@@ -455,7 +455,7 @@ var formatSkillViewResult = structured(false, func(toolName string, data, args *
 		lines = append(lines, "- **Description:** "+d)
 	}
 	if content != "" {
-		lines = append(lines, "- **Content:** "+pystr.GroupThousands(int64(runeLen(content)))+" chars loaded into agent context")
+		lines = append(lines, "- **Content:** "+textutil.Thousands(int64(runeLen(content)))+" chars loaded into agent context")
 	}
 	if linked, ok := isDict(dget(data, "linked_files")); ok && linked.Len() > 0 {
 		n := 0
@@ -467,7 +467,7 @@ var formatSkillViewResult = structured(false, func(toolName string, data, args *
 		lines = append(lines, fmt.Sprintf("- **Linked files:** %d", n))
 	}
 	var headings []string
-	for _, line := range pystr.Splitlines(content, false) {
+	for _, line := range textutil.Lines(content) {
 		s := strip(line)
 		if !strings.HasPrefix(s, "#") {
 			continue
@@ -765,7 +765,7 @@ var formatSessionSearchResult = structured(false, func(toolName string, data, ar
 		}
 		lines = append(lines, line)
 		if summary := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(item, "summary"), dget(item, "preview")), ""))); summary != "" {
-			lines = append(lines, "  "+truncateText(strings.Join(pystr.SplitWhitespace(summary, -1), " "), 500))
+			lines = append(lines, "  "+truncateText(strings.Join(strings.Fields(summary), " "), 500))
 		}
 	}
 	return truncateText(strings.Join(lines, "\n"), 7000), true
@@ -1085,7 +1085,7 @@ func parseUnifiedDiffContent(diffText string) []pyacp.ToolCallContent {
 		}
 		oldPath, newPath, oldLines, newLines = nil, nil, nil, nil
 	}
-	for _, line := range pystr.Splitlines(diffText, false) {
+	for _, line := range textutil.Lines(diffText) {
 		switch {
 		case strings.HasPrefix(line, "--- "):
 			flush()

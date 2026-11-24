@@ -2,6 +2,7 @@ package agent
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -22,6 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -90,7 +93,7 @@ func promptSize(text string) (PromptTextSize, error) {
 	if err != nil {
 		return PromptTextSize{}, err
 	}
-	return PromptTextSize{Chars: pystr.Len(text), Bytes: n}, nil
+	return PromptTextSize{Chars: utf8.RuneCountInString(text), Bytes: n}, nil
 }
 
 // Byte count as kilobytes with one decimal and the KB suffix
@@ -209,7 +212,7 @@ func computeSkillsBreakdown(env *tools.Env, skillsBlock string) ([]SkillBreakdow
 		}
 		entries = append(entries, e)
 	}
-	for _, line := range pystr.Splitlines(skillsBlock, false) {
+	for _, line := range textutil.Lines(skillsBlock) {
 		lineBytes, err := promptBytes(line)
 		if err != nil {
 			return nil, err
@@ -351,7 +354,7 @@ func ComputePromptBreakdown(ctx context.Context, env *tools.Env, platform string
 		if err != nil {
 			return nil, err
 		}
-		out.Sections = append(out.Sections, PromptSection{Label: tier.label, Chars: pystr.Len(tier.text), Bytes: n})
+		out.Sections = append(out.Sections, PromptSection{Label: tier.label, Chars: utf8.RuneCountInString(tier.text), Bytes: n})
 	}
 	for _, s := range []struct {
 		dst  *PromptTextSize
@@ -438,7 +441,7 @@ func (b *PromptBreakdown) Object() *pyjson.Object {
 
 // Byte count right aligned in eight columns with comma thousands separators
 func promptGrouped(n int64) string {
-	return pystr.Rjust(pystr.GroupThousands(n), 8)
+	return fmt.Sprintf("%8s", textutil.Thousands(n))
 }
 
 // Plain text rendering of the breakdown for a terminal
@@ -450,41 +453,41 @@ func RenderBreakdown(data *PromptBreakdown) string {
 	}
 	lines := []string{
 		"Prompt-size breakdown (platform=" + data.Platform + ", model=" + model + ")", "",
-		"  System prompt total : " + promptGrouped(int64(sp.Bytes)) + " B  (" + promptFmtKB(sp.Bytes) + ", " + pystr.GroupThousands(int64(sp.Chars)) + " chars)", "",
+		"  System prompt total : " + promptGrouped(int64(sp.Bytes)) + " B  (" + promptFmtKB(sp.Bytes) + ", " + textutil.Thousands(int64(sp.Chars)) + " chars)", "",
 		"  Major blocks:",
 	}
 	for _, blk := range []struct {
 		label string
 		size  PromptTextSize
 	}{{"skills index", data.SkillsIndex}, {"memory", data.Memory}, {"user profile", data.UserProfile}} {
-		lines = append(lines, "    "+pystr.Ljust(blk.label, 19)+": "+promptGrouped(int64(blk.size.Bytes))+" B  ("+promptFmtKB(blk.size.Bytes)+")")
+		lines = append(lines, "    "+fmt.Sprintf("%-19s", blk.label)+": "+promptGrouped(int64(blk.size.Bytes))+" B  ("+promptFmtKB(blk.size.Bytes)+")")
 	}
 	lines = append(lines, "", "  Prompt tiers:")
 	for _, s := range data.Sections {
-		lines = append(lines, "    "+pystr.Ljust(s.Label, 36)+": "+promptGrouped(int64(s.Bytes))+" B  ("+promptFmtKB(s.Bytes)+")")
+		lines = append(lines, "    "+fmt.Sprintf("%-36s", s.Label)+": "+promptGrouped(int64(s.Bytes))+" B  ("+promptFmtKB(s.Bytes)+")")
 	}
 	lines = append(lines, "", "  Tool schemas         : "+promptGrouped(int64(data.ToolJSONBytes))+" B  ("+promptFmtKB(data.ToolJSONBytes)+", "+strconv.Itoa(data.ToolCount)+" tools)")
 	if toolsets := data.ToolsetsBreakdown; len(toolsets) > 0 {
 		lines = append(lines, "", "  Toolsets by size (tool-schema JSON, largest first):",
-			"    "+pystr.Ljust("toolset", 22)+" "+pystr.Rjust("tools", 5)+"  "+pystr.Rjust("schema", 10))
+			"    "+fmt.Sprintf("%-22s", "toolset")+" "+fmt.Sprintf("%5s", "tools")+"  "+fmt.Sprintf("%10s", "schema"))
 		for _, ts := range toolsets {
-			lines = append(lines, "    "+pystr.Ljust(ts.Toolset, 22)+" "+pystr.Rjust(strconv.Itoa(ts.ToolCount), 5)+"  "+promptGrouped(int64(ts.JSONBytes))+" B  ("+promptFmtKB(ts.JSONBytes)+")")
+			lines = append(lines, "    "+fmt.Sprintf("%-22s", ts.Toolset)+" "+fmt.Sprintf("%5s", strconv.Itoa(ts.ToolCount))+"  "+promptGrouped(int64(ts.JSONBytes))+" B  ("+promptFmtKB(ts.JSONBytes)+")")
 		}
 	}
 	if skillRows := data.SkillsBreakdown; len(skillRows) > 0 {
 		lines = append(lines, "", "  Skills by size (SKILL.md on-disk = read cost; index cost = attributed always-on bytes, largest first):",
-			"    "+pystr.Ljust("skill", 28)+" "+pystr.Rjust("SKILL.md", 10)+"  "+pystr.Rjust("index cost", 10))
+			"    "+fmt.Sprintf("%-28s", "skill")+" "+fmt.Sprintf("%10s", "SKILL.md")+"  "+fmt.Sprintf("%10s", "index cost"))
 		shown := skillRows[:min(len(skillRows), promptSkillsTableLimit)]
 		for _, sk := range shown {
-			mdStr := pystr.Rjust("n/a", 10)
+			mdStr := fmt.Sprintf("%10s", "n/a")
 			if sk.SkillMDBytes != nil {
 				mdStr = promptGrouped(*sk.SkillMDBytes) + " B"
 			}
 			name := sk.Name
-			if pystr.Len(name) > 28 {
-				name = pystr.Slice(name, 0, 27) + "…"
+			if utf8.RuneCountInString(name) > 28 {
+				name = textutil.First(name, 27) + "…"
 			}
-			lines = append(lines, "    "+pystr.Ljust(name, 28)+" "+mdStr+"  "+promptGrouped(int64(sk.IndexLineBytes))+" B")
+			lines = append(lines, "    "+fmt.Sprintf("%-28s", name)+" "+mdStr+"  "+promptGrouped(int64(sk.IndexLineBytes))+" B")
 		}
 		if remaining := len(skillRows) - len(shown); remaining > 0 {
 			lines = append(lines, "    … and "+strconv.Itoa(remaining)+" more (use --json for the full list)")

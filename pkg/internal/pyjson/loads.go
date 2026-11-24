@@ -80,7 +80,7 @@ func loadsWith(p *parser, text string) (any, error) {
 	if strings.HasPrefix(text, "\ufeff") {
 		return nil, &DecodeError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Lineno: 1, Colno: 1}
 	}
-	p.s = pystr.Runes(text)
+	p.s = []rune(text)
 	idx := p.ws(0)
 	v, end, err := p.value(idx)
 	if stop, ok := err.(*stopError); ok {
@@ -213,7 +213,7 @@ func (p *parser) str(end int) (any, int, error) {
 		if next >= len(p.s) {
 			return nil, end, p.fail("Unterminated string starting at", begin)
 		}
-		b.WriteString(pystr.FromRunes(p.s[end:next]))
+		b.WriteString(string(p.s[end:next]))
 		c := p.s[next]
 		if c == '"' {
 			return b.String(), next + 1, nil

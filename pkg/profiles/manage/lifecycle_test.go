@@ -12,8 +12,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Captures lifecycle prints for the test duration
@@ -46,7 +47,7 @@ func TestCreateProfileSeedsPlaceholderEnvFile(t *testing.T) {
 	if !pathExists(env) {
 		t.Fatal("no .env seeded")
 	}
-	for _, line := range pystr.Splitlines(strings.TrimPrefix(readText(t, env), "\ufeff"), false) {
+	for _, line := range textutil.Lines(strings.TrimPrefix(readText(t, env), "\ufeff")) {
 		if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
 			t.Fatalf("non comment line %q", line)
 		}

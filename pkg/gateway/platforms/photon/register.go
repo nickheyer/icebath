@@ -17,9 +17,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/plugins"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Whether project credentials are set in the extra, the env or auth.json
@@ -453,7 +454,7 @@ func installSidecar(ctx context.Context, out, errOut io.Writer) int {
 		fmt.Fprintf(out, "  npm ci failed — falling back to:  %s install\n", npm)
 		code, stderr = run("install")
 	}
-	errText := pystr.Slice(strings.TrimSpace(stderr), 0, NpmErrorLogMaxChars)
+	errText := textutil.First(strings.TrimSpace(stderr), NpmErrorLogMaxChars)
 	if code != 0 {
 		fmt.Fprintln(errOut, "npm install failed")
 	}

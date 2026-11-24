@@ -1,8 +1,6 @@
 package plugins
 
 import (
-	"unicode"
-
 	"bufio"
 	"context"
 	"errors"
@@ -18,12 +16,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -1325,7 +1323,7 @@ func pumpHostStderr(stream io.Reader, label string) {
 	r := bufio.NewReader(stream)
 	for {
 		raw, err := r.ReadBytes('\n')
-		if line := strings.TrimRightFunc(pystr.DecodeUTF8Replace(raw), unicode.IsSpace); line != "" {
+		if line := strings.TrimRightFunc(strings.ToValidUTF8(string(raw), "\uFFFD"), unicode.IsSpace); line != "" {
 			pkgLog().Info(fmt.Sprintf("plugin host [%s]: %s", label, line))
 		}
 		if err != nil {

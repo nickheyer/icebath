@@ -1,9 +1,8 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"

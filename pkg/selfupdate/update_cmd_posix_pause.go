@@ -24,10 +24,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -163,7 +164,9 @@ func pauseSuppressed(err error) bool {
 	return pypath.IsOSError(err) || isSubprocessError(err)
 }
 
-func pauseText(raw []byte) string { return strings.TrimSpace(pystr.DecodeUTF8Replace(raw)) }
+func pauseText(raw []byte) string {
+	return strings.TrimSpace(strings.ToValidUTF8(string(raw), "\uFFFD"))
+}
 
 // Control group path systemd reports for a unit, empty when unknown
 func unitCgroup(ctx context.Context, scopeCmd []string, unit string) (string, error) {
@@ -189,7 +192,7 @@ func pidCgroup(pid string) string {
 	}
 	unified, legacy := "", ""
 	haveUnified, haveLegacy := false, false
-	for _, line := range pystr.Splitlines(string(raw), false) {
+	for _, line := range textutil.Lines(string(raw)) {
 		if !haveUnified && strings.HasPrefix(line, "0::") {
 			unified, haveUnified = strings.TrimSpace(line[3:]), true
 		}
@@ -225,7 +228,7 @@ func discoverSystemd(ctx context.Context) ([]map[string]any, error) {
 	seen := map[int]bool{}
 	for _, listing := range listings {
 		var names []string
-		err := forEachSystemdGatewayUnit(pystr.DecodeUTF8Replace(listing.Listing.Stdout),
+		err := forEachSystemdGatewayUnit(strings.ToValidUTF8(string(listing.Listing.Stdout), "\uFFFD"),
 			func(name string) error { names = append(names, name); return nil }, func(string, error) {})
 		if err != nil {
 			return nil, err
@@ -451,7 +454,7 @@ func escapeCgroup(ctx context.Context, unit map[string]any) bool {
 	self := os.Getpid()
 	for pid := self; pid > 1 && pid != entryPid(unit) && inside(pidCgroup(strconv.Itoa(pid)), unitCg); pid = ppid(pid) {
 		if raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
-			cmdline := pystr.DecodeUTF8Replace([]byte(strings.ReplaceAll(string(raw), "\x00", " ")))
+			cmdline := strings.ToValidUTF8(string([]byte(strings.ReplaceAll(string(raw), "\x00", " "))), "\uFFFD")
 			if pid != self && gateway.LooksLikeGatewayCommandLine(cmdline) {
 				break
 			}

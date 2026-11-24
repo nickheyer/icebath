@@ -1,8 +1,6 @@
 package irc
 
 import (
-	"unicode"
-
 	"context"
 	"crypto/tls"
 	"errors"
@@ -16,6 +14,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/google/uuid"
@@ -26,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -115,7 +113,7 @@ func parseIRCMessage(raw string) ircMessage {
 	if head, tail, found := strings.Cut(raw, " :"); found {
 		raw, trailing = head, tail
 	}
-	parts := pystr.SplitWhitespace(raw, -1)
+	parts := strings.Fields(raw)
 	params := []string{}
 	if len(parts) > 1 {
 		params = append(params, parts[1:]...)
@@ -607,7 +605,7 @@ func (a *IRCAdapter) receiveLoop(ctx context.Context, conn net.Conn) (err error)
 			}
 			line := buffer[:idx]
 			buffer = append([]byte{}, buffer[idx+2:]...)
-			if herr := a.handleLine(ctx, pystr.DecodeUTF8Replace(line)); herr != nil {
+			if herr := a.handleLine(ctx, strings.ToValidUTF8(string(line), "\uFFFD")); herr != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}

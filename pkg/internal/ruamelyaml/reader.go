@@ -17,7 +17,7 @@ type Input struct {
 }
 
 // Python str input, surrogates of the WTF-8 text kept as their own code points
-func TextInput(s string) Input { return Input{Text: pystr.Runes(s)} }
+func TextInput(s string) Input { return Input{Text: []rune(s)} }
 
 // Python bytes input
 func BytesInput(b []byte) Input { return Input{Bytes: b, IsBytes: true} }

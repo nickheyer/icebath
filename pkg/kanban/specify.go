@@ -7,16 +7,18 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const specifySystemPrompt = `You are the Kanban triage specifier for the Icebath Agent board.
@@ -65,10 +67,10 @@ type SpecifyOutcome struct {
 
 // Text clamped to limit characters with an ellipsis
 func truncateText(text string, limit int) string {
-	if pystr.Len(text) <= limit {
+	if utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	return pystr.Slice(text, 0, limit-1) + "…"
+	return textutil.First(text, limit-1) + "…"
 }
 
 var specifyFenceRE = regexp2.MustCompile("^\\s*```(?:json)?\\s*|\\s*```\\s*$", regexp2.IgnoreCase|regexp2.Unicode)

@@ -14,6 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Auxiliary task the urgency scorer runs under, its model and timeout set in auxiliary.monitor
@@ -137,7 +139,7 @@ func classifyPrompt(items []*pyjson.Object, criteria string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		lines = append(lines, fmt.Sprintf("[%d] %s", i, pystr.Slice(text, 0, classifyItemViewChars)))
+		lines = append(lines, fmt.Sprintf("[%d] %s", i, textutil.First(text, classifyItemViewChars)))
 	}
 	lines = append(lines, "\nReturn the JSON array of scores now (one object per item, same order)."+classifyReplyContract)
 	return strings.Join(lines, "\n"), nil

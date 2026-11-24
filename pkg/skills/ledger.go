@@ -28,6 +28,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -229,8 +231,8 @@ func ledgerIter(v any) ([]any, error) {
 		return out, nil
 	case string:
 		var out []any
-		for _, r := range pystr.Runes(x) {
-			out = append(out, pystr.FromRunes([]rune{r}))
+		for _, r := range []rune(x) {
+			out = append(out, string([]rune{r}))
 		}
 		return out, nil
 	}
@@ -881,7 +883,7 @@ func (s *Scope) LedgerCompact(ctx context.Context) (int, int, int, error) {
 	}
 	var out []string
 	kept := 0
-	for _, line := range pystr.Splitlines(string(raw), false) {
+	for _, line := range textutil.Lines(string(raw)) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -957,7 +959,7 @@ func (s *Scope) LedgerGCBlobs(ctx context.Context) (int, int64, error) {
 		return 0, 0, nil
 	}
 	referenced := map[string]bool{}
-	for _, line := range pystr.Splitlines(string(raw), false) {
+	for _, line := range textutil.Lines(string(raw)) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -1107,7 +1109,7 @@ func (s *Scope) LedgerListEntries(skill string, limit int) ([]*pyjson.Object, er
 	if raw == nil {
 		return rows, nil
 	}
-	for _, line := range pystr.Splitlines(string(raw), false) {
+	for _, line := range textutil.Lines(string(raw)) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}

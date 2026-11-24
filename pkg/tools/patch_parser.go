@@ -203,7 +203,7 @@ func parseV4APatch(patchContent string) ([]*v4aOperation, string) {
 // Counts occurrences advancing one character per hit so overlaps count
 func countOccurrences(text, pattern string) int {
 	if pattern == "" {
-		return pystr.Len(text) + 1
+		return utf8.RuneCountInString(text) + 1
 	}
 	n := 0
 	for i := 0; i <= len(text)-len(pattern); i++ {

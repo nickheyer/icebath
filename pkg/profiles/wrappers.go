@@ -16,8 +16,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Characters of a candidate wrapper read when probing for the profile launch marker
@@ -39,7 +40,7 @@ var runWhich = func(name string) (string, int, error) {
 	if err != nil {
 		return "", -1, err
 	}
-	return pystr.DecodeUTF8Replace(res.Stdout), res.Returncode, nil
+	return strings.ToValidUTF8(string(res.Stdout), "\uFFFD"), res.Returncode, nil
 }
 
 // Reports whether a which or where launch failed the way subprocess.run raises FileNotFoundError or TimeoutExpired
@@ -125,7 +126,7 @@ func CheckAliasCollision(name string) (string, error) {
 	if code != 0 {
 		return "", nil
 	}
-	lines := pystr.Splitlines(strings.TrimSpace(stdout), false)
+	lines := textutil.Lines(strings.TrimSpace(stdout))
 	if len(lines) == 0 {
 		return "", errors.New("list index out of range")
 	}
@@ -309,7 +310,7 @@ func BuildAliasMap() (map[string]string, error) {
 		if strings.TrimSpace(rest) == "" {
 			continue
 		}
-		token := strings.TrimSpace(pystr.SplitWhitespace(rest, 1)[0])
+		token := strings.TrimSpace(textutil.FieldsN(rest, 1)[0])
 		if token == "" {
 			continue
 		}

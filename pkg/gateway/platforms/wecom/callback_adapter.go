@@ -550,7 +550,7 @@ func (a *WecomCallbackAdapter) handleCallback(ctx context.Context, request *gate
 		pkgLog().Warn(fmt.Sprintf("[WecomCallback] Payload too large (%d bytes) — rejected", len(bodyBytes)))
 		return gateway.WebTextResponse(http.StatusRequestEntityTooLarge, "payload too large", "", nil), nil
 	}
-	body := pystr.DecodeUTF8Replace(bodyBytes)
+	body := strings.ToValidUTF8(string(bodyBytes), "\uFFFD")
 	for _, app := range a.apps {
 		event, err := a.eventOfCallback(ctx, app, body, msgSignature, timestamp, nonce)
 		var cryptoErr WeComCryptoError

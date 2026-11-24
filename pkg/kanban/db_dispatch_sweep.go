@@ -15,8 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -475,7 +476,7 @@ func workerFinalOutput(ctx context.Context, taskID string, board *string) string
 	}
 	prefixes := logNoisePrefixes(ctx)
 	var lines []string
-	for _, ln := range pystr.Splitlines(text, false) {
+	for _, ln := range textutil.Lines(text) {
 		stripped, _ := logChromeRE.Replace(ln, "", -1, -1)
 		stripped = strings.TrimSpace(stripped)
 		if stripped == "" {

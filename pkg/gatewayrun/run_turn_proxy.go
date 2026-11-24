@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -219,7 +218,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 	reader := &idleTimeoutReader{body: resp.Body, timeout: proxySockRead, cancel: cancel}
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(reader)
-		errorText := pystr.DecodeUTF8Replace(raw)
+		errorText := strings.ToValidUTF8(string(raw), "\uFFFD")
 		pkgLog().Warn(fmt.Sprintf("Proxy error (%d) from %s: %s", resp.StatusCode, gateway.SafeProxyURLForLog(proxyURL), firstRunes(errorText, 500)))
 		return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.http_error", "", map[string]any{"status": resp.StatusCode, "error": firstRunes(errorText, 300)})), nil
 	}
@@ -232,7 +231,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 			if !runStillCurrent() {
 				return "", staleResult("stream"), nil
 			}
-			buffer += pystr.DecodeUTF8Replace(chunk[:n])
+			buffer += strings.ToValidUTF8(string(chunk[:n]), "\uFFFD")
 			for strings.Contains(buffer, "\n") {
 				line, rest, _ := strings.Cut(buffer, "\n")
 				buffer = rest

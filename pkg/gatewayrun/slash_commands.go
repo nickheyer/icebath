@@ -10,7 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Canonical reply of a shared slash executor, its text and structured data
@@ -33,8 +34,8 @@ func execute(ctx context.Context, command, args string, options map[string]any) 
 
 // First limit characters of text with an ellipsis when it was longer
 func preview(text string, limit int) string {
-	out := pystr.Slice(text, 0, limit)
-	if len(pystr.Runes(text)) > limit {
+	out := textutil.First(text, limit)
+	if len([]rune(text)) > limit {
 		out += "..."
 	}
 	return out

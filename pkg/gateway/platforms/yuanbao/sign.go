@@ -26,9 +26,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -365,7 +366,7 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 			return nil, requestError(err)
 		}
 		if resp.StatusCode != 200 {
-			return nil, runtimeError(fmt.Sprintf("Sign token API returned %d: %s", resp.StatusCode, pystr.Slice(resp.Text(), 0, 200)))
+			return nil, runtimeError(fmt.Sprintf("Sign token API returned %d: %s", resp.StatusCode, textutil.First(resp.Text(), 200)))
 		}
 		decoded, err := resp.JSON()
 		if err != nil {
@@ -451,7 +452,7 @@ func signGetToken(ctx context.Context, appKey, appSecret, apiDomain, routeEnv st
 
 // Clears the cached token of an app key and signs again
 func signForceRefresh(ctx context.Context, appKey, appSecret, apiDomain, routeEnv string) (map[string]any, error) {
-	pkgLog().Warn(fmt.Sprintf("[force-refresh] Clearing cache and re-signing token: app_key=****%s", pystr.Slice(appKey, -4, pystr.Len(appKey))))
+	pkgLog().Warn(fmt.Sprintf("[force-refresh] Clearing cache and re-signing token: app_key=****%s", textutil.Last(appKey, 4)))
 	lock := signRefreshLock(appKey)
 	lock.Lock()
 	defer lock.Unlock()

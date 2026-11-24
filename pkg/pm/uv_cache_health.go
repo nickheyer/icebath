@@ -13,9 +13,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -75,7 +74,7 @@ func failedWheels(output string) []string {
 func wheelEnd(text string, start int) int {
 	for i := start; i < len(text); {
 		r, size := utf8.DecodeRuneInString(text[i:])
-		if pystr.IsSpace(r) || r == '(' || r == ')' {
+		if unicode.IsSpace(r) || r == '(' || r == ')' {
 			return -1
 		}
 		i += size

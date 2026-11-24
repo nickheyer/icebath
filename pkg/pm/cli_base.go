@@ -1,13 +1,12 @@
 package pm
 
 import (
-	"strings"
-
 	"context"
 	"io"
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )

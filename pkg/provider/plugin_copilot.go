@@ -2,8 +2,9 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Copilot API host family covering the individual, business and enterprise subdomains

@@ -20,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Twilio REST base the Messages endpoint hangs off
@@ -381,7 +383,7 @@ func (a *SmsAdapter) handleWebhook(ctx context.Context, request *gateway.WebRequ
 		pkgLog().Debug("[sms] ignoring echo from own number " + gateway.RedactPhone(fromNumber))
 		return twimlResponse(200), nil
 	}
-	pkgLog().Info(fmt.Sprintf("[sms] inbound from %s -> %s: %s", gateway.RedactPhone(fromNumber), gateway.RedactPhone(toNumber), pystr.Slice(text, 0, 80)))
+	pkgLog().Info(fmt.Sprintf("[sms] inbound from %s -> %s: %s", gateway.RedactPhone(fromNumber), gateway.RedactPhone(toNumber), textutil.First(text, 80)))
 	source := a.BuildSource(ctx, fromNumber, gateway.SourceFields{ChatName: &fromNumber, ChatType: "dm", UserID: &fromNumber,
 		UserName: &fromNumber, MessageID: &messageSID})
 	event := gateway.NewMessageEvent(text)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -20,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjwt"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -867,7 +867,7 @@ func (g *GitHubSource) githubGet(ctx context.Context, url string, o ghGet) *pyht
 				reset := pyhttpx.HeaderGet(resp.Header, "X-RateLimit-Reset", "")
 				if ra, ok := pyhttpx.RetryAfterSeconds(resp.Header); ok {
 					wait = math.Min(ra, 60)
-				} else if reset != "" && !strings.ContainsFunc(reset, func(r rune) bool { return !pystr.IsDigit(r) }) {
+				} else if reset != "" && !strings.ContainsFunc(reset, func(r rune) bool { return !unicode.IsDigit(r) }) {
 					if f, err := pyint.ParseFloat(reset); err == nil {
 						if delta := f - g.Auth.now(); delta > 0 && delta <= 60 {
 							wait = delta

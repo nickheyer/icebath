@@ -36,6 +36,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // One obligation record as a run found or left it, present false when the file was absent
@@ -336,7 +338,7 @@ func publishRecoveryClosure(ctx context.Context, gitCmd []string, root, pre stri
 	ids := map[string]string{}
 	if listed.ReturnCode == 0 {
 		for _, entry := range strings.Split(listed.Stdout, "\x00") {
-			meta, rel, _ := strings.Cut(pystr.DecodeUTF8Replace([]byte(entry)), "\t")
+			meta, rel, _ := strings.Cut(strings.ToValidUTF8(string([]byte(entry)), "\uFFFD"), "\t")
 			fields := strings.Fields(meta)
 			if len(fields) < 2 || fields[1] != "blob" {
 				continue
@@ -581,7 +583,7 @@ func runPython(ctx context.Context, argv []string, stdin string, timeout time.Du
 	if err != nil || done == nil || done.Returncode != 0 {
 		return "", false
 	}
-	return pystr.TranslateNewlines(pystr.DecodeUTF8Replace(done.Stdout)), true
+	return pystr.TranslateNewlines(strings.ToValidUTF8(string(done.Stdout), "\uFFFD")), true
 }
 
 // An installed python3.N the target's requires-python admits, newest first, false when the machine has none
@@ -672,7 +674,7 @@ func startupSyntaxError(ctx context.Context, sources []sourceFile, pyproject []b
 			return nil, err
 		}
 		out, _ := runPython(ctx, []string{python, "-I", "-c", compileAll}, payload, 120*time.Second)
-		if lines := pystr.Splitlines(strings.TrimSpace(out), false); len(lines) > 0 {
+		if lines := textutil.Lines(strings.TrimSpace(out)); len(lines) > 0 {
 			if verdict, err := pyjson.Loads(lines[len(lines)-1]); err == nil {
 				if verdict == nil {
 					return nil, nil
@@ -885,7 +887,7 @@ func preflightRefusal(ctx context.Context, w io.Writer, gitCmd []string, root, t
 	}
 	if broken != nil {
 		recordStop(ctx, "target_syntax_error")
-		lines := pystr.Splitlines(broken.Error, false)
+		lines := textutil.Lines(broken.Error)
 		if len(lines) > 6 {
 			lines = lines[:6]
 		}

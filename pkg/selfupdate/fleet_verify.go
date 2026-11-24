@@ -17,8 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -115,7 +116,7 @@ func fleetRowIdentityPending(row any, preRestartPIDs []int) bool {
 // Properties of a systemctl show answer keyed by name
 func systemctlShowProps(stdout string) map[string]string {
 	props := map[string]string{}
-	for _, line := range pystr.Splitlines(stdout, false) {
+	for _, line := range textutil.Lines(stdout) {
 		if key, value, found := strings.Cut(line, "="); found {
 			props[key] = value
 		}

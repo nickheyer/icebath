@@ -54,10 +54,10 @@ const KanbanAttachmentMaxBytes = 25 * 1024 * 1024
 func LossyText(value any) any {
 	switch v := value.(type) {
 	case []byte:
-		return pystr.DecodeUTF8Replace(v)
+		return strings.ToValidUTF8(string(v), "\uFFFD")
 	case string:
 		if !utf8.ValidString(v) {
-			return pystr.DecodeUTF8Replace([]byte(v))
+			return strings.ToValidUTF8(string([]byte(v)), "\uFFFD")
 		}
 	}
 	return value
@@ -175,7 +175,7 @@ func gitOut(cwd string, timeout time.Duration, args ...string) *string {
 	if err := cmd.Run(); err != nil {
 		return nil
 	}
-	out := strings.TrimSpace(pystr.DecodeUTF8Replace([]byte(stdout.String())))
+	out := strings.TrimSpace(strings.ToValidUTF8(string([]byte(stdout.String())), "\uFFFD"))
 	if out == "" {
 		return nil
 	}

@@ -8,13 +8,15 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // SeverityOrder lists diagnostic severities from least to most urgent
@@ -264,19 +266,19 @@ func errorSnippet(lastErr any) string {
 	if text == "" {
 		return ""
 	}
-	if pystr.Len(text) > 500 {
-		return pystr.Slice(text, 0, 500) + "…"
+	if utf8.RuneCountInString(text) > 500 {
+		return textutil.First(text, 500) + "…"
 	}
 	return text
 }
 
 // First line of a snippet cut to 160 characters
 func snippetHeadline(snippet string) string {
-	lines := pystr.Splitlines(snippet, false)
+	lines := textutil.Lines(snippet)
 	if len(lines) == 0 {
 		diagFail("the error snippet has no lines")
 	}
-	return pystr.Slice(lines[0], 0, 160)
+	return textutil.First(lines[0], 160)
 }
 
 // Events of kind with no completed or edited event after them, in arrival order

@@ -15,9 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const subagentGitTimeout = 30 * time.Second
@@ -99,7 +100,7 @@ func ensureWorktreesGitignore(repoRoot string) {
 		pkgLog().Debug(fmt.Sprintf("subagent worktree: could not update .gitignore: %v", err))
 		return
 	}
-	for _, line := range pystr.Splitlines(existing, false) {
+	for _, line := range textutil.Lines(existing) {
 		if line == ".worktrees/" {
 			return
 		}
@@ -224,7 +225,7 @@ func finalizeSubagentWorktree(info map[string]string, prune bool) (*pyjson.Objec
 			return markWorktreePayloadUnproven(payload, fmt.Sprintf("git %s could not run: %v", p.label, err), "commits/dirty"), nil
 		}
 		if res.code != 0 {
-			failed = append(failed, fmt.Sprintf("%s exit %d: %s", p.label, res.code, pystr.Slice(strings.TrimSpace(res.stderr), 0, 200)))
+			failed = append(failed, fmt.Sprintf("%s exit %d: %s", p.label, res.code, textutil.First(strings.TrimSpace(res.stderr), 200)))
 			unmeasured = append(unmeasured, p.field)
 			continue
 		}

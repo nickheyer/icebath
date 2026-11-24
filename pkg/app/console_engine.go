@@ -2,6 +2,7 @@ package app
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"bufio"
 	"context"
@@ -18,9 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Fresh cobra command tree with every host handler bound, assigned by the binary at startup
@@ -138,7 +140,7 @@ func (e *ConsoleEngine) execute(rawLine string, confirmed bool) (ConsoleResult, 
 // Usage and summary of one command, or the table of every supported command
 func (e *ConsoleEngine) HelpText(subject string) (string, error) {
 	if subject != "" {
-		command, _, err := e.resolveCommand(pystr.SplitWhitespace(subject, -1))
+		command, _, err := e.resolveCommand(strings.Fields(subject))
 		if err != nil {
 			return "", err
 		}
@@ -155,7 +157,7 @@ func (e *ConsoleEngine) HelpText(subject string) (string, error) {
 		if command.Mutating {
 			marker = " *"
 		}
-		lines = append(lines, fmt.Sprintf("%s %s %s", marker, pystr.Ljust(command.Usage, 32), consoleTableSummary(command.Summary, 76)))
+		lines = append(lines, fmt.Sprintf("%s %-32s %s", marker, command.Usage, consoleTableSummary(command.Summary, 76)))
 	}
 	lines = append(lines, "", "* requires confirmation", "Built-ins: help, help <command>, history, clear, exit, quit")
 	return strings.Join(lines, "\n"), nil
@@ -244,11 +246,11 @@ func (e *ConsoleEngine) resolveCommand(tokens []string) (*ConsoleCommand, []stri
 
 // Output cut at the limit with a note of how much was dropped
 func (e *ConsoleEngine) capOutput(output string) string {
-	n := pystr.Len(output)
+	n := utf8.RuneCountInString(output)
 	if n <= e.OutputLimit {
 		return output
 	}
-	return fmt.Sprintf("%s\n... output truncated (%d bytes omitted)", pystr.Slice(output, 0, e.OutputLimit), n-e.OutputLimit)
+	return fmt.Sprintf("%s\n... output truncated (%d bytes omitted)", textutil.First(output, e.OutputLimit), n-e.OutputLimit)
 }
 
 // Top level commands the console never runs
@@ -322,16 +324,16 @@ func consoleContainsShellSyntax(line string, tokens []string) bool {
 
 // Whitespace collapsed summary cut to the limit with an ellipsis
 func consoleTableSummary(summary string, limit int) string {
-	summary = strings.Join(pystr.SplitWhitespace(summary, -1), " ")
-	if pystr.Len(summary) <= limit {
+	summary = strings.Join(strings.Fields(summary), " ")
+	if utf8.RuneCountInString(summary) <= limit {
 		return summary
 	}
-	return strings.TrimRightFunc(pystr.Slice(summary, 0, limit-3), unicode.IsSpace) + "..."
+	return strings.TrimRightFunc(textutil.First(summary, limit-3), unicode.IsSpace) + "..."
 }
 
 // Help text as a one line summary, empty for hidden or run hints
 func consoleCleanSummary(text string) string {
-	summary := strings.Join(pystr.SplitWhitespace(text, -1), " ")
+	summary := strings.Join(strings.Fields(text), " ")
 	if strings.HasPrefix(summary, "Run `icebath ") {
 		return ""
 	}
@@ -447,7 +449,7 @@ func consolePaths(spec string) []consolePath {
 		name := strings.TrimLeft(item, "*")
 		var path []string
 		if name != "." {
-			path = pystr.SplitWhitespace(name, -1)
+			path = strings.Fields(name)
 		}
 		out = append(out, consolePath{path: path, mutating: strings.HasPrefix(item, "*")})
 	}

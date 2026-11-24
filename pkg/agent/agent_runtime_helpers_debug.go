@@ -1,12 +1,11 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 

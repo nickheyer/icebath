@@ -10,8 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -165,7 +166,7 @@ func runChildrenParallel(ctx context.Context, batch *delegateBatch, results *[]*
 	parent, nTasks := batch.Parent, len(batch.TaskList)
 	labels := make([]string, len(batch.TaskList))
 	for i, t := range batch.TaskList {
-		labels[i] = pystr.Slice(goalOf(t), 0, 40)
+		labels[i] = textutil.First(goalOf(t), 40)
 	}
 	spinner := any(parent.delegateSpinner)
 	tag := formatBatchTag(batch.LiveDelegID, parent)

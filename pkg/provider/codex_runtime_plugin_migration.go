@@ -1,8 +1,6 @@
 package provider
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
@@ -21,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pytoml"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Marker comments wrapping the managed section of codex config.toml so a rerun replaces only its own text
@@ -390,7 +391,7 @@ func codexInsertManagedBlockAtTopLevel(userText, managedBlock string) string {
 	if strings.TrimSpace(userText) == "" {
 		return managedBlock
 	}
-	lines := pystr.Splitlines(userText, true)
+	lines := slices.Collect(strings.Lines(userText))
 	first := -1
 	for i, ln := range lines {
 		if strings.HasPrefix(strings.TrimLeftFunc(ln, unicode.IsSpace), "[") {
@@ -417,7 +418,7 @@ func codexInsertManagedBlockAtTopLevel(userText, managedBlock string) string {
 func codexStripUnmanagedPluginTables(tomlText string) string {
 	var out strings.Builder
 	inPluginTable := false
-	for _, line := range pystr.Splitlines(tomlText, true) {
+	for _, line := range slices.Collect(strings.Lines(tomlText)) {
 		stripped := strings.TrimLeftFunc(line, unicode.IsSpace)
 		if codexLooksLikeTableHeader(stripped) {
 			inPluginTable = strings.HasPrefix(stripped, "[plugins.")
@@ -440,7 +441,7 @@ func codexUnmanagedMCPServerNames(tomlText string) (map[string]bool, error) {
 			return names, nil
 		}
 	}
-	for _, line := range pystr.Splitlines(tomlText, false) {
+	for _, line := range textutil.Lines(tomlText) {
 		stripped := strings.TrimLeftFunc(line, unicode.IsSpace)
 		if !codexLooksLikeTableHeader(stripped) || !strings.HasPrefix(stripped, "[mcp_servers.") {
 			continue
@@ -478,7 +479,7 @@ var codexManagedHeaders = []string{"[mcp_servers", "[plugins", "[permissions]", 
 func codexStripExistingManagedBlock(tomlText string) string {
 	var out strings.Builder
 	inManaged := false
-	for _, line := range pystr.Splitlines(tomlText, true) {
+	for _, line := range slices.Collect(strings.Lines(tomlText)) {
 		bare := strings.TrimRight(line, "\n")
 		if bare == CodexMigrationMarker {
 			inManaged = true

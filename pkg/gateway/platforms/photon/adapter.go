@@ -33,6 +33,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -176,7 +178,7 @@ func sidecarErrorFromResponse(path string, status int, text string, data map[str
 	}
 	errText := pyrepr.Str(data["error"])
 	if !pyrepr.Truthy(data["error"]) {
-		errText = pystr.Slice(text, 0, 200)
+		errText = textutil.First(text, 200)
 		if errText == "" {
 			errText = "sidecar error"
 		}
@@ -239,7 +241,7 @@ func checkRequirements(ctx context.Context) bool {
 	}
 	npmError := ""
 	if raw, err := os.ReadFile(NpmErrorLog(ctx)); err == nil {
-		npmError = pystr.Slice(strings.TrimSpace(string(raw)), 0, NpmErrorLogMaxChars)
+		npmError = textutil.First(strings.TrimSpace(string(raw)), NpmErrorLogMaxChars)
 	}
 	if npmError != "" {
 		pkgLog().Debug(fmt.Sprintf("photon: spectrum-ts not installed at %s (last npm error: %s) — run: icebath photon setup", SidecarDir(ctx), npmError))

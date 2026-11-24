@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -228,7 +227,7 @@ func runShellCommand(ctx context.Context, command, cwd string) (tuigateway.Shell
 		code = pysubprocess.Returncode(exitErr)
 	}
 	redact := func(raw []byte, n int) string {
-		text := universalNewlines(pystr.DecodeUTF8Replace(raw))
+		text := universalNewlines(strings.ToValidUTF8(string(raw), "\uFFFD"))
 		return lastRunes(tools.RedactSensitiveTextWith(nil, text, tools.RedactOptions{Force: true, URLCredentials: true}), n)
 	}
 	return tuigateway.ShellExecResult{Stdout: redact(stdout.Bytes(), 4000), Stderr: redact(stderr.Bytes(), 2000), Code: int64(code)}, nil

@@ -6,13 +6,13 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Inputs of one migration run, empty paths meaning None and an empty selection meaning every option
@@ -478,7 +478,7 @@ func (m *Migrator) migrateWorkspaceAgents() {
 func mergeDetails(stats MergeStats, limit int, merged []string) []any {
 	final := 0
 	if len(merged) > 0 {
-		final = pystr.Len(strings.Join(merged, EntryDelimiter))
+		final = utf8.RuneCountInString(strings.Join(merged, EntryDelimiter))
 	}
 	return []any{
 		"existing_entries", int64(stats.Existing), "added_entries", int64(stats.Added),

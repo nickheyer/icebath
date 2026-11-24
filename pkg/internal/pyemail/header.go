@@ -1,16 +1,15 @@
 package pyemail
 
 import (
-	"unicode"
-
 	"bytes"
 	"encoding/base64"
 	"errors"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // HeaderValue is a raw header value, bytes above ASCII kept as they arrived
@@ -280,7 +279,7 @@ func DecodeHeader(header HeaderValue) ([]DecodedPart, error) {
 		charset  string
 	}
 	var words []word
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		first := true
 		pos := 0
 		for _, m := range encodedWordRE.FindAllStringSubmatchIndex(line, -1) {

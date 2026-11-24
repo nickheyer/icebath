@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -18,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -495,7 +495,7 @@ func translateStdioServer(cfg map[string]any, pluginRoot, dataRoot string, creat
 			return nil, err
 		}
 		command = resolved
-	case strings.ContainsFunc(command, pystr.IsSpace):
+	case strings.ContainsFunc(command, unicode.IsSpace):
 		return nil, errors.New("command must contain one executable token")
 	case strings.ContainsAny(command, `/\`) || command == "." || command == "..":
 		return nil, errors.New("command must be a bare executable or begin with ./")

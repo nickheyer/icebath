@@ -3,7 +3,6 @@ package updaterecord
 import (
 	"bufio"
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"io"
 	"os"
 	"os/exec"
@@ -11,6 +10,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 const pcModeEnv = "ICEBATH_PAUSE_TEST_CHILD"

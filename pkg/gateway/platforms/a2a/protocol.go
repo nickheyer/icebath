@@ -25,6 +25,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const ProtocolVersion = "1.0"
@@ -934,7 +936,7 @@ func LoadConversation(ctx context.Context, contextID string, limit int) []*pyjso
 		return []*pyjson.Object{}
 	}
 	out := []*pyjson.Object{}
-	for _, line := range pystr.Splitlines(string(raw), false) {
+	for _, line := range textutil.Lines(string(raw)) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}

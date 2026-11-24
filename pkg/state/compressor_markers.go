@@ -1,9 +1,8 @@
 package state
 
 import (
-	"unicode"
-
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )

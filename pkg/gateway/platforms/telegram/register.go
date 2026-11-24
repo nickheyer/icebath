@@ -1,9 +1,8 @@
 package telegram
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"

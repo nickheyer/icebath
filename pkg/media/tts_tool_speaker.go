@@ -3,8 +3,6 @@
 package media
 
 import (
-	"strings"
-
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -13,6 +11,7 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"

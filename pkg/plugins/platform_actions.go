@@ -1,17 +1,17 @@
 package plugins
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -291,7 +291,7 @@ func (p *PlatformActions) run(ctx context.Context, verb string, platform any, na
 			}
 			v, err := guardedValue(func() (any, error) { return impl(ctx, adapter, args) })
 			if err != nil {
-				result = actionErr("action_failed", pystr.Slice(err.Error(), 0, 512))
+				result = actionErr("action_failed", textutil.First(err.Error(), 512))
 			} else {
 				result = v.(map[string]any)
 			}

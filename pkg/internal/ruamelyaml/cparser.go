@@ -204,7 +204,7 @@ func ComposeC(in Input) (doc *Document, ok bool, err error) {
 		input = string(in.Bytes)
 	} else {
 		name = "<unicode string>"
-		text := pystr.FromRunes(in.Text)
+		text := string(in.Text)
 		if e := pystr.StrictUTF8EncodeError(text); e != nil {
 			return nil, false, Raise("UnicodeEncodeError", e.Error())
 		}

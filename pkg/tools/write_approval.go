@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -408,7 +407,7 @@ func frontmatterDescription(content string) string {
 		return ""
 	}
 	desc := strings.Trim(pyStrip(m[1]), `'"`)
-	if pystr.Len(desc) > 140 {
+	if utf8.RuneCountInString(desc) > 140 {
 		desc = runePrefix(desc, 140)
 	}
 	return desc

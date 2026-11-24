@@ -1,16 +1,16 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Prints the Anthropic auth method and fixes once a credential refresh could not lift a 401
@@ -204,7 +204,7 @@ func clampToAffordableBudget(a *AIAgent, apiError error, classified *provider.Cl
 	}
 	retry.Affordable402ClampAttempted = true
 	a.ephemeralMaxOutputTokens = affordable
-	vlines(a, fmt.Sprintf("💳 Credit balance covers fewer output tokens — retrying with max_tokens=%s...", pystr.GroupThousands(int64(affordable))))
+	vlines(a, fmt.Sprintf("💳 Credit balance covers fewer output tokens — retrying with max_tokens=%s...", textutil.Thousands(int64(affordable))))
 	pkgLog().Info(fmt.Sprintf("%sCredit-limited 402: retrying once with max_tokens=%d", a.logPrefix, affordable))
 	return true
 }

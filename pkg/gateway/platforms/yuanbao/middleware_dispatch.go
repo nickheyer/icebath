@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // DispatchMiddleware builds the message event and hands it to the gateway, group turns serialised per session
@@ -171,7 +172,7 @@ func consumeGroupQueue(ctx context.Context, adapter *YuanbaoAdapter, sessionKey 
 		if err != nil || dispatch == nil {
 			return err
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] Group queue: dispatching for %s (remaining=%d)", adapter.Name(), pystr.Slice(sessionKey, 0, 50), remaining))
+		pkgLog().Debug(fmt.Sprintf("[%s] Group queue: dispatching for %s (remaining=%d)", adapter.Name(), textutil.First(sessionKey, 50), remaining))
 		err = dispatch(ctx)
 		for err == nil && adapter.HasActiveSession(sessionKey) {
 			err = sleep(ctx, groupQueuePollS)
@@ -195,7 +196,7 @@ func (m *DispatchMiddleware) Handle(ctx context.Context, ic *InboundContext, nex
 	dispatch := func(tctx context.Context) error { return dispatchInboundEvent(tctx, adapter, ic, sessionKey) }
 	if ic.ChatType == "group" {
 		size, created := adapter.enqueueGroupDispatch(sessionKey, dispatch)
-		pkgLog().Info(fmt.Sprintf("[%s] Group message enqueued (qsize=%d) for %s", adapter.Name(), size, pystr.Slice(sessionKey, 0, 50)))
+		pkgLog().Info(fmt.Sprintf("[%s] Group message enqueued (qsize=%d) for %s", adapter.Name(), size, textutil.First(sessionKey, 50)))
 		if created {
 			adapter.trackInbound(gateway.SpawnAdapterTask(ctx, func(tctx context.Context) error {
 				return consumeGroupQueue(tctx, adapter, sessionKey)

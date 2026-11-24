@@ -1,9 +1,8 @@
 package whatsapp
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 )

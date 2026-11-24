@@ -2,6 +2,7 @@ package agent
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -11,10 +12,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Constructor keywords with their defaults from DefaultContextCompressorOptions
@@ -481,9 +483,9 @@ func (c *ContextCompressor) DeriveAutoFocusTopic(messages []map[string]any) *str
 		if text == "" {
 			continue
 		}
-		text = strings.Join(pystr.SplitWhitespace(text, -1), " ")
-		if pystr.Len(text) > autoFocusTurnMaxChars {
-			text = strings.TrimRightFunc(pystr.Slice(text, 0, autoFocusTurnMaxChars-1), unicode.IsSpace) + "…"
+		text = strings.Join(strings.Fields(text), " ")
+		if utf8.RuneCountInString(text) > autoFocusTurnMaxChars {
+			text = strings.TrimRightFunc(textutil.First(text, autoFocusTurnMaxChars-1), unicode.IsSpace) + "…"
 		}
 		candidates = append(candidates, text)
 		if len(candidates) >= autoFocusMaxTurns {
@@ -498,8 +500,8 @@ func (c *ContextCompressor) DeriveAutoFocusTopic(messages []map[string]any) *str
 		lines = append(lines, "- "+candidates[i])
 	}
 	focus := "Recent user focus:\n" + strings.Join(lines, "\n")
-	if pystr.Len(focus) > autoFocusMaxChars {
-		focus = strings.TrimRightFunc(pystr.Slice(focus, 0, autoFocusMaxChars-1), unicode.IsSpace) + "…"
+	if utf8.RuneCountInString(focus) > autoFocusMaxChars {
+		focus = strings.TrimRightFunc(textutil.First(focus, autoFocusMaxChars-1), unicode.IsSpace) + "…"
 	}
 	return &focus
 }

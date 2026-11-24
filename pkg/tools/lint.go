@@ -135,14 +135,14 @@ const pyIntMaxStrDigits = 4300
 
 // json.loads outcome as exception type and message, the decode error set for JSONDecodeError
 func pyJSONLoadsCheck(text string) (string, string, *pyjson.DecodeError) {
-	rs := pystr.Runes(text)
+	rs := []rune(text)
 	if len(rs) > 0 && rs[0] == 0xfeff {
 		return "JSONDecodeError", "", &pyjson.DecodeError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Pos: 0, Lineno: 1, Colno: 1}
 	}
 	scan := scanJSONHazards(rs)
 	parseText := text
 	if scan.overflowAt >= 0 {
-		parseText = pystr.FromRunes(rs[:scan.overflowAt]) + "0"
+		parseText = string(rs[:scan.overflowAt]) + "0"
 	}
 	_, err := pyjson.Loads(parseText)
 	errPos := -1

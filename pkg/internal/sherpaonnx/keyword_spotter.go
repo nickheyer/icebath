@@ -1,11 +1,10 @@
 package sherpaonnx
 
 import (
-	"strings"
-
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyctypes"

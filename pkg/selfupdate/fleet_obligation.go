@@ -18,9 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -131,7 +132,7 @@ func fleetObligationFields(ctx context.Context) (map[string]string, bool) {
 		return nil, false
 	}
 	legacy := map[string]string{}
-	for _, line := range pystr.Splitlines(string(raw), false) {
+	for _, line := range textutil.Lines(string(raw)) {
 		key, value, found := strings.Cut(line, "=")
 		if _, seen := legacy[key]; !found || seen {
 			return nil, false
@@ -420,7 +421,7 @@ func dischargeGatewaylessMarker(ctx context.Context, checkoutSHA, expectedSHA st
 		return false
 	}
 	clearFleetRestartPendingMarker(ctx)
-	pkgLog().Debug(fmt.Sprintf("Fleet-restart-pending marker discharged: host runs no gateway at %s", pystr.Slice(checkoutSHA, 0, 10)))
+	pkgLog().Debug(fmt.Sprintf("Fleet-restart-pending marker discharged: host runs no gateway at %s", textutil.First(checkoutSHA, 10)))
 	return true
 }
 
@@ -518,7 +519,7 @@ func markerOnlyRestartObsolete(ctx context.Context) (bool, error) {
 		}
 	}
 	clearFleetRestartPendingMarker(ctx)
-	pkgLog().Debug(fmt.Sprintf("Fleet-restart-pending marker discharged: %d gateway(s) already serve %s", len(fleet), pystr.Slice(targetSHA, 0, 10)))
+	pkgLog().Debug(fmt.Sprintf("Fleet-restart-pending marker discharged: %d gateway(s) already serve %s", len(fleet), textutil.First(targetSHA, 10)))
 	return true, nil
 }
 

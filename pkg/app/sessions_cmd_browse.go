@@ -12,8 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Short fixed width tag of a session lifecycle status, a dash for none
@@ -65,7 +66,7 @@ func clipText(text string, n int) string {
 	if utf8.RuneCountInString(text) <= n {
 		return text
 	}
-	return pystr.Slice(text, 0, n-3) + "..."
+	return textutil.First(text, n-3) + "..."
 }
 
 // Message count of a row as text, a dash when it is not an integer
@@ -291,7 +292,7 @@ func (b *cursesBrowser) handleKey(key int) bool {
 		b.refilter(true)
 	case key == cliui.KeyBackspace || key == 127 || key == 8:
 		if b.search != "" {
-			b.search = pystr.Slice(b.search, 0, utf8.RuneCountInString(b.search)-1)
+			b.search = textutil.First(b.search, utf8.RuneCountInString(b.search)-1)
 			b.refilter(true)
 		}
 	case key == 'q' && b.search == "":

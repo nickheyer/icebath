@@ -24,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Age past which a completion notice stops waiting for its platform adapter to connect
@@ -286,7 +288,7 @@ func readUpdateOutputSince(path string, offset int) (string, int) {
 	if len(data) <= offset {
 		return "", len(data)
 	}
-	return pystr.DecodeUTF8Replace(data[offset:]), len(data)
+	return strings.ToValidUTF8(string(data[offset:]), "\uFFFD"), len(data)
 }
 
 // Sends buffered update output as fenced chunks that fit message limits
@@ -322,7 +324,7 @@ func (r *GatewayRunner) forwardUpdatePrompt(ctx context.Context, target *updateT
 		}
 	}
 	r.updatePromptPending().Set(target.sessionKey, true)
-	pkgLog().Info(fmt.Sprintf("Forwarded update prompt to %s: %s", target.sessionKey, pystr.Slice(promptText, 0, 80)))
+	pkgLog().Info(fmt.Sprintf("Forwarded update prompt to %s: %s", target.sessionKey, textutil.First(promptText, 80)))
 	return nil
 }
 
@@ -509,7 +511,7 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 		if err != nil {
 			return true, err
 		}
-		output = pystr.DecodeUTF8Replace(raw)
+		output = strings.ToValidUTF8(string(raw), "\uFFFD")
 	}
 	platform, err := gateway.ParsePlatform(ctx, platformStr)
 	if err != nil {

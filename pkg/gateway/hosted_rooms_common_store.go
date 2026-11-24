@@ -1,10 +1,9 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"os"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

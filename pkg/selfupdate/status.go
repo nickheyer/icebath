@@ -124,7 +124,7 @@ func (s *statusRun) section(title string) {
 
 // One name, mark and text row with the name padded to width
 func (s *statusRun) row(name string, ok bool, text string, width int, sep string) {
-	s.println("  ", pystr.Ljust(name, width), sep, s.checkMark(ok), " ", text)
+	s.println("  ", fmt.Sprintf("%-*s", width, name), sep, s.checkMark(ok), " ", text)
 }
 
 // Indented label and value detail line under a row
@@ -133,7 +133,7 @@ func (s *statusRun) detail(label string, value any) { s.kvIndent(label, value, "
 func (s *statusRun) kv(label string, value any) { s.kvIndent(label, value, "  ", 14) }
 
 func (s *statusRun) kvIndent(label string, value any, indent string, width int) {
-	s.println(indent, pystr.Ljust(label, width), pyrepr.Str(value))
+	s.println(indent, fmt.Sprintf("%-*s", width, label), pyrepr.Str(value))
 }
 
 // Label with a mark followed by the on or off text
@@ -300,7 +300,7 @@ func (s *statusRun) renderTerminal() error {
 			if value == "" {
 				value = "(not set)"
 			}
-			s.println("  ", pystr.Ljust(r.label, 13), " ", value)
+			s.println("  ", fmt.Sprintf("%-13s", r.label), " ", value)
 		}
 	case name == "vercel_sandbox":
 		persistEnabled := settings.TerminalContainerPersistent.Get(sctx)
@@ -574,7 +574,7 @@ func (s *statusRun) renderSessions() error {
 			}
 		}
 		if freshest > 0 {
-			s.println("  Last activity:", pystr.Rjust(pydatetime.RelativeTime(freshest, "", time.Now()), 13))
+			s.println("  Last activity:", fmt.Sprintf("%13s", pydatetime.RelativeTime(freshest, "", time.Now())))
 		}
 	} else if _, err := os.Stat(sessionsFile); err != nil {
 		s.kv("Active:", 0)
@@ -633,8 +633,8 @@ func (s *statusRun) renderSessions() error {
 			return err
 		}
 		age := activesessions.FormatAge(now - started)
-		s.println("                ", pystr.Ljust(pyrepr.Str(statusOr(entry.Vals["surface"], "unknown")), 17), " ",
-			pystr.Ljust(pyrepr.Str(statusOr(entry.Vals["session_id"], "?")), 24), " ", age)
+		s.println("                ", fmt.Sprintf("%-17s", pyrepr.Str(statusOr(entry.Vals["surface"], "unknown"))), " ",
+			fmt.Sprintf("%-24s", pyrepr.Str(statusOr(entry.Vals["session_id"], "?"))), " ", age)
 	}
 	return nil
 }

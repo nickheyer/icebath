@@ -1,10 +1,9 @@
 package app
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"

@@ -1,11 +1,10 @@
 package tuiserver
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"

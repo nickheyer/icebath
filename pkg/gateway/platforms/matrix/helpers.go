@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"maunium.net/go/mautrix"
@@ -23,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -76,7 +76,7 @@ func matrixVoiceMetadataForFile(path string) map[string]any {
 		result, err := runMediaTool([]string{ffprobe, "-v", "error", "-show_entries", "format=duration", "-of",
 			"default=noprint_wrappers=1:nokey=1", path}, 10*time.Second)
 		if err == nil && result.returnCode == 0 {
-			text := strings.TrimSpace(pystr.DecodeUTF8Replace(result.stdout))
+			text := strings.TrimSpace(strings.ToValidUTF8(string(result.stdout), "\uFFFD"))
 			if text == "" {
 				text = "0"
 			}
@@ -409,7 +409,7 @@ func looksLikeTransportFilename(text string, mimePrefixes []string, exts map[str
 	if candidate == "" || strings.Contains(candidate, "\n") || strings.HasSuffix(candidate, "/") {
 		return false
 	}
-	if rejectSpaces && strings.ContainsFunc(candidate, pystr.IsSpace) {
+	if rejectSpaces && strings.ContainsFunc(candidate, unicode.IsSpace) {
 		return false
 	}
 	if pypath.PathName(candidate) != candidate {

@@ -3,6 +3,7 @@ package openclaw
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,7 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -273,7 +275,7 @@ func readText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pystr.DecodeUTF8Replace(data), nil
+	return strings.ToValidUTF8(string(data), "\uFFFD"), nil
 }
 
 // File text as readText, an unreadable file raised as the OSError it is
@@ -529,7 +531,7 @@ func parseEnvFile(path string) *envFile {
 	if err != nil {
 		return out
 	}
-	for _, rawLine := range pystr.Splitlines(text, false) {
+	for _, rawLine := range textutil.Lines(text) {
 		line := strip(rawLine)
 		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
 			continue
@@ -682,7 +684,7 @@ func ExtractMarkdownEntries(text string) []string {
 		}
 	}
 	inCode := false
-	for _, rawLine := range pystr.Splitlines(text, false) {
+	for _, rawLine := range textutil.Lines(text) {
 		line := strings.TrimRightFunc(rawLine, unicode.IsSpace)
 		stripped := strip(line)
 		if strings.HasPrefix(stripped, "```") {
@@ -695,7 +697,7 @@ func ExtractMarkdownEntries(text string) []string {
 		}
 		if m := firstMatch(headingLine, stripped); m != nil {
 			flush()
-			level := pystr.Len(m.GroupByNumber(1).String())
+			level := utf8.RuneCountInString(m.GroupByNumber(1).String())
 			value := strip(m.GroupByNumber(2).String())
 			for len(headings) >= level {
 				headings = headings[:len(headings)-1]
@@ -755,9 +757,9 @@ func MergeEntries(existing, incoming []string, limit int) ([]string, MergeStats,
 	var overflowed []string
 	currentLen := 0
 	if len(merged) > 0 {
-		currentLen = pystr.Len(strings.Join(merged, EntryDelimiter))
+		currentLen = utf8.RuneCountInString(strings.Join(merged, EntryDelimiter))
 	}
-	delimLen := pystr.Len(EntryDelimiter)
+	delimLen := utf8.RuneCountInString(EntryDelimiter)
 	for _, entry := range incoming {
 		n := normalizeText(entry)
 		if n == "" {
@@ -767,9 +769,9 @@ func MergeEntries(existing, incoming []string, limit int) ([]string, MergeStats,
 			stats.Duplicates++
 			continue
 		}
-		candidate := pystr.Len(entry)
+		candidate := utf8.RuneCountInString(entry)
 		if len(merged) > 0 {
-			candidate = currentLen + delimLen + pystr.Len(entry)
+			candidate = currentLen + delimLen + utf8.RuneCountInString(entry)
 		}
 		if candidate > limit {
 			stats.Overflowed++

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -13,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const textChunkRetries = 3
@@ -487,10 +487,10 @@ func (s *messageSender) sendText(ctx context.Context, chatID, content, replyTo s
 		chunks := truncateMessage(contentToSend, maxTextChunk)
 		sizes := make([]any, len(chunks))
 		for i, chunk := range chunks {
-			sizes[i] = int64(pystr.Len(chunk))
+			sizes[i] = int64(utf8.RuneCountInString(chunk))
 		}
 		pkgLog().Info(fmt.Sprintf("[%s] truncate_message: input=%d chars, max=%d, output=%d chunk(s) sizes=%s", adapter.Name(),
-			pystr.Len(contentToSend), maxTextChunk, len(chunks), pyrepr.Repr(sizes)))
+			utf8.RuneCountInString(contentToSend), maxTextChunk, len(chunks), pyrepr.Repr(sizes)))
 		for i, chunk := range chunks {
 			chunkReplyTo := ""
 			if i == 0 {
@@ -719,7 +719,7 @@ func dispatchEncoded(ctx context.Context, adapter *YuanbaoAdapter, encoded []byt
 
 // One chunk for content within the limit, else table and fence aware chunks with their page indicators stripped
 func truncateMessage(content string, maxLength int) []string {
-	if pystr.Len(content) <= maxLength {
+	if utf8.RuneCountInString(content) <= maxLength {
 		return []string{content}
 	}
 	chunks := chunkMarkdownText(content, maxLength)

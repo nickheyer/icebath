@@ -11,7 +11,7 @@ func TestHostStderrPumpTagsEachLineWithTheProfile(t *testing.T) {
 	logs := captureLogs(t)
 	pumpHostStderr(strings.NewReader("first line  \n\n\x0b\x0c\nbad \xff\xfe end\x0c\nlast"), "work")
 	out := logs.String()
-	for _, want := range []string{`plugin host [work]: first line"`, "plugin host [work]: bad �� end\"", `plugin host [work]: last"`} {
+	for _, want := range []string{`plugin host [work]: first line"`, "plugin host [work]: bad � end\"", `plugin host [work]: last"`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in %s", want, out)
 		}

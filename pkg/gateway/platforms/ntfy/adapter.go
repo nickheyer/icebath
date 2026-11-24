@@ -24,8 +24,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -96,7 +97,7 @@ func truncateBody(message, context string) []byte {
 	if n := utf8.RuneCountInString(message); n > maxMessageLength {
 		pkgLog().Warn(fmt.Sprintf("%s: truncating message from %d to %d chars (ntfy limit)", context, n, maxMessageLength))
 	}
-	return []byte(pystr.Slice(message, 0, maxMessageLength))
+	return []byte(textutil.First(message, maxMessageLength))
 }
 
 // Message id ntfy returned, a random twelve hex id when the body carries none or does not parse
@@ -337,7 +338,7 @@ func (d *textDecoder) decode(chunk []byte, final bool) string {
 			}
 		}
 	}
-	return pystr.DecodeUTF8Replace(data)
+	return strings.ToValidUTF8(string(data), "\uFFFD")
 }
 
 // Line splitter of httpx aiter_lines, a trailing carriage return carried into the next chunk
@@ -363,7 +364,7 @@ func (d *lineDecoder) decode(text string) []string {
 	}
 	last, _ := utf8.DecodeLastRuneInString(text)
 	trailingNewline := strings.ContainsRune(newlineChars, last)
-	lines := pystr.Splitlines(text, false)
+	lines := textutil.Lines(text)
 	if len(lines) == 1 && !trailingNewline {
 		d.buffer = append(d.buffer, lines[0])
 		return nil
@@ -601,7 +602,7 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 	messageEvent.MessageID = &msgID
 	messageEvent.RawMessage = event
 	messageEvent.Timestamp = timestamp
-	pkgLog().Debug(fmt.Sprintf("[%s] Message on topic %s: %s", a.Name(), topic, pystr.Slice(text, 0, 80)))
+	pkgLog().Debug(fmt.Sprintf("[%s] Message on topic %s: %s", a.Name(), topic, textutil.First(text, 80)))
 	return a.HandleMessage(ctx, messageEvent)
 }
 
@@ -627,7 +628,7 @@ func (a *NtfyAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 	if n := utf8.RuneCountInString(content); n > maxMessageLength {
 		pkgLog().Warn(fmt.Sprintf("[%s] Message truncated from %d to %d chars (ntfy limit)", a.Name(), n, maxMessageLength))
 	}
-	body := []byte(pystr.Slice(content, 0, maxMessageLength))
+	body := []byte(textutil.First(content, maxMessageLength))
 	resp, err := publish(ctx, client, a.server+"/"+pyrepr.Str(publishTopic), body, headers)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -644,7 +645,7 @@ func (a *NtfyAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 	if resp.StatusCode < 300 {
 		return gateway.SendResult{Success: true, MessageID: responseMessageID(resp)}, nil
 	}
-	bodyText := pystr.Slice(resp.Text(), 0, 200)
+	bodyText := textutil.First(resp.Text(), 200)
 	pkgLog().Warn(fmt.Sprintf("[%s] Send failed HTTP %d: %s", a.Name(), resp.StatusCode, bodyText))
 	return gateway.SendResult{Success: false, Error: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, bodyText)}, nil
 }

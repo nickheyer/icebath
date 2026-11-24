@@ -29,8 +29,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -244,7 +245,7 @@ func readLightpandaLogTail(path string) string {
 	if len(data) > lightpandaStderrTailLimit {
 		data = data[len(data)-lightpandaStderrTailLimit:]
 	}
-	lines := pystr.Splitlines(strings.TrimSpace(pystr.DecodeUTF8Replace(data)), false)
+	lines := textutil.Lines(strings.TrimSpace(strings.ToValidUTF8(string(data), "\uFFFD")))
 	for i := len(lines) - 1; i >= 0; i-- {
 		if strings.TrimSpace(lines[i]) != "" {
 			return lines[i]

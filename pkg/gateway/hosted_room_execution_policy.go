@@ -1,13 +1,12 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"math/big"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"

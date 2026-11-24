@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -396,7 +395,7 @@ func runCommandProvider(ctx context.Context, env *tools.Env, command string, tim
 		for {
 			n, rerr := f.Read(buf)
 			if n > 0 {
-				s := pystr.DecodeUTF8Replace(buf[:n])
+				s := strings.ToValidUTF8(string(buf[:n]), "\uFFFD")
 				queue <- commandChunk{name, &s}
 			}
 			if rerr != nil {

@@ -26,9 +26,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -850,7 +851,7 @@ func (s *Store) readMarkerFields(name string) []string {
 	if !ok {
 		return nil
 	}
-	return pystr.SplitWhitespace(text, -1)
+	return strings.Fields(text)
 }
 
 // Reads a text file as utf-8-sig with universal newlines, false on any read or decode failure
@@ -915,7 +916,7 @@ func (s *Store) TickerLastError() (string, bool) {
 	if !ok {
 		return "", false
 	}
-	lines := pystr.Splitlines(raw, false)
+	lines := textutil.Lines(raw)
 	if len(lines) < 2 {
 		return "", false
 	}

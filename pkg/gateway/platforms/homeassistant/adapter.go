@@ -18,8 +18,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -397,7 +398,7 @@ func (a *HomeAssistantAdapter) readEvents(ctx context.Context) error {
 		text, _ := msg.Data.(string)
 		data, err := pyjson.Loads(text)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("Invalid JSON from HA WS: %s", pystr.Slice(text, 0, 200)))
+			pkgLog().Debug(fmt.Sprintf("Invalid JSON from HA WS: %s", textutil.First(text, 200)))
 			continue
 		}
 		kind, err := pyGet(data, "type", nil)
@@ -554,7 +555,7 @@ func formatStateChange(entityID, oldState, newState any) (string, bool, error) {
 // Posts the reply as a persistent notification over REST so the WebSocket listener is never raced
 func (a *HomeAssistantAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	target := a.hassURL + "/api/services/persistent_notification/create"
-	payload := pyjson.ObjectOf("title", notificationTitle, "message", pystr.Slice(content, 0, maxMessageLength))
+	payload := pyjson.ObjectOf("title", notificationTitle, "message", textutil.First(content, maxMessageLength))
 	a.mu.Lock()
 	session := a.restSession
 	a.mu.Unlock()

@@ -30,6 +30,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -141,7 +143,7 @@ func pruneOrphanRescueRefs(ctx context.Context, gitCmd []string, cwd, branch str
 			continue
 		}
 		var refs []string
-		for _, line := range pystr.Splitlines(listed.Stdout, false) {
+		for _, line := range textutil.Lines(listed.Stdout) {
 			if ref := strings.TrimSpace(line); ref != "" {
 				refs = append(refs, ref)
 			}
@@ -328,7 +330,7 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 	if err != nil {
 		return false, "", err
 	}
-	for _, line := range pystr.Splitlines(promisor.Stdout, false) {
+	for _, line := range textutil.Lines(promisor.Stdout) {
 		fields := strings.Fields(line)
 		if len(fields) == 0 {
 			return false, "", &pm.PyError{Class: "IndexError", Message: "git printed an empty status line"}
@@ -345,7 +347,7 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 		return true, "unmerged:" + aheadCount.String(), nil
 	}
 	unmerged := 0
-	for _, line := range pystr.Splitlines(cherry.Stdout, false) {
+	for _, line := range textutil.Lines(cherry.Stdout) {
 		if strings.HasPrefix(line, "+") {
 			unmerged++
 		}
@@ -686,7 +688,7 @@ func damagedCheckoutMessage(ctx context.Context, root, branch string) string {
 // Whether a fetch failed because git cannot open root itself instead of its remote
 func checkoutRejectedByGit(ctx context.Context, stderr string, gitCmd []string, root string) (bool, error) {
 	rejected := false
-	for _, line := range pystr.Splitlines(stderr, false) {
+	for _, line := range textutil.Lines(stderr) {
 		if strings.HasPrefix(line, "fatal: not a git repository") {
 			rejected = true
 			break
@@ -730,7 +732,7 @@ func printFetchFailure(ctx context.Context, w io.Writer, stderr string, gitCmd [
 		fmt.Fprintln(w, ClassifyFetchFailure(stderr))
 	}
 	if stderr != "" {
-		lines := pystr.Splitlines(stderr, false)
+		lines := textutil.Lines(stderr)
 		for _, line := range lines[:min(len(lines), 15)] {
 			fmt.Fprintf(w, "  %s\n", line)
 		}
@@ -880,7 +882,7 @@ func lockfileChurnSteps(ctx context.Context, w io.Writer, gitCmd []string, repoR
 	}
 	var changed []string
 	dirtyManifests := map[string]bool{}
-	for _, line := range pystr.Splitlines(diff.Stdout, false) {
+	for _, line := range textutil.Lines(diff.Stdout) {
 		path := strings.TrimSpace(line)
 		changed = append(changed, path)
 		if strings.HasSuffix(path, "package.json") {
@@ -942,7 +944,7 @@ func normalizeManagedEOL(ctx context.Context, w io.Writer, gitCmd []string, repo
 			return nil, false, nil
 		}
 		content := map[string]bool{}
-		for _, line := range pystr.Splitlines(realDirty.Stdout, false) {
+		for _, line := range textutil.Lines(realDirty.Stdout) {
 			if strings.TrimSpace(line) == "" {
 				continue
 			}

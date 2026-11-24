@@ -7,7 +7,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const backendProbeCmd = "printf 'os=%s\\nkernel=%s\\n' \"$(uname -s 2>/dev/null || echo unknown)\" \"$(uname -r 2>/dev/null || echo unknown)\""
@@ -99,7 +100,7 @@ func runBackendProbe(ctx context.Context, env *Env, envType string) (string, err
 // Indented OS summary from the probe key value lines, empty when nothing usable came back
 func formatBackendProbe(output string) string {
 	parsed := map[string]string{}
-	for _, line := range pystr.Splitlines(output, false) {
+	for _, line := range textutil.Lines(output) {
 		k, v, ok := strings.Cut(line, "=")
 		if ok {
 			parsed[strings.TrimSpace(k)] = strings.TrimSpace(v)

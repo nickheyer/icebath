@@ -5,10 +5,11 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // SwitchModel swaps the live route in place, a once pick keeping its alias for the turn and a restore clearing the one turn state
@@ -101,7 +102,7 @@ func appendSwitchWarning(result *provider.ModelSwitchResult, text string) {
 }
 
 // Python thousands grouping of an int
-func switchGroupedInt(n int) string { return pystr.GroupThousands(int64(n)) }
+func switchGroupedInt(n int) string { return textutil.Thousands(int64(n)) }
 
 // Configured route a gateway switch resolves the display context against, nil fields falling back to the agent
 type PreflightConfigured struct {

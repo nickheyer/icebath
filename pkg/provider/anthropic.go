@@ -27,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -1493,7 +1492,7 @@ func (c *anthropicClient) streamTimeouts(req *Request, settings wireSettings, es
 
 // APIError for a non success HTTP response
 func (c *anthropicClient) httpError(resp *http.Response, data []byte) error {
-	body := pystr.DecodeUTF8Replace(data)
+	body := strings.ToValidUTF8(string(data), "\uFFFD")
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {
@@ -1568,8 +1567,8 @@ func (c *anthropicClient) completeOnce(ctx context.Context, req *Request, p *ant
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, pystr.DecodeUTF8Replace(data), err)
-		apiErr.Message = "Provider returned a non-JSON message body: " + truncate(redactSensitiveText(strings.TrimSpace(pystr.DecodeUTF8Replace(data))), 300)
+		apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, strings.ToValidUTF8(string(data), "\uFFFD"), err)
+		apiErr.Message = "Provider returned a non-JSON message body: " + truncate(redactSensitiveText(strings.TrimSpace(strings.ToValidUTF8(string(data), "\uFFFD"))), 300)
 		apiErr.Err = &ccHeadersError{err: err, headers: resp.Header.Clone()}
 		return nil, apiErr
 	}
@@ -1765,7 +1764,7 @@ func (c *anthropicClient) CountTokens(ctx context.Context, req *Request) (int, e
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return 0, Classify(c.route.Provider, c.route.Model, resp.StatusCode, pystr.DecodeUTF8Replace(data), err)
+		return 0, Classify(c.route.Provider, c.route.Model, resp.StatusCode, strings.ToValidUTF8(string(data), "\uFFFD"), err)
 	}
 	n, ok := anyInt(payload["input_tokens"])
 	if !ok {

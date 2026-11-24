@@ -1,8 +1,6 @@
 package acp
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/google/uuid"
 
@@ -24,9 +23,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Owner connection the gateway agent projects, requests answered as ordered objects
@@ -122,7 +122,7 @@ func slashCommandOf(text string) (string, bool) {
 	if !strings.HasPrefix(stripped, "/") {
 		return "", false
 	}
-	parts := pystr.SplitWhitespace(stripped, 1)
+	parts := textutil.FieldsN(stripped, 1)
 	name := parts[0][1:]
 	if name == "" || strings.Contains(name, "/") {
 		return "", false
@@ -1547,7 +1547,7 @@ func (a *GatewayACPAgent) runSlash(ctx context.Context, heldID, sessionID, text 
 		return false, text, nil
 	}
 	arg := ""
-	if parts := pystr.SplitWhitespace(strings.TrimSpace(text), 1); len(parts) > 1 {
+	if parts := textutil.FieldsN(strings.TrimSpace(text), 1); len(parts) > 1 {
 		arg = strings.TrimSpace(parts[1])
 	}
 	reply, submit, err := runGatewayCommand(ctx, a, sessionID, command, arg)

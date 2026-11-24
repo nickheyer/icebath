@@ -1,10 +1,9 @@
 package gateway
 
 import (
-	"unicode"
-
 	"context"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -20,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -101,7 +104,7 @@ func (s *Scope) readMetaLines(path, failLog string) ([]string, error) {
 		return nil, err
 	}
 	var out []string
-	for _, line := range pystr.Splitlines(strings.TrimPrefix(text, "\xEF\xBB\xBF"), false) {
+	for _, line := range textutil.Lines(strings.TrimPrefix(text, "\xEF\xBB\xBF")) {
 		if line = strings.TrimSpace(line); line != "" {
 			out = append(out, line)
 		}
@@ -1119,7 +1122,7 @@ func (s *Scope) RestoreSkill(ctx context.Context, name string) (bool, string, er
 		prefix := name + "-"
 		for _, p := range dirs {
 			b := filepath.Base(p)
-			if rest, ok := strings.CutPrefix(b, prefix); ok && len(b)-len(prefix) == 14 && pystr.All(rest, pystr.IsDigit) {
+			if rest, ok := strings.CutPrefix(b, prefix); ok && len(b)-len(prefix) == 14 && pystr.All(rest, unicode.IsDigit) {
 				cands = append(cands, p)
 			}
 		}

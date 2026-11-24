@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Install and profile locations of one Chromium family product
@@ -293,7 +292,7 @@ func runStdout(argv []string) (string, bool) {
 	if _, exited := err.(*exec.ExitError); err != nil && !exited {
 		return "", false
 	}
-	return pystr.DecodeUTF8Replace(stdout.Bytes()), true
+	return strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD"), true
 }
 
 var (

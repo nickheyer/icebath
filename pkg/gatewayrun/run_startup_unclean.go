@@ -1,12 +1,11 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"

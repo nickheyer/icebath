@@ -24,9 +24,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -843,7 +844,7 @@ func (a *FeishuAdapter) downloadRemoteImage(ctx context.Context, imageURL string
 func (a *FeishuAdapter) downloadRemoteDocument(ctx context.Context, fileURL, defaultExt, preferredName string) (string, string, error) {
 	env := gateway.URLSafetyEnv(ctx)
 	if !tools.IsSafeURL(env, fileURL) {
-		return "", "", fmt.Errorf("Blocked unsafe URL (SSRF protection): %s", pystr.Slice(fileURL, 0, 80))
+		return "", "", fmt.Errorf("Blocked unsafe URL (SSRF protection): %s", textutil.First(fileURL, 80))
 	}
 	client := tools.NewSSRFSafeClient(env, 30*time.Second, true)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)

@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 

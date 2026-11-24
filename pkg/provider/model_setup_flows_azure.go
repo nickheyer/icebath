@@ -8,6 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Azure flow seams, swappable so tests script the credential probe, the endpoint detection and the context lookup
@@ -363,7 +365,7 @@ func modelFlowAzureFoundry(r *ModelFlowRun) error {
 	}
 	ctxLine := "    Context length: not auto-detected (will fall back at runtime)"
 	if ctxLen != 0 {
-		ctxLine = fmt.Sprintf("    Context length: %s tokens", pystr.GroupThousands(int64(ctxLen)))
+		ctxLine = fmt.Sprintf("    Context length: %s tokens", textutil.Thousands(int64(ctxLen)))
 	}
 	flowSay(r.Out, "", "✓ Azure Foundry configured:", fmt.Sprintf("    Endpoint:       %s", effectiveURL),
 		fmt.Sprintf("    API mode:       %s", azureModeLabel(apiMode)),

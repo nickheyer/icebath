@@ -1,9 +1,8 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

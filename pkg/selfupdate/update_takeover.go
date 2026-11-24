@@ -23,6 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -141,7 +143,7 @@ func headSHA(ctx context.Context, root string) string {
 	head, err := pysubprocess.RunWith(ctx, []string{takeoverGitExecutable(ctx), "-C", root, "rev-parse", "HEAD"},
 		pysubprocess.Options{Timeout: 60 * time.Second})
 	if err == nil && head.Returncode == 0 {
-		if sha := strings.TrimSpace(pystr.DecodeUTF8Replace(head.Stdout)); takeoverSHA.MatchString(sha) {
+		if sha := strings.TrimSpace(strings.ToValidUTF8(string(head.Stdout), "\uFFFD")); takeoverSHA.MatchString(sha) {
 			return sha
 		}
 	}
@@ -179,7 +181,7 @@ func headSHA(ctx context.Context, root string) string {
 				return ""
 			}
 			sha = ""
-			for _, line := range pystr.Splitlines(text, false) {
+			for _, line := range textutil.Lines(text) {
 				if strings.HasSuffix(line, " "+ref) {
 					sha = strings.SplitN(line, " ", 2)[0]
 					break

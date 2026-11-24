@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -14,16 +12,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Launch policy and pins of one client that never become the shared daemon's environment
@@ -278,7 +278,7 @@ func StartupFailureReport(ctx context.Context, profileHome string, offset int64,
 		f.Close()
 	}
 	var lines []string
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
@@ -297,7 +297,7 @@ func StartupFailureReport(ctx context.Context, profileHome string, offset int64,
 	if len(lines) == 0 {
 		record := ReadRuntimeStatus(filepath.Join(profileHome, "gateway_state.json"))
 		if reason := recGet(record, "exit_reason"); pyTruthy(reason) && pid != nil && pyEq(recGet(record, "pid"), int64(*pid)) {
-			lines = []string{pystr.Slice(pyrepr.Str(reason), 0, 2000)}
+			lines = []string{textutil.First(pyrepr.Str(reason), 2000)}
 			path = filepath.Join(profileHome, "logs", "gateway.log")
 		}
 	}
@@ -308,7 +308,7 @@ func StartupFailureReport(ctx context.Context, profileHome string, offset int64,
 	}
 	body := "  (it wrote no output)"
 	if tail != "" {
-		parts := pystr.Splitlines(tail, false)
+		parts := textutil.Lines(tail)
 		for i, line := range parts {
 			parts[i] = "  " + line
 		}

@@ -11,9 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Plain content mirroring an embed payload, the body cut to fit the message cap with a marker
@@ -306,7 +307,7 @@ func (a *DiscordAdapter) SendChoicePicker(ctx context.Context, chatID, title str
 		heading := i18n.T(ctx, "platform.discord.picker.choice_default_title", "", nil)
 		description := ""
 		if title != "" {
-			lines := pystr.Splitlines(title, false)
+			lines := textutil.Lines(title)
 			heading = lines[0]
 			description = strings.Join(lines[1:], "\n")
 		}

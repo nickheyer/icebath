@@ -12,9 +12,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Temp icebath home under a temp cwd so no repository AGENTS.md is read
@@ -133,7 +134,7 @@ func TestSkillsBreakdownAttributesDemotedCategorySharedLine(t *testing.T) {
 		t.Fatalf("no available_skills block in %q", prompt)
 	}
 	sharedLine, found := "", false
-	for _, line := range pystr.Splitlines(skillsBlock, false) {
+	for _, line := range textutil.Lines(skillsBlock) {
 		if strings.Contains(line, "demo [names only]") {
 			sharedLine, found = line, true
 			break

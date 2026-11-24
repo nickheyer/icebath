@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var stampedLineRe = `\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}`
@@ -48,7 +48,7 @@ func TestMainTimestampsEachStderrLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := pystr.Splitlines(string(data), false)
+	lines := textutil.Lines(string(data))
 	if len(lines) != 3 {
 		t.Fatalf("lines = %q", lines)
 	}
@@ -70,7 +70,7 @@ func TestWrapperTimestampsChildStdoutIntoItsOwnStdout(t *testing.T) {
 	if rc != 7 {
 		t.Fatalf("rc = %d", rc)
 	}
-	lines := pystr.Splitlines(stdout, false)
+	lines := textutil.Lines(stdout)
 	if len(lines) != 3 {
 		t.Fatalf("lines = %q", lines)
 	}
@@ -134,12 +134,12 @@ func TestWrapperForwardsSigusr1RestartRequestToChild(t *testing.T) {
 	}
 }
 
-func TestStderrTimestampDecodesEachInvalidByteAsReplacement(t *testing.T) {
+func TestStderrTimestampReplacesInvalidBytes(t *testing.T) {
 	var out bytes.Buffer
 	if err := copyLinesWithTimestamps(strings.NewReader("2026-07-15 12:34:56,789 a\xff\xfeb\n"), &out); err != nil {
 		t.Fatal(err)
 	}
-	if got := out.String(); got != "2026-07-15 12:34:56,789 a��b\n" {
+	if got := out.String(); got != "2026-07-15 12:34:56,789 a�b\n" {
 		t.Fatalf("got %q", got)
 	}
 }

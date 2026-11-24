@@ -1,8 +1,6 @@
 package langfuse
 
 import (
-	"unicode"
-
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -17,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"

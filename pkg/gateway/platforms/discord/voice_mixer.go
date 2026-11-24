@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Mixer PCM geometry, 48 kHz stereo signed 16 bit little endian in 20 millisecond frames
@@ -271,7 +271,7 @@ func decodeToPCM(ctx context.Context, path string, timeout time.Duration) []byte
 		return nil
 	}
 	if rc := pyReturnCode(cmd.ProcessState); rc != 0 {
-		pkgLog().Warn(fmt.Sprintf("ffmpeg decode failed for %s (rc=%d): %s", path, rc, cut(pystr.DecodeUTF8Replace(stderr.Bytes()), 200)))
+		pkgLog().Warn(fmt.Sprintf("ffmpeg decode failed for %s (rc=%d): %s", path, rc, cut(strings.ToValidUTF8(string(stderr.Bytes()), "\uFFFD"), 200)))
 		return nil
 	}
 	if stdout.Len() == 0 {

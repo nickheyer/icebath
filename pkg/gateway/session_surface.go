@@ -2,7 +2,8 @@ package gateway
 
 import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Surfaces one turn may name
@@ -55,7 +56,7 @@ func admitSurface(params map[string]any) (*pyjson.Object, error) {
 		committed.Set("surface", name)
 	}
 	if spoken != "" {
-		committed.Set("voice_context", pystr.Slice(spoken, 0, voiceContextLimit))
+		committed.Set("voice_context", textutil.First(spoken, voiceContextLimit))
 	}
 	if interrupted {
 		committed.Set("interrupted", true)

@@ -13,16 +13,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Python ImportError of a provider package missing from the managed environment
@@ -418,7 +420,7 @@ func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr strin
 		if err != nil {
 			return "", err
 		}
-		pkgLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", final, pystr.GroupThousands(info.Size()), provider))
+		pkgLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", final, textutil.Thousands(info.Size()), provider))
 		return ttsDumps(pyjson.ObjectOf("success", true, "file_path", final, "media_tag", mediaTag([]string{final}, voiceCompatible),
 			"provider", provider, "voice_compatible", voiceCompatible)), nil
 	}()
@@ -528,7 +530,7 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 		return ttsToolError("Text is required"), nil
 	}
 	if len(chunks) > 1 {
-		pkgLog().Info(fmt.Sprintf("TTS text for provider %s split into %d chunks (input=%d chars, cap=%d)", provider, len(chunks), pystr.Len(text), maxLen))
+		pkgLog().Info(fmt.Sprintf("TTS text for provider %s split into %d chunks (input=%d chars, cap=%d)", provider, len(chunks), utf8.RuneCountInString(text), maxLen))
 	}
 	platform, wantOpus := sessionPlatform(env)
 	profile := resolveAudioDeliveryProfile(platform, req)
@@ -576,7 +578,7 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 			if err != nil {
 				return "", err
 			}
-			pkgLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", p, pystr.GroupThousands(info.Size()), provider))
+			pkgLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", p, textutil.Thousands(info.Size()), provider))
 		}
 		filePaths := make([]any, len(finalPaths))
 		for i, p := range finalPaths {

@@ -18,7 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Respawn storm check result, start count in the window and the backoff to sleep
@@ -50,7 +51,7 @@ func recordStartAndCheckStorm(ctx context.Context, h string, maxStarts int, wind
 		if !utf8.Valid(data) {
 			return nil, errors.New("gateway-starts.log is not valid UTF-8")
 		}
-		for _, line := range pystr.Splitlines(string(data), false) {
+		for _, line := range textutil.Lines(string(data)) {
 			line = strings.TrimSpace(line)
 			if line == "" {
 				continue

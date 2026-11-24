@@ -2,6 +2,7 @@ package agent
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"encoding/json"
@@ -23,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var summaryPermanentQuotaMarkers = []string{"insufficient_quota", "quota exceeded", "quota_exceeded", "out of funds", "out of credits",
@@ -217,14 +220,14 @@ func responseFinishReason(response any) string {
 
 // Summary text that opens with a refusal about summarizing and carries no markdown section
 func isSummaryRefusal(content string) bool {
-	normalized := strings.Join(pystr.SplitWhitespace(content, -1), " ")
+	normalized := strings.Join(strings.Fields(content), " ")
 	if ok, _ := summaryRefusalPrefixRE.MatchString(normalized); !ok {
 		return false
 	}
 	if m, _ := markdownHeadingLineRE.FindStringMatch(content); m != nil {
 		return false
 	}
-	head := pystr.Casefold(pystr.Slice(normalized, 0, 400))
+	head := pystr.Casefold(textutil.First(normalized, 400))
 	return strings.Contains(head, "summar") || strings.Contains(head, "checkpoint")
 }
 
@@ -431,7 +434,7 @@ func looksLikeCompactionSummary(msg map[string]any, content string) bool {
 		role == "tool" || ((role == "user" || role == "assistant") && !pyTruthy(msg[state.CompressedSummaryMetadataKey])) {
 		return false
 	}
-	head := pystr.Slice(content, 0, 280)
+	head := textutil.First(content, 280)
 	return pyTruthy(msg[state.CompressedSummaryMetadataKey]) || strings.Contains(head, "CONTEXT COMPACTION") || strings.Contains(head, "Conversation Summary")
 }
 
@@ -490,11 +493,11 @@ func SalvageGrownTranscript(ctx context.Context, original, candidate []map[strin
 			continue
 		}
 		if msg["role"] == "tool" && !keep[i] {
-			if c, ok := msg["content"].(string); ok && pystr.Len(c) > pruneMinChars {
+			if c, ok := msg["content"].(string); ok && utf8.RuneCountInString(c) > pruneMinChars {
 				msg["content"] = prunedToolPlaceholder
 			}
 		}
-		if c, ok := msg["content"].(string); ok && pystr.Len(c) > salvageSummaryMaxChars && looksLikeCompactionSummary(msg, c) {
+		if c, ok := msg["content"].(string); ok && utf8.RuneCountInString(c) > salvageSummaryMaxChars && looksLikeCompactionSummary(msg, c) {
 			msg["content"] = ElideKeepingSkillSafetyRule(c, salvageSummaryMaxChars) + "\n\n" + state.SummaryEndMarker
 		}
 	}
@@ -524,10 +527,10 @@ func shortErrorText(err error, limit int) string {
 		name := strings.TrimLeft(fmt.Sprintf("%T", err), "*")
 		text = name[strings.LastIndex(name, ".")+1:]
 	}
-	if pystr.Len(text) <= limit {
+	if utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	return strings.TrimRightFunc(pystr.Slice(text, 0, limit-3), unicode.IsSpace) + "..."
+	return strings.TrimRightFunc(textutil.First(text, limit-3), unicode.IsSpace) + "..."
 }
 
 // Transient failure classes of a summary call, several of which may hold at once
@@ -709,12 +712,12 @@ func buildVerbatimUserSection(turns []map[string]any) string {
 			break
 		}
 		text := strings.TrimSpace(content)
-		if pystr.Len(text) > remaining && remaining <= tools.ElisionMarkerMaxLen() {
+		if utf8.RuneCountInString(text) > remaining && remaining <= tools.ElisionMarkerMaxLen() {
 			break
 		}
 		text = tools.Elide(text, min(leanUserMessageMaxChars, remaining))
 		collected = append(collected, "> "+strings.ReplaceAll(text, "\n", "\n> "))
-		used += pystr.Len(text)
+		used += utf8.RuneCountInString(text)
 	}
 	if len(collected) == 0 {
 		return ""
@@ -794,11 +797,11 @@ func buildAnchorIndex(turns []map[string]any) string {
 			}
 		}
 		line := ap.label + ": " + strings.Join(rendered, ", ")
-		if used+pystr.Len(line) > leanAnchorBudgetChars {
+		if used+utf8.RuneCountInString(line) > leanAnchorBudgetChars {
 			break
 		}
 		sections = append(sections, line)
-		used += pystr.Len(line)
+		used += utf8.RuneCountInString(line)
 	}
 	if len(sections) == 0 {
 		return ""
@@ -986,14 +989,14 @@ func bullets(items []string, limit int) string {
 // Character weight of message content for budgeting, images charged at the calibrated token cost
 func contentLengthForBudget(ctx context.Context, raw any) int {
 	if s, ok := raw.(string); ok {
-		return pystr.Len(s)
+		return utf8.RuneCountInString(s)
 	}
 	parts, ok := raw.([]any)
 	if !ok {
 		if !pyTruthy(raw) {
 			return 0
 		}
-		return pystr.Len(pyStrOf(raw))
+		return utf8.RuneCountInString(pyStrOf(raw))
 	}
 	imageChars := provider.CurrentImageTokenCost(ctx) * compressorCharsPerToken
 	total := 0
@@ -1001,12 +1004,12 @@ func contentLengthForBudget(ctx context.Context, raw any) int {
 		m, ok := p.(map[string]any)
 		switch {
 		case !ok:
-			total += pystr.Len(pyStrOf(p))
+			total += utf8.RuneCountInString(pyStrOf(p))
 		case isCompactionImagePart(p):
 			total += imageChars
 		default:
 			text, _ := m["text"].(string)
-			total += pystr.Len(text)
+			total += utf8.RuneCountInString(text)
 		}
 	}
 	return total
@@ -1018,19 +1021,19 @@ func serializedLengthForBudget(value any) int {
 		return 0
 	}
 	if s, ok := value.(string); ok {
-		return pystr.Len(s)
+		return utf8.RuneCountInString(s)
 	}
 	out, err := pyjson.Dumps(value, pyjson.EnsureASCII(false), pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyStrOf(v), nil }))
 	if err != nil {
-		return pystr.Len(pyStrOf(value))
+		return utf8.RuneCountInString(pyStrOf(value))
 	}
-	return pystr.Len(out)
+	return utf8.RuneCountInString(out)
 }
 
 // Visible text characters of a reasoning_details value
 func reasoningDetailsTextChars(value any) int {
 	if s, ok := value.(string); ok {
-		return pystr.Len(s)
+		return utf8.RuneCountInString(s)
 	}
 	var parts []any
 	switch x := value.(type) {
@@ -1046,11 +1049,11 @@ func reasoningDetailsTextChars(value any) int {
 		}
 		switch p := part.(type) {
 		case string:
-			total += pystr.Len(p)
+			total += utf8.RuneCountInString(p)
 		case map[string]any:
 			for _, k := range []string{"thinking", "text", "summary"} {
 				if t, ok := p[k].(string); ok {
-					total += pystr.Len(t)
+					total += utf8.RuneCountInString(t)
 				}
 			}
 		}
@@ -1221,7 +1224,7 @@ func stripImagesFromToolMsg(msg map[string]any) map[string]any {
 		if !pyTruthy(summary) {
 			summary = strippedToolScreenshotPlaceholder
 		}
-		return rewritten(msg, "[screenshot removed] "+pystr.Slice(pyStrOf(summary), 0, 200))
+		return rewritten(msg, "[screenshot removed] "+textutil.First(pyStrOf(summary), 200))
 	}
 	stripped, ok := replaceImageParts(content, strippedToolScreenshotPlaceholder)
 	if !ok {

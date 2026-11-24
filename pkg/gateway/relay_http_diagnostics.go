@@ -8,6 +8,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var relayOriginHeaders = []string{"Server", "Via", "Proxy-Status", "X-Squid-Error"}
@@ -96,14 +98,14 @@ func RelayDescribeHTTPError(exc *RelayHTTPError, body []byte, secrets ...string)
 			value = exc.Header.Get(name)
 		}
 		if value != "" {
-			collapsed := strings.Join(pystr.SplitWhitespace(value, -1), " ")
-			parts = append(parts, strings.ToLower(name)+"="+pystr.Slice(RelayRedactExcerpt(collapsed, secrets...), 0, 120))
+			collapsed := strings.Join(strings.Fields(value), " ")
+			parts = append(parts, strings.ToLower(name)+"="+textutil.First(RelayRedactExcerpt(collapsed, secrets...), 120))
 		}
 	}
-	text := relayScrub(strings.Join(pystr.SplitWhitespace(pystr.DecodeUTF8Replace(body), -1), " "), secrets)
+	text := relayScrub(strings.Join(strings.Fields(strings.ToValidUTF8(string(body), "\uFFFD")), " "), secrets)
 	if text != "" {
-		excerpt := pystr.Slice(text, 0, RelayBodyExcerptChars)
-		if len(pystr.Runes(text)) > RelayBodyExcerptChars {
+		excerpt := textutil.First(text, RelayBodyExcerptChars)
+		if len([]rune(text)) > RelayBodyExcerptChars {
 			excerpt += "…"
 		}
 		parts = append(parts, "body="+pyrepr.Repr(RelayRedactExcerpt(excerpt, secrets...)))

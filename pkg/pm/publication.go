@@ -20,9 +20,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"gopkg.in/yaml.v3"
 )
@@ -625,7 +625,7 @@ func metadataLockHolderHint(path string) string {
 		return ""
 	}
 	text, _ := decodeUTF8Replace(raw, true)
-	fields := strings.FieldsFunc(strings.TrimPrefix(text, "\ufeff"), pystr.IsSpace)
+	fields := strings.FieldsFunc(strings.TrimPrefix(text, "\ufeff"), unicode.IsSpace)
 	if len(fields) == 0 {
 		return ""
 	}

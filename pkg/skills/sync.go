@@ -27,6 +27,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Marker file that limits sync to the essential skills on an opted out profile
@@ -348,7 +350,7 @@ func (s *Scope) readManifest() (map[string]string, error) {
 		return map[string]string{}, nil
 	}
 	out := map[string]string{}
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -393,7 +395,7 @@ func (s *Scope) syncSuppressedNames() map[string]bool {
 	if err != nil {
 		return names
 	}
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
 			names[line] = true
 		}
@@ -1422,7 +1424,7 @@ func (s *Scope) DiffBundledSkill(name string) (map[string]any, error) {
 				diffs = append(diffs, map[string]any{"path": rel, "status": "binary", "diff": "<binary file differs>"})
 			}
 		} else if *userText != *stockText {
-			lines := tools.UnifiedDiff(pystr.Splitlines(*stockText, true), pystr.Splitlines(*userText, true), "stock/"+rel, "yours/"+rel, 3)
+			lines := tools.UnifiedDiff(slices.Collect(strings.Lines(*stockText)), slices.Collect(strings.Lines(*userText)), "stock/"+rel, "yours/"+rel, 3)
 			diffs = append(diffs, map[string]any{"path": rel, "status": "modified", "diff": strings.Join(lines, "")})
 		}
 	}

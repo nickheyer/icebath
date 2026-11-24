@@ -30,6 +30,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -403,7 +405,7 @@ func runFile(directory string, data *pyjson.Object) string {
 	if truthy(started) {
 		text = pyrepr.Str(started)
 	}
-	stamp := pystr.Slice(nonDigit.ReplaceAllString(text, ""), 0, 14)
+	stamp := textutil.First(nonDigit.ReplaceAllString(text, ""), 14)
 	if stamp == "" {
 		stamp = time.Now().Format("20060102150405")
 	}
@@ -411,7 +413,7 @@ func runFile(directory string, data *pyjson.Object) string {
 	if truthy(data.Vals["pid"]) {
 		pid = data.Vals["pid"]
 	}
-	name := fmt.Sprintf("update_%s_%s_%s_%s.json", pystr.Slice(stamp, 0, 8), pystr.Slice(stamp, 8, len(stamp)),
+	name := fmt.Sprintf("update_%s_%s_%s_%s.json", textutil.First(stamp, 8), textutil.DropFirst(stamp, 8),
 		pyrepr.Str(pid), pyrepr.Str(data.Vals["update_id"]))
 	return filepath.Join(directory, name)
 }
@@ -712,7 +714,7 @@ func RecordBuildStage(ctx context.Context, followups [][2]string) {
 
 // Whitespace collapsed text cut to 500 characters
 func collapseReason(reason string) string {
-	return pystr.Slice(strings.Join(pystr.SplitWhitespace(reason, -1), " "), 0, 500)
+	return textutil.First(strings.Join(strings.Fields(reason), " "), 500)
 }
 
 // Prints the owed follow-up protocol line and records it on the open run
@@ -839,7 +841,7 @@ func GitErrorStopClass(err error) *string {
 		raw = called.Stdout
 	}
 	code := called.Returncode
-	return GitOutputStopClass(pystr.DecodeUTF8Replace(raw), called.Cmd, &code)
+	return GitOutputStopClass(strings.ToValidUTF8(string(raw), "\uFFFD"), called.Cmd, &code)
 }
 
 // Stop token for a git call that returned instead of raising

@@ -1,15 +1,15 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Whether a status adapter is present and this run is still the current generation
@@ -84,7 +84,7 @@ func (t *TurnRunner) statusCallbackSync(eventType string, message any) {
 			text = pyrepr.Str(message)
 		}
 		pkgLog().Debug(fmt.Sprintf("status_callback suppressed for %s/%s: %s", platform, eventType,
-			pystr.Slice(redactGatewayUserFacingSecrets(t.turnCtx, text), 0, 160)))
+			textutil.First(redactGatewayUserFacingSecrets(t.turnCtx, text), 160)))
 		return
 	}
 	text := *prepared

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -38,7 +38,7 @@ func TranscriptTail(path string, lines, chars int) string {
 	if err != nil {
 		return ""
 	}
-	all := pystr.Splitlines(pystr.DecodeUTF8Replace(data), false)
+	all := textutil.Lines(strings.ToValidUTF8(string(data), "\uFFFD"))
 	tail := strings.TrimSpace(strings.Join(all[max(0, len(all)-lines):], "\n"))
 	if rs := []rune(tail); len(rs) > chars {
 		tail = "…" + string(rs[len(rs)-chars:])
@@ -79,7 +79,7 @@ func GitStateHint(cwd string) string {
 		if err := cmd.Run(); err != nil {
 			return "", false
 		}
-		return pystr.DecodeUTF8Replace(out.Bytes()), true
+		return strings.ToValidUTF8(string(out.Bytes()), "\uFFFD"), true
 	}
 	head, ok := run("log", "-1", "--format=%h %s")
 	if !ok {
@@ -92,7 +92,7 @@ func GitStateHint(cwd string) string {
 	branch = strings.TrimSpace(branch)
 	dirty := "?"
 	if status, ok := run("status", "--porcelain"); ok {
-		dirty = strconv.Itoa(len(pystr.Splitlines(status, false)))
+		dirty = strconv.Itoa(len(textutil.Lines(status)))
 	}
 	return fmt.Sprintf("%s @ %s (%s uncommitted file(s)) in %s", branch, strings.TrimSpace(head), dirty, cwd)
 }

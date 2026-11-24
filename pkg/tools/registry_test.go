@@ -7,10 +7,9 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Fresh registry holding one core tool per handler
@@ -78,8 +77,8 @@ func TestExtraKwargsPreserved(t *testing.T) {
 }
 
 func TestOversizedBodyTruncated(t *testing.T) {
-	if e := decodeRegistryResult(t, toolErrorJSON("boom: "+strings.Repeat("X", 5000), nil))["error"].(string); !strings.HasSuffix(e, truncatedMarker) || pystr.Len(e) > maxToolErrorChars+pystr.Len(truncatedMarker) {
-		t.Fatalf("oversized length %d", pystr.Len(e))
+	if e := decodeRegistryResult(t, toolErrorJSON("boom: "+strings.Repeat("X", 5000), nil))["error"].(string); !strings.HasSuffix(e, truncatedMarker) || utf8.RuneCountInString(e) > maxToolErrorChars+utf8.RuneCountInString(truncatedMarker) {
+		t.Fatalf("oversized length %d", utf8.RuneCountInString(e))
 	}
 }
 
@@ -92,8 +91,8 @@ func TestAtLimitNotTruncated(t *testing.T) {
 func TestLongerPrefixReachesLogsThanContext(t *testing.T) {
 	env, logs := recordingEnv()
 	body := "boom: " + strings.Repeat("Z", 5000)
-	if got := boundModelErrorText(env, body); pystr.Len(got) >= 5000 || !strings.Contains(strings.Join(logs.messages(), "\n"), body[:5000]) {
-		t.Fatalf("context length %d logs %d", pystr.Len(got), len(logs.messages()))
+	if got := boundModelErrorText(env, body); utf8.RuneCountInString(got) >= 5000 || !strings.Contains(strings.Join(logs.messages(), "\n"), body[:5000]) {
+		t.Fatalf("context length %d logs %d", utf8.RuneCountInString(got), len(logs.messages()))
 	}
 }
 
@@ -102,8 +101,8 @@ func TestLogLineIsBoundedForHugeBodies(t *testing.T) {
 	huge := "boom: " + strings.Repeat("Z", 500_000)
 	boundModelErrorText(env, huge)
 	for _, m := range logs.messages() {
-		if pystr.Len(m) >= maxLoggedErrorChars+200 || strings.Contains(m, huge) {
-			t.Fatalf("log line length %d", pystr.Len(m))
+		if utf8.RuneCountInString(m) >= maxLoggedErrorChars+200 || strings.Contains(m, huge) {
+			t.Fatalf("log line length %d", utf8.RuneCountInString(m))
 		}
 	}
 }
@@ -112,7 +111,7 @@ func TestLogLineIsBoundedForHugeBodies(t *testing.T) {
 func TestToolErrorBoundingCutsCodePoints(t *testing.T) {
 	wide := strings.Repeat("é", maxToolErrorChars+5)
 	if got := boundModelErrorText(nil, wide); got != strings.Repeat("é", maxToolErrorChars)+truncatedMarker {
-		t.Fatalf("code point cut length %d", pystr.Len(got))
+		t.Fatalf("code point cut length %d", utf8.RuneCountInString(got))
 	}
 	if got := boundModelErrorText(nil, strings.Repeat("é", maxToolErrorChars)); got != strings.Repeat("é", maxToolErrorChars) {
 		t.Fatal("two byte message at the code point limit truncated")
@@ -140,14 +139,14 @@ func TestDirectJsonErrorResultTruncated(t *testing.T) {
 	out := directDispatch(d, "direct")
 	result := decodeRegistryResult(t, out)
 	e, _ := result["error"].(string)
-	if !strings.HasSuffix(e, truncatedMarker) || pystr.Len(e) > maxToolErrorChars+pystr.Len(truncatedMarker) || result["status"] != "error" || result["tool_calls_made"] != float64(3) || result["duration_seconds"] != 1.2 {
+	if !strings.HasSuffix(e, truncatedMarker) || utf8.RuneCountInString(e) > maxToolErrorChars+utf8.RuneCountInString(truncatedMarker) || result["status"] != "error" || result["tool_calls_made"] != float64(3) || result["duration_seconds"] != 1.2 {
 		t.Fatalf("direct %v", result)
 	}
 	if !strings.HasPrefix(out, `{"status": "error", "error": "boom: XXX`) || !strings.HasSuffix(out, `[truncated]", "tool_calls_made": 3, "duration_seconds": 1.2}`) {
 		t.Fatalf("direct result lost json.dumps key order or separators %q...%q", out[:40], out[len(out)-60:])
 	}
 	if out := directDispatch(d, "wide"); out != `{"error": "`+strings.Repeat("é", maxToolErrorChars)+truncatedMarker+`", "n": 1}` {
-		t.Fatalf("non ascii error cut by bytes, length %d", pystr.Len(out))
+		t.Fatalf("non ascii error cut by bytes, length %d", utf8.RuneCountInString(out))
 	}
 }
 
@@ -189,11 +188,11 @@ func TestRaisingHandlerLogsBoundedMessage(t *testing.T) {
 		t.Fatal("dispatch should log the failure")
 	}
 	for _, m := range messages {
-		if pystr.Len(m) >= maxLoggedErrorChars+200 || strings.Contains(m, body) {
-			t.Fatalf("log line length %d", pystr.Len(m))
+		if utf8.RuneCountInString(m) >= maxLoggedErrorChars+200 || strings.Contains(m, body) {
+			t.Fatalf("log line length %d", utf8.RuneCountInString(m))
 		}
 	}
-	if e, _ := result["error"].(string); pystr.Len(e) >= maxToolErrorChars+200 || !strings.HasPrefix(e, "[TOOL_ERROR] Tool execution failed: errorString: upstream said: ") {
+	if e, _ := result["error"].(string); utf8.RuneCountInString(e) >= maxToolErrorChars+200 || !strings.HasPrefix(e, "[TOOL_ERROR] Tool execution failed: errorString: upstream said: ") {
 		t.Fatalf("error %.120q", e)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
@@ -21,6 +22,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -210,10 +213,10 @@ func truthy(v any) bool {
 
 // Decoded body of a JS string literal with escapes normalized, the raw body when the escapes do not decode
 func decodeJSStringLiteral(literal string) string {
-	if pystr.Len(literal) < 2 {
+	if utf8.RuneCountInString(literal) < 2 {
 		return literal
 	}
-	body := pystr.Slice(literal, 1, pystr.Len(literal)-1)
+	body := textutil.DropLast(textutil.DropFirst(literal, 1), 1)
 	if pystr.StrictUTF8EncodeError(body) != nil {
 		return body
 	}
@@ -311,9 +314,9 @@ func writeCacheFile(path, content string) error {
 func (s *scope) storeFullSnapshot(snapshotText string) string {
 	path, err := func() (string, error) {
 		content := s.redactText(snapshotText)
-		if n := pystr.Len(content); n > maxStoredSnapshotChars {
-			content = pystr.Slice(content, 0, maxStoredSnapshotChars) + fmt.Sprintf("\n\n[... stored copy truncated at %s chars of %s ...]",
-				pystr.GroupThousands(maxStoredSnapshotChars), pystr.GroupThousands(int64(n)))
+		if n := utf8.RuneCountInString(content); n > maxStoredSnapshotChars {
+			content = textutil.First(content, maxStoredSnapshotChars) + fmt.Sprintf("\n\n[... stored copy truncated at %s chars of %s ...]",
+				textutil.Thousands(maxStoredSnapshotChars), textutil.Thousands(int64(n)))
 		}
 		cacheDir := home.IcebathDir(s.home, "cache/web", "web_cache")
 		if st, err := os.Lstat(cacheDir); err == nil && st.Mode()&os.ModeSymlink != 0 {
@@ -341,16 +344,16 @@ func (s *scope) storeFullSnapshot(snapshotText string) string {
 
 // Snapshot cut at a line boundary to maxChars, the note naming the stored full tree for refs past the cut
 func (s *scope) truncateSnapshot(snapshotText string, maxChars int64) string {
-	if int64(pystr.Len(snapshotText)) <= maxChars {
+	if int64(utf8.RuneCountInString(snapshotText)) <= maxChars {
 		return snapshotText
 	}
 	storedPath := s.storeFullSnapshot(snapshotText)
 	lines := strings.Split(snapshotText, "\n")
 	var result []string
 	var chars int64
-	reserve := min(110+int64(pystr.Len(storedPath)), floorDiv(maxChars, 2))
+	reserve := min(110+int64(utf8.RuneCountInString(storedPath)), floorDiv(maxChars, 2))
 	for _, line := range lines {
-		n := int64(pystr.Len(line))
+		n := int64(utf8.RuneCountInString(line))
 		if chars+n+1 > maxChars-reserve {
 			break
 		}

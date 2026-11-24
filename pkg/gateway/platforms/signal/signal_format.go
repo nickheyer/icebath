@@ -8,7 +8,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -66,16 +65,16 @@ func runeSlice(rs []rune, start, end int) []rune {
 
 // Alternating outside and fenced parts of the source the way re.split keeps its capture group
 func splitFences(source string) []string {
-	runes := pystr.Runes(source)
+	runes := []rune(source)
 	var parts []string
 	last := 0
 	m, _ := fenceSplitRE.FindRunesMatch(runes)
 	for m != nil {
-		parts = append(parts, pystr.FromRunes(runes[last:m.RuneIndex]), pystr.FromRunes(runes[m.RuneIndex:m.RuneIndex+m.RuneLength]))
+		parts = append(parts, string(runes[last:m.RuneIndex]), string(runes[m.RuneIndex:m.RuneIndex+m.RuneLength]))
 		last = m.RuneIndex + m.RuneLength
 		m, _ = fenceSplitRE.FindNextMatch(m)
 	}
-	return append(parts, pystr.FromRunes(runes[last:]))
+	return append(parts, string(runes[last:]))
 }
 
 // Markdown bullet markers outside code fences replaced with plain Unicode bullets
@@ -134,7 +133,7 @@ func markdownToSignal(text string) (string, []string) {
 	if err != nil {
 		panic(err)
 	}
-	runes := pystr.Runes(fenceTables(normalizeBulletMarkers(strings.TrimSpace(collapsed))))
+	runes := []rune(fenceTables(normalizeBulletMarkers(strings.TrimSpace(collapsed))))
 	var styles []styleRange
 	for {
 		m, _ := codeBlockRE.FindRunesMatch(runes)
@@ -263,5 +262,5 @@ func markdownToSignal(text string) (string, []string) {
 			styleStrings = append(styleStrings, fmt.Sprintf("%d:%d:%s", utf16LenRunes(runes[:s.start]), utf16LenRunes(runes[s.start:s.start+s.length]), s.style))
 		}
 	}
-	return pystr.FromRunes(runes), styleStrings
+	return string(runes), styleStrings
 }

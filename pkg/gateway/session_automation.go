@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -293,7 +293,7 @@ func AutomationDisplayMetadata(get func(key string) (any, bool)) (*pyjson.Object
 	}
 	kindText, isKind := kind.(string)
 	body, isBody := text.(string)
-	if !isKind || !ProducerCardKinds[kindText] || !isBody || strings.TrimSpace(body) == "" || pystr.Len(body) > automationDisplayTextLimit {
+	if !isKind || !ProducerCardKinds[kindText] || !isBody || strings.TrimSpace(body) == "" || utf8.RuneCountInString(body) > automationDisplayTextLimit {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	out.Set("display_kind", kindText)

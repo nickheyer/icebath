@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -264,7 +263,7 @@ func ghAPI(ctx context.Context, endpoint string, query *string, paginate bool, p
 		if i := bytes.IndexByte([]byte(endpoint), '?'); i >= 0 {
 			short = endpoint[:i]
 		}
-		if m := deniedRE.FindStringSubmatch(pystr.DecodeUTF8Replace(stderr.Bytes())); m != nil {
+		if m := deniedRE.FindStringSubmatch(strings.ToValidUTF8(string(stderr.Bytes()), "\uFFFD")); m != nil {
 			panic(&gateAuthError{fmt.Sprintf("HTTP %s on %s", m[1], short)})
 		}
 		if exitErr.ExitCode() == 4 {
@@ -275,7 +274,7 @@ func ghAPI(ctx context.Context, endpoint string, query *string, paginate bool, p
 	if err != nil {
 		gateRaise("OSError", "%v", err)
 	}
-	value, err := pyjson.Loads(pystr.DecodeUTF8Replace(stdout.Bytes()))
+	value, err := pyjson.Loads(strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD"))
 	if err != nil {
 		gateRaise("ValueError", "%v", err)
 	}

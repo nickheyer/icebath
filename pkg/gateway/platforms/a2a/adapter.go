@@ -1,8 +1,6 @@
 package a2a
 
 import (
-	"unicode"
-
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -28,11 +27,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -882,7 +882,7 @@ func (a *A2AAdapter) finalizeTask(pending *pendingTask, state, reply string) (st
 	stripped := strings.TrimLeftFunc(reply, unicode.IsSpace)
 	if state == StateCompleted && strings.HasPrefix(strings.ToUpper(stripped), InputRequiredMarker) {
 		state = StateInputRequired
-		reply = strings.TrimSpace(pystr.Slice(stripped, len([]rune(InputRequiredMarker)), len([]rune(stripped))))
+		reply = strings.TrimSpace(textutil.DropFirst(stripped, utf8.RuneCountInString(InputRequiredMarker)))
 	}
 	started := pending.started
 	a.recordOutcome(pending.taskID, pending.contextID, pending.peer, state, reply, &started)
@@ -1171,7 +1171,7 @@ func (a *A2AAdapter) sendPushNotification(ctx context.Context, taskID, contextID
 		fail("blocked — unsafe callback URL: %s", callbackURL)
 		return
 	}
-	payload := StatusUpdate(taskID, contextID, state, pystr.Slice(reply, 0, 2000))
+	payload := StatusUpdate(taskID, contextID, state, textutil.First(reply, 2000))
 	headers := map[string]string{"Content-Type": "application/json"}
 	signature, err := a.securityContext.SignPushPayload(payload)
 	if err != nil {

@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyplist"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -43,7 +42,7 @@ func systemdUnitIcebathHome(ctx context.Context, scopeCmd []string, svcName stri
 	envLine := strings.TrimSpace(completedStdout(shown))
 	tokens, err := pyshlex.SplitPOSIX(envLine, false)
 	if err != nil {
-		tokens = pystr.SplitWhitespace(envLine, -1)
+		tokens = strings.Fields(envLine)
 	}
 	for _, token := range tokens {
 		key, value, found := strings.Cut(token, "=")

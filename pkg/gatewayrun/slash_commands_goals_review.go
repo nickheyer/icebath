@@ -1,10 +1,9 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"errors"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/agent"

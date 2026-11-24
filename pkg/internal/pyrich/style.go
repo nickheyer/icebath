@@ -2,12 +2,13 @@ package pyrich
 
 import (
 	"fmt"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"hash/crc32"
 	"math"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Rich style whose unset fields inherit, an attribute is 1 for on, -1 for explicitly off and 0 for unset

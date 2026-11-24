@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/cliui"
@@ -23,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -248,7 +251,7 @@ func journeyFrameLines(palette map[string]string, payload map[string]any, cols, 
 		grow, _ := growAny.([]any)
 		lines = append(lines, append(journeyLine{{Text: "  "}}, journeyRowRuns(palette, grow, color)...))
 	}
-	gap := max(1, inner-pystr.Len(axis["start"])-pystr.Len(axis["end"]))
+	gap := max(1, inner-utf8.RuneCountInString(axis["start"])-utf8.RuneCountInString(axis["end"]))
 	lines = append(lines, journeyLine{{Text: "  "}, {Text: axis["start"], Style: styleIf(color, "grey54")}, {Text: strings.Repeat(" ", gap)}, {Text: axis["end"], Style: styleIf(color, "grey54")}})
 	pct := int(math.RoundToEven(reveal * 100))
 	date := pyrepr.Str(frame["date"])
@@ -270,8 +273,8 @@ func journeyFrameLines(palette map[string]string, payload map[string]any, cols, 
 				signalStyle = resolveChartedSignal(palette, pyrepr.Str(item["style"]), alpha)
 			}
 			meta := pyrepr.Str(item["meta"])
-			if pystr.Len(meta) > 32 {
-				meta = pystr.Slice(meta, 0, 29) + "…"
+			if utf8.RuneCountInString(meta) > 32 {
+				meta = textutil.First(meta, 29) + "…"
 			}
 			lines = append(lines, journeyLine{{Text: "  "}, {Text: pyrepr.Str(item["key"]) + " ", Style: styleIf(color, "grey70")},
 				{Text: pyrepr.Str(item["glyph"]) + " ", Style: signalStyle}, {Text: pyrepr.Str(item["label"]), Style: signalStyle},

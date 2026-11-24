@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // One AST deep scan hit, the (file, line, pattern_id, description) tuple of tools/skills_ast_audit.py
@@ -129,7 +128,7 @@ func astScanFile(py, rel string) []ASTFinding {
 	if err != nil {
 		return nil
 	}
-	text := strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\uFEFF")
+	text := strings.TrimPrefix(strings.ToValidUTF8(string(data), "\uFFFD"), "\uFEFF")
 	return astScanSource(text, rel)
 }
 

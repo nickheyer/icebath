@@ -34,9 +34,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Longest error body a tool result may carry
@@ -1131,7 +1132,7 @@ func keylessResponseText(header http.Header, raw []byte) (string, error) {
 			return pycodecs.DecodeReplace(raw, declared)
 		}
 	}
-	return pystr.DecodeUTF8Replace(raw), nil
+	return strings.ToValidUTF8(string(raw), "\uFFFD"), nil
 }
 
 // Charset requests get_encoding_from_headers reads from a content type, its text and json defaults included
@@ -1349,7 +1350,7 @@ func parseExaSearchText(text string, limit int) []WebSearchHit {
 		title, u := "", ""
 		highlights := []string{}
 		inHighlights := false
-		for _, line := range pystr.Splitlines(block, false) {
+		for _, line := range textutil.Lines(block) {
 			stripped := strings.TrimSpace(line)
 			switch {
 			case strings.HasPrefix(stripped, "Title:"):
@@ -1406,7 +1407,7 @@ func exaExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, error) {
 			return nil, err
 		}
 		title := ""
-		for _, line := range pystr.Splitlines(text, false) {
+		for _, line := range textutil.Lines(text) {
 			s := strings.TrimSpace(line)
 			if strings.HasPrefix(s, "# ") {
 				title = strings.TrimSpace(s[2:])
@@ -1510,7 +1511,7 @@ func requestsJSON(header http.Header, raw []byte) (any, error) {
 		if !errors.As(err, &le) {
 			return nil, err
 		}
-		text = pystr.DecodeUTF8Replace(raw)
+		text = strings.ToValidUTF8(string(raw), "\uFFFD")
 	}
 	return pyjson.Loads(text)
 }

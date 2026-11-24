@@ -1,14 +1,13 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"

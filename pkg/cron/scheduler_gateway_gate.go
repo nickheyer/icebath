@@ -9,7 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const gatewayDownHint = "the gateway is not running, so agent jobs cannot fire; they run at the next tick once it is " +
@@ -55,7 +56,7 @@ func (s *Store) noteFireRefused(ctx context.Context, jobIDs []string, detail str
 			if !ids[job.ID] {
 				continue
 			}
-			job.LastFireError = &Stamp{At: s.clk.nowISO(), Detail: pystr.Slice(detail, 0, 500)}
+			job.LastFireError = &Stamp{At: s.clk.nowISO(), Detail: textutil.First(detail, 500)}
 			job.PendingSlot = nil
 			if job.RunClaim != nil {
 				job.setNull("run_claim")

@@ -1,8 +1,6 @@
 package provider
 
 import (
-	"unicode"
-
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -386,7 +385,7 @@ func (s *CommandTokenSource) mint(ctx context.Context) (string, time.Duration, e
 		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s exited %d. Run that provider's key_cmd manually to see why "+
 			"(e.g. `databricks auth login` if its OAuth session expired).", label, code)}
 	}
-	out := pystr.TranslateNewlines(pystr.DecodeUTF8Replace(stdout))
+	out := pystr.TranslateNewlines(strings.ToValidUTF8(string(stdout), "\uFFFD"))
 	if strings.TrimSpace(out) == "" {
 		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s produced no output", label)}
 	}

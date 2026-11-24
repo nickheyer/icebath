@@ -1,8 +1,6 @@
 package app
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/gorilla/websocket"
@@ -503,7 +502,7 @@ func gatewayReadQueryFile(ctx context.Context, path string) (string, error) {
 			if r.err != nil {
 				return "", r.err
 			}
-			return pystr.TranslateNewlines(pystr.DecodeUTF8Replace(r.data)), nil
+			return pystr.TranslateNewlines(strings.ToValidUTF8(string(r.data), "\uFFFD")), nil
 		case <-ctx.Done():
 			return "", ctx.Err()
 		}

@@ -7,12 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -265,7 +265,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 	var requestID string
 	if raw, has := params["request_id"]; has {
 		text, isText := raw.(string)
-		if !isText || text == "" || pystr.Len(text) > 256 {
+		if !isText || text == "" || utf8.RuneCountInString(text) > 256 {
 			return nil, nil, invalidParams("request_id", "must be a non-empty string of at most 256 characters")
 		}
 		requestID = text

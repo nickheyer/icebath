@@ -12,13 +12,13 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/gitcred"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -106,7 +106,7 @@ func lockHolderHint(path string) string {
 	if err != nil {
 		return ""
 	}
-	fields := strings.FieldsFunc(strings.TrimPrefix(strings.ToValidUTF8(string(raw), "\ufffd"), "\ufeff"), pystr.IsSpace)
+	fields := strings.FieldsFunc(strings.TrimPrefix(strings.ToValidUTF8(string(raw), "\ufffd"), "\ufeff"), unicode.IsSpace)
 	if len(fields) == 0 {
 		return ""
 	}

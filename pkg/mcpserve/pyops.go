@@ -2,12 +2,11 @@
 package mcpserve
 
 import (
-	"strings"
-
 	"fmt"
 	"math"
 	"math/big"
 	"sort"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"

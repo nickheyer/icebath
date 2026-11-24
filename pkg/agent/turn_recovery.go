@@ -15,9 +15,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Sleep and wall clock seams the interruptible backoff slices its wait over
@@ -245,7 +246,7 @@ func responseAttrs(response any) map[string]any {
 	if m, ok := response.(map[string]any); ok {
 		for k, v := range m {
 			if !strings.HasPrefix(k, "_") {
-				out[k] = pystr.Slice(pyrepr.Str(v), 0, 100)
+				out[k] = textutil.First(pyrepr.Str(v), 100)
 			}
 		}
 	}

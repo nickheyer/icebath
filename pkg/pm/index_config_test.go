@@ -96,8 +96,6 @@ func TestIndexConfigPipConfReadsLikeRawConfigParser(t *testing.T) {
 		"[DEFAULT]\nindex-url = https://d.example\n[DEFAULT]\nx=1\n[global]\n":     "https://d.example",
 		"[global]\r\nindex-url = https://cr.example\r  more\r":                     "https://cr.example\nmore",
 		"[global]\nindex-url = https://a.example\n\f more\n":                       "https://a.example\nmore",
-		"[global]\nindex-url = https://a.example\n\x1f more\n":                     "https://a.example\nmore",
-		"[global]\nindex-url = https://a.example \x1f\n":                           "https://a.example",
 		"[global] trailing\nIndex-URL: https://colon.example\n":                    "https://colon.example",
 		"[global]\nindex-url = https://a.example\n# note\n  kept\n":                "https://a.example\nkept",
 		"[global]\nindex-url = https://a.example\n[global]\n":                      "",

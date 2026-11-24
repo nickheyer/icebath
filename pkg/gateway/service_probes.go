@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // True when a systemctl failure is the RuntimeError or timeout the probes swallow
@@ -107,7 +107,7 @@ func systemctlShow(ctx context.Context, properties []string, system bool) (map[s
 	if err != nil || res.ReturnCode != 0 {
 		return map[string]string{}, nil
 	}
-	return parseKVPairs(pystr.Splitlines(res.Stdout, false)), nil
+	return parseKVPairs(textutil.Lines(res.Stdout)), nil
 }
 
 // Unit state properties, the default ActiveState SubState Result ExecMainStatus MainPID set when none are named
@@ -152,7 +152,7 @@ func SyncIcebathHomeFromSystemdUnit(ctx context.Context, system bool) error {
 		if err != nil {
 			return err
 		}
-		unitHome = strings.TrimSpace(parseKVPairs(pystr.SplitWhitespace(props["Environment"], -1))["ICEBATH_HOME"])
+		unitHome = strings.TrimSpace(parseKVPairs(strings.Fields(props["Environment"]))["ICEBATH_HOME"])
 	}
 	if unitHome != "" && strings.TrimSpace(os.Getenv("ICEBATH_HOME")) != unitHome {
 		os.Setenv("ICEBATH_HOME", unitHome)

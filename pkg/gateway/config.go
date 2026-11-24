@@ -1,9 +1,8 @@
 package gateway
 
 import (
-	"strings"
-
 	"regexp"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"

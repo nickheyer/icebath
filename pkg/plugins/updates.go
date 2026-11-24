@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyversion"
 )
 
@@ -239,5 +238,5 @@ var defaultFetch = func(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pystr.DecodeUTF8Replace(data), nil
+	return strings.ToValidUTF8(string(data), "\uFFFD"), nil
 }

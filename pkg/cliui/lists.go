@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // How one list prompt maps its ending to a result, off a terminal and when replayed
@@ -143,7 +143,7 @@ func (c *Console) CursesRadiolist(ctx context.Context, title string, items []Rad
 		cancel = *opts.CancelReturns
 	}
 	p := c.newListPrompt(title, items, selected, opts.Headings)
-	p.desc = pystr.Splitlines(opts.Description, false)
+	p.desc = textutil.Lines(opts.Description)
 	p.searchable = opts.Searchable
 	p.labels = rowLabels(p.rows, opts.SearchLabels)
 	p.yesNo = len(items) == 2 && RadioItemPlain(items[0]) == "Yes" && RadioItemPlain(items[1]) == "No"

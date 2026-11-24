@@ -10,7 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Home directory the way Path home resolves it, expanding a bare tilde
@@ -93,7 +94,7 @@ func NPMRegistry(env map[string]string) string {
 		}
 		npmrc = expandUser(npmrc)
 		if data, err := os.ReadFile(npmrc); err == nil && utf8.Valid(data) {
-			for _, line := range pystr.Splitlines(string(trimBOM(data)), false) {
+			for _, line := range textutil.Lines(string(trimBOM(data))) {
 				key, candidate, found := strings.Cut(line, "=")
 				if found && strings.ToLower(strings.TrimSpace(key)) == "registry" {
 					value = strings.Trim(strings.TrimSpace(candidate), `"'`)

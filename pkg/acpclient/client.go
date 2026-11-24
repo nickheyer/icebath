@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -375,14 +374,14 @@ func pumpLines(r io.Reader, sink func(string)) {
 	br := bufio.NewReader(r)
 	var pending []byte
 	flush := func() {
-		sink(pystr.DecodeUTF8Replace(pending) + "\n")
+		sink(strings.ToValidUTF8(string(pending), "\uFFFD") + "\n")
 		pending = pending[:0]
 	}
 	for {
 		b, err := br.ReadByte()
 		if err != nil {
 			if len(pending) > 0 {
-				sink(pystr.DecodeUTF8Replace(pending))
+				sink(strings.ToValidUTF8(string(pending), "\uFFFD"))
 			}
 			return
 		}

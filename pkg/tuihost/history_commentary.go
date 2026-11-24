@@ -4,12 +4,12 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -110,7 +110,7 @@ func withoutFlattenedCommentary(reasoning string, commentary []string) string {
 			unique = append(unique, text)
 		}
 	}
-	slices.SortStableFunc(unique, func(a, b string) int { return pystr.Len(b) - pystr.Len(a) })
+	slices.SortStableFunc(unique, func(a, b string) int { return utf8.RuneCountInString(b) - utf8.RuneCountInString(a) })
 	remaining := reasoning
 	for _, text := range unique {
 		searchFrom := 0

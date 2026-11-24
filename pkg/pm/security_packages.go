@@ -15,7 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // ProxySubprocessEnvAllowlist is the infrastructure only environment an iron-proxy child may see
@@ -141,7 +142,7 @@ func (s *SignedBinary) Stage(store *Store, staged, version, target string) error
 	}
 	expected := ""
 	found := false
-	for _, line := range pystr.Splitlines(string(trimBOM(data)), false) {
+	for _, line := range textutil.Lines(string(trimBOM(data))) {
 		row := strings.Fields(line)
 		if len(row) == 2 && strings.TrimLeft(row[1], "*") == filename {
 			expected, found = row[0], true

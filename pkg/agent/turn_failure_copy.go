@@ -11,9 +11,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // SiteFailureCodes are the failure codes loop sites mint that are not provider verdicts
@@ -355,12 +356,12 @@ func ShortDetail(exc any, limit int) string {
 	if text == "" {
 		text = "no details given"
 	}
-	lines := pystr.Splitlines(strings.TrimSpace(text), false)
+	lines := textutil.Lines(strings.TrimSpace(text))
 	first := "no details given"
 	if len(lines) > 0 {
 		first = lines[0]
 	}
-	runes := pystr.Runes(first)
+	runes := []rune(first)
 	if len(runes) <= limit {
 		return first
 	}
@@ -368,5 +369,5 @@ func ShortDetail(exc any, limit int) string {
 	if end < 0 {
 		end = max(len(runes)+end, 0)
 	}
-	return pystr.FromRunes(runes[:end]) + "…"
+	return string(runes[:end]) + "…"
 }

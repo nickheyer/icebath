@@ -14,9 +14,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Colored CLI line printer of the worktree setup, the cli _cprint the app replaces with its renderer
@@ -181,7 +182,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 			envLog(nil).Debug(fmt.Sprintf("worktree base: default-branch resolution failed: %s", err))
 			return "HEAD", "HEAD (local — could not reach remote)"
 		}
-		for _, line := range pystr.Splitlines(show.Stdout, false) {
+		for _, line := range textutil.Lines(show.Stdout) {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "HEAD branch:") {
 				_, rest, _ := strings.Cut(line, ":")
@@ -209,12 +210,12 @@ func ensureWorktreesGitignored(repoRoot string) {
 	gitignore := filepath.Join(repoRoot, ".gitignore")
 	existing := ""
 	if raw, err := os.ReadFile(gitignore); err == nil {
-		existing = pystr.DecodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
+		existing = strings.ToValidUTF8(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))), "\uFFFD")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		envLog(nil).Debug(fmt.Sprintf("Could not update .gitignore: %s", err))
 		return
 	}
-	for _, line := range pystr.Splitlines(existing, false) {
+	for _, line := range textutil.Lines(existing) {
 		if line == ".worktrees/" {
 			return
 		}

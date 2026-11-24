@@ -17,9 +17,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // CuratorArgs holds every flag and positional of the curator subcommands
@@ -191,7 +192,7 @@ func (c *CuratorCLI) printCuratorConfig(ctx context.Context) error {
 	}
 	lines := []string{summary}
 	if strings.Contains(summary, "\n") {
-		lines = pystr.Splitlines(summary, false)
+		lines = textutil.Lines(summary)
 	}
 	if len(lines) == 0 {
 		return fmt.Errorf("not enough values to unpack (expected at least 1, got 0)")

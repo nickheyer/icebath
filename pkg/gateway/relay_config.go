@@ -1,9 +1,8 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/settings"
 )

@@ -15,9 +15,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // How long a turn waits for its settlement after an interrupt
@@ -543,7 +544,7 @@ func (a *GatewayAgent) InterruptRequested() bool {
 }
 
 // First 300 characters of an error, the one line a failed side call shows
-func (a *GatewayAgent) SummarizeAPIError(err error) string { return pystr.Slice(err.Error(), 0, 300) }
+func (a *GatewayAgent) SummarizeAPIError(err error) string { return textutil.First(err.Error(), 300) }
 
 // Sends session.interrupt for the running generation, the message staying with the CLI
 func (a *GatewayAgent) Interrupt() {

@@ -1,8 +1,6 @@
 package discord
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -16,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 

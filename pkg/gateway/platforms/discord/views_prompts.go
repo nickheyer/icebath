@@ -1,8 +1,6 @@
 package discord
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/bwmarrin/discordgo"
 

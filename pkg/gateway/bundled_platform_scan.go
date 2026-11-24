@@ -1,12 +1,11 @@
 package gateway
 
 import (
-	"strings"
-
 	"bytes"
 	"io/fs"
 	"path"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"

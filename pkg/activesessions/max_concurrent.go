@@ -1,11 +1,10 @@
 package activesessions
 
 import (
-	"strings"
-
 	"fmt"
 	"math"
 	"math/big"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

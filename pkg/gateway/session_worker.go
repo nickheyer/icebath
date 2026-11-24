@@ -6,11 +6,11 @@ import (
 	"math/big"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -55,7 +55,7 @@ func workerClaim(ctx context.Context, c *AuthorityConnection, params *pyjson.Obj
 	birth, birthNumber := strictNumber(params.GetOr("birth", nil))
 	secret, secretText := params.GetOr("secret", nil).(string)
 	if !pidInt || pidValue.Sign() <= 0 || !pidValue.IsInt64() || pidValue.Int64() == int64(os.Getpid()) || !birthNumber ||
-		!secretText || pystr.Len(secret) < 16 || pystr.Len(secret) > 256 {
+		!secretText || utf8.RuneCountInString(secret) < 16 || utf8.RuneCountInString(secret) > 256 {
 		return "", runtimeRefusal("invalid_params")
 	}
 	pid := int(pidValue.Int64())

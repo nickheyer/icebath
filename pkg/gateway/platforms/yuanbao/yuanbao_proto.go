@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -212,7 +213,7 @@ func (d FieldDict) first(fn int64, wt int64) any {
 // GetString decodes the first length delimited field with replacement, empty when absent
 func (d FieldDict) GetString(fn int64) string {
 	if b, ok := d.first(fn, WTLen).([]byte); ok {
-		return pystr.DecodeUTF8Replace(b)
+		return strings.ToValidUTF8(string(b), "\uFFFD")
 	}
 	return ""
 }

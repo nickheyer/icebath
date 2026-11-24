@@ -411,7 +411,7 @@ func pauseRetired(path string) (map[string]bool, error) {
 		return nil, &PauseRecordError{Kind: "RetiredUnknown", Msg: fmt.Sprintf("cannot read the retired paused-gateway list %s: %s", target, errchain.OSText(err))}
 	}
 	var ids any
-	if v, err := pyjson.Loads(pystr.DecodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))); err == nil {
+	if v, err := pyjson.Loads(strings.ToValidUTF8(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))), "\uFFFD")); err == nil {
 		if obj, ok := v.(*pyjson.Object); ok {
 			ids = obj.Vals["ids"]
 		}

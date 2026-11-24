@@ -23,8 +23,9 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -54,7 +55,7 @@ func runClipText(argv []string, timeoutSeconds int) (clipResult, error) {
 	if err != nil {
 		return clipResult{}, err
 	}
-	return clipResult{code: res.Returncode, stdout: pystr.DecodeUTF8Replace(res.Stdout)}, nil
+	return clipResult{code: res.Returncode, stdout: strings.ToValidUTF8(string(res.Stdout), "\uFFFD")}, nil
 }
 
 // Reports a missing executable the way Python raises FileNotFoundError
@@ -436,7 +437,7 @@ func waylandHasImage() bool {
 		if r.code != 0 {
 			return false
 		}
-		for _, t := range pystr.Splitlines(r.stdout, false) {
+		for _, t := range textutil.Lines(r.stdout) {
 			if strings.HasPrefix(t, "image/") {
 				return true
 			}
@@ -459,7 +460,7 @@ func waylandSave(dest string) bool {
 	}
 	var types []string
 	if r.code == 0 {
-		types = pystr.Splitlines(r.stdout, false)
+		types = textutil.Lines(r.stdout)
 	}
 	mime := ""
 	for _, m := range waylandMimePrefs {

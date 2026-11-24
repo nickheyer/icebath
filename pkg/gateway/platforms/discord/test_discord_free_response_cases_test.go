@@ -2,16 +2,15 @@ package discord
 
 import (
 	"context"
-	"strings"
-	"time"
-
-	"github.com/bwmarrin/discordgo"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/bwmarrin/discordgo"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )

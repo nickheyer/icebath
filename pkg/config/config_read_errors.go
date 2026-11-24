@@ -13,7 +13,6 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 )
 
@@ -83,7 +82,7 @@ func YAMLErrorDetails(err error) string {
 	} else {
 		text = inner.Error()
 	}
-	return strings.Join(pystr.SplitWhitespace(text, -1), " ")
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // Reports whether an error is an operating system error rather than a parse failure

@@ -579,7 +579,7 @@ func pdfCoverageNote(ctx context.Context, p, displayPath string) string {
 	counts := make([]int, len(texts))
 	var empty []int
 	for i, page := range texts {
-		counts[i] = pystr.Len(pyStrip(page))
+		counts[i] = utf8.RuneCountInString(pyStrip(page))
 		if counts[i] < pdfEmptyPageChars {
 			empty = append(empty, i+1)
 		}
@@ -772,7 +772,7 @@ func notebookOutputText(output any) (string, error) {
 		}
 	}
 	if v, ok := data.Get("text/html"); ok {
-		return fmt.Sprintf("[text/html output — %s chars, omitted]", commaInt(pystr.Len(notebookSourceText(v)))), nil
+		return fmt.Sprintf("[text/html output — %s chars, omitted]", commaInt(utf8.RuneCountInString(notebookSourceText(v)))), nil
 	}
 	names := strings.Join(data.Keys, ", ")
 	if names == "" {
@@ -798,7 +798,7 @@ func notebookOutputs(cell *pyjson.Object, jqPointer, filename string) (string, e
 		}
 	}
 	joined := strings.Join(parts, "\n")
-	total := pystr.Len(joined)
+	total := utf8.RuneCountInString(joined)
 	if total <= maxNotebookOutputChars {
 		return joined, nil
 	}
@@ -1375,7 +1375,7 @@ func sqliteCell(v any) string {
 		text = fmt.Sprint(x)
 	}
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "|", `\|`), "\n", " ")
-	if pystr.Len(text) <= sqliteCellChars {
+	if utf8.RuneCountInString(text) <= sqliteCellChars {
 		return text
 	}
 	return firstRunes(text, sqliteCellChars-1) + "…"

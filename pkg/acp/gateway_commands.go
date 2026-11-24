@@ -1,14 +1,13 @@
 package acp
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"

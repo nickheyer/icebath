@@ -24,9 +24,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var githubHosts = map[string]bool{"github.com": true, "gist.github.com": true}
@@ -131,8 +132,8 @@ func runText(ctx context.Context, spec runSpec) (runResult, error) {
 		return runResult{}, fmt.Errorf("Command '%s' timed out: %w", pyrepr.Repr(anyList(spec.argv)), ctx.Err())
 	}
 	res := runResult{
-		stdout: translateNewlines(pystr.DecodeUTF8Replace(stdout.Bytes())),
-		stderr: translateNewlines(pystr.DecodeUTF8Replace(stderr.Bytes())),
+		stdout: translateNewlines(strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD")),
+		stderr: translateNewlines(strings.ToValidUTF8(string(stderr.Bytes()), "\uFFFD")),
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -246,7 +247,7 @@ func fillCredential(ctx context.Context, origin string) (BasicAuth, bool) {
 		return BasicAuth{}, false
 	}
 	fields := map[string]string{}
-	for _, line := range pystr.Splitlines(res.stdout, false) {
+	for _, line := range textutil.Lines(res.stdout) {
 		if k, v, ok := strings.Cut(line, "="); ok {
 			fields[k] = v
 		}

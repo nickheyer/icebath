@@ -11,7 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -373,7 +374,7 @@ func needsRichRendering(content string) bool {
 	if content == "" {
 		return false
 	}
-	for _, line := range pystr.Splitlines(content, false) {
+	for _, line := range textutil.Lines(content) {
 		if gateway.IsTableSeparatorLine(line) {
 			return true
 		}

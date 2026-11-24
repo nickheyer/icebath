@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -37,11 +39,11 @@ func truncateStdoutText(env *tools.Env, stdoutText string) (string, *pyjson.Obje
 	meta.Set("stdout_bytes_total", total)
 	meta.Set("stdout_bytes_omitted", total-captured)
 	if total <= maxStdoutBytes {
-		return pystr.DecodeUTF8Replace(raw), meta
+		return strings.ToValidUTF8(string(raw), "\uFFFD"), meta
 	}
 	head, tail := tools.HeadTailSplit(maxStdoutBytes)
-	text := pystr.DecodeUTF8Replace(raw[:head]) + tools.TruncationNotice(total-captured, total, "", "bytes") +
-		pystr.DecodeUTF8Replace(raw[len(raw)-tail:])
+	text := strings.ToValidUTF8(string(raw[:head]), "\uFFFD") + tools.TruncationNotice(total-captured, total, "", "bytes") +
+		strings.ToValidUTF8(string(raw[len(raw)-tail:]), "\uFFFD")
 	meta.Set("warning", "execute_code stdout was truncated; the script did run, but only "+
 		"the captured head/tail output is included. Re-run only with "+
 		"narrower output if the omitted data is required.")
@@ -56,8 +58,8 @@ func truncateStdoutText(env *tools.Env, stdoutText string) (string, *pyjson.Obje
 
 // Full stdout written under cache/exec keyed by digest, empty when the write fails
 var spillFullStdout = func(env *tools.Env, stdoutText string) string {
-	if pystr.Len(stdoutText) > maxSpilledStdoutBytes {
-		stdoutText = pystr.FromRunes(pystr.Runes(stdoutText)[:maxSpilledStdoutBytes]) + "\n\n[... spill capped at 5,000,000 bytes ...]"
+	if utf8.RuneCountInString(stdoutText) > maxSpilledStdoutBytes {
+		stdoutText = string([]rune(stdoutText)[:maxSpilledStdoutBytes]) + "\n\n[... spill capped at 5,000,000 bytes ...]"
 	}
 	dir := home.IcebathDir(envHome(env), "cache/exec", "exec_spill")
 	if err := os.MkdirAll(dir, 0o777); err != nil {

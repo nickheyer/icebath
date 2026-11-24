@@ -2,6 +2,7 @@ package commands
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -490,7 +491,7 @@ func (f *apFormatter) text(text string, raw bool) string {
 	indent := strings.Repeat(" ", f.indent)
 	if raw {
 		var b strings.Builder
-		for _, line := range pystr.Splitlines(text, true) {
+		for _, line := range slices.Collect(strings.Lines(text)) {
 			b.WriteString(indent + line)
 		}
 		return b.String() + "\n\n"

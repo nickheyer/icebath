@@ -1704,60 +1704,6 @@ func TestPipeStdinMissingPipeRecordsError(t *testing.T) {
 	}
 }
 
-// Exact refusal text of a write whose content holds a lone surrogate
-func loneSurrogateRefusal(path, repr string) string {
-	return "Refusing to write '" + path + "': content contains a lone surrogate character (" + repr +
-		") that cannot be encoded as UTF-8. The file was NOT created or modified."
-}
-
-func TestFileOpsWriteFileRejectsUnencodableSurrogateBeforeWrite(t *testing.T) {
-	for _, native := range []bool{true, false} {
-		ops, env, dir := hostFileOps(t, native)
-		for bad, repr := range map[string]string{"\xed\xa0\x80": `'\ud800'`, "\xed\xb1\xbf": `'\udc7f'`, "\xed\xb4\x80": `'\udd00'`} {
-			p := filepath.Join(dir, "reject.bin")
-			resetEnvCommands(env)
-			r := ops.WriteFile(p, bad, nil)
-			if r.Error != loneSurrogateRefusal(p, repr) || strings.Contains(r.Error, "timed out") || strings.Contains(r.Error, "codec can't encode") {
-				t.Fatalf("native=%v %q: %+v", native, bad, r)
-			}
-			if _, err := os.Stat(p); err == nil {
-				t.Fatalf("native=%v %q created the file", native, bad)
-			}
-			if cmds := envCommands(env); len(cmds) != 0 {
-				t.Fatalf("native=%v %q ran %q before refusing", native, bad, cmds)
-			}
-		}
-	}
-}
-
-func TestFileOpsRejectedWriteLeavesExistingTargetUnchanged(t *testing.T) {
-	for _, native := range []bool{true, false} {
-		ops, _, dir := hostFileOps(t, native)
-		p := writeTestFile(t, dir, "keep.bin", []byte("precious original bytes"))
-		r := ops.WriteFile(p, "\xed\xa0\x80", nil)
-		if !strings.Contains(r.Error, "NOT created or modified") {
-			t.Fatalf("native=%v %+v", native, r)
-		}
-		if data, _ := os.ReadFile(p); string(data) != "precious original bytes" {
-			t.Fatalf("native=%v target changed %q", native, data)
-		}
-	}
-}
-
-func TestFileOpsPatchReplaceFunnelRejectsSurrogateNewString(t *testing.T) {
-	for _, native := range []bool{true, false} {
-		ops, _, dir := hostFileOps(t, native)
-		p := writeTestFile(t, dir, "patchme.txt", []byte("old\n"))
-		r := ops.patchReplace(p, "old", "new\xed\xb1\xbf", false)
-		if !strings.Contains(r.Error, "surrogate") || r.Error != "Failed to write changes: "+loneSurrogateRefusal(p, `'\udc7f'`) {
-			t.Fatalf("native=%v %+v", native, r)
-		}
-		if data, _ := os.ReadFile(p); string(data) != "old\n" {
-			t.Fatalf("native=%v target changed %q", native, data)
-		}
-	}
-}
-
 func TestExecuteSurfacesStdinErrorWithoutHanging(t *testing.T) {
 	requireBash(t)
 	l := NewLocalEnvironment(context.Background(), newTestToolEnv(t), t.TempDir(), 15, nil, true)

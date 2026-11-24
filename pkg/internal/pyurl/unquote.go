@@ -2,8 +2,6 @@ package pyurl
 
 import (
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Percent decodes like urllib.parse.unquote, ASCII runs as UTF-8 with replacement and other text kept
@@ -16,7 +14,7 @@ func Unquote(s string) string {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c >= 0x80 {
-			out.WriteString(pystr.DecodeUTF8Replace(run))
+			out.WriteString(strings.ToValidUTF8(string(run), "\uFFFD"))
 			run = run[:0]
 			out.WriteByte(c)
 			continue
@@ -28,7 +26,7 @@ func Unquote(s string) string {
 		}
 		run = append(run, c)
 	}
-	out.WriteString(pystr.DecodeUTF8Replace(run))
+	out.WriteString(strings.ToValidUTF8(string(run), "\uFFFD"))
 	return out.String()
 }
 

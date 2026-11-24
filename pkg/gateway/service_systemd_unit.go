@@ -16,8 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -298,7 +299,7 @@ func GenerateSystemdUnit(ctx context.Context, system bool, runAsUser string) (st
 // Unit text without the directives older systemd silently drops
 func stripOptionalSystemdDirectives(text string) string {
 	var kept []string
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		stripped := strings.TrimSpace(line)
 		key, _, _ := strings.Cut(stripped, "=")
 		if stripped != "" && !strings.HasPrefix(stripped, "#") && slices.Contains(systemdOptionalDirectives, strings.TrimSpace(key)) {
@@ -321,7 +322,7 @@ func readSystemdUserFromUnit(unitPath string) (string, error) {
 	if !utf8.Valid(raw) {
 		return "", errUnitDecode
 	}
-	for _, line := range pystr.Splitlines(strings.TrimPrefix(string(raw), "\ufeff"), false) {
+	for _, line := range textutil.Lines(strings.TrimPrefix(string(raw), "\ufeff")) {
 		if strings.HasPrefix(line, "User=") {
 			_, value, _ := strings.Cut(line, "=")
 			return strings.TrimSpace(value), nil

@@ -1,8 +1,6 @@
 package selfupdate
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"errors"
@@ -14,6 +12,7 @@ import (
 	"os/exec"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/net/http/httpproxy"
@@ -107,7 +106,7 @@ func execSourceGit(ctx context.Context, argv []string, cwd string, timeout time.
 		return nil, err
 	}
 	return &sourceGitResult{ReturnCode: cmd.ProcessState.ExitCode(),
-		Stdout: pystr.DecodeUTF8Replace(stdout.Bytes()), Stderr: pystr.DecodeUTF8Replace(stderr.Bytes())}, nil
+		Stdout: strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD"), Stderr: strings.ToValidUTF8(string(stderr.Bytes()), "\uFFFD")}, nil
 }
 
 // GitHub HTTP failure tagged with whether the failing request carried a token

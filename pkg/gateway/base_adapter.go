@@ -1,14 +1,13 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"reflect"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"

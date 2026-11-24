@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -13,8 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Parsed data of one TIMCustomElem with the msg_content dict it came from
@@ -94,8 +96,8 @@ func formatSharedLink(custom map[string]any) string {
 		}
 	}
 	if preview != "" {
-		if pystr.Len(preview) > cardContentMaxLength {
-			preview = pystr.Slice(preview, 0, cardContentMaxLength) + "...(truncated)"
+		if utf8.RuneCountInString(preview) > cardContentMaxLength {
+			preview = textutil.First(preview, cardContentMaxLength) + "...(truncated)"
 		}
 		lines = append(lines, "Preview: "+preview)
 	}
@@ -261,7 +263,7 @@ func customElemText(dataVal any) any {
 func rewriteSlashCommand(text string) string {
 	text = strings.TrimSpace(text)
 	if strings.HasPrefix(text, "／") {
-		return "/" + pystr.Slice(text, 1, pystr.Len(text))
+		return "/" + strings.TrimPrefix(text, "／")
 	}
 	return text
 }
@@ -395,7 +397,7 @@ func detectOwnerCommand(push *pyjson.Object, msgBody []any, chatType string, fro
 	if !strings.HasPrefix(line, "/") {
 		return "", "", false, nil
 	}
-	name := strings.ToLower(pystr.SplitWhitespace(line, 1)[0])
+	name := strings.ToLower(textutil.FieldsN(line, 1)[0])
 	if !ownerCommandAllowlist[name] {
 		return "", "", false, nil
 	}

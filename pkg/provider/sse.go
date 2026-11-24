@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Error code of an SSE data frame that was not JSON
@@ -373,7 +371,7 @@ func providerStreamErrorFromNonJSON(raw string, headers http.Header) *ProviderSt
 			"message": "Provider stream returned an empty SSE data frame (keepalive with no payload).",
 		}, 0), Headers: headers}
 	}
-	safe := redactSensitiveText(pystr.DecodeUTF8Replace([]byte(raw)))
+	safe := redactSensitiveText(strings.ToValidUTF8(string([]byte(raw)), "\uFFFD"))
 	if len(safe) > providerStreamErrorTextLimit {
 		safe = safe[:providerStreamErrorTextLimit]
 	}

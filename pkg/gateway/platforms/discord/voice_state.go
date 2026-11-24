@@ -1,8 +1,6 @@
 package discord
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"errors"
@@ -10,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 

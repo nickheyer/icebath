@@ -1,9 +1,10 @@
 package telegram
 
 import (
-	"github.com/nickheyer/icebath/pkg/gateway"
 	"strings"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/gateway"
 )
 
 // Fails unless every wanted substring is present and every refused one absent

@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Shell command collapsed onto one line and capped at limit runes for display
 func shortenCommandForDisplay(command string, limit int) string {
-	oneLine := []rune(strings.Join(pystr.SplitWhitespace(command, -1), " "))
+	oneLine := []rune(strings.Join(strings.Fields(command), " "))
 	if len(oneLine) > limit {
 		return string(oneLine[:limit-1]) + "…"
 	}
@@ -50,7 +51,7 @@ func formatConciseProcessNotification(ctx context.Context, sessionID, command st
 	text := strings.Join(parts, " ")
 	if !ok && output != "" {
 		var tailLines []string
-		for _, line := range pystr.Splitlines(strings.TrimSpace(output), false) {
+		for _, line := range textutil.Lines(strings.TrimSpace(output)) {
 			if strings.TrimSpace(line) != "" {
 				tailLines = append(tailLines, line)
 			}

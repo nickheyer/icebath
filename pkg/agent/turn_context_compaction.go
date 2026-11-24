@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -460,7 +460,7 @@ func rearmUncompressedOverflowWarn(ctx context.Context, a *AIAgent, messages []*
 			continue
 		}
 		if text, ok := m.Content.(string); ok {
-			rawChars += pystr.Len(text)
+			rawChars += utf8.RuneCountInString(text)
 		} else if pyTruthy(m.Content) {
 			rawChars = ctxLen + 1
 			break

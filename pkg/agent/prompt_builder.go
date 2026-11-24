@@ -1,14 +1,13 @@
 package agent
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"

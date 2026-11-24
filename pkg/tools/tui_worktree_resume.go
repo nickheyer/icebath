@@ -1,14 +1,13 @@
 package tools
 
 import (
-	"strings"
-	"unicode"
-
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -256,7 +257,7 @@ func (p *parser) parseSeq(fl *flags, nested int, first bool) (string, width, err
 		if !ok || c == '|' || c == ')' {
 			break
 		}
-		if fl.verbose && pystr.IsSpace(c) {
+		if fl.verbose && unicode.IsSpace(c) {
 			p.i++
 			continue
 		}
@@ -898,7 +899,7 @@ func (p *parser) conditional(fl *flags, nested, start int) (item, bool, error) {
 func (p *parser) inlineFlags(fl *flags, nested int, first bool, start int, char rune) (item, bool, error) {
 	add, del := map[rune]bool{}, map[rune]bool{}
 	missing := func(msg string, c rune) error {
-		if pystr.IsAlpha(c) {
+		if unicode.IsLetter(c) {
 			return p.err("unknown flag", 1)
 		}
 		return p.err(msg, 1)

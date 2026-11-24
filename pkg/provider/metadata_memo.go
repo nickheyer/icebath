@@ -8,10 +8,10 @@ import (
 	"math/big"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Entry count bound of the message token memo
@@ -28,7 +28,7 @@ const stringHeaderBytes = 41
 
 // Bytes sys.getsizeof reports for a str, by the widest code point it stores
 func strSizeof(s string) int {
-	runes := pystr.Runes(s)
+	runes := []rune(s)
 	widest := rune(0)
 	for _, r := range runes {
 		widest = max(widest, r)
@@ -157,7 +157,7 @@ func longStrings(value any, out map[string]bool) {
 		case pyrepr.Tuple:
 			stack = append(stack, t...)
 		case string:
-			if pystr.Len(t) > 64 {
+			if utf8.RuneCountInString(t) > 64 {
 				out[t] = true
 			}
 		}

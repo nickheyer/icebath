@@ -23,6 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -168,7 +170,7 @@ func checkoutTracksOfficialOrigin(root string) (bool, error) {
 		return false, err
 	}
 	inOrigin := false
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		line = strings.TrimSpace(line)
 		key, value, _ := strings.Cut(line, "=")
 		switch {

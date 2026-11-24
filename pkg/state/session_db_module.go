@@ -1,8 +1,6 @@
 package state
 
 import (
-	"unicode"
-
 	"context"
 	"fmt"
 	"math"
@@ -11,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"

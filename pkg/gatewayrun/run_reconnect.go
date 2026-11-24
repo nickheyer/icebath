@@ -1,12 +1,11 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"

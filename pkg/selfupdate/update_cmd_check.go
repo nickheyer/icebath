@@ -3,8 +3,6 @@
 package selfupdate
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
@@ -13,16 +11,18 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Calls of the target selection the tests replace, the resolver, the config read and the run's channel
@@ -400,7 +400,7 @@ func fetchReleaseTag(ctx context.Context, w io.Writer, gitCmd []string, root str
 		if fetched.ReturnCode == 0 {
 			return nil, false, nil
 		}
-		lines := pystr.Splitlines(strings.TrimSpace(fetched.Stderr), false)
+		lines := textutil.Lines(strings.TrimSpace(fetched.Stderr))
 		if len(lines) > 1 {
 			lines = lines[len(lines)-1:]
 		}

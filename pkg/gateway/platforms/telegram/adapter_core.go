@@ -1,10 +1,9 @@
 package telegram
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"

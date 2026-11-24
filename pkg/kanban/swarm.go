@@ -10,8 +10,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // BlackboardPrefix opens every structured blackboard comment on a swarm root
@@ -102,7 +103,7 @@ func activateRootInline(ctx context.Context, conn state.SQLiteConn, rootID, summ
 		return false, err
 	}
 	var short any
-	if s := pystr.Slice(summary, 0, 400); s != "" {
+	if s := textutil.First(summary, 400); s != "" {
 		short = s
 	}
 	return true, appendEvent(ctx, conn, rootID, "completed", payload("result_len", 0, "summary", short), &runID)
@@ -194,7 +195,7 @@ func createSwarmUncommitted(ctx context.Context, conn state.SQLiteConn, o SwarmO
 		opts.CreatedBy, opts.Tenant, opts.WorkspaceKind, opts.WorkspacePath = &createdBy, o.Tenant, o.WorkspaceKind, o.WorkspacePath
 		return opts
 	}
-	rootTitle := "Swarm: " + pystr.Slice(pystr.Splitlines(goal, false)[0], 0, 80)
+	rootTitle := "Swarm: " + textutil.First(textutil.Lines(goal)[0], 80)
 	if o.RootTitle != nil && *o.RootTitle != "" {
 		rootTitle = *o.RootTitle
 	}

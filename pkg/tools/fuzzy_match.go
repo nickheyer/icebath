@@ -413,7 +413,7 @@ func boundaryNote(strategies []string, target, where string) string {
 
 // Reports a re sent edit whose non trivial new text is present and old text gone
 func isAlreadyApplied(content, oldString, newString string) bool {
-	if newString == "" || pystr.Len(pyStrip(newString)) < 8 || !strings.Contains(content, newString) {
+	if newString == "" || utf8.RuneCountInString(pyStrip(newString)) < 8 || !strings.Contains(content, newString) {
 		return false
 	}
 	return oldString == newString || !strings.Contains(content, oldString)
@@ -443,7 +443,7 @@ func formatMatchLocations(content string, matches []matchSpan, limit int) string
 			lineEnd += lineStart
 		}
 		snippet := pyStrip(content[lineStart:lineEnd])
-		if pystr.Len(snippet) > 80 {
+		if utf8.RuneCountInString(snippet) > 80 {
 			snippet = runePrefix(snippet, 77) + "..."
 		}
 		rows = append(rows, fmt.Sprintf("  L%d: %s", lineNo, snippet))

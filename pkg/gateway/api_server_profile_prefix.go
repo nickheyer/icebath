@@ -1,11 +1,10 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"

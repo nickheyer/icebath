@@ -1,8 +1,6 @@
 package pyemail
 
 import (
-	"unicode"
-
 	"bytes"
 	"encoding/base64"
 	"errors"
@@ -11,8 +9,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Part is a MIME entity under construction, a leaf with an encoded text payload or a multipart container
@@ -304,7 +303,7 @@ func foldHeader(name, value, linesep string) (string, error) {
 			f.lines = append(f.lines, " "+line)
 		}
 	}
-	lines := pystr.Splitlines(value, false)
+	lines := textutil.Lines(value)
 	if len(lines) > 0 {
 		feed("", lines[0])
 	} else {

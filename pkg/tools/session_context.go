@@ -1,10 +1,9 @@
 package tools
 
 import (
-	"strings"
-
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 )

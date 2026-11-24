@@ -1,10 +1,11 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math/big"
 	"strings"
 	"unicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var (

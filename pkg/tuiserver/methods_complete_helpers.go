@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -166,7 +166,7 @@ func listRepoFiles(root string) []string {
 
 // Tier and length of a name against a query, lower wins, false rejects
 func fuzzyBasenameRank(name, query string) (int, int, bool) {
-	n := pystr.Len(name)
+	n := utf8.RuneCountInString(name)
 	if query == "" {
 		return 3, n, true
 	}

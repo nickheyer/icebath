@@ -19,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const launchdLabelBase = "app.icebath.gateway"
@@ -132,7 +134,7 @@ func LaunchdGatewayLabelsForInstall(ctx context.Context) ([]string, error) {
 
 // Pid of a launchctl list record, false when absent or not positive
 func ParseLaunchdPIDFromListOutput(output string) (int, bool) {
-	for _, line := range pystr.Splitlines(output, false) {
+	for _, line := range textutil.Lines(output) {
 		s := strings.TrimSpace(line)
 		if (strings.HasPrefix(s, `"PID"`) || strings.HasPrefix(s, "PID")) && strings.Contains(s, "=") {
 			v := strings.TrimSpace(strings.SplitN(s, "=", 2)[1])
@@ -144,7 +146,7 @@ func ParseLaunchdPIDFromListOutput(output string) (int, bool) {
 
 // Live pid of a launchctl print record, the first pid line wins
 func ParseLaunchdPIDFromPrintOutput(output string) (int, bool) {
-	for _, line := range pystr.Splitlines(output, false) {
+	for _, line := range textutil.Lines(output) {
 		s := strings.TrimSpace(line)
 		if strings.HasPrefix(s, "pid = ") {
 			return positivePID(strings.TrimSpace(s[len("pid = "):]))
@@ -240,8 +242,8 @@ func collectSystemdScopePIDs(ctx context.Context, scope []string, pattern string
 		}
 		return err
 	}
-	for _, line := range pystr.Splitlines(strings.TrimSpace(res.Stdout), false) {
-		parts := pystr.SplitWhitespace(line, -1)
+	for _, line := range textutil.Lines(strings.TrimSpace(res.Stdout)) {
+		parts := strings.Fields(line)
 		if len(parts) == 0 || !strings.HasSuffix(parts[0], ".service") {
 			continue
 		}
@@ -309,8 +311,8 @@ func collectLaunchdPIDs(ctx context.Context, allProfiles bool, pids map[int]bool
 	if res.ReturnCode != 0 {
 		return nil
 	}
-	for _, line := range pystr.Splitlines(strings.TrimSpace(res.Stdout), false) {
-		parts := pystr.SplitWhitespace(line, -1)
+	for _, line := range textutil.Lines(strings.TrimSpace(res.Stdout)) {
+		parts := strings.Fields(line)
 		if len(parts) >= 3 && isGatewayLaunchdLabel(parts[len(parts)-1]) {
 			if pid, ok := pyIntText(parts[0]); ok && pid > 0 {
 				pids[pid] = true
@@ -396,12 +398,12 @@ func parsePSLine(line string) (int, string, bool) {
 	if stripped == "" || strings.Contains(stripped, "grep") {
 		return 0, "", false
 	}
-	if parts := pystr.SplitWhitespace(stripped, 1); len(parts) == 2 {
+	if parts := textutil.FieldsN(stripped, 1); len(parts) == 2 {
 		if pid, ok := pyIntText(parts[0]); ok {
 			return pid, parts[1], true
 		}
 	}
-	aux := pystr.SplitWhitespace(stripped, -1)
+	aux := strings.Fields(stripped)
 	if len(aux) > 10 && pystr.StrIsDigit(aux[1]) {
 		if pid, ok := pyIntText(aux[1]); ok {
 			return pid, strings.Join(aux[10:], " "), true
@@ -534,7 +536,7 @@ func cmdlineForPID(ctx context.Context, pid int) ([]string, bool) {
 	}
 	argv, err := pyshlex.SplitPOSIX(command, false)
 	if err != nil {
-		argv = pystr.SplitWhitespace(command, -1)
+		argv = strings.Fields(command)
 	}
 	return argv, len(argv) > 0
 }
@@ -739,7 +741,7 @@ func scanGatewayPIDs(ctx context.Context, exclude map[int]bool, allProfiles, inc
 		return nil, err
 	}
 	currentProfile := ""
-	if fields := pystr.SplitWhitespace(profileArgText, -1); profileArgText != "" && len(fields) > 0 {
+	if fields := strings.Fields(profileArgText); profileArgText != "" && len(fields) > 0 {
 		currentProfile = fields[len(fields)-1]
 	}
 	currentProfileLC := strings.ToLower(currentProfile)

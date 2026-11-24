@@ -15,8 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Text body with the thread name when replying into a thread
@@ -328,7 +329,7 @@ func chunkText(text string) []string {
 			chunks = append(chunks, remaining)
 			break
 		}
-		head := pystr.Slice(remaining, 0, maxTextLength)
+		head := textutil.First(remaining, maxTextLength)
 		cut := strings.LastIndex(head, "\n")
 		if cut < 0 || utf8.RuneCountInString(head[:cut]) < maxTextLength/2 {
 			cut = len(head)
@@ -505,7 +506,7 @@ func (a *GoogleChatAdapter) SendClarify(ctx context.Context, chatID, question st
 	}
 	label := func(text string) string {
 		if utf8.RuneCountInString(text) > 80 {
-			return pystr.Slice(text, 0, 77) + "..."
+			return textutil.First(text, 77) + "..."
 		}
 		return text
 	}
@@ -544,7 +545,7 @@ func (a *GoogleChatAdapter) EditMessage(ctx context.Context, chatID, messageID, 
 		return gateway.SendResult{Success: false, Error: "missing message_id"}, nil
 	}
 	if utf8.RuneCountInString(content) > maxTextLength {
-		content = pystr.Slice(content, 0, maxTextLength-1) + "…"
+		content = textutil.First(content, maxTextLength-1) + "…"
 	}
 	res, err := a.patchMessage(ctx, messageID, map[string]any{"text": content})
 	if err != nil {

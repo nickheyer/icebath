@@ -20,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -455,7 +457,7 @@ func (a *GoogleChatAdapter) handlePubSubMessage(ctx context.Context, path string
 	if a.debugRaw {
 		dump, _ := json.Marshal(envelope)
 		redacted := tools.RedactSensitiveTextWith(&tools.Env{Home: home.Dir(ctx)}, string(dump), tools.RedactOptions{Force: true})
-		pkgLog().Debug("[GoogleChat] RAW envelope (redacted): " + pystr.Slice(redacted, 0, 2000))
+		pkgLog().Debug("[GoogleChat] RAW envelope (redacted): " + textutil.First(redacted, 2000))
 	}
 	if click, ok := parseCardClick(envelope); ok {
 		a.mu.Lock()

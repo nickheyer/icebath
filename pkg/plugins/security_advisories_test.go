@@ -11,7 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 func advisoryFake() Advisory {
@@ -168,8 +169,8 @@ func TestBannerCacheCallAfterWindowReBanners(t *testing.T) {
 		t.Fatal(err)
 	}
 	var backdated []string
-	for _, line := range pystr.Splitlines(string(data), false) {
-		if parts := pystr.SplitWhitespace(line, 1); len(parts) == 2 {
+	for _, line := range textutil.Lines(string(data)) {
+		if parts := textutil.FieldsN(line, 1); len(parts) == 2 {
 			backdated = append(backdated, fmt.Sprintf("%s %f", parts[0], float64(time.Now().Unix()-48*3600)))
 		}
 	}

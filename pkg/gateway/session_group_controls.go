@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -895,7 +894,7 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 			}
 			text := ""
 			if message != nil {
-				text = strings.Join(pystr.SplitWhitespace(pyStrOf(groupTruthyOr(message.GetOr("content", nil), "")), -1), " ")
+				text = strings.Join(strings.Fields(pyStrOf(groupTruthyOr(message.GetOr("content", nil), ""))), " ")
 			}
 			preview := text
 			if runes := []rune(text); len(runes) > 80 {

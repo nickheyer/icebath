@@ -1,11 +1,10 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 

@@ -206,7 +206,7 @@ func (a *FeishuAdapter) isWebhookSignatureValid(request *gateway.WebRequest, bod
 	if timestamp == "" || nonce == "" || signature == "" {
 		return false
 	}
-	sum := sha256.Sum256([]byte(timestamp + nonce + a.settings.EncryptKey + pystr.DecodeUTF8Replace(body)))
+	sum := sha256.Sum256([]byte(timestamp + nonce + a.settings.EncryptKey + strings.ToValidUTF8(string(body), "\uFFFD")))
 	return hmac.Equal([]byte(hex.EncodeToString(sum[:])), []byte(signature))
 }
 

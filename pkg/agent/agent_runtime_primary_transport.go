@@ -1,12 +1,11 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/provider"

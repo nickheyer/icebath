@@ -1,9 +1,8 @@
 package state
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 )
 
 // Lifecycle statuses a session transcript tail classifies to

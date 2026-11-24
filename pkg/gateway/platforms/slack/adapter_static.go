@@ -2,6 +2,7 @@ package slack
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -20,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const markdownBlockMax = 11500
@@ -251,7 +254,7 @@ func taskUpdateChunk(task map[string]string) map[string]any {
 	if title == "" {
 		title = taskID
 	}
-	return map[string]any{"type": "task_update", "id": taskID, "title": pystr.Slice(title, 0, 256), "status": status}
+	return map[string]any{"type": "task_update", "id": taskID, "title": textutil.First(title, 256), "status": status}
 }
 
 func retryAfterFromErr(err error) *float64 {
@@ -278,7 +281,7 @@ func stripStreamCursor(text string) string {
 var mrkdwnMarkerRe = mustPyRe(`[*_~]`)
 
 func mrkdwnInsensitive(text string) string {
-	return strings.Join(pystr.SplitWhitespace(replaceAll(mrkdwnMarkerRe, text, func(reMatch) string { return "" }), -1), " ")
+	return strings.Join(strings.Fields(replaceAll(mrkdwnMarkerRe, text, func(reMatch) string { return "" })), " ")
 }
 
 func streamRelation(sent, text string) (string, string) {
@@ -341,14 +344,14 @@ func isBlockPayloadRejection(err error) bool {
 }
 
 func markdownBlockPayload(content string) []any {
-	if strings.TrimSpace(content) == "" || pystr.Len(content) > markdownBlockMax {
+	if strings.TrimSpace(content) == "" || utf8.RuneCountInString(content) > markdownBlockMax {
 		return nil
 	}
 	return []any{map[string]any{"type": "markdown", "text": content}}
 }
 
 func feedbackBlock(ctx context.Context) map[string]any {
-	label := func(key string) string { return pystr.Slice(i18n.T(ctx, key, "", nil), 0, 75) }
+	label := func(key string) string { return textutil.First(i18n.T(ctx, key, "", nil), 75) }
 	return map[string]any{
 		"type": "context_actions",
 		"elements": []any{map[string]any{

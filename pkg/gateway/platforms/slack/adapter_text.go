@@ -2,6 +2,7 @@ package slack
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"encoding/json"
@@ -17,10 +18,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"golang.org/x/text/width"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const slackErrorBodyLimitBytes = 8 * 1024
@@ -71,7 +73,7 @@ func readErrorTextLimited(body io.ReadCloser, limit int) string {
 	if len(data) > limit {
 		data = data[:limit]
 	}
-	return pystr.DecodeUTF8Replace(data)
+	return strings.ToValidUTF8(string(data), "\uFFFD")
 }
 
 // Raw Web API response with its decoded JSON data or the undecoded bytes of a binary body
@@ -298,7 +300,7 @@ func rewriteKnownBangCommand(ctx context.Context, text string) string {
 	if !strings.HasPrefix(text, "!") {
 		return text
 	}
-	fields := pystr.SplitWhitespace(text[1:], 1)
+	fields := textutil.FieldsN(text[1:], 1)
 	if len(fields) == 0 {
 		return text
 	}
@@ -890,13 +892,13 @@ func appendLinkUnfurls(text string, slackAttachments []any) string {
 		nestedText := ""
 		if blocksBudget > 0 {
 			nestedText = extractTextFromSlackBlocks(asList(att["blocks"]))
-			if pystr.Len(nestedText) > blocksBudget && blocksBudget <= tools.ElisionMarkerMaxLen() {
+			if utf8.RuneCountInString(nestedText) > blocksBudget && blocksBudget <= tools.ElisionMarkerMaxLen() {
 				nestedText = ""
 			}
 			nestedText = tools.Elide(nestedText, blocksBudget)
 		}
 		if nestedText != "" && !strings.Contains(body, nestedText) {
-			blocksBudget -= pystr.Len(nestedText)
+			blocksBudget -= utf8.RuneCountInString(nestedText)
 			if body != "" {
 				body = strings.TrimSpace(body + "\n" + nestedText)
 			} else {

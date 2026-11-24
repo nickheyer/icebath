@@ -2,8 +2,9 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Key under which a hook context map carries the caller's context, the Go form of the Python ambient contextvars

@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Grok Bot app user data folder per OS
@@ -82,7 +81,7 @@ func unquote(s string) string {
 		}
 		out = append(out, s[i])
 	}
-	return pystr.DecodeUTF8Replace(out)
+	return strings.ToValidUTF8(string(out), "\uFFFD")
 }
 
 // ReadGrokBotCache reads the cached roster and routine names under the user home, empty when the app is not installed

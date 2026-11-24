@@ -13,8 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var atMentionRE = pyre.MustCompile(`^@\S+\s*`)
@@ -128,7 +129,7 @@ func (a *QQAdapter) acknowledgeInteraction(ctx context.Context, interactionID st
 		return err
 	}
 	if resp.StatusCode >= 400 {
-		return runtimeError(fmt.Sprintf("Interaction ACK failed [%d]: %s", resp.StatusCode, pystr.Slice(resp.Text(), 0, 200)))
+		return runtimeError(fmt.Sprintf("Interaction ACK failed [%d]: %s", resp.StatusCode, textutil.First(resp.Text(), 200)))
 	}
 	return nil
 }
@@ -259,12 +260,12 @@ func (a *QQAdapter) handleC2CMessage(ctx context.Context, d map[string]any, msgI
 	if pyrepr.Truthy(attachmentsRaw) {
 		summary = fmt.Sprintf("%d items", len(list))
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] C2C message: id=%s content=%s attachments=%s", a.logTag(), msgID, pyrepr.Repr(pystr.Slice(content, 0, 50)), summary))
+	pkgLog().Info(fmt.Sprintf("[%s] C2C message: id=%s content=%s attachments=%s", a.logTag(), msgID, pyrepr.Repr(textutil.First(content, 50)), summary))
 	if isList {
 		for i, raw := range list {
 			if att, ok := asDict(raw); ok {
 				pkgLog().Info(fmt.Sprintf("[%s] attachment[%d]: content_type=%s url=%s filename=%s", a.logTag(), i, strAt(att, "content_type"),
-					pystr.Slice(strAt(att, "url"), 0, 80), strAt(att, "filename")))
+					textutil.First(strAt(att, "url"), 80), strAt(att, "filename")))
 			}
 		}
 	}
@@ -526,7 +527,7 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 		if strings.HasPrefix(url, "//") {
 			url = "https:" + url
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] Processing attachment: content_type=%s, url=%s, filename=%s", a.logTag(), ct, pystr.Slice(url, 0, 80), filename))
+		pkgLog().Debug(fmt.Sprintf("[%s] Processing attachment: content_type=%s, url=%s, filename=%s", a.logTag(), ct, textutil.First(url, 80), filename))
 		if isVoiceContentType(ct, filename) {
 			transcript, err := a.sttVoiceAttachment(ctx, url, ct, filename, optStr(att["asr_refer_text"]), optStr(att["voice_wav_url"]))
 			if err != nil {
@@ -536,7 +537,7 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 				out.voiceTranscripts = append(out.voiceTranscripts, "[Voice] "+transcript)
 				pkgLog().Debug(fmt.Sprintf("[%s] Voice transcript: %s", a.logTag(), transcript))
 			} else {
-				pkgLog().Warn(fmt.Sprintf("[%s] Voice STT failed for %s", a.logTag(), pystr.Slice(url, 0, 60)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Voice STT failed for %s", a.logTag(), textutil.First(url, 60)))
 				out.voiceTranscripts = append(out.voiceTranscripts, "[Voice] [语音识别失败]")
 			}
 			continue

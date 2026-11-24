@@ -1,8 +1,6 @@
 package tuihost
 
 import (
-	"unicode"
-
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -12,15 +10,17 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -86,7 +86,7 @@ func hintImageProjection(text string) (string, []string, bool) {
 // Body and paths of a ref form native vision row whose trailing lines are image directives, false otherwise
 func refImageProjection(text string) (string, []string, bool) {
 	body, placeholders := stripTrailingScreenshotPlaceholders(text)
-	lines := pystr.Splitlines(body, false)
+	lines := textutil.Lines(body)
 	var refLines []string
 	for _, line := range lines {
 		if strings.HasPrefix(line, "@image:") {

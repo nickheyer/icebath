@@ -7,8 +7,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // SandboxImageSwitch is a default image change the persisted docker sandbox still has to decide
@@ -58,7 +59,7 @@ func PendingSandboxImageSwitch(ctx context.Context, env *Env) (*SandboxImageSwit
 	}
 	stale := map[string][]string{}
 	var order []string
-	for _, line := range pystr.Splitlines(listing.Stdout, false) {
+	for _, line := range textutil.Lines(listing.Stdout) {
 		name, image, _ := strings.Cut(line, "\t")
 		if image != "" && image != target {
 			if _, seen := stale[image]; !seen {

@@ -18,9 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplist"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // RuntimeStartError is a start the service manager refused or failed, with the verdict state it reports
@@ -212,7 +213,7 @@ func systemdExistingService(ctx context.Context, h string, deadline float64) (*E
 			return nil, err
 		}
 		props := map[string]string{}
-		for _, line := range pystr.Splitlines(stdout, false) {
+		for _, line := range textutil.Lines(stdout) {
 			if key, value, ok := strings.Cut(line, "="); ok {
 				props[key] = value
 			}

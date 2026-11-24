@@ -4,7 +4,6 @@ import (
 	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type eventKind int8
@@ -44,7 +43,7 @@ type tagValue struct {
 
 // Suffix with each percent and two characters replaced by the character of that hex value, as Tag.uri_decoded_suffix
 func uriDecodedSuffix(suffix string) string {
-	rs := pystr.Runes(suffix)
+	rs := []rune(suffix)
 	var out []rune
 	for idx := 0; idx < len(rs); {
 		ch := rs[idx]
@@ -53,7 +52,7 @@ func uriDecodedSuffix(suffix string) string {
 			out = append(out, ch)
 			continue
 		}
-		part := pystr.FromRunes(pySlice(rs, idx, idx+2))
+		part := string(pySlice(rs, idx, idx+2))
 		n, ok := pyint.ParseBase(part, 16)
 		if !ok {
 			panic(Raise("ValueError", "invalid literal for int() with base 16: "+pyStrRepr(part)))
@@ -64,7 +63,7 @@ func uriDecodedSuffix(suffix string) string {
 		out = append(out, rune(n.Int64()))
 		idx += 2
 	}
-	return pystr.FromRunes(out)
+	return string(out)
 }
 
 var defaultTags = map[string]string{"!": "!", "!!": "tag:yaml.org,2002:"}

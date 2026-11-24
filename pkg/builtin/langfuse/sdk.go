@@ -30,7 +30,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -353,7 +352,7 @@ func setAttrs(span trace.Span, entries []attrEntry) {
 }
 
 // Python len of a string in code points
-func strLen(s string) int { return pystr.Len(s) }
+func strLen(s string) int { return utf8.RuneCountInString(s) }
 
 // Reports a propagated string within the 200 character limit, warning when it is not
 func validPropagatedString(value any, key string) bool {

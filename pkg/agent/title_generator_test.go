@@ -14,11 +14,11 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -232,7 +232,7 @@ func TestGenerateTitleAttachmentPlusInstructionTitlesFromTheInstruction(t *testi
 
 func TestGenerateTitleTitleInputBudgetAndManualAttachmentsStayUnread(t *testing.T) {
 	input := buildTitleInput("Describe the release plan", sp(strings.Repeat("p", maxTitleInputChars)))
-	if pystr.Len(input) != maxTitleInputChars || !strings.HasPrefix(input, "Describe the release plan") || !strings.HasSuffix(input, strings.Repeat("p", 20)) {
+	if utf8.RuneCountInString(input) != maxTitleInputChars || !strings.HasPrefix(input, "Describe the release plan") || !strings.HasSuffix(input, strings.Repeat("p", 20)) {
 		t.Fatalf("input %q", input)
 	}
 	if got := buildTitleInput("Summarize @file:notes.txt", nil); got != "Summarize @file:notes.txt" {
@@ -334,7 +334,7 @@ func TestGenerateTitleTruncatesLongTitles(t *testing.T) {
 	titleTestHome(t)
 	fakeTitleLLMContent(t, strings.Repeat("A", 100))
 	got := generateTitle(context.Background(), "question", generateTitleOptions{})
-	if pystr.Len(got) != 80 || !strings.HasSuffix(got, "...") {
+	if utf8.RuneCountInString(got) != 80 || !strings.HasSuffix(got, "...") {
 		t.Fatalf("title %q", got)
 	}
 }
@@ -623,7 +623,7 @@ func TestMaybeAutoTitleKanbanWorkerIsNamedAfterItsCardWithoutTheLlmThread(t *tes
 func TestMaybeAutoTitleKanbanWorkerWithAnOverlongCardTitleIsStillNamed(t *testing.T) {
 	titleKanbanHome(t)
 	card := "Investigate why the swap modal intermittently fails to render its confirmation step on mobile Safari after a retry"
-	if pystr.Len(card) <= state.MaxTitleLength {
+	if utf8.RuneCountInString(card) <= state.MaxTitleLength {
 		t.Fatal("card is not overlong")
 	}
 	taskID := createTitleKanbanCard(t, card)
@@ -640,7 +640,7 @@ func TestMaybeAutoTitleKanbanWorkerWithAnOverlongCardTitleIsStillNamed(t *testin
 	if first == nil || !strings.HasPrefix(*first, card[:40]) || !strings.HasSuffix(*first, "…") {
 		t.Fatalf("first %v", first)
 	}
-	if second == nil || *second != *first+" #2" || pystr.Len(*second) > state.MaxTitleLength {
+	if second == nil || *second != *first+" #2" || utf8.RuneCountInString(*second) > state.MaxTitleLength {
 		t.Fatalf("second %v", second)
 	}
 }

@@ -1,13 +1,12 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"math"
 	"net"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

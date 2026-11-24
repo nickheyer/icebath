@@ -11,10 +11,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Event handlers of the gateway session stream by event type
@@ -180,7 +181,7 @@ func (a *GatewayAgent) onToolComplete(payload map[string]any, streamCallback fun
 	}
 	if diff, isStr := payload["inline_diff"].(string); isStr && diff != "" {
 		emit := diffPrinter(cprint)
-		for _, line := range pystr.Splitlines(strings.TrimRight(diff, "\n"), false) {
+		for _, line := range textutil.Lines(strings.TrimRight(diff, "\n")) {
 			emit(line)
 		}
 		if name == "delegate_task" && a.opts.ToolCompleteCallback != nil {
@@ -238,7 +239,7 @@ func (a *GatewayAgent) onReasoning(payload map[string]any, streamCallback func(s
 
 func (a *GatewayAgent) onReasoningAvailable(payload map[string]any, streamCallback func(string), starts map[string]time.Time) {
 	if cb := a.opts.ToolProgressCallback; cb != nil {
-		cb("reasoning.available", "_thinking", pystr.Slice(strOrEmpty(payload["text"]), 0, 500), nil, nil)
+		cb("reasoning.available", "_thinking", textutil.First(strOrEmpty(payload["text"]), 500), nil, nil)
 	}
 }
 

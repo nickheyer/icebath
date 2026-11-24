@@ -1,11 +1,10 @@
 package tools
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"

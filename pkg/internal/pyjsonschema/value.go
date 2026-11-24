@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Deep copy in the Python value model, dicts ordered, ints as int64 or big.Int and floats as float64
@@ -156,7 +156,7 @@ func dictHas(d *pyjson.Object, key any) bool {
 func pyLen(v any) int {
 	switch x := v.(type) {
 	case string:
-		return pystr.Len(x)
+		return utf8.RuneCountInString(x)
 	case []any:
 		return len(x)
 	case *pyjson.Object:
@@ -352,7 +352,7 @@ func pyIs(a, b any) bool {
 		if !ok || x != y {
 			return false
 		}
-		rs := pystr.Runes(x)
+		rs := []rune(x)
 		return len(rs) == 0 || len(rs) == 1 && rs[0] < 256
 	case float64:
 		y, ok := b.(float64)

@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // One non streaming unmask probe per window across the agent's streaming calls
@@ -37,7 +38,7 @@ func providerStreamErrorFromJSONDecodeError(err error, resp *http.Response) erro
 		}, 0), Headers: headers}
 	}
 	safe := tools.RedactSensitiveTextWith(nil, state.SanitizeSurrogates(rawText), tools.RedactOptions{Force: true})
-	safe = pystr.Slice(safe, 0, providerStreamErrorTextLimit)
+	safe = textutil.First(safe, providerStreamErrorTextLimit)
 	message := safe
 	if message == "" {
 		message = "Provider stream returned non-JSON SSE data."

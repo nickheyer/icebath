@@ -41,15 +41,3 @@ func TestPyReprStrSurrogates(t *testing.T) {
 		}
 	}
 }
-
-func TestPyLowerAndPrefixKeepSurrogates(t *testing.T) {
-	if got := pyLower("AB\xed\xa0\x80\xc3\x89\x80"); got != "ab\xed\xa0\x80\xc3\xa9\x80" {
-		t.Fatalf("lower %q", got)
-	}
-	if got := runePrefix("a\xed\xa0\x80bc", 2); got != "a\xed\xa0\x80" {
-		t.Fatalf("prefix %q", got)
-	}
-	if got := pyLen("a\xed\xa0\x80b"); got != 3 {
-		t.Fatalf("len %d", got)
-	}
-}

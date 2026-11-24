@@ -1,11 +1,10 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"

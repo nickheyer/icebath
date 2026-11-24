@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
@@ -661,7 +662,7 @@ func (p *parser) replacementField(tstr bool) *Node {
 			p.raiseAt(convTok.l, convTok.c, convName.el, convName.ec, pre+"conversion type must come right after the exclamation mark")
 		}
 		name := p.identifier(convName.val)
-		if pystr.Len(name) > 1 || !(name == "s" || name == "r" || name == "a") {
+		if utf8.RuneCountInString(name) > 1 || !(name == "s" || name == "r" || name == "a") {
 			p.raiseTok(convName, fmt.Sprintf("%sinvalid conversion character %s: expected 's', 'r', or 'a'", pre, reprIdent(name)))
 		}
 		conversion = int(name[0])
@@ -750,13 +751,13 @@ func reprIdent(s string) string {
 
 // Expression text of an interpolation without trailing whitespace and the self documenting equals sign
 func stripInterpolation(s string) string {
-	r := pystr.Runes(s)
+	r := []rune(s)
 	n := len(r)
-	for n > 0 && pystr.IsSpace(r[n-1]) {
+	for n > 0 && unicode.IsSpace(r[n-1]) {
 		n--
 	}
 	if n > 0 && r[n-1] == '=' {
 		n--
 	}
-	return pystr.FromRunes(r[:n])
+	return string(r[:n])
 }

@@ -9,13 +9,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Python str pattern whitespace class
@@ -109,7 +111,7 @@ func isCuaDriverSelfWindow(w *pyjson.Object) bool {
 	name := strings.ToLower(strings.TrimSpace(cuStrField(w, "app_name", "")))
 	var b strings.Builder
 	for _, r := range name {
-		if !pystr.IsSpace(r) && r != '_' && r != '-' {
+		if !unicode.IsSpace(r) && r != '_' && r != '-' {
 			b.WriteRune(r)
 		}
 	}
@@ -762,7 +764,7 @@ func (b *CuaDriverBackend) ListApps() ([]any, error) {
 		return []any{}, nil
 	}
 	apps := []any{}
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		m := textAppPIDRE.FindStringSubmatch(line)
 		if m == nil {
 			continue

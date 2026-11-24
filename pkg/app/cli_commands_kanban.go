@@ -3,12 +3,11 @@
 package app
 
 import (
-	"unicode"
-
 	"bytes"
 	"errors"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/kanban"

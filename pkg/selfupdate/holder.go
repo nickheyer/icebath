@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -57,7 +56,7 @@ func holderValueFlags() map[string]bool {
 func icebathHolderSubcommand(cmdline string) (string, bool) {
 	tokens, err := pyshlex.SplitNonPOSIX(cmdline)
 	if err != nil {
-		tokens = pystr.SplitWhitespace(cmdline, -1)
+		tokens = strings.Fields(cmdline)
 	}
 	normalized := make([]string, len(tokens))
 	for i, token := range tokens {

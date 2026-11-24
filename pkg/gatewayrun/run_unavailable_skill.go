@@ -10,9 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/skills"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -36,7 +37,7 @@ func skillSlugFromFrontmatter(skillMD string) (string, string) {
 		return "", ""
 	}
 	declared := ""
-	for _, line := range pystr.Splitlines(content[3:3+end], false) {
+	for _, line := range textutil.Lines(content[3 : 3+end]) {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "name:") {
 			value := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])

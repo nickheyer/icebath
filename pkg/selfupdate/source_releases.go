@@ -13,9 +13,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -343,7 +344,7 @@ func resolveRelease(ctx context.Context, gitCmd []string, cwd, repository string
 			return "", "", &sourceCalledProcessError{Argv: argv, ReturnCode: result.ReturnCode}
 		}
 		refs := map[string]string{}
-		for _, line := range pystr.Splitlines(result.Stdout, false) {
+		for _, line := range textutil.Lines(result.Stdout) {
 			if parts := strings.Fields(line); len(parts) == 2 {
 				refs[parts[1]] = parts[0]
 			}

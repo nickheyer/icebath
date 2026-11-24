@@ -1,12 +1,11 @@
 package telegram
 
 import (
-	"unicode"
-
-	"github.com/go-telegram/bot/models"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
+	"github.com/go-telegram/bot/models"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 

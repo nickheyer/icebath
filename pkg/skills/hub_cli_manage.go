@@ -23,7 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Value of a lock entry key, false when absent as a KeyError would report
@@ -417,7 +418,7 @@ func (x *HubCLI) DoDiff(ctx context.Context, name string, c *pyrich.Console) err
 	diffs, _ := result["diffs"].([]map[string]any)
 	for _, e := range diffs {
 		if e["status"] == "modified" {
-			for _, line := range pystr.Splitlines(pyrepr.Str(e["diff"]), false) {
+			for _, line := range textutil.Lines(pyrepr.Str(e["diff"])) {
 				printDiffLine(c, line)
 			}
 			continue
@@ -771,7 +772,7 @@ func (x *HubCLI) githubPublish(ctx context.Context, skillPath, skillName, target
 		obj, _ := data.(*pyjson.Object)
 		return true, "PR created: " + entryStr(obj, "html_url", ""), nil
 	}
-	text := []rune(pystr.DecodeUTF8Replace(pr.body))
+	text := []rune(strings.ToValidUTF8(string(pr.body), "\uFFFD"))
 	return false, fmt.Sprintf("Failed to create PR: %d %s", pr.status, string(text[:min(200, len(text))])), nil
 }
 

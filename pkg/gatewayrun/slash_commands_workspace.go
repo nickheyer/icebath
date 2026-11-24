@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Rollback result keys of files the safe restore left alone, with their reply line key
@@ -33,7 +36,7 @@ func (r *GatewayRunner) handleRollbackCommand(ctx context.Context, event *gatewa
 	if err != nil {
 		return "", err
 	}
-	tokens := pystr.SplitWhitespace(strings.TrimSpace(event.GetCommandArgs()), -1)
+	tokens := strings.Fields(strings.TrimSpace(event.GetCommandArgs()))
 	restoreAll := false
 	var kept []string
 	for _, tok := range tokens {
@@ -91,7 +94,7 @@ func (r *GatewayRunner) handleRollbackCommand(ctx context.Context, event *gatewa
 // Git changes of the working directory or the session checkpoint baseline, truncated for chat
 func (r *GatewayRunner) handleDiffCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	var args []string
-	for _, a := range pystr.SplitWhitespace(strings.TrimSpace(event.GetCommandArgs()), -1) {
+	for _, a := range strings.Fields(strings.TrimSpace(event.GetCommandArgs())) {
 		args = append(args, strings.ToLower(a))
 	}
 	statOnly, mode := false, "working"
@@ -172,13 +175,13 @@ func renderDiffResult(ctx context.Context, result map[string]any, statOnly bool)
 
 // Diff body fenced and truncated to the line and character limits with a note when cut
 func fencedTruncatedDiff(ctx context.Context, diff string, maxLines, maxChars int) string {
-	diffLines := pystr.Splitlines(diff, false)
+	diffLines := textutil.Lines(diff)
 	truncated := len(diffLines) > maxLines
 	if truncated {
 		diff = strings.Join(diffLines[:maxLines], "\n")
 	}
-	if pystr.Len(diff) > maxChars {
-		diff = pystr.Slice(diff, 0, maxChars)
+	if utf8.RuneCountInString(diff) > maxChars {
+		diff = textutil.First(diff, maxChars)
 		truncated = true
 	}
 	note := ""

@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -419,7 +418,7 @@ func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared,
 
 // APIError for a non success HTTP response
 func (c *codexResponsesClient) httpError(resp *http.Response, data []byte) error {
-	body := pystr.DecodeUTF8Replace(data)
+	body := strings.ToValidUTF8(string(data), "\uFFFD")
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -117,7 +118,7 @@ func DiscordRequest(ctx context.Context, method, path, token string, params [][2
 		case errors.As(err, &tooLarge):
 			errorBody = tooLarge.Body
 		case err == nil:
-			errorBody = pystr.DecodeUTF8Replace(raw)
+			errorBody = strings.ToValidUTF8(string(raw), "\uFFFD")
 		}
 		return nil, newDiscordAPIError(resp.StatusCode, errorBody)
 	}

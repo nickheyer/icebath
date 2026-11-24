@@ -3,21 +3,21 @@
 package selfupdate
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Wall clock of the rescue tag and rescue ref names
@@ -170,7 +170,7 @@ func rollBackBrokenUpdate(ctx context.Context, w io.Writer, gitCmd []string, pre
 	fmt.Fprintln(w, o.Header)
 	fmt.Fprintf(w, "  %s\n", failingPath)
 	if syntaxError != "" {
-		lines := pystr.Splitlines(syntaxError, false)
+		lines := textutil.Lines(syntaxError)
 		if len(lines) > 6 {
 			lines = lines[:6]
 		}
@@ -286,7 +286,7 @@ func rollBackBrokenUpdate(ctx context.Context, w io.Writer, gitCmd []string, pre
 		fmt.Fprintln(w, "  ✗ Rollback failed. Recover manually with:")
 		fmt.Fprintf(w, "    cd %s && git %s\n", root, pyshlex.Join(rollbackArgs))
 		if detail := strings.TrimSpace(rollbackResult.Stderr); detail != "" {
-			fmt.Fprintf(w, "    (%s)\n", pystr.Splitlines(detail, false)[0])
+			fmt.Fprintf(w, "    (%s)\n", textutil.Lines(detail)[0])
 		}
 		if info, err := os.Stat(marker); err == nil && info.Mode().IsRegular() {
 			if err := oweRestoreOf(ctx, root, prePullSHA); err != nil {

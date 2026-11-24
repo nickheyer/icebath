@@ -1,10 +1,9 @@
 package state
 
 import (
-	"strings"
-
 	"context"
 	"slices"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )

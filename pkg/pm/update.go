@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	xunicode "golang.org/x/text/encoding/unicode"
@@ -495,7 +494,7 @@ func reverseCut(s, sep string) (string, string) {
 // Integer of an all ASCII digit port, ok false otherwise or when it overflows the port range check
 func asciiPort(port string) (int, bool) {
 	for _, r := range port {
-		if !pystr.IsDigit(r) || r > 127 {
+		if !unicode.IsDigit(r) || r > 127 {
 			return 0, false
 		}
 	}
@@ -907,7 +906,7 @@ func GithubReleaseTags(repo, stripPrefix string) ([]string, error) {
 		if stripPrefix != "" && strings.HasPrefix(tag, stripPrefix) {
 			tag = tag[len(stripPrefix):]
 		}
-		if r, _ := utf8.DecodeRuneInString(tag); tag == "" || !pystr.IsDigit(r) {
+		if r, _ := utf8.DecodeRuneInString(tag); tag == "" || !unicode.IsDigit(r) {
 			return false, nil
 		}
 		tags = append(tags, tag)

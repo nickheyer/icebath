@@ -181,7 +181,7 @@ func TestWorkerReceiptsRequireExactSequenceAssignmentAndAdoption(t *testing.T) {
 }
 
 func TestWorkerMutationAndReceiptRollBackTogether(t *testing.T) {
-	for _, content := range []string{"once", "a\xed\xa0\x80b"} {
+	for _, content := range []string{"once", "a\xffb"} {
 		ctx := context.Background()
 		db, path, _, assignment := setupWorker(t)
 		mustExecConn(t, db.conn, "CREATE TRIGGER reject_receipt BEFORE INSERT ON worker_receipts BEGIN SELECT RAISE(ABORT, 'receipt fixture'); END")
@@ -313,9 +313,9 @@ func TestStructuredWorkerReceiptsAreAtomicAndScoped(t *testing.T) {
 	if err != nil || !pyTruthy(resultValue(acquired, "value")) {
 		t.Fatalf("acquire %v %v", acquired, err)
 	}
-	surrogate := "\xed\xa0\x80"
+	invalid := "\xff"
 	messages := []any{
-		pyjson.ObjectOf("role", "user", "content", []any{pyjson.ObjectOf("type", "text", "text", "hello"+surrogate)}, "api_content", "wire"),
+		pyjson.ObjectOf("role", "user", "content", []any{pyjson.ObjectOf("type", "text", "text", "hello"+invalid)}, "api_content", "wire"),
 		pyjson.ObjectOf("role", "assistant", "content", nil, "reasoning", "private reason",
 			"tool_calls", []any{pyjson.ObjectOf("id", "call1", "type", "function", "function", pyjson.ObjectOf("name", "terminal", "arguments", "{}"))}),
 		pyjson.ObjectOf("role", "tool", "content", "tool-marker", "tool_call_id", "call1", "tool_name", "terminal"),
@@ -364,7 +364,7 @@ func TestStructuredWorkerReceiptsAreAtomicAndScoped(t *testing.T) {
 	if err != nil || !pyjson.Equal(released, pyjson.ObjectOf("value", nil)) {
 		t.Fatalf("release %v %v", released, err)
 	}
-	assistantContent := []any{pyjson.ObjectOf("type", "text", "text", "canonical winner"+surrogate)}
+	assistantContent := []any{pyjson.ObjectOf("type", "text", "text", "canonical winner"+invalid)}
 	winner, err := apply(5, "transcript.append", pyjson.ObjectOf("messages", []any{pyjson.ObjectOf("role", "assistant", "content", assistantContent)}), nil)
 	if err != nil {
 		t.Fatal(err)

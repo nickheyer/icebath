@@ -1,13 +1,12 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
 	"slices"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -17,6 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Python class name of an error, the kind of a pyint error first
@@ -166,7 +167,7 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 		}
 		return i18n.T(ctx, "gateway.heartbeat.none_set", "", nil), nil
 	}
-	tokens := pystr.SplitWhitespace(args, 2)
+	tokens := textutil.FieldsN(args, 2)
 	var interval *big.Int
 	var err error
 	prompt := ""
@@ -215,7 +216,7 @@ func (r *GatewayRunner) handleSubgoalCommand(ctx context.Context, event *gateway
 	if args == "" {
 		return mgr.StatusLine() + "\n" + mgr.RenderSubgoals(), nil
 	}
-	tokens := pystr.SplitWhitespace(args, 1)
+	tokens := textutil.FieldsN(args, 1)
 	verb := strings.ToLower(tokens[0])
 	rest := ""
 	if len(tokens) > 1 {
@@ -226,7 +227,7 @@ func (r *GatewayRunner) handleSubgoalCommand(ctx context.Context, event *gateway
 		if rest == "" {
 			return i18n.T(ctx, "gateway.subgoal.usage_remove", "", nil), nil
 		}
-		idx, ok := pystr.IntText(pystr.SplitWhitespace(rest, -1)[0])
+		idx, ok := pystr.IntText(strings.Fields(rest)[0])
 		if !ok {
 			return i18n.T(ctx, "gateway.subgoal.remove_not_int", "", nil), nil
 		}

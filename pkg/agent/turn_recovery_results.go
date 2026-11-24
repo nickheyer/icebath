@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Base failed turn result shared by the two terminal paths
@@ -259,7 +260,7 @@ func maxRetriesExhaustedResult(ctx context.Context, a *AIAgent, s *LoopState, e 
 	}
 
 	pkgLog().Error(fmt.Sprintf("%sAPI call failed after %d retries. %s | provider=%s model=%s msgs=%d tokens=~%s",
-		a.logPrefix, attempts, summary, prov, model, len(s.APIMessages), pystr.GroupThousands(int64(s.ApproxTokens))))
+		a.logPrefix, attempts, summary, prov, model, len(s.APIMessages), textutil.Thousands(int64(s.ApproxTokens))))
 	if s.APIKwargs != nil {
 		a.dumpAPIRequestDebug(tools.WithEnvHome(ctx, a.env), s.APIKwargs, "max_retries_exhausted", apiError)
 	}

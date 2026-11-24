@@ -35,6 +35,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -698,8 +700,8 @@ func spawnShellHookArgv(ctx context.Context, argv []string, dir string, timeout 
 	case <-run.done:
 		code := run.returnCode()
 		r.ReturnCode = &code
-		r.Stdout = pystr.TranslateNewlines(pystr.DecodeUTF8Replace(run.stdout.Bytes()))
-		r.Stderr = pystr.TranslateNewlines(pystr.DecodeUTF8Replace(run.stderr.Bytes()))
+		r.Stdout = pystr.TranslateNewlines(strings.ToValidUTF8(string(run.stdout.Bytes()), "\uFFFD"))
+		r.Stderr = pystr.TranslateNewlines(strings.ToValidUTF8(string(run.stderr.Bytes()), "\uFFFD"))
 		r.ElapsedSeconds = pyint.Round(time.Since(t0).Seconds(), 3)
 		return r, nil
 	case <-timer.C:
@@ -779,7 +781,7 @@ func evaluateShellHookResult(spec *ShellHookSpec, r *ShellHookResult) map[string
 		return shellHookFailClosedBlock(spec, reason)
 	}
 	stderr := strings.TrimSpace(r.Stderr)
-	limited := pystr.Slice(stderr, 0, shellHookStderrLimit)
+	limited := textutil.First(stderr, shellHookStderrLimit)
 	if stderr != "" {
 		pkgLog().Debug(fmt.Sprintf("shell hook stderr (event=%s command=%s): %s", spec.Event, spec.Command, limited))
 	}
@@ -899,7 +901,7 @@ func parseShellHookResponse(event, stdout string) map[string]any {
 	}
 	v, err := pyjson.Loads(stdout)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("shell hook stdout was not valid JSON (event=%s): %s", event, pystr.Slice(stdout, 0, 200)))
+		pkgLog().Warn(fmt.Sprintf("shell hook stdout was not valid JSON (event=%s): %s", event, textutil.First(stdout, 200)))
 		return nil
 	}
 	obj, ok := v.(*pyjson.Object)

@@ -19,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -116,12 +118,7 @@ func (v *VerifyResult) ToDict() *pyjson.Object {
 }
 
 // Last tail characters of text counted in code points
-func tail(text string) string {
-	if n := pystr.Len(text); n > tailChars {
-		return pystr.Slice(text, n-tailChars, n)
-	}
-	return text
-}
+func tail(text string) string { return textutil.Last(text, tailChars) }
 
 // Text mode output, the locale codec with errors replace and universal newlines
 func decodeOutput(raw []byte) (string, error) {
@@ -215,7 +212,7 @@ func runPhaseCommandReal(phase, command, root string, timeout float64, onOutput 
 				return nil, err
 			}
 		} else {
-			output = pystr.DecodeUTF8Replace(out.snapshot())
+			output = strings.ToValidUTF8(string(out.snapshot()), "\uFFFD")
 			r.Close()
 		}
 		result.TimedOut = true
@@ -499,7 +496,7 @@ func composeLiveStateReasonReal(root string) (string, error) {
 		if text == "" {
 			text = res.Stdout
 		}
-		detail := pystr.Splitlines(strings.TrimSpace(text), false)
+		detail := textutil.Lines(strings.TrimSpace(text))
 		last := "no output"
 		if len(detail) > 0 {
 			last = detail[len(detail)-1]
@@ -507,7 +504,7 @@ func composeLiveStateReasonReal(root string) (string, error) {
 		return fmt.Sprintf("docker compose ps failed (exit %d): %s", res.Returncode, last), nil
 	}
 	var names []string
-	for _, line := range pystr.Splitlines(res.Stdout, false) {
+	for _, line := range textutil.Lines(res.Stdout) {
 		if strings.TrimSpace(line) != "" {
 			names = append(names, line)
 		}

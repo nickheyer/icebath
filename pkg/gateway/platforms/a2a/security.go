@@ -23,11 +23,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // One A2A credential from the active profile scope, a secondary profile miss never reading the default env
@@ -158,7 +159,7 @@ func (s *A2ASecurityContext) Authenticate(authHeader *string, clientIP string) (
 	if authHeader != nil {
 		header = *authHeader
 	}
-	parts := pystr.SplitWhitespace(header, 1)
+	parts := textutil.FieldsN(header, 1)
 	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
 		return "", false, nil
 	}
@@ -392,7 +393,7 @@ func IsSafeCallbackURL(ctx context.Context, rawURL string, localhostMode *bool) 
 func Audit(ctx context.Context, direction, peer, taskID, summary string) {
 	h := home.Dir(ctx)
 	rec := pyjson.ObjectOf("ts", float64(time.Now().UnixNano())/1e9, "direction", direction, "peer", peer,
-		"task_id", taskID, "summary", pystr.Slice(summary, 0, 500))
+		"task_id", taskID, "summary", textutil.First(summary, 500))
 	line, err := pyjson.Dumps(rec, pyjson.EnsureASCII(false))
 	if err == nil {
 		err = os.MkdirAll(h, 0o777)

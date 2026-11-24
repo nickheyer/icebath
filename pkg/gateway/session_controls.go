@@ -8,14 +8,16 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Refusal carrying the revision and execution generation a mutation conflict reports
@@ -118,8 +120,8 @@ func logStorageFailure(profile, method string, sessionID any, err error, class s
 	storageTracebacks[key] = true
 	storageTracebacksMu.Unlock()
 	shown := pyrepr.Repr(sessionID)
-	if length := pystr.Len(shown); length > 64 {
-		shown = fmt.Sprintf("%s… (%d chars)", pystr.Slice(shown, 0, 48), length)
+	if length := utf8.RuneCountInString(shown); length > 64 {
+		shown = fmt.Sprintf("%s… (%d chars)", textutil.First(shown, 48), length)
 	}
 	line := fmt.Sprintf("%s storage failure for profile=%s session_id=%s: %s", method, profileLabel(profile), shown, err)
 	if first {

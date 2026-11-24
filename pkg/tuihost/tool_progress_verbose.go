@@ -1,10 +1,9 @@
 package tuihost
 
 import (
-	"unicode"
-
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/tools"

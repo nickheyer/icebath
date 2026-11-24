@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -247,7 +246,7 @@ func searchIsCJK(cp rune) bool {
 // Whitespace tokens of a query other than AND, OR and NOT
 func nonOperatorTokens(rawQuery string) []string {
 	out := []string{}
-	for _, tok := range pystr.SplitWhitespace(rawQuery, -1) {
+	for _, tok := range strings.Fields(rawQuery) {
 		if !slices.Contains(ftsOperators, strings.ToUpper(tok)) {
 			out = append(out, tok)
 		}
@@ -257,7 +256,7 @@ func nonOperatorTokens(rawQuery string) []string {
 
 // Quotes each non operator token so FTS5 special characters are literal, keeping AND, OR and NOT
 func quoteFTSTokens(rawQuery string) string {
-	tokens := pystr.SplitWhitespace(rawQuery, -1)
+	tokens := strings.Fields(rawQuery)
 	out := make([]string, len(tokens))
 	for i, tok := range tokens {
 		if slices.Contains(ftsOperators, strings.ToUpper(tok)) {
@@ -281,7 +280,7 @@ func stripCJKWildcards(rawQuery string) string {
 		return rawQuery
 	}
 	var stripped []string
-	for _, tok := range pystr.SplitWhitespace(rawQuery, -1) {
+	for _, tok := range strings.Fields(rawQuery) {
 		if slices.Contains(ftsOperators, strings.ToUpper(tok)) {
 			stripped = append(stripped, tok)
 			continue

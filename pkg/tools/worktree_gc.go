@@ -1,14 +1,12 @@
 package tools
 
 import (
-	"strings"
-
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Directory size in megabytes through du with a bounded wait, nil on failure or timeout
@@ -17,7 +15,7 @@ func TreeSizeMB(path string, timeout time.Duration) *int {
 	if r == nil || r.Code != 0 || strings.TrimSpace(r.Stdout) == "" {
 		return nil
 	}
-	n, ok := pyint.Parse(pystr.SplitWhitespace(r.Stdout, -1)[0])
+	n, ok := pyint.Parse(strings.Fields(r.Stdout)[0])
 	if !ok || !n.IsInt64() {
 		return nil
 	}

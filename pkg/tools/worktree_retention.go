@@ -10,8 +10,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var retentionOpaqueDirs = map[string]bool{
@@ -177,7 +178,7 @@ func HiddenIndexEdits(wtPath string, env map[string]string) ([]string, error) {
 	var present []flaggedEntry
 	for _, record := range strings.Split(out, "\x00") {
 		meta, rel, _ := strings.Cut(record, "\t")
-		parts := pystr.SplitWhitespace(meta, -1)
+		parts := strings.Fields(meta)
 		if rel == "" || len(parts) != 4 || !(parts[0] == "S" || pyIsLower(parts[0])) {
 			continue
 		}
@@ -259,7 +260,7 @@ func PrivateWorktreeRefs(wtPath string, env map[string]string) ([]string, error)
 		return nil, err
 	}
 	var private []string
-	for _, line := range pystr.Splitlines(out, false) {
+	for _, line := range textutil.Lines(out) {
 		name, sha, _ := strings.Cut(line, "\x00")
 		if sha == "" {
 			continue

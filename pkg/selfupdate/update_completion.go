@@ -155,7 +155,7 @@ func (d *replaceDecoder) decode(chunk []byte, final bool) string {
 		d.pending = append([]byte{}, data[cut:]...)
 		data = data[:cut]
 	}
-	return pystr.DecodeUTF8Replace(data)
+	return strings.ToValidUTF8(string(data), "\uFFFD")
 }
 
 // Runs the completion of a moved checkout in a fresh process holding the checkout lock and checks its correlated result

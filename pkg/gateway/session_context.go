@@ -173,7 +173,7 @@ func NeutralizeUntrustedInlineText(value any, maxChars int) string {
 	text := strings.ReplaceAll(strings.ReplaceAll(pyrepr.Str(value), "\r\n", "\n"), "\r", "\n")
 	text = strings.ReplaceAll(text, "\n", " ")
 	text = blankControlChars(text, "\t")
-	text = strings.Join(pystr.SplitWhitespace(text, -1), " ")
+	text = strings.Join(strings.Fields(text), " ")
 	return truncatePromptChars(text, maxChars)
 }
 

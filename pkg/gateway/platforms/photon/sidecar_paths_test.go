@@ -1,13 +1,12 @@
 package photon
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
-
-	"context"
 )
 
 func seedSource(t *testing.T, source string, withNodeModules bool) {

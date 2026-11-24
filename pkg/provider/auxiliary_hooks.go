@@ -2,6 +2,7 @@ package provider
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -137,7 +137,7 @@ func auxPyLen(v any) int {
 	case nil:
 		return 0
 	case string:
-		return pystr.Len(x)
+		return utf8.RuneCountInString(x)
 	}
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
@@ -304,7 +304,7 @@ func (h *auxCallHooks) pre(ctx context.Context) {
 		if !pyrepr.Truthy(content) {
 			continue
 		}
-		totalChars += pystr.Len(pyrepr.Str(content))
+		totalChars += utf8.RuneCountInString(pyrepr.Str(content))
 	}
 	maxTokens := kwargs["max_tokens"]
 	if !pyrepr.Truthy(maxTokens) {
@@ -386,7 +386,7 @@ func (h *auxCallHooks) post(ctx context.Context, response any, callErr error, no
 	})
 	chars := 0
 	if s, ok := content.(string); ok {
-		chars = pystr.Len(s)
+		chars = utf8.RuneCountInString(s)
 	}
 	payload["assistant_content_chars"] = chars
 	payload["assistant_tool_call_count"] = auxPyLen(toolCalls)

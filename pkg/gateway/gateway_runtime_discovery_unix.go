@@ -3,14 +3,13 @@
 package gateway
 
 import (
-	"strings"
-
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 	"unicode/utf8"

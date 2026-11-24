@@ -1,18 +1,18 @@
 package ntfy
 
 import (
-	"strings"
-
 	"cmp"
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Env var, extra key and conversion of every ntfy value seeded from an env only setup
@@ -96,7 +96,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return gateway.SendError("ntfy standalone send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(server)), pyhttpx.ErrorText(err))), nil
 	}
 	if resp.StatusCode >= 300 {
-		return gateway.SendError(fmt.Sprintf("ntfy HTTP %d: %s", resp.StatusCode, pystr.Slice(resp.Text(), 0, 200))), nil
+		return gateway.SendError(fmt.Sprintf("ntfy HTTP %d: %s", resp.StatusCode, textutil.First(resp.Text(), 200))), nil
 	}
 	return map[string]any{"success": true, "platform": "ntfy", "chat_id": publishTopic, "message_id": responseMessageID(resp)}, nil
 }

@@ -8,13 +8,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -274,13 +274,13 @@ func drainUntil(out *os.File, onLine func(string), deadline time.Time) bool {
 			t.Stop()
 			if r.eof {
 				if len(buf) > 0 {
-					onLine(pystr.DecodeUTF8Replace(buf))
+					onLine(strings.ToValidUTF8(string(buf), "\uFFFD"))
 				}
 				return true
 			}
 			parts := bytes.Split(append(buf, r.chunk...), []byte("\n"))
 			for _, line := range parts[:len(parts)-1] {
-				onLine(pystr.DecodeUTF8Replace(line))
+				onLine(strings.ToValidUTF8(string(line), "\uFFFD"))
 			}
 			buf = append([]byte(nil), parts[len(parts)-1]...)
 		}

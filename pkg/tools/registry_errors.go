@@ -3,26 +3,28 @@ package tools
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const maxLoggedErrorChars = 8192
 
 // Caps an error body at 2048 code points for model context while the debug log keeps 8192
 func boundModelErrorText(env *Env, text string) string {
-	n := pystr.Len(text)
+	n := utf8.RuneCountInString(text)
 	if n <= maxToolErrorChars {
 		return text
 	}
-	envLog(env).Debug(fmt.Sprintf("tool error body truncated for context (%d chars): %s", n, pystr.Slice(text, 0, maxLoggedErrorChars)))
-	return pystr.Slice(text, 0, maxToolErrorChars) + toolErrorTruncationMarker
+	envLog(env).Debug(fmt.Sprintf("tool error body truncated for context (%d chars): %s", n, textutil.First(text, maxLoggedErrorChars)))
+	return textutil.First(text, maxToolErrorChars) + toolErrorTruncationMarker
 }
 
 // Trims an oversized error string of a JSON object result, re-encoded with json.dumps defaults and ensure_ascii off
 func boundJSONErrorResult(env *Env, result string) string {
-	if pystr.Len(result) <= maxToolErrorChars || !strings.Contains(result, `"error"`) {
+	if utf8.RuneCountInString(result) <= maxToolErrorChars || !strings.Contains(result, `"error"`) {
 		return result
 	}
 	decoded, err := pyjson.Loads(result)
@@ -35,7 +37,7 @@ func boundJSONErrorResult(env *Env, result string) string {
 	}
 	v, _ := payload.Get("error")
 	errText, ok := v.(string)
-	if !ok || pystr.Len(errText) <= maxToolErrorChars {
+	if !ok || utf8.RuneCountInString(errText) <= maxToolErrorChars {
 		return result
 	}
 	payload.Set("error", boundModelErrorText(env, errText))

@@ -15,9 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Teams that sign official CuaDriver.app releases, exact matches only
@@ -57,7 +58,7 @@ func validateCuaDriverAppSignature(env *tools.Env, appPath string) error {
 		return fmt.Errorf("CuaDriver.app at %s is not code-signed; refusing to launch it (%s)", appPath, strings.TrimSpace(proc.Stderr))
 	}
 	fields := map[string]string{}
-	lines := pystr.Splitlines(proc.Stderr, false)
+	lines := textutil.Lines(proc.Stderr)
 	for i := len(lines) - 1; i >= 0; i-- {
 		if k, v, ok := strings.Cut(lines[i], "="); ok {
 			fields[strings.TrimSpace(k)] = strings.TrimSpace(v)

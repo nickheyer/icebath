@@ -231,7 +231,7 @@ func croniterExpand(exprFormat string) (*croniterSpec, error) {
 	if alias, ok := croniterAliases[efl]; ok {
 		efl = alias
 	}
-	expressions := pystr.SplitWhitespace(efl, -1)
+	expressions := strings.Fields(efl)
 	n := len(expressions)
 	if n < 5 || n > 7 {
 		return nil, croniterFail("Exactly 5, 6 or 7 columns has to be specified for iterator expression.")

@@ -1,18 +1,18 @@
 package yuanbao
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Session store surface the inbound middlewares read and rewrite transcripts through
@@ -190,7 +190,7 @@ func interruptForRecall(ctx context.Context, adapter *YuanbaoAdapter, sessionKey
 	if active := adapter.ActiveSessionEvent(sessionKey); active != nil {
 		active.Set()
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] Recall interrupt: msg_id=%s session=%s", adapter.Name(), recalledID, pystr.Slice(sessionKey, 0, 30)))
+	pkgLog().Info(fmt.Sprintf("[%s] Recall interrupt: msg_id=%s session=%s", adapter.Name(), recalledID, textutil.First(sessionKey, 30)))
 	if recalledText := adapter.processingText(sessionKey); recalledText != "" {
 		scheduleContentRedact(ctx, adapter, sessionKey, recalledText, groupCode, fromAccount)
 	}
@@ -230,13 +230,13 @@ func scheduleContentRedact(ctx context.Context, adapter *YuanbaoAdapter, session
 			for _, entry := range rows {
 				if pyrepr.Equal(entry["role"], "user") && pyrepr.Equal(entry["content"], recalledText) {
 					redactEntry(tctx, adapter, store, sid, rows, entry,
-						fmt.Sprintf("[%s] Recall redact: session %s", adapter.Name(), pystr.Slice(sessionKey, 0, 30)),
+						fmt.Sprintf("[%s] Recall redact: session %s", adapter.Name(), textutil.First(sessionKey, 30)),
 						"[%s] Recall redact failed: %s")
 					return nil
 				}
 			}
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] Recall redact: content not found after polling, session %s", adapter.Name(), pystr.Slice(sessionKey, 0, 30)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Recall redact: content not found after polling, session %s", adapter.Name(), textutil.First(sessionKey, 30)))
 		return nil
 	}))
 }

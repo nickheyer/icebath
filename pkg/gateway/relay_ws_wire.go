@@ -9,8 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -95,7 +96,7 @@ func relayRenderContext(context any) *string {
 
 // Native Slack parent slash routing of relay text, unchanged unless it starts with /icebath
 func relayNormalizeSlackParentCommand(ctx context.Context, text string, messageType MessageType) (string, MessageType) {
-	parts := pystr.SplitWhitespace(strings.TrimSpace(text), 1)
+	parts := textutil.FieldsN(strings.TrimSpace(text), 1)
 	if len(parts) == 0 || parts[0] != "/icebath" {
 		return text, messageType
 	}
@@ -112,7 +113,7 @@ func relayNormalizeSlackParentCommand(ctx context.Context, text string, messageT
 	}
 	subcommands["compact"] = "/compress"
 	firstWord := ""
-	if words := pystr.SplitWhitespace(payload, -1); len(words) > 0 {
+	if words := strings.Fields(payload); len(words) > 0 {
 		firstWord = words[0]
 	}
 	normalized := payload

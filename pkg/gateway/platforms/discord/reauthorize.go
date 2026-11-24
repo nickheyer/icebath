@@ -1,12 +1,11 @@
 package discord
 
 import (
-	"strings"
-
 	"context"
 	"maps"
 	"math/big"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"

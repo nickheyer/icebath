@@ -5,15 +5,17 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -128,7 +130,7 @@ func pySizedLen(v any) (int, bool) {
 	}
 	switch c := v.(type) {
 	case string:
-		return pystr.Len(c), true
+		return utf8.RuneCountInString(c), true
 	case []any:
 		return len(c), true
 	case map[string]any:
@@ -165,7 +167,7 @@ func relayThinking(a *AIAgent, content any, assistantMessage *provider.Response)
 	thinkText := strings.TrimSpace(intakeReasoningTagRE.ReplaceAllString(strings.TrimSpace(text), ""))
 	firstLine := ""
 	if thinkText != "" {
-		firstLine = pystr.Slice(strings.SplitN(thinkText, "\n", 2)[0], 0, 80)
+		firstLine = textutil.First(strings.SplitN(thinkText, "\n", 2)[0], 80)
 	}
 	if a.delegateDepth > 0 {
 		if firstLine != "" {
@@ -180,7 +182,7 @@ func relayThinking(a *AIAgent, content any, assistantMessage *provider.Response)
 	if reasoning == "" {
 		return nil
 	}
-	callToolProgress(a, "reasoning.available", "_thinking", pystr.Slice(reasoning, 0, 500))
+	callToolProgress(a, "reasoning.available", "_thinking", textutil.First(reasoning, 500))
 	return nil
 }
 
@@ -204,8 +206,8 @@ func callToolProgress(a *AIAgent, event, name string, preview any) {
 func assistantContentPreview(content any) (string, error) {
 	switch c := content.(type) {
 	case string:
-		if pystr.Len(c) > 100 {
-			return pystr.Slice(c, 0, 100) + "...", nil
+		if utf8.RuneCountInString(c) > 100 {
+			return textutil.First(c, 100) + "...", nil
 		}
 		return c, nil
 	case []any:

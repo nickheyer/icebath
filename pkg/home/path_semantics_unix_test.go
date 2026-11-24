@@ -10,9 +10,9 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Runs fn and fails unless it panicked with the OverflowError text CPython raises
@@ -43,7 +43,7 @@ func TestMarkProfileDeletedCreatesWithTheUmaskModes(t *testing.T) {
 }
 
 func TestHomeModeParsesLikePythonIntBaseEight(t *testing.T) {
-	cases := map[string]uint32{"_755": 0o700, "0o7_55": 0o755, "\u0667\u0665\u0665": 0o755, "\x1c751\x1c": 0o751, "0o_750": 0o750, "78": 0o700}
+	cases := map[string]uint32{"_755": 0o700, "0o7_55": 0o755, "\u0667\u0665\u0665": 0o755, "\t751\t": 0o751, "0o_750": 0o750, "78": 0o700}
 	for text, want := range cases {
 		tmp := t.TempDir()
 		isolatePolicyEnv(t, tmp)
@@ -107,12 +107,12 @@ func TestSocketSafeTmpdirCountsCodePoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.RemoveAll(base) })
-	dir := filepath.Join(base, strings.Repeat("\u00e9", 50-pystr.Len(base)-1))
+	dir := filepath.Join(base, strings.Repeat("\u00e9", 50-utf8.RuneCountInString(base)-1))
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", dir)
 	if got, err := SocketSafeTmpdir(); err != nil || got != dir {
-		t.Fatalf("SocketSafeTmpdir = %q, %v, want the %d code point root %q", got, err, pystr.Len(dir), dir)
+		t.Fatalf("SocketSafeTmpdir = %q, %v, want the %d code point root %q", got, err, utf8.RuneCountInString(dir), dir)
 	}
 }

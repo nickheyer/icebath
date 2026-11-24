@@ -259,7 +259,7 @@ func readLastNLogLines(path string, n int) ([]string, error) {
 		var decoded []string
 		for _, raw := range parts {
 			if len(bytes.Trim(raw, " \t\n\r\x0b\x0c")) > 0 {
-				decoded = append(decoded, pystr.DecodeUTF8Replace(raw)+"\n")
+				decoded = append(decoded, strings.ToValidUTF8(string(raw), "\uFFFD")+"\n")
 			}
 		}
 		return lastN(decoded, n), nil
@@ -318,7 +318,7 @@ func followLog(ctx context.Context, w io.Writer, path string, f logFilters) erro
 				if i < 0 {
 					break
 				}
-				line := pystr.DecodeUTF8Replace(pending[:i+1])
+				line := strings.ToValidUTF8(string(pending[:i+1]), "\uFFFD")
 				pending = pending[i+1:]
 				if keep.keep(line) {
 					fmt.Fprint(w, line)

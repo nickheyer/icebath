@@ -9,6 +9,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -304,7 +306,7 @@ func exportSessionMetadataLines(session *pyjson.Object) []string {
 		}
 	}
 	if title := rowValue(session, "title"); pyrepr.Truthy(title) {
-		lines = append(lines, "- Title: "+strings.TrimSpace(strings.Join(pystr.Splitlines(pyrepr.Str(title), false), " ")))
+		lines = append(lines, "- Title: "+strings.TrimSpace(strings.Join(textutil.Lines(pyrepr.Str(title)), " ")))
 	}
 	if started, ok := formatExportTimestamp(rowValue(session, "started_at"), exportSessionID(session)); ok && started != "" {
 		lines = append(lines, "- Started: "+started)
@@ -337,7 +339,7 @@ func exportSessionTitleOrID(session *pyjson.Object) string {
 
 // One line heading text, unknown when nothing is left
 func exportHeadingText(value string) string {
-	if text := strings.TrimSpace(strings.Join(pystr.Splitlines(value, false), " ")); text != "" {
+	if text := strings.TrimSpace(strings.Join(textutil.Lines(value), " ")); text != "" {
 		return text
 	}
 	return "unknown"

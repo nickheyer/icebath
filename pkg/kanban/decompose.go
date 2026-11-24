@@ -11,11 +11,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const decomposeSystemPrompt = `You are the Kanban decomposer for the Icebath Agent board.
@@ -251,7 +252,7 @@ func cleanChildren(taskID string, rawTasks []any, routing *decomposeRouting) ([]
 		if s, isStr := body.(string); isStr {
 			bodyText = strings.TrimSpace(s)
 		}
-		children = append(children, pyjson.ObjectOf("title", pystr.Slice(strings.TrimSpace(title), 0, 200), "body", bodyText,
+		children = append(children, pyjson.ObjectOf("title", textutil.First(strings.TrimSpace(title), 200), "body", bodyText,
 			"assignee", chosen, "parents", parents))
 	}
 	return children, ""

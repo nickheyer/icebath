@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -19,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -154,7 +154,7 @@ func readYAMLDict(path, needle string) map[string]any {
 		if err != nil {
 			return nil, err
 		}
-		text := pystr.DecodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
+		text := strings.ToValidUTF8(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))), "\uFFFD")
 		if needle != "" && !strings.Contains(text, needle) {
 			return nil, nil
 		}
@@ -245,7 +245,7 @@ func profileRole(profileDir string) string {
 			display = ""
 		}
 		line := roleLine(display, title, strings.TrimSpace(strOr(data["description"])))
-		return headRunes(strings.Join(pystr.SplitWhitespace(line, -1), " "), 160), nil
+		return headRunes(strings.Join(strings.Fields(line), " "), 160), nil
 	}, "")
 }
 
@@ -462,7 +462,7 @@ func modelPromptCapabilitySurface(modelCfg any) (map[string]any, error) {
 // Reports whether every character of a non empty string is a Python digit
 func allDigits(s string) bool {
 	for _, r := range s {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}
@@ -479,8 +479,8 @@ func pyIterate(v any) ([]any, error) {
 		return x, nil
 	case string:
 		var out []any
-		for _, r := range pystr.Runes(x) {
-			out = append(out, pystr.FromRunes([]rune{r}))
+		for _, r := range []rune(x) {
+			out = append(out, string([]rune{r}))
 		}
 		return out, nil
 	}
@@ -650,9 +650,9 @@ func strOr(v any) string {
 
 // First n code points of text
 func headRunes(text string, n int) string {
-	runes := pystr.Runes(text)
+	runes := []rune(text)
 	if len(runes) <= n {
 		return text
 	}
-	return pystr.FromRunes(runes[:n])
+	return string(runes[:n])
 }

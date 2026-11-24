@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -57,7 +57,7 @@ func historyRowSize(row map[string]any) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return pystr.Len(text), nil
+	return utf8.RuneCountInString(text), nil
 }
 
 // History reader of every resume and replay, replaced by a case as the tests patch display_rows
@@ -353,7 +353,7 @@ func releaseHandedOffReceipts(ctx context.Context, db *state.SessionDB, epoch in
 
 // Session ids of the local receipts boot restores
 func localReceiptIDs(ctx context.Context, a *SessionAuthority) ([]string, error) {
-	start := pystr.Len(state.LocalPolicyPrefix) + 1
+	start := utf8.RuneCountInString(state.LocalPolicyPrefix) + 1
 	var ids []string
 	err := a.DB.ReadCtx(ctx, func(conn state.SQLiteConn) error {
 		ids = nil

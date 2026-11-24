@@ -10,6 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -31,7 +33,7 @@ func pidUnifiedCgroupEntries(pid int) []string {
 		return nil
 	}
 	var entries []string
-	for _, line := range pystr.Splitlines(pystr.DecodeUTF8SigReplace(raw), false) {
+	for _, line := range textutil.Lines(pystr.DecodeUTF8SigReplace(raw)) {
 		if _, entry, found := strings.Cut(strings.TrimSpace(line), "::"); found {
 			entries = append(entries, entry)
 		}
@@ -73,7 +75,7 @@ func unitMainPidIs(ctx context.Context, svcName, cgroupPath string, pid int) boo
 		if err != nil {
 			continue
 		}
-		if result.Returncode == 0 && strings.TrimSpace(pystr.DecodeUTF8Replace(result.Stdout)) == strconv.Itoa(pid) {
+		if result.Returncode == 0 && strings.TrimSpace(strings.ToValidUTF8(string(result.Stdout), "\uFFFD")) == strconv.Itoa(pid) {
 			return true
 		}
 	}

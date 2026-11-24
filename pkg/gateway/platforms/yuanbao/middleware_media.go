@@ -16,8 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // MediaResolveMiddleware downloads inbound media into the local cache and hands the model the cached paths
@@ -405,9 +406,9 @@ func resolveMediaURLs(ctx context.Context, adapter *YuanbaoAdapter, mediaRefs []
 			return fmt.Sprintf("[%s] inbound media resolve failed: kind=%s url=%s err=%s", name, kind, rawURL, errText(err))
 		},
 		crashed: func(kind, rawURL string, err error) string {
-			return fmt.Sprintf("[%s] inbound media resolve crashed: kind=%s url=%s err=%s", name, kind, pystr.Slice(rawURL, 0, 80), errText(err))
+			return fmt.Sprintf("[%s] inbound media resolve crashed: kind=%s url=%s err=%s", name, kind, textutil.First(rawURL, 80), errText(err))
 		},
-		logTag: func(rawURL string) string { return "placeholder_url=" + pystr.Slice(rawURL, 0, 80) },
+		logTag: func(rawURL string) string { return "placeholder_url=" + textutil.First(rawURL, 80) },
 	}, &mediaURLs, &mediaTypes)
 	return mediaURLs, mediaTypes, err
 }

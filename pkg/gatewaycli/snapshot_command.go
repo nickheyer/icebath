@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 )
@@ -131,7 +130,7 @@ func (s SnapshotCommand) List() ([]string, error) {
 		if text, isStr := row["label"].(string); isStr {
 			label = text
 		}
-		lines = append(lines, fmt.Sprintf("%3d  %s %5s %10s %s", i+1, pystr.Ljust(pyrepr.Str(row["id"]), 35), files, sizeText, label))
+		lines = append(lines, fmt.Sprintf("%3d  %-35s %5s %10s %s", i+1, pyrepr.Str(row["id"]), files, sizeText, label))
 	}
 	return lines, nil
 }

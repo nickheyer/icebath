@@ -1,10 +1,11 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"reflect"
 	"strings"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var (

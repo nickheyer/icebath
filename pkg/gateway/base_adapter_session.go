@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -99,7 +99,7 @@ func (b *BasePlatformAdapter) isQueueTextDebounceCandidate(event *MessageEvent) 
 		strings.TrimSpace(event.Text) != ""
 	if result {
 		pkgLog().Debug(fmt.Sprintf("[%s] Queue-text debounce candidate accepted: session=%s text_len=%d", b.Self().Name(), "?",
-			pystr.Len(event.Text)))
+			utf8.RuneCountInString(event.Text)))
 	}
 	return result
 }

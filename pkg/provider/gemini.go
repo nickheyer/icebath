@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Registers the native Gemini adapter and routes native Gemini base URLs of chat routes onto it
@@ -569,7 +568,7 @@ func (c *geminiNativeClient) apiError(gerr *GeminiAPIError) *APIError {
 
 // Error for a non 200 response, without API key remedies on a bearer credential
 func (c *geminiNativeClient) httpError(p *geminiPrepared, status int, headers http.Header, body string) *APIError {
-	return c.apiError(geminiHTTPError(status, headers, pystr.DecodeUTF8Replace([]byte(body)), c.route.APIKey, p.baseURL, !c.bearer))
+	return c.apiError(geminiHTTPError(status, headers, strings.ToValidUTF8(string([]byte(body)), "\uFFFD"), c.route.APIKey, p.baseURL, !c.bearer))
 }
 
 // One unary generateContent hop

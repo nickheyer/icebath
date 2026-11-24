@@ -21,9 +21,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -225,7 +226,7 @@ func generateNeuTTS(ctx context.Context, env *tools.Env, text, outputPath string
 	}
 	if result.ReturnCode != 0 {
 		var errorLines []string
-		for _, l := range pystr.Splitlines(strings.TrimSpace(result.Stderr), false) {
+		for _, l := range textutil.Lines(strings.TrimSpace(result.Stderr)) {
 			if !strings.HasPrefix(l, "OK:") {
 				errorLines = append(errorLines, l)
 			}

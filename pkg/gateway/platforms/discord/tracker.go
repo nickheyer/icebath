@@ -1,12 +1,11 @@
 package discord
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"

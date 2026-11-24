@@ -5,8 +5,6 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Bytes of C stack CPython 3.14.8 spends per frame of the ast_preprocess.c and Python-ast.c recursions on this host
@@ -474,7 +472,7 @@ func (f *folder) foldBinop(n *Node) {
 			return
 		}
 	}
-	fmtRunes := pystr.Runes(format)
+	fmtRunes := []rune(format)
 	pos, cnt := 0, 0
 	var seq []*Node
 	for {
@@ -525,7 +523,7 @@ func formatLiteral(fmt []rune, pos *int) *Node {
 	if p == start {
 		return nil
 	}
-	s := pystr.FromRunes(fmt[start:p])
+	s := string(fmt[start:p])
 	if percents {
 		s = strings.ReplaceAll(s, "%%", "%")
 	}

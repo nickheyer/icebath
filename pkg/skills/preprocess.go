@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -95,9 +94,9 @@ func (s *Scope) RunInlineShell(ctx context.Context, command, cwd string, timeout
 		}
 		return fmt.Sprintf("[inline-shell error: %v]", err)
 	}
-	output := strings.TrimRight(universalNewlines(pystr.DecodeUTF8Replace(stdout.Bytes())), "\n")
+	output := strings.TrimRight(universalNewlines(strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD")), "\n")
 	if output == "" {
-		output = strings.TrimRight(universalNewlines(pystr.DecodeUTF8Replace(stderr.Bytes())), "\n")
+		output = strings.TrimRight(universalNewlines(strings.ToValidUTF8(string(stderr.Bytes()), "\uFFFD")), "\n")
 	}
 	if code := pyReturnCode(cmd.ProcessState); code != 0 && output == "" {
 		return fmt.Sprintf("[inline-shell exit %d with no output: %s]", code, command)

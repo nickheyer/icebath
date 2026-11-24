@@ -1,13 +1,12 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 // Scope picker of the setup install, a seam tests replace like the patched gateway module

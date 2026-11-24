@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -94,10 +95,10 @@ func ownerProfileValue(adapter gateway.PlatformAdapter) any {
 
 // Collapses whitespace, lowercases and drops every non word non space rune of a transcript
 func normalizeVoiceTranscript(transcript string) string {
-	lowered := strings.ToLower(strings.Join(pystr.SplitWhitespace(transcript, -1), " "))
+	lowered := strings.ToLower(strings.Join(strings.Fields(transcript), " "))
 	var b strings.Builder
 	for _, r := range lowered {
-		if pystr.IsAlnum(r) || r == '_' || pystr.IsSpace(r) {
+		if pystr.IsAlnum(r) || r == '_' || unicode.IsSpace(r) {
 			b.WriteRune(r)
 		}
 	}

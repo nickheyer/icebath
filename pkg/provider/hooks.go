@@ -10,10 +10,13 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Env var overriding the serialized hook payload cap, floor 1000 chars
@@ -256,9 +259,9 @@ func SanitizeHookPayload(value any) any {
 			return s
 		}
 		encoded = text
-		if pystr.Len(encoded) <= limit {
+		if utf8.RuneCountInString(encoded) <= limit {
 			return payload
 		}
 	}
-	return map[string]any{"_truncated": true, "original_type": pyrepr.TypeName(value), "preview": pystr.Slice(encoded, 0, limit)}
+	return map[string]any{"_truncated": true, "original_type": pyrepr.TypeName(value), "preview": textutil.First(encoded, limit)}
 }

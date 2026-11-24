@@ -30,6 +30,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Decoded result of one worktree git call
@@ -49,7 +51,7 @@ func worktreeGit(args []string, cwd string, timeout time.Duration, env map[strin
 	if err != nil {
 		return nil, err
 	}
-	return &worktreeGitResult{r.Returncode, pystr.DecodeUTF8Replace(r.Stdout), pystr.DecodeUTF8Replace(r.Stderr)}, nil
+	return &worktreeGitResult{r.Returncode, strings.ToValidUTF8(string(r.Stdout), "\uFFFD"), strings.ToValidUTF8(string(r.Stderr), "\uFFFD")}, nil
 }
 
 // Stripped stdout with ok false on a non zero exit, errors raise like the git call
@@ -87,10 +89,10 @@ func worktreeincludeEntries(repoRoot string) []string {
 	if err != nil {
 		return nil
 	}
-	text := pystr.DecodeUTF8Replace(raw)
+	text := strings.ToValidUTF8(string(raw), "\uFFFD")
 	text = strings.TrimPrefix(text, "\ufeff")
 	var entries []string
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		if entry := strings.TrimSpace(line); entry != "" && !strings.HasPrefix(entry, "#") {
 			entries = append(entries, entry)
 		}
@@ -119,7 +121,7 @@ func worktreeLocalTrunk(path string, timeout time.Duration) (string, error) {
 		return "", err
 	}
 	first, _, _ := strings.Cut(porcelain, "\n\n")
-	for _, line := range pystr.Splitlines(first, false) {
+	for _, line := range textutil.Lines(first) {
 		if strings.HasPrefix(line, "branch refs/heads/") {
 			return strings.TrimSpace(line[len("branch refs/heads/"):]), nil
 		}
@@ -319,7 +321,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 		return false
 	}
 	var names []string
-	for _, r := range pystr.Splitlines(remotes, false) {
+	for _, r := range textutil.Lines(remotes) {
 		if r = strings.TrimSpace(r); r != "" {
 			names = append(names, r)
 		}
@@ -347,7 +349,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 				label = " " + strings.Join(extra, " ")
 			}
 			stderr := strings.TrimSpace(r.Stderr)
-			envLog(nil).Debug(fmt.Sprintf("git fetch --unshallow%s failed: %s", label, pystr.Slice(stderr, -500, pystr.Len(stderr))))
+			envLog(nil).Debug(fmt.Sprintf("git fetch --unshallow%s failed: %s", label, textutil.Last(stderr, 500)))
 		}
 		return false
 	}()
@@ -459,7 +461,7 @@ func worktreeCommitsAllMergedUpstream(worktreePath string, timeout time.Duration
 		if err != nil {
 			return false
 		}
-		if shas := pystr.SplitWhitespace(revs, -1); len(shas) == 2 {
+		if shas := strings.Fields(revs); len(shas) == 2 {
 			cacheKey = fmt.Sprintf("%s..%s:%d", shas[0], shas[1], maxAhead)
 			if v, ok := cache.get(cacheKey); ok {
 				return v
@@ -495,7 +497,7 @@ func worktreeCommitsAllMergedUpstream(worktreePath string, timeout time.Duration
 		return false
 	}
 	var lines []string
-	for _, ln := range pystr.Splitlines(cherry.Stdout, false) {
+	for _, ln := range textutil.Lines(cherry.Stdout) {
 		if strings.TrimSpace(ln) != "" {
 			lines = append(lines, ln)
 		}
@@ -522,7 +524,7 @@ var worktreeGhRun = func(args []string, cwd string, timeout time.Duration) (*wor
 	if err != nil {
 		return nil, err
 	}
-	return &worktreeGitResult{r.Returncode, pystr.DecodeUTF8Replace(r.Stdout), pystr.DecodeUTF8Replace(r.Stderr)}, nil
+	return &worktreeGitResult{r.Returncode, strings.ToValidUTF8(string(r.Stdout), "\uFFFD"), strings.ToValidUTF8(string(r.Stderr), "\uFFFD")}, nil
 }
 
 // Whether the branch pull request is merged on GitHub, caching only true verdicts per branch and head
@@ -571,7 +573,7 @@ func fetchRemoteBranchHeads(repoRoot string, timeout time.Duration) map[string]s
 		return nil
 	}
 	heads := map[string]string{}
-	for _, line := range pystr.Splitlines(r.Stdout, false) {
+	for _, line := range textutil.Lines(r.Stdout) {
 		sha, ref, ok := strings.Cut(line, "\t")
 		if ok && strings.HasPrefix(ref, "refs/heads/") {
 			heads[strings.TrimSpace(ref[len("refs/heads/"):])] = strings.TrimSpace(sha)
@@ -885,7 +887,7 @@ func worktreeLockReason(repoRoot, worktreePath string, timeout time.Duration) (b
 	if err != nil {
 		return false, nil, err
 	}
-	text := strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\ufeff")
+	text := strings.TrimPrefix(strings.ToValidUTF8(string(data), "\uFFFD"), "\ufeff")
 	reason := strings.Trim(text, " \t\n\v\f\r")
 	return true, &reason, nil
 }

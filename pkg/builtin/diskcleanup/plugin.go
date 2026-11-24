@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 )
 
@@ -400,7 +399,7 @@ var subcommands = map[string]func(context.Context, []string) (string, error){
 
 // Dispatches a /disk-cleanup invocation to its subcommand, help for none or an unknown one
 func (h *hooks) handleSlash(ctx context.Context, rawArgs string) (any, error) {
-	argv := pystr.SplitWhitespace(strings.TrimSpace(rawArgs), -1)
+	argv := strings.Fields(strings.TrimSpace(rawArgs))
 	if len(argv) == 0 || argv[0] == "help" || argv[0] == "-h" || argv[0] == "--help" {
 		return helpText, nil
 	}

@@ -17,8 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -151,7 +152,7 @@ func RecordTurnStart(home, sessionKey, prompt string, attempts int, autoContinue
 	now := float64(time.Now().UnixNano()) / 1e9
 	entry := pyjson.NewObject()
 	entry.Set("attempts", int64(max(0, attempts)))
-	entry.Set("prompt", pystr.Slice(prompt, 0, turnMarkerMaxPromptChar))
+	entry.Set("prompt", textutil.First(prompt, turnMarkerMaxPromptChar))
 	entry.Set("started_at", now)
 	entry.Set("auto_continue", autoContinue)
 	pid, start, hasStart := turnMarkerWriterIdentity()

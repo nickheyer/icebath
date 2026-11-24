@@ -30,7 +30,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -820,7 +819,7 @@ func auxSDKStatusError(resp *http.Response, data []byte) *AuxSDKError {
 		e.Message = fmt.Sprintf("Error code: %d", resp.StatusCode)
 		return e
 	}
-	e.ResponseText = pystr.DecodeUTF8Replace(data)
+	e.ResponseText = strings.ToValidUTF8(string(data), "\uFFFD")
 	text := strings.TrimSpace(e.ResponseText)
 	var body any = text
 	parsed, err := pyjson.Loads(text)

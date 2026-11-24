@@ -29,9 +29,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var zipStagingArtifactSuffixes = [2]string{zipStagingSuffix, zipOldSuffix}
@@ -387,7 +388,7 @@ func zipOverlayBlockReason(ctx context.Context, root string, staged []string, sh
 		}
 		if tracked.ReturnCode == 0 {
 			shipped = map[string]bool{}
-			for _, name := range pystr.Splitlines(tracked.Stdout, false) {
+			for _, name := range textutil.Lines(tracked.Stdout) {
 				shipped[name] = true
 			}
 		}
@@ -398,13 +399,13 @@ func zipOverlayBlockReason(ctx context.Context, root string, staged []string, sh
 		if text == "" {
 			text = result.Stdout
 		}
-		detail := pystr.Splitlines(strings.TrimSpace(text), false)
+		detail := textutil.Lines(strings.TrimSpace(text))
 		if len(detail) > 0 {
 			return "could not check the working tree (" + detail[0] + ")", true, nil
 		}
 		return "could not check the working tree", true, nil
 	}
-	for _, line := range pystr.Splitlines(result.Stdout, false) {
+	for _, line := range textutil.Lines(result.Stdout) {
 		if strings.TrimSpace(line) != "" && !isZipPreservedEntryStatusLine(line, shipped) && !isZipStagingArtifactStatusLine(line, staged) {
 			return "the working tree has uncommitted changes or untracked files", true, nil
 		}

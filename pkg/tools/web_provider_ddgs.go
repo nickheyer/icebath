@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +8,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -19,6 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Hard wall clock cap per search in seconds, kept as the Python value so messages print it the same way
@@ -185,7 +186,7 @@ func ddgsParseEnvelope(raw string, p *ddgsWorkerProc) ([]WebSearchHit, error) {
 	}
 	envelope, err := pyjson.Loads(raw)
 	if err != nil {
-		return nil, raise("RuntimeError", "DDGS worker returned invalid JSON: %s", pyrepr.StrRepr(pystr.Slice(raw, 0, 200)))
+		return nil, raise("RuntimeError", "DDGS worker returned invalid JSON: %s", pyrepr.StrRepr(textutil.First(raw, 200)))
 	}
 	d, ok := envelope.(*pyjson.Object)
 	if !ok {
@@ -248,7 +249,7 @@ func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit in
 		out, _ := io.ReadAll(stdout)
 		stdout.Close()
 		<-p.exited
-		result <- pystr.TranslateNewlines(pystr.DecodeUTF8Replace(out))
+		result <- pystr.TranslateNewlines(strings.ToValidUTF8(string(out), "\uFFFD"))
 	}()
 	grace := time.Duration(ddgsTerminateGraceSecs * float64(time.Second))
 	interrupted, done, raw := false, false, ""

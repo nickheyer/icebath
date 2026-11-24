@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -485,7 +484,7 @@ func (s *Store) latestJobOutputExcerpt(jobID string, maxChars int) string {
 	if err != nil {
 		return ""
 	}
-	text := strings.TrimSpace(strings.TrimPrefix(pystr.DecodeUTF8Replace(data), "\uFEFF"))
+	text := strings.TrimSpace(strings.TrimPrefix(strings.ToValidUTF8(string(data), "\uFFFD"), "\uFEFF"))
 	if text == "" {
 		return ""
 	}

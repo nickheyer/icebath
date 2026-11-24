@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -23,6 +22,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Reports whether the .env text names a provider credential or base URL setting
@@ -91,7 +92,7 @@ func checkRelayPlugins(ctx context.Context, d *Doctor, shouldFix bool) (*Finding
 func doctorRelayInfoLines(w io.Writer, lines []string) {
 	for _, line := range lines {
 		var parts []string
-		for _, part := range pystr.Splitlines(strings.TrimSpace(line), false) {
+		for _, part := range textutil.Lines(strings.TrimSpace(line)) {
 			if strings.TrimSpace(part) != "" {
 				parts = append(parts, part)
 			}
@@ -431,7 +432,7 @@ func doctorValidateAuxiliaryConfig(ctx context.Context, d *Doctor, configPath st
 		requested, model, baseURL, apiKey := field(block, "provider"), field(block, "model"), field(block, "base_url"), field(block, "api_key")
 		runtime, rerr := provider.ResolveRuntimeProvider(ctx, d.Home, requested, model, baseURL, apiKey)
 		if rerr != nil {
-			lines := pystr.Splitlines(rerr.Error(), false)
+			lines := textutil.Lines(rerr.Error())
 			if len(lines) == 0 {
 				return errors.New("provider resolution failed without a reason")
 			}
@@ -562,7 +563,7 @@ func doctorDriftStructure(ctx context.Context, d *Doctor, f *Finding, shouldFix 
 		} else {
 			doctorCheckWarn(d.W, ci.Message, "")
 		}
-		for _, hintLine := range pystr.Splitlines(ci.Hint, false) {
+		for _, hintLine := range textutil.Lines(ci.Hint) {
 			doctorCheckInfo(d.W, hintLine)
 		}
 		f.Issues = append(f.Issues, ci.Message)

@@ -19,9 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // One systemd manager scope and the systemctl prefix that addresses it
@@ -109,7 +110,7 @@ func completedStdout(result *pysubprocess.Completed) string {
 	if result == nil {
 		return ""
 	}
-	return pystr.DecodeUTF8Replace(result.Stdout)
+	return strings.ToValidUTF8(string(result.Stdout), "\uFFFD")
 }
 
 // Captured stderr of a finished command as text with undecodable bytes replaced
@@ -117,7 +118,7 @@ func completedStderr(result *pysubprocess.Completed) string {
 	if result == nil {
 		return ""
 	}
-	return pystr.DecodeUTF8Replace(result.Stderr)
+	return strings.ToValidUTF8(string(result.Stderr), "\uFFFD")
 }
 
 // Runs one systemctl or sudo systemctl invocation capturing utf-8 text under a timeout in seconds
@@ -279,8 +280,8 @@ func isIcebathGatewayUnit(unit string) bool {
 
 // Runs processUnit per gateway unit of a list-units output, a per unit timeout handed to onUnitTimeout
 func forEachSystemdGatewayUnit(listUnitsStdout string, processUnit func(name string) error, onUnitTimeout func(name string, err error)) error {
-	for _, line := range pystr.Splitlines(strings.TrimSpace(listUnitsStdout), false) {
-		parts := pystr.SplitWhitespace(line, -1)
+	for _, line := range textutil.Lines(strings.TrimSpace(listUnitsStdout)) {
+		parts := strings.Fields(line)
 		if len(parts) == 0 {
 			continue
 		}

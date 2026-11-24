@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -22,6 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Unit properties whose loaded values bind a systemd service to an account, home and command
@@ -240,7 +243,7 @@ var systemdExecStartRE = regexp.MustCompile(`^\{ path=(.*?) ; argv\[\]=(.*?) ; i
 func systemdServiceUID(user string) (int, error) {
 	decimal := user != ""
 	for _, r := range user {
-		decimal = decimal && pystr.IsDecimal(r)
+		decimal = decimal && unicode.IsDigit(r)
 	}
 	if decimal {
 		digits := strings.Map(func(r rune) rune {
@@ -306,7 +309,7 @@ func VerifySystemd(props map[string]string, managerEnv, h string, system bool) e
 	if system {
 		env = map[string]string{}
 		passed := map[string]bool{}
-		for _, name := range pystr.SplitWhitespace(props["PassEnvironment"], -1) {
+		for _, name := range strings.Fields(props["PassEnvironment"]) {
 			passed[name] = true
 		}
 		for k, v := range inherited {
@@ -416,7 +419,7 @@ func VerifyLaunchdLoaded(output, h string, uid int, username string) error {
 		if len(found) != 1 {
 			return nil, unverifiedIdentity()
 		}
-		return pystr.Splitlines(found[0][1], false), nil
+		return textutil.Lines(found[0][1]), nil
 	}
 	for _, pair := range [][2]string{{"uid", strconv.Itoa(uid)}, {"username", username}} {
 		values := regexp.MustCompile(`(?m)^\t`+pair[0]+` = (.+)$`).FindAllStringSubmatch(output, -1)
@@ -599,7 +602,7 @@ var (
 
 // Home and argv of the vendor scheduled task vbs template, unverified for any other script
 func vbsIdentity(script string) (string, []string, error) {
-	lines := pystr.Splitlines(script, false)
+	lines := textutil.Lines(script)
 	if len(lines) < 16 || !strings.HasPrefix(lines[0], "' ") {
 		return "", nil, unverifiedIdentity()
 	}

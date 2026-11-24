@@ -13,9 +13,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Argv sentinels of a branch switch that never ran git, the refused arm and the moved ref
@@ -161,7 +162,7 @@ func exitAfterFailedBranchSwitch(ctx context.Context, w io.Writer, gitCmd []stri
 	if info, err := os.Stat(marker); err == nil && info.Mode().IsRegular() {
 		fmt.Fprintf(w, "✗ Switching to '%s' stopped part-way; the next `icebath` launch puts the checkout back.\n", branch)
 		if detail != "" {
-			fmt.Fprintf(w, "  %s\n", pystr.Splitlines(detail, false)[0])
+			fmt.Fprintf(w, "  %s\n", textutil.Lines(detail)[0])
 		}
 		if autoStashRef != "" {
 			fmt.Fprintf(w, "  ℹ️  Local changes preserved in stash (ref: %s)\n", autoStashRef)
@@ -187,7 +188,7 @@ func exitAfterFailedBranchSwitch(ctx context.Context, w io.Writer, gitCmd []stri
 	} else {
 		fmt.Fprintf(w, "✗ Branch '%s' does not exist locally or on origin.\n", branch)
 		if detail != "" {
-			fmt.Fprintf(w, "  %s\n", pystr.Splitlines(detail, false)[0])
+			fmt.Fprintf(w, "  %s\n", textutil.Lines(detail)[0])
 		}
 		recordStop(ctx, missingBranchStop(ctx, gitCmd, branch))
 	}

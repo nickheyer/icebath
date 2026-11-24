@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var hintFilenames = []string{"AGENTS.override.md", "AGENTS.md", "agents.md", "CLAUDE.md", "claude.md", ".cursorrules"}
@@ -288,7 +287,7 @@ func (t *SubdirectoryHintTracker) addPathCandidate(rawPath string, candidates *[
 func (t *SubdirectoryHintTracker) extractPathsFromCommand(cmd string, candidates *[]string, seen map[string]bool) {
 	tokens, err := pyshlex.SplitPOSIX(cmd, false)
 	if err != nil {
-		tokens = pystr.SplitWhitespace(cmd, -1)
+		tokens = strings.Fields(cmd)
 	}
 	for _, target := range navTargets(cmd) {
 		t.addPathCandidate(target, candidates, seen)

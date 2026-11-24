@@ -1,11 +1,10 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"

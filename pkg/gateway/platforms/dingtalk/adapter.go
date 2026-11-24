@@ -1,8 +1,6 @@
 package dingtalk
 
 import (
-	"unicode"
-
 	"bytes"
 	"context"
 	"errors"
@@ -13,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/google/uuid"
@@ -25,8 +24,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -136,7 +136,7 @@ func (g *sdkLogGuard) filter(record *slog.Record) (emit bool) {
 	if exc != nil && st.onException != nil {
 		st.onException(exc)
 	}
-	key := sdkLogKey{level: record.Level, msg: pystr.Slice(msg, 0, 500)}
+	key := sdkLogKey{level: record.Level, msg: textutil.First(msg, 500)}
 	if exc != nil {
 		key.exc = pyrepr.ExceptionName(exc)
 	}
@@ -741,10 +741,10 @@ func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessag
 	}
 	where, preview := "?", "(media)"
 	if chatID != "" {
-		where = pystr.Slice(chatID, 0, 20)
+		where = textutil.First(chatID, 20)
 	}
 	if text != "" {
-		preview = pystr.Slice(text, 0, 80)
+		preview = textutil.First(text, 80)
 	}
 	pkgLog().Debug(fmt.Sprintf("[%s] Message from %s in %s: %s", a.Name(), userName, where, preview))
 	event := gateway.NewMessageEvent(text)
@@ -814,7 +814,7 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 	}
 	pkgLog().Debug(fmt.Sprintf("[%s] Sending via webhook", a.Name()))
 	payload := pyjson.ObjectOf("msgtype", "markdown", "markdown", pyjson.ObjectOf("title", "Icebath",
-		"text", normalizeMarkdown(pystr.Slice(content, 0, maxMessageLength))))
+		"text", normalizeMarkdown(textutil.First(content, maxMessageLength))))
 	resp, err := postJSON(ctx, httpClient, pyrepr.Str(webhookValue), payload, 15*time.Second)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -834,7 +834,7 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 		}
 		return gateway.SendResult{Success: true, MessageID: uuidHex()[:12]}, nil
 	}
-	body := pystr.Slice(resp.Text(), 0, 200)
+	body := textutil.First(resp.Text(), 200)
 	pkgLog().Warn(fmt.Sprintf("[%s] Send failed HTTP %d: %s", a.Name(), resp.StatusCode, body))
 	return gateway.SendResult{Success: false, Error: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, body)}, nil
 }
@@ -1011,7 +1011,7 @@ func (a *DingTalkAdapter) streamCardContent(ctx context.Context, outTrackID stri
 	if cardSDK == nil {
 		return attributeError(nil, "streaming_update_with_options_async")
 	}
-	return cardSDK.streamingUpdate(ctx, token, outTrackID, uuid.NewString(), pystr.Slice(content, 0, maxMessageLength), finalize)
+	return cardSDK.streamingUpdate(ctx, token, outTrackID, uuid.NewString(), textutil.First(content, maxMessageLength), finalize)
 }
 
 // App access token through the stream client's cached getter, nil when it fails or the client is gone
@@ -1060,7 +1060,7 @@ func (a *DingTalkAdapter) sendEmotion(ctx context.Context, openMsgID, openConver
 	if err == nil && pyrepr.Truthy(token) {
 		err = robotSDK.robotEmotion(ctx, token, recall, a.robotCode, openMsgID, openConversationID, emojiName)
 		if err == nil {
-			pkgLog().Info(fmt.Sprintf("[%s] _send_emotion: %s %s on msg=%s", a.Name(), action, emojiName, pystr.Slice(openMsgID, 0, 24)))
+			pkgLog().Info(fmt.Sprintf("[%s] _send_emotion: %s %s on msg=%s", a.Name(), action, emojiName, textutil.First(openMsgID, 24)))
 		}
 	}
 	if err != nil {

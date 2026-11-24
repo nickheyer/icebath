@@ -3,6 +3,7 @@ package gateway
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
@@ -40,7 +41,7 @@ func HostHeaderHostname(hostHeader string) string {
 			return ""
 		}
 		suffix := value[closeAt+1:]
-		if suffix != "" && !(len(suffix) > 1 && suffix[0] == ':' && pystr.All(suffix[1:], pystr.IsDecimal)) {
+		if suffix != "" && !(len(suffix) > 1 && suffix[0] == ':' && pystr.All(suffix[1:], unicode.IsDigit)) {
 			return ""
 		}
 		return strings.ToLower(hostname)

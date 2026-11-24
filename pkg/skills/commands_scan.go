@@ -1,8 +1,6 @@
 package skills
 
 import (
-	"unicode"
-
 	"bytes"
 	"context"
 	"errors"
@@ -13,12 +11,15 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Skill slash command table keyed by "/slug" with name, description, skill_md_path and skill_dir
@@ -418,7 +419,7 @@ func (s *Scope) scanPluginSkillCommands(host PluginSkillHost, metadata []map[str
 		if err != nil {
 			continue
 		}
-		parsed, _ := ParseFrontmatter(pystr.DecodeUTF8Replace(bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))))
+		parsed, _ := ParseFrontmatter(strings.ToValidUTF8(string(bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))), "\uFFFD"))
 		if !skillMatchesPlatform(parsed) || !s.skillMatchesEnvironment(parsed) || !skillMatchesApps(parsed) {
 			continue
 		}
@@ -623,7 +624,7 @@ func (s *Scope) SplitStackedSkillCommands(ctx context.Context, rest string, inte
 		if !strings.HasPrefix(stripped, "/") {
 			break
 		}
-		parts := pystr.SplitWhitespace(stripped, 1)
+		parts := textutil.FieldsN(stripped, 1)
 		tail := ""
 		if len(parts) > 1 {
 			tail = parts[1]
@@ -810,7 +811,7 @@ func (s *Scope) Command(ctx context.Context, line, taskID string) (string, bool,
 	if !strings.HasPrefix(trimmed, "/") {
 		return "", false, nil
 	}
-	parts := pystr.SplitWhitespace(trimmed, 1)
+	parts := textutil.FieldsN(trimmed, 1)
 	rest := ""
 	if len(parts) > 1 {
 		rest = parts[1]

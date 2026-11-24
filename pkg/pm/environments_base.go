@@ -17,6 +17,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Launcher a sealed payload records for the icebath command, empty when none is recorded
@@ -441,7 +443,7 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 	parse := func(text string) (string, string, bool, error) {
 		head, rest, _ := strings.Cut(text, ".")
 		tail, _, _ := strings.Cut(rest, ".")
-		if !pystr.All(head, pystr.IsDigit) || !pystr.All(tail, pystr.IsDigit) {
+		if !pystr.All(head, unicode.IsDigit) || !pystr.All(tail, unicode.IsDigit) {
 			return "", "", false, nil
 		}
 		a, err := pyIntText(head)
@@ -459,7 +461,7 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 		if err := utf8Strict(data); err != nil {
 			return "", "", false, err
 		}
-		for _, line := range pystr.Splitlines(string(data), false) {
+		for _, line := range textutil.Lines(string(data)) {
 			key, value, _ := strings.Cut(line, "=")
 			if k := strings.TrimSpace(key); k != "version" && k != "version_info" {
 				continue

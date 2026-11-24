@@ -4,7 +4,6 @@ package selfupdate
 
 import (
 	"context"
-
 	"os"
 	"strings"
 	"testing"

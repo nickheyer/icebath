@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -14,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -31,7 +31,7 @@ func (c *CLI) writeTerminalBreadcrumb() {
 
 // Collapses whitespace and caps the text at limit cells with an ellipsis
 func squash(text string, limit int) string {
-	text = strings.Join(strings.FieldsFunc(text, pystr.IsSpace), " ")
+	text = strings.Join(strings.FieldsFunc(text, unicode.IsSpace), " ")
 	if utf8.RuneCountInString(text) > limit {
 		return string([]rune(text)[:limit-1]) + "…"
 	}

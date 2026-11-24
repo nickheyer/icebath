@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Fresh home with the English catalog and an unlimited preview cap
@@ -58,7 +58,7 @@ func TestTrimErrorShortMessageUnchanged(t *testing.T) {
 func TestTrimErrorLongMessageTruncatedToCap(t *testing.T) {
 	ctx := cuteTestHome(t)
 	trimmed := trimError(ctx, strings.Repeat("x", 200))
-	if pystr.Len(trimmed) > errorSuffixMaxLen || !strings.HasSuffix(trimmed, "…") {
+	if utf8.RuneCountInString(trimmed) > errorSuffixMaxLen || !strings.HasSuffix(trimmed, "…") {
 		t.Fatalf("got %q", trimmed)
 	}
 }

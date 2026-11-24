@@ -58,12 +58,12 @@ func looksLikeDegenerateFinal(text string, userMessage any) bool {
 			return false
 		}
 	}
-	if strings.ContainsRune(degenerateLeadingPunct, r[0]) && len(r) > 1 && pystr.IsAlpha(r[1]) {
+	if strings.ContainsRune(degenerateLeadingPunct, r[0]) && len(r) > 1 && unicode.IsLetter(r[1]) {
 		return true
 	}
 	anyAlpha, asciiAlnum := false, false
 	for _, ch := range r {
-		anyAlpha = anyAlpha || pystr.IsAlpha(ch)
+		anyAlpha = anyAlpha || unicode.IsLetter(ch)
 		asciiAlnum = asciiAlnum || (ch <= unicode.MaxASCII && pystr.IsAlnum(ch))
 	}
 	if !anyAlpha || asciiAlnum {
@@ -74,7 +74,7 @@ func looksLikeDegenerateFinal(text string, userMessage any) bool {
 		userText = provider.SummarizeUserMessageForLog(userMessage, " ")
 	}
 	for _, ch := range userText {
-		if pystr.IsAlpha(ch) && ch > unicode.MaxASCII {
+		if unicode.IsLetter(ch) && ch > unicode.MaxASCII {
 			return false
 		}
 	}

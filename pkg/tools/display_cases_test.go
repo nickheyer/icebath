@@ -8,10 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Resets the configured preview length around a display case
@@ -66,7 +65,7 @@ func TestBuildToolPreviewDelegateTaskBatchPreviewRespectsMaxLen(t *testing.T) {
 	thirty := 30
 	got := BuildToolPreview(nil, "delegate_task", map[string]any{"tasks": []any{
 		map[string]any{"goal": strings.Repeat("A", 80)}, map[string]any{"goal": strings.Repeat("B", 80)}}}, &thirty)
-	if got == "" || pystr.Len(got) > 30 {
+	if got == "" || utf8.RuneCountInString(got) > 30 {
 		t.Fatalf("preview %q", got)
 	}
 }
@@ -85,12 +84,12 @@ func TestBuildToolPreviewTinyMaxLenNeverExceeded(t *testing.T) {
 		limit := maxLen
 		for tool, args := range map[string]map[string]any{"terminal": {"command": long}, "web_search": {"query": long}} {
 			preview := BuildToolPreview(nil, tool, args, &limit)
-			if preview == "" || pystr.Len(preview) > maxLen {
+			if preview == "" || utf8.RuneCountInString(preview) > maxLen {
 				t.Fatalf("%s at %d gave %q", tool, maxLen, preview)
 			}
 		}
 		SetToolPreviewMaxLen(maxLen)
-		if got := cutePath("/" + long + "/file.py"); pystr.Len(got) > maxLen {
+		if got := cutePath("/" + long + "/file.py"); utf8.RuneCountInString(got) > maxLen {
 			t.Fatalf("cute path at %d gave %q", maxLen, got)
 		}
 		SetToolPreviewMaxLen(0)
@@ -183,7 +182,7 @@ func TestBuildToolLabelDisabledFallsBackToPreview(t *testing.T) {
 func TestBuildStatusPhraseCapsLengthForSlackStatusLine(t *testing.T) {
 	SetFriendlyToolLabels(true)
 	phrase := BuildStatusPhrase(nil, "terminal", map[string]any{"command": strings.Repeat("x", 300)}, 49)
-	if phrase == "" || pystr.Len(phrase) > 49 || !strings.HasSuffix(phrase, "\u2026") {
+	if phrase == "" || utf8.RuneCountInString(phrase) > 49 || !strings.HasSuffix(phrase, "\u2026") {
 		t.Fatalf("phrase %q", phrase)
 	}
 }

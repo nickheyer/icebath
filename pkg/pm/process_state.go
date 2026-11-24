@@ -1,8 +1,6 @@
 package pm
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"errors"
@@ -10,10 +8,9 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Single letter ps style state of pid from proc stat on Linux or ps on macOS, false when unknowable
@@ -42,7 +39,7 @@ func processState(pid int) (string, bool) {
 		if err != nil && (ctx.Err() != nil || !errors.As(err, &exit)) {
 			return "", false
 		}
-		text := strings.TrimSpace(pystr.DecodeUTF8Replace(out))
+		text := strings.TrimSpace(strings.ToValidUTF8(string(out), "\uFFFD"))
 		if text == "" {
 			return "", false
 		}

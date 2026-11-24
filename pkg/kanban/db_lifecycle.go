@@ -1,8 +1,6 @@
 package kanban
 
 import (
-	"unicode"
-
 	"bufio"
 	"bytes"
 	"context"
@@ -12,13 +10,13 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -297,7 +295,7 @@ func ReadWorkerLog(ctx context.Context, taskID string, tailBytes *int64, board *
 			return nil, nil
 		}
 		data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
-		text := strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(pystr.DecodeUTF8Replace(data))
+		text := strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(strings.ToValidUTF8(string(data), "\uFFFD"))
 		return &text, nil
 	}
 	st, err := os.Stat(path)
@@ -331,7 +329,7 @@ func ReadWorkerLog(ctx context.Context, taskID string, tailBytes *int64, board *
 	if err != nil {
 		return nil, nil
 	}
-	text := pystr.DecodeUTF8Replace(data)
+	text := strings.ToValidUTF8(string(data), "\uFFFD")
 	return &text, nil
 }
 

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -26,7 +28,7 @@ func ParsePartialCompressArgs(rawArgs string) (bool, int, *string) {
 		lowered = lowered[len("up to "):]
 		text = text[len("up to "):]
 	}
-	tokens := pystr.SplitWhitespace(lowered, -1)
+	tokens := strings.Fields(lowered)
 	head := ""
 	if len(tokens) > 0 {
 		head = tokens[0]
@@ -53,7 +55,7 @@ func ParsePartialCompressArgs(rawArgs string) (bool, int, *string) {
 func ExtractCompressFlags(rawArgs string) (string, bool, bool) {
 	preview, aggressive := false, false
 	kept := []string{}
-	for _, tok := range pystr.SplitWhitespace(rawArgs, -1) {
+	for _, tok := range strings.Fields(rawArgs) {
 		switch strings.ToLower(tok) {
 		case "--preview", "--dry-run", "--dryrun":
 			preview = true
@@ -77,7 +79,7 @@ func SummarizeCompressPreview(history []map[string]any, partial bool, keepLast i
 	}
 	lines := []string{
 		"Preview — no changes made.",
-		fmt.Sprintf("Would compress %d of %d message(s) (~%s tokens currently in context).", len(head), total, pystr.GroupThousands(int64(approxTokens))),
+		fmt.Sprintf("Would compress %d of %d message(s) (~%s tokens currently in context).", len(head), total, textutil.Thousands(int64(approxTokens))),
 	}
 	if effectivePartial {
 		lines = append(lines, fmt.Sprintf("Boundary: keeping the last %d exchange(s) (%d message(s)) verbatim.", keepLast, len(tail)))

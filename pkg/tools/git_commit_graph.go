@@ -19,8 +19,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var commitGraphWrite = []string{"commit-graph", "write", "--reachable", "--split", "--no-changed-paths", "--no-progress"}
@@ -149,7 +150,7 @@ func runBoundedGit(ctx context.Context, repoRoot string, args []string, timeout 
 		if len(raw) > 4096 {
 			raw = raw[len(raw)-4096:]
 		}
-		lines := pystr.Splitlines(strings.TrimSpace(pystr.DecodeUTF8Replace(raw)), false)
+		lines := textutil.Lines(strings.TrimSpace(strings.ToValidUTF8(string(raw), "\uFFFD")))
 		cause := "no output"
 		if len(lines) > 0 {
 			cause = lines[len(lines)-1]

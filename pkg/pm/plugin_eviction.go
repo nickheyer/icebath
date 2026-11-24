@@ -16,10 +16,10 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"gopkg.in/yaml.v3"
 )
@@ -302,7 +302,7 @@ func disablePlugin(plugins *yaml.Node, name string, spellings map[string]bool, r
 			return err
 		}
 	}
-	words := []rune(strings.Join(strings.FieldsFunc(reason, pystr.IsSpace), " "))
+	words := []rune(strings.Join(strings.FieldsFunc(reason, unicode.IsSpace), " "))
 	if len(words) > 300 {
 		words = words[:300]
 	}

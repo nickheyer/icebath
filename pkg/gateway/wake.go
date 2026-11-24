@@ -17,8 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Ceiling of one synchronous wake self post turn
@@ -366,7 +367,7 @@ func selfPostChatCompletion(ctx context.Context, adapter PlatformAdapter, text, 
 		if resp.StatusCode >= 400 {
 			raw, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
-			return fmt.Errorf("wake self-post failed for session %s: HTTP %d: %s", sessionID, resp.StatusCode, pystr.Slice(string(raw), 0, 300))
+			return fmt.Errorf("wake self-post failed for session %s: HTTP %d: %s", sessionID, resp.StatusCode, textutil.First(string(raw), 300))
 		}
 		_, err = io.ReadAll(resp.Body)
 		_ = resp.Body.Close()

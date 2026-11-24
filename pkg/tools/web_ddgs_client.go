@@ -33,7 +33,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
@@ -288,7 +287,7 @@ func ddgsDecodeText(contentType string, raw []byte) string {
 			}
 		}
 	}
-	return pystr.DecodeUTF8Replace(raw)
+	return strings.ToValidUTF8(string(raw), "\uFFFD")
 }
 
 var ddgsStripTagsRe = regexp.MustCompile(`<.*?>`)
@@ -309,7 +308,7 @@ func ddgsNormalizeText(v any) (any, error) {
 		}
 		return r
 	}, s)
-	return strings.Join(pystr.SplitWhitespace(s, -1), " "), nil
+	return strings.Join(strings.Fields(s), " "), nil
 }
 
 // ddgs _normalize_url, percent decoding with spaces turned into plus signs
@@ -352,7 +351,7 @@ func pyContains(container any, item string) (bool, error) {
 func pyValueLen(v any) (int, error) {
 	switch x := v.(type) {
 	case string:
-		return pystr.Len(x), nil
+		return utf8.RuneCountInString(x), nil
 	case []any:
 		return len(x), nil
 	case *pyjson.Object:
@@ -535,7 +534,7 @@ func (e *ddgsEngine) extractHTML(_ context.Context, text string) ([]*ddgsTextRes
 			if err != nil {
 				return nil, err
 			}
-			if err := r.set(kv[0], strings.Join(pystr.SplitWhitespace(joined, -1), " ")); err != nil {
+			if err := r.set(kv[0], strings.Join(strings.Fields(joined), " ")); err != nil {
 				return nil, err
 			}
 		}

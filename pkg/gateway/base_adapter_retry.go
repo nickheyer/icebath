@@ -7,10 +7,12 @@ import (
 	"math"
 	"math/rand/v2"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Longest server requested retry wait the send path sleeps inline before handing redelivery to the ledger
@@ -125,7 +127,7 @@ func (b *BasePlatformAdapter) dispatchInlineReply(ctx context.Context, event *Me
 	}
 	if logCmd != nil {
 		pkgLog().Info(fmt.Sprintf("[%s] Sending command '/%s' response (%d chars) to %s", b.Self().Name(), *logCmd,
-			pystr.Len(text), event.Source.ChatID))
+			utf8.RuneCountInString(text), event.Source.ChatID))
 	}
 	replyTo := ""
 	if anchor := replyAnchorForEvent(event); anchor != nil {
@@ -271,7 +273,7 @@ func (b *BasePlatformAdapter) ResumePartialSend(ctx context.Context, chatID stri
 // Last resort send after a permanent failure, the content as plain text under the fallback banner
 func (b *BasePlatformAdapter) SendPlainFallback(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (SendResult, error) {
 	self := b.Self()
-	head := pystr.Slice(content, 0, 3500)
+	head := textutil.First(content, 3500)
 	visible := i18n.T(ctx, "gateway.notify.plain_fallback_prefix", "", map[string]any{"content": head})
 	text := self.WarningText(ctx, visible, &head, "", chatID, metadata)
 	return self.Send(ctx, chatID, *text, replyTo, metadata)

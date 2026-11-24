@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 )
 
@@ -695,7 +695,7 @@ func yamlIntOf(text string, base int) *big.Int {
 	if base == 10 {
 		digits := 0
 		for _, r := range text {
-			if r != '_' && !pystr.IsSpace(r) && r != '+' && r != '-' {
+			if r != '_' && !unicode.IsSpace(r) && r != '+' && r != '-' {
 				digits++
 			}
 		}
@@ -719,7 +719,7 @@ func strIndex0(s string) rune {
 	if s == "" {
 		panic(pyErr("IndexError", "YAML text is empty where a character was expected"))
 	}
-	return pystr.Runes(s)[0]
+	return []rune(s)[0]
 }
 
 func (c *safeConstructor) constructInt(n *ry.Node) any {
@@ -729,7 +729,7 @@ func (c *safeConstructor) constructInt(n *ry.Node) any {
 		sign = big.NewInt(-1)
 	}
 	if first := strIndex0(valueS); first == '+' || first == '-' {
-		valueS = string(pystr.Runes(valueS)[1:])
+		valueS = string([]rune(valueS)[1:])
 	}
 	switch {
 	case valueS == "0":
@@ -789,7 +789,7 @@ func (c *safeConstructor) constructFloat(n *ry.Node) any {
 		sign = -1
 	}
 	if first := strIndex0(valueS); first == '+' || first == '-' {
-		valueS = string(pystr.Runes(valueS)[1:])
+		valueS = string([]rune(valueS)[1:])
 	}
 	switch {
 	case valueS == ".inf":
@@ -896,7 +896,7 @@ func base64Value(ch byte) int {
 
 func (c *safeConstructor) constructBinary(n *ry.Node) any {
 	text := c.constructScalar(n)
-	runes := pystr.Runes(text)
+	runes := []rune(text)
 	for i, r := range runes {
 		if r >= 0x80 {
 			j := i

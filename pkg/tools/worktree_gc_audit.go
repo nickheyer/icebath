@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -15,12 +13,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Branches never considered for deletion, in any mode
@@ -98,7 +98,7 @@ func gcDirtySplit(path string) (bool, []string) {
 		}
 		lines = append(lines, line)
 		if strings.HasPrefix(line, "??") {
-			untracked = append(untracked, strings.TrimSpace(pystr.Slice(line, 3, pystr.Len(line))))
+			untracked = append(untracked, strings.TrimSpace(strings.TrimPrefix(line, "??")))
 		}
 	}
 	if len(untracked) == len(lines) {
@@ -210,7 +210,7 @@ func AuditExternalTrees(repoRoot string) ([]ExternalTreeRecord, error) {
 		}
 		branch := current["branch"]
 		if branch == "" && current["head"] != "" {
-			branch = "detached @" + pystr.Slice(current["head"], 0, 10)
+			branch = "detached @" + textutil.First(current["head"], 10)
 		}
 		_, statErr := os.Stat(path)
 		records = append(records, ExternalTreeRecord{Path: path, Branch: branch, Locked: locked, Missing: statErr != nil})

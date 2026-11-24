@@ -2,9 +2,10 @@ package googlemeet
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"os"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 )
 
 func TestMain(m *testing.M) {

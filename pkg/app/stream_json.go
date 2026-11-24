@@ -8,11 +8,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const streamJSONToolOutputCap = 5000
@@ -172,8 +174,8 @@ func (e *StreamJSONEmitter) OnToolProgress(eventType, toolName, preview string, 
 		if pyrepr.Truthy(extra["result"]) {
 			output = pyrepr.Str(extra["result"])
 		}
-		if pystr.Len(output) > streamJSONToolOutputCap {
-			output = pystr.Slice(output, 0, streamJSONToolOutputCap) + "..."
+		if utf8.RuneCountInString(output) > streamJSONToolOutputCap {
+			output = textutil.First(output, streamJSONToolOutputCap) + "..."
 		}
 		payload := pyjson.NewObject()
 		payload.Set("type", "tool_result")

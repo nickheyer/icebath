@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -13,6 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Database holding both the session transcript and its authority's admission ledger, nil without an authority
@@ -96,7 +99,7 @@ func (r *GatewayRunner) handleUndoCommand(ctx context.Context, event *gateway.Me
 	n := 1
 	rawArgs := strings.TrimSpace(event.GetCommandArgs())
 	if rawArgs != "" {
-		first := pystr.SplitWhitespace(rawArgs, -1)[0]
+		first := strings.Fields(rawArgs)[0]
 		parsed, ok := pystr.IntText(first)
 		if !ok {
 			return i18n.T(ctx, "gateway.undo.invalid_count", "", map[string]any{"arg": first}), nil
@@ -138,8 +141,8 @@ func (r *GatewayRunner) handleUndoCommand(ctx context.Context, event *gateway.Me
 	}()
 	targetText, _ := result["target_text"].(string)
 	preview := targetText
-	if pystr.Len(targetText) > 200 {
-		preview = pystr.Slice(targetText, 0, 200) + "..."
+	if utf8.RuneCountInString(targetText) > 200 {
+		preview = textutil.First(targetText, 200) + "..."
 	}
 	return i18n.T(ctx, "gateway.undo.removed", "", map[string]any{"turns": result["turns_undone"],
 		"count": result["rewound_count"], "preview": preview}), nil

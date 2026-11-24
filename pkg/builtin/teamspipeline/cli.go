@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 
@@ -20,7 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -354,7 +356,7 @@ func compactJob(job *pyjson.Object) (*pyjson.Object, error) {
 		summary = m.Copy()
 	}
 	if transcript, _ := summary.Pop("transcript_text"); pyrepr.Truthy(transcript) {
-		summary.Set("transcript_preview", pystr.Slice(pyrepr.Str(transcript), 0, 240))
+		summary.Set("transcript_preview", textutil.First(pyrepr.Str(transcript), 240))
 	}
 	if summary.Len() > 0 {
 		payload.Set("summary_payload", summary)
@@ -607,7 +609,7 @@ func cmdFetch(ctx context.Context, ns map[string]any) error {
 	if artifact != nil {
 		artifactDict = artifact.ToDict()
 	}
-	if p := pystr.Slice(text, 0, 240); p != "" {
+	if p := textutil.First(text, 240); p != "" {
 		preview = p
 	}
 	if callRecord != nil {
@@ -805,7 +807,7 @@ func cmdTokenHealth(ctx context.Context, ns map[string]any) error {
 			payload.Set("refresh_error", err.Error())
 		} else {
 			payload.Set("last_refresh_succeeded", true)
-			payload.Set("access_token_length", int64(pystr.Len(token)))
+			payload.Set("access_token_length", int64(utf8.RuneCountInString(token)))
 		}
 	}
 	return printJSON(payload)

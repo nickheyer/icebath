@@ -17,6 +17,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Journey memory sources and the file each one names
@@ -243,7 +245,7 @@ func NodeDetail(ctx context.Context, env *tools.Env, nodeID string) (map[string]
 			return nil, err
 		}
 		body := pyStrip(chunks[local])
-		lines := pystr.Splitlines(body, false)
+		lines := textutil.Lines(body)
 		if len(lines) == 0 {
 			return nil, &pyError{class: "IndexError", msg: "memory node " + nodeID + " has an empty entry"}
 		}

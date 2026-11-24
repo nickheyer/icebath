@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -236,7 +235,7 @@ func lfAttemptList(attempts []*pyjson.Object) []any {
 
 // Last n code points of UTF-8 decoded bytes with replacement
 func lfTail(data []byte, n int) string {
-	text := pystr.DecodeUTF8Replace(data)
+	text := strings.ToValidUTF8(string(data), "\uFFFD")
 	if utf8.RuneCountInString(text) <= n {
 		return text
 	}

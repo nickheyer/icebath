@@ -6,11 +6,11 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
@@ -532,7 +532,7 @@ func tokenValidationStatus(cli *secretsCLI, enabled bool, binary, token, serverU
 	if _, ok := listProjects(cli, binary, token, probeConsole, serverURL); !ok {
 		if details := strings.TrimSpace(recorded.String()); details != "" {
 			for _, line := range strings.Split(details, "\n") {
-				messages = append(messages, strings.TrimRightFunc(line, pystr.IsSpace))
+				messages = append(messages, strings.TrimRightFunc(line, unicode.IsSpace))
 			}
 		}
 		return "[red]failed[/red]", messages

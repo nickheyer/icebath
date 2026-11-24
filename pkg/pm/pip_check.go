@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -142,7 +142,7 @@ func OverriddenVersions(lock string) (map[string]map[string]bool, error) {
 // Report lines a lock does not account for, nil when the report cannot be read line by line
 func UnexpectedIncompatibilities(report, lock string) ([]string, error) {
 	var lines []string
-	for _, line := range pystr.Splitlines(report, false) {
+	for _, line := range textutil.Lines(report) {
 		if stripped := strings.TrimSpace(line); pipReportLine.MatchString(stripped) {
 			lines = append(lines, stripped)
 		}

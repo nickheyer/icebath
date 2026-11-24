@@ -24,9 +24,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -209,7 +210,7 @@ func (s *scope) identityOverride(taskID string, cfg map[string]any) *identity {
 	}
 	sessionKey := s.envOrCfg("CAMOFOX_SESSION_KEY", cfg, "session_key")
 	if sessionKey == "" {
-		sessionKey = "task_" + pystr.Slice(taskOrDefault(taskID), 0, 16)
+		sessionKey = "task_" + textutil.First(taskOrDefault(taskID), 16)
 	}
 	return &identity{userID: userID, sessionKey: sessionKey}
 }
@@ -639,7 +640,7 @@ func (s *scope) getSession(taskID string) *session {
 		ss := &session{}
 		if id == nil {
 			ss.userID = "icebath_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
-			ss.sessionKey = "task_" + pystr.Slice(key.task, 0, 16)
+			ss.sessionKey = "task_" + textutil.First(key.task, 16)
 		} else {
 			ss.userID, ss.sessionKey = id.userID, id.sessionKey
 			ss.adopt = s.flag("CAMOFOX_ADOPT_EXISTING_TAB", cfg, "adopt_existing_tab")

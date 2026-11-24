@@ -1,11 +1,10 @@
 package agent
 
 import (
-	"unicode"
-
 	"fmt"
 	"reflect"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"

@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -25,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Save, export, reload, delegation pause, rollback, context breakdown, history, account usage and runtime check verbs of the shared owner
@@ -517,7 +518,7 @@ func sessionDiff(mgr *tools.CheckpointManager, cwd, refusal string) tuigateway.R
 	stat = fitFrame(stat, sessionDiffBytes)
 	body := fitFrame(diff, sessionDiffBytes-wireBytes(stat))
 	return tuigateway.RollbackSessionDiffResult{Enabled: true, Success: true, Stat: stat, Diff: body,
-		DiffLines: int64(len(pystr.Splitlines(diff, false))), Empty: pyrepr.Truthy(result["empty"])}
+		DiffLines: int64(len(textutil.Lines(diff))), Empty: pyrepr.Truthy(result["empty"])}
 }
 
 // Bytes text takes inside a frame, JSON escaped without ASCII escaping and then UTF-8

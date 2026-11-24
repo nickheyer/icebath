@@ -1,10 +1,9 @@
 package tuiserver
 
 import (
-	"strings"
-
 	"context"
 	"slices"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

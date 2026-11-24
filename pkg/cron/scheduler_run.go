@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -19,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -1340,8 +1340,8 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 		}
 		framedPrompt := normalizeNewlines(prompt)
 		logged = normalizeNewlines(logged)
-		output := s.runDocHeader(job, jobName, jobID, framedPrompt, fmt.Sprintf("%s%d\n", promptFrame, pystr.Len(framedPrompt))) +
-			fmt.Sprintf("%s%d\n%s%s%s", responseFrame, pystr.Len(logged), responseHeading, logged, responseTerminator)
+		output := s.runDocHeader(job, jobName, jobID, framedPrompt, fmt.Sprintf("%s%d\n", promptFrame, utf8.RuneCountInString(framedPrompt))) +
+			fmt.Sprintf("%s%d\n%s%s%s", responseFrame, utf8.RuneCountInString(logged), responseHeading, logged, responseTerminator)
 		s.log.Info(fmt.Sprintf("Job '%s' completed successfully", jobName))
 		audit.write(result, isCronSilenceResponse(finalResponse), nil)
 		return jobRunOutcome{true, output, finalResponse, nil}, nil

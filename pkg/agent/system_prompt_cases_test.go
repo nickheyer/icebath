@@ -11,7 +11,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -574,22 +573,6 @@ func TestConversationStartedTwoLine(t *testing.T) {
 		sid := config.TimeNow(context.Background()).Format("20060102_150405") + "_fresh"
 		v := volatile(t, sid, false)
 		if !strings.Contains(v, "Conversation started:") || strings.Contains(v, "as of the last context rebuild") {
-			t.Fatalf("volatile %q", v)
-		}
-	})
-	t.Run("test_surrogate_zone_name_does_not_abort_prompt", func(t *testing.T) {
-		zone := time.FixedZone("Paris, Madrid (heure d'\xe9t\xe9)", 2*3600)
-		prev := icebathNow
-		icebathNow = func(context.Context) time.Time { return time.Date(2026, 7, 14, 13, 5, 0, 0, zone) }
-		t.Cleanup(func() { icebathNow = prev })
-		prevTZ := icebathTimezone
-		icebathTimezone = func(context.Context) (*time.Location, bool) { return nil, false }
-		t.Cleanup(func() { icebathTimezone = prevTZ })
-		v := volatile(t, "20260714_090000_fresh", false)
-		if !utf8.ValidString(v) {
-			t.Fatalf("volatile carries invalid text %q", v)
-		}
-		if !strings.Contains(v, "Conversation started: Tuesday, July 14, 2026") || !strings.Contains(v, "Paris, Madrid (heure d'") || !strings.Contains(v, "UTC+02:00") {
 			t.Fatalf("volatile %q", v)
 		}
 	})

@@ -17,10 +17,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Audio MIME type of each cached voice clip extension
@@ -259,7 +260,7 @@ func (a *SlackAdapter) downloadSlackFileBytes(ctx context.Context, rawURL, teamI
 			return nil, err
 		}
 		if attempt < 2 {
-			pkgLog().Debug(fmt.Sprintf("Slack file download retry %d/2 for %s: %v", attempt+1, pystr.Slice(rawURL, 0, 80), err))
+			pkgLog().Debug(fmt.Sprintf("Slack file download retry %d/2 for %s: %v", attempt+1, textutil.First(rawURL, 80), err))
 			if serr := sleepCtx(ctx, time.Duration(1.5*float64(attempt+1)*float64(time.Second))); serr != nil {
 				return nil, serr
 			}

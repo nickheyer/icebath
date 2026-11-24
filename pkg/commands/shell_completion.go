@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Profile actions that take a profile name as their next argument
@@ -107,7 +107,7 @@ func inheritedFlag(cmd *cobra.Command, f *pflag.Flag) bool {
 // Strips quotes and backslashes and truncates to sixty characters for shell safety
 func cleanCompletionText(text string) string {
 	text = strings.NewReplacer("'", "", `"`, "", `\`, "").Replace(text)
-	return pystr.Slice(text, 0, 60)
+	return textutil.First(text, 60)
 }
 
 // Subcommand names of a completion level in sorted order

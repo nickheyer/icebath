@@ -117,12 +117,12 @@ func (r *resource) pointer(pointer string, res *resolver) (any, *resolver) {
 			segment, contents = pyValue(n), c[i]
 		case string:
 			n := pyInt(raw)
-			rs := pystr.Runes(c)
+			rs := []rune(c)
 			i, ok := sequenceIndex(n, len(rs))
 			if !ok {
 				pointerToNowhere(pointer, r, st)
 			}
-			segment, contents = pyValue(n), pystr.FromRunes(rs[i:i+1])
+			segment, contents = pyValue(n), string(rs[i:i+1])
 		case *pyjson.Object:
 			key := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
 			v, ok := c.Vals[key]

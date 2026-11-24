@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -204,7 +203,7 @@ func headerRequestID(h http.Header) string {
 
 // APIError for a non success HTTP response
 func (c *chatCompletionsClient) httpError(resp *http.Response, data []byte) error {
-	body := pystr.DecodeUTF8Replace(data)
+	body := strings.ToValidUTF8(string(data), "\uFFFD")
 	he := &ccHTTPError{Status: resp.StatusCode, Body: body, Headers: resp.Header.Clone()}
 	apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, body, he)
 	if apiErr.RetryAfter == 0 {
@@ -279,8 +278,8 @@ func (c *chatCompletionsClient) completeOnce(ctx context.Context, req *Request, 
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, pystr.DecodeUTF8Replace(data), err)
-		apiErr.Message = "Provider returned a non-JSON completion body: " + truncate(redactSensitiveText(strings.TrimSpace(pystr.DecodeUTF8Replace(data))), 300)
+		apiErr := Classify(c.route.Provider, c.route.Model, resp.StatusCode, strings.ToValidUTF8(string(data), "\uFFFD"), err)
+		apiErr.Message = "Provider returned a non-JSON completion body: " + truncate(redactSensitiveText(strings.TrimSpace(strings.ToValidUTF8(string(data), "\uFFFD"))), 300)
 		apiErr.Err = &ccHeadersError{err: err, headers: resp.Header.Clone()}
 		return nil, apiErr
 	}

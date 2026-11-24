@@ -18,13 +18,15 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Client wait budgets and retry policy
@@ -126,7 +128,7 @@ func endPosition(text string) map[string]any {
 	if text == "" {
 		return map[string]any{"line": 0, "character": 0}
 	}
-	lines := pystr.Splitlines(text, false)
+	lines := textutil.Lines(text)
 	if strings.HasSuffix(text, "\n") || strings.HasSuffix(text, "\r") {
 		return map[string]any{"line": len(lines), "character": 0}
 	}
@@ -602,7 +604,7 @@ func (c *Client) drainStderr(ctx context.Context, p *serverProc) {
 		if len(line) == 0 && err != nil {
 			return
 		}
-		text := strings.TrimRightFunc(decodeUTF8Replace(line), pystr.IsSpace)
+		text := strings.TrimRightFunc(decodeUTF8Replace(line), unicode.IsSpace)
 		if text != "" {
 			text = runePrefix(text, 1000)
 			c.logf(slog.LevelDebug, "[%s] stderr: %s", c.ServerID, text)

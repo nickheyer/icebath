@@ -10,10 +10,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Resident agent of a TUI read, nil when the owner holds none
@@ -159,13 +160,13 @@ func TUIContextRead(ctx context.Context, a *gateway.SessionAuthority, ref gatewa
 		}
 	}
 	if used != 0 && maximum != 0 {
-		lines = append(lines, fmt.Sprintf("Context usage: %s / %s tokens (%.1f%%)", pystr.GroupThousands(int64(used)),
-			pystr.GroupThousands(int64(maximum)), float64(used)/float64(maximum)*100))
+		lines = append(lines, fmt.Sprintf("Context usage: %s / %s tokens (%.1f%%)", textutil.Thousands(int64(used)),
+			textutil.Thousands(int64(maximum)), float64(used)/float64(maximum)*100))
 	} else if used != 0 {
-		lines = append(lines, fmt.Sprintf("Context usage: %s tokens", pystr.GroupThousands(int64(used))))
+		lines = append(lines, fmt.Sprintf("Context usage: %s tokens", textutil.Thousands(int64(used))))
 	}
 	if count != 0 {
-		lines = append(lines, "Compressions: "+pystr.GroupThousands(int64(count)))
+		lines = append(lines, "Compressions: "+textutil.Thousands(int64(count)))
 	}
 	return strings.Join(lines, "\n"), nil
 }

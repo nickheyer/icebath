@@ -1,8 +1,6 @@
 package memory
 
 import (
-	"unicode"
-
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
@@ -11,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
@@ -20,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -330,7 +331,7 @@ func SafeSessionFilename(session *pyjson.Object, format string) (string, error) 
 	if slug == "" {
 		slug = "session"
 	}
-	return exportedSessionID(session) + "-" + pystr.Slice(slug, 0, min(60, utf8.RuneCountInString(slug))) + "." + format, nil
+	return exportedSessionID(session) + "-" + textutil.First(slug, min(60, utf8.RuneCountInString(slug))) + "." + format, nil
 }
 
 // Hex SHA256 of the bytes of a file

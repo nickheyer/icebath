@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 func TestActiveProfileSetToDefaultRemovesFile(t *testing.T) {
@@ -50,7 +51,7 @@ func TestGetActiveProfileNameProfilePathReturnsProfileName(t *testing.T) {
 // Every line of a seeded env file is a comment or blank
 func commentOnlyEnv(t *testing.T, path string) {
 	t.Helper()
-	for _, line := range pystr.Splitlines(strings.TrimPrefix(readText(t, path), "\ufeff"), false) {
+	for _, line := range textutil.Lines(strings.TrimPrefix(readText(t, path), "\ufeff")) {
 		if !strings.HasPrefix(line, "#") && strings.TrimSpace(line) != "" {
 			t.Fatalf("%s carries %q", path, line)
 		}

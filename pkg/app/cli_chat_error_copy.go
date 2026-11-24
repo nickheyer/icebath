@@ -3,6 +3,7 @@ package app
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -12,8 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const summaryLimit = 120
@@ -52,12 +54,12 @@ func shortText(text string, limit *int) string {
 	stripped := strings.TrimSpace(text)
 	first := ""
 	if stripped != "" {
-		first = pystr.Splitlines(stripped, false)[0]
+		first = textutil.Lines(stripped)[0]
 	}
-	if limit == nil || pystr.Len(first) <= *limit {
+	if limit == nil || utf8.RuneCountInString(first) <= *limit {
 		return first
 	}
-	return strings.TrimRightFunc(pystr.Slice(first, 0, *limit-1), unicode.IsSpace) + "…"
+	return strings.TrimRightFunc(textutil.First(first, *limit-1), unicode.IsSpace) + "…"
 }
 
 // Text of a truthy value, empty for None, empty strings, zero and false

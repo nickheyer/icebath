@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Keyword arguments of get_anchored_view, a nil KeepRoles disabling the role filter
@@ -151,9 +150,9 @@ func (s *sessionSearch) ListRecentUserMessages(ctx context.Context, sessionID st
 		} else if preview, err = flattenText(decoded); err != nil {
 			return nil, err
 		}
-		preview = strings.Join(pystr.SplitWhitespace(preview, -1), " ")
-		if runes := pystr.Runes(preview); len(runes) > 80 {
-			preview = pystr.FromRunes(runes[:77]) + "..."
+		preview = strings.Join(strings.Fields(preview), " ")
+		if runes := []rune(preview); len(runes) > 80 {
+			preview = string(runes[:77]) + "..."
 		}
 		id, _ := row.Get("id")
 		timestamp, _ := row.Get("timestamp")

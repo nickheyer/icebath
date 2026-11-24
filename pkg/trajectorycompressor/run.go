@@ -18,7 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // One parsed JSONL line and its number
@@ -257,8 +258,8 @@ func (c *Compressor) ProcessDirectory(ctx context.Context, inputDir, outputDir s
 	console.Print("📂 Input: " + inputDir)
 	console.Print("📂 Output: " + outputDir)
 	console.Print(fmt.Sprintf("📄 Files to process: %d", len(files)))
-	console.Print("📊 Total trajectories: " + pystr.GroupThousands(int64(total)))
-	console.Print("🎯 Target max tokens: " + pystr.GroupThousands(int64(c.Config.TargetMaxTokens)))
+	console.Print("📊 Total trajectories: " + textutil.Thousands(int64(total)))
+	console.Print("🎯 Target max tokens: " + textutil.Thousands(int64(c.Config.TargetMaxTokens)))
 	console.Print(fmt.Sprintf("📝 Summary target tokens: %d", c.Config.SummaryTargetTokens))
 	console.Print(fmt.Sprintf("⚡ Max concurrent API calls: %d", c.Config.MaxConcurrentRequests))
 	console.Print(rule + "\n")
@@ -269,7 +270,7 @@ func (c *Compressor) ProcessDirectory(ctx context.Context, inputDir, outputDir s
 	progress.Start()
 	totalF := float64(total)
 	run := &runProgress{progress: progress}
-	run.mainTask = progress.AddTask("[cyan]Compressing "+pystr.GroupThousands(int64(total))+" trajectories", &totalF)
+	run.mainTask = progress.AddTask("[cyan]Compressing "+textutil.Thousands(int64(total))+" trajectories", &totalF)
 	run.statusTask = progress.AddTask("[dim]Starting...[/dim]", nil)
 	if c.Config.MaxConcurrentRequests < 0 {
 		progress.Stop()

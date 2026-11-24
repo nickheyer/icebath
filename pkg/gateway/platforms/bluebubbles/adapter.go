@@ -2,6 +2,7 @@ package bluebubbles
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"bytes"
 	"container/list"
@@ -25,7 +26,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -825,7 +825,7 @@ func (a *BlueBubblesAdapter) Send(ctx context.Context, chatID, content, replyTo 
 	limit := a.Traits.MaxMessageLength
 	var chunks []string
 	for _, para := range paragraphs {
-		if pystr.Len(para) <= limit {
+		if utf8.RuneCountInString(para) <= limit {
 			chunks = append(chunks, para)
 		} else {
 			chunks = append(chunks, a.TruncateMessage(para, limit, nil)...)

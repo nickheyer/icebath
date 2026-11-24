@@ -1,13 +1,12 @@
 package mcpserve
 
 import (
-	"unicode"
-
 	"context"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"

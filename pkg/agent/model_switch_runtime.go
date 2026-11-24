@@ -1,12 +1,11 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"maps"
 	"regexp"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/provider"

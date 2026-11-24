@@ -1,13 +1,12 @@
 package messagetools
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"

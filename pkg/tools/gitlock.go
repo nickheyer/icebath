@@ -24,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Age past which a lock is presumed abandoned, a healthy fetch completes in minutes
@@ -113,7 +115,7 @@ func gitProcRunning(env *Env) bool {
 		if res.Returncode != 0 {
 			return true
 		}
-		for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(res.Stdout), false) {
+		for _, line := range textutil.Lines(strings.ToValidUTF8(string(res.Stdout), "\uFFFD")) {
 			first, _, _ := strings.Cut(line, ",")
 			if pm.GitProgram(strings.Trim(first, `"`)) != "" {
 				return true
@@ -293,7 +295,7 @@ func DisableTree0AutoMaintenance(ctx context.Context, repoRoot string) {
 	for _, kv := range tree0MaintenanceOff {
 		res, err := gitlockConfigRun(ctx, repoRoot, false, "config", "--local", "--get", kv[0])
 		if err == nil {
-			if strings.TrimSpace(pystr.DecodeUTF8Replace(res.Stdout)) == kv[1] {
+			if strings.TrimSpace(strings.ToValidUTF8(string(res.Stdout), "\uFFFD")) == kv[1] {
 				continue
 			}
 			_, err = gitlockConfigRun(ctx, repoRoot, true, "config", "--local", kv[0], kv[1])
@@ -310,7 +312,7 @@ func migrateEarlierMaintenanceKeys(ctx context.Context, repoRoot string) {
 	local := map[string]string{}
 	for _, line := range GitlockStdoutLines(ctx, repoRoot, []string{"config", "--local", "--get-regexp",
 		`^(maintenance\.auto|maintenance\.commit-graph\.enabled|fetch\.writecommitgraph|gc\.auto)$`}) {
-		parts := pystr.SplitWhitespace(line, 1)
+		parts := textutil.FieldsN(line, 1)
 		if len(parts) != 2 {
 			fail()
 			return
@@ -379,7 +381,7 @@ func GitlockStdoutLines(ctx context.Context, repoRoot string, args []string) []s
 		return nil
 	}
 	var out []string
-	for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(res.Stdout), false) {
+	for _, line := range textutil.Lines(strings.ToValidUTF8(string(res.Stdout), "\uFFFD")) {
 		if s := strings.TrimSpace(line); s != "" {
 			out = append(out, s)
 		}
@@ -482,9 +484,9 @@ func batchMissingParentsErr(ctx context.Context, repoRoot string, candidates []s
 		return nil, nil
 	}
 	missing := map[string]bool{}
-	for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(check.Stdout), false) {
+	for _, line := range textutil.Lines(strings.ToValidUTF8(string(check.Stdout), "\uFFFD")) {
 		if strings.HasSuffix(line, " missing") {
-			missing[pystr.SplitWhitespace(line, -1)[0]] = true
+			missing[strings.Fields(line)[0]] = true
 		}
 	}
 	out := map[string]bool{}
@@ -580,7 +582,7 @@ func shallowLines(original []byte) ([]string, error) {
 		return nil, err
 	}
 	var out []string
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		if line != "" {
 			out = append(out, line)
 		}
@@ -766,14 +768,14 @@ func PartialCloneFilter(ctx context.Context, repoRoot string, kw pysubprocess.Op
 	if err != nil {
 		return "", err
 	}
-	if res.Returncode != 0 || strings.ToLower(strings.TrimSpace(pystr.DecodeUTF8Replace(res.Stdout))) != "true" {
+	if res.Returncode != 0 || strings.ToLower(strings.TrimSpace(strings.ToValidUTF8(string(res.Stdout), "\uFFFD"))) != "true" {
 		return "", nil
 	}
 	configured, err := gitlockKwRun(ctx, repoRoot, kw, "config", "--get", "remote.origin.partialclonefilter")
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(pystr.DecodeUTF8Replace(configured.Stdout)), nil
+	return strings.TrimSpace(strings.ToValidUTF8(string(configured.Stdout), "\uFFFD")), nil
 }
 
 // Unshallows a stale installer checkout before the bounded fetch, reporting whether it was shallow
@@ -809,7 +811,7 @@ func FetchFullCommitGraph(ctx context.Context, repoRoot string, extraRefspecs []
 		if err != nil {
 			return false, err
 		}
-		converts = len(batchMissingParents(ctx, repoRoot, pystr.SplitWhitespace(text, -1))) > 0
+		converts = len(batchMissingParents(ctx, repoRoot, strings.Fields(text))) > 0
 	}
 	if converts {
 		fetchFilter = "blob:none"
@@ -864,7 +866,7 @@ func FetchWithPartialCloneRecovery(runner func(gitCmd, args []string) (*pysubpro
 	if err != nil {
 		return nil, err
 	}
-	if result.Returncode == 0 || !IsPartialClonePackObjectsCrash(pystr.DecodeUTF8Replace(result.Stderr)) {
+	if result.Returncode == 0 || !IsPartialClonePackObjectsCrash(strings.ToValidUTF8(string(result.Stderr), "\uFFFD")) {
 		return result, nil
 	}
 	MarkUnmarkedPacksPromisor(repoRoot)
@@ -907,7 +909,7 @@ func ConvertTreelessCheckout(ctx context.Context, repoRoot string, kw pysubproce
 		if err != nil {
 			return false, err
 		}
-		head := strings.TrimSpace(pystr.DecodeUTF8Replace(res.Stdout))
+		head := strings.TrimSpace(strings.ToValidUTF8(string(res.Stdout), "\uFFFD"))
 		checked := fetchKw
 		checked.Check = true
 		if _, err := gitlockSubprocessRun(ctx, append(slices.Clone(refetch), head), checked); err != nil {
@@ -957,15 +959,15 @@ func ConvertTreelessCheckoutFirst(ctx context.Context, repoRoot string) {
 	if errors.As(err, &cpe) {
 		name = "CalledProcessError"
 		if len(cpe.Stderr) > 0 {
-			text = pystr.DecodeUTF8Replace(cpe.Stderr)
+			text = strings.ToValidUTF8(string(cpe.Stderr), "\uFFFD")
 		}
 	} else if errors.As(err, &te) {
 		name = "TimeoutExpired"
 		if len(te.Stderr) > 0 {
-			text = pystr.DecodeUTF8Replace(te.Stderr)
+			text = strings.ToValidUTF8(string(te.Stderr), "\uFFFD")
 		}
 	}
-	lines := pystr.Splitlines(strings.TrimSpace(text), false)
+	lines := textutil.Lines(strings.TrimSpace(text))
 	detail := name
 	if len(lines) > 0 {
 		detail = lines[len(lines)-1]
@@ -984,7 +986,7 @@ func gitlockGitVersion(ctx context.Context, kw pysubprocess.Options) (int, int, 
 	if err != nil {
 		return 0, 0, err
 	}
-	m := gitVersionRe.FindStringSubmatch(pystr.DecodeUTF8Replace(res.Stdout))
+	m := gitVersionRe.FindStringSubmatch(strings.ToValidUTF8(string(res.Stdout), "\uFFFD"))
 	if m == nil {
 		return 0, 0, nil
 	}
@@ -1009,7 +1011,7 @@ func historyTreesComplete(ctx context.Context, repoRoot string, kw pysubprocess.
 	if walk.Returncode != 0 {
 		return false, nil
 	}
-	for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(walk.Stdout), false) {
+	for _, line := range textutil.Lines(strings.ToValidUTF8(string(walk.Stdout), "\uFFFD")) {
 		if strings.HasPrefix(line, "?") {
 			return false, nil
 		}

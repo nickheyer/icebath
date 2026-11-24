@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -14,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Home key to home path and to resolved cron store for every profile this process ticks
@@ -223,7 +223,7 @@ func isDigitText(text string) bool {
 		return false
 	}
 	for _, r := range text {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}

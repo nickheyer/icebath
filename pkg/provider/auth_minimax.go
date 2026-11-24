@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const minimaxOAuthErrorBodyLimit = 16 * 1024
@@ -57,7 +56,7 @@ func minimaxResponseErrorText(body io.Reader, limit int) string {
 	if len(text) > limit {
 		text = text[:limit]
 	}
-	out := pystr.DecodeUTF8Replace(text)
+	out := strings.ToValidUTF8(string(text), "\uFFFD")
 	if len(raw) > limit {
 		out += "...[truncated]"
 	}

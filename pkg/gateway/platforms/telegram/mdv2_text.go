@@ -1,11 +1,10 @@
 package telegram
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-
+	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 )
 

@@ -2,12 +2,11 @@ package generate
 
 import (
 	"image"
-	"math"
-	"os"
-
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"math"
+	"os"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	_ "golang.org/x/image/bmp"

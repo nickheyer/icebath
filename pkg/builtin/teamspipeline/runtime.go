@@ -1,10 +1,9 @@
 package teamspipeline
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"

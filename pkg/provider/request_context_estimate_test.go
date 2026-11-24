@@ -5,9 +5,9 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var estimatorB64 = "data:image/png;base64," + strings.Repeat("A", 400000)
@@ -44,9 +44,9 @@ func TestTextPayloadsAndToolSchemasKeepTheLegacyEstimate(t *testing.T) {
 	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "vision", "parameters": map[string]any{"type": "image"}}}}
 	legacy := 0
 	for _, m := range messages {
-		legacy += pystr.Len(pyrepr.Str(m))
+		legacy += utf8.RuneCountInString(pyrepr.Str(m))
 	}
-	legacy = (legacy + pystr.Len(pyrepr.Str(tools))) / 4
+	legacy = (legacy + utf8.RuneCountInString(pyrepr.Str(tools))) / 4
 	got := EstimateRequestContextTokens(context.Background(), map[string]any{"messages": messages, "tools": tools})
 	if math.Abs(float64(got-legacy)) >= float64(legacy)*0.02 {
 		t.Fatalf("estimate %d legacy %d", got, legacy)

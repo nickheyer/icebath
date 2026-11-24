@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -62,8 +62,8 @@ func whatsappStash(re *regexp2.Regexp, text, tag string) (string, []string) {
 // Header text as bold, already bolded asterisks stripped so the title shows no literal stars
 func whatsappHeaderToBold(m regexp2.Match) string {
 	inner := strings.TrimSpace(whatsappGroup(m, 1))
-	for pystr.Len(inner) > 1 && strings.HasPrefix(inner, "*") && strings.HasSuffix(inner, "*") {
-		inner = strings.TrimSpace(pystr.Slice(inner, 1, pystr.Len(inner)-1))
+	for len(inner) > 1 && strings.HasPrefix(inner, "*") && strings.HasSuffix(inner, "*") {
+		inner = strings.TrimSpace(inner[1 : len(inner)-1])
 	}
 	return "*" + inner + "*"
 }
@@ -163,7 +163,7 @@ func (b *WhatsAppBehaviorMixin) EffectiveReplyPrefix(ctx context.Context) (strin
 // Chunk budget with room reserved for the reply prefix, floored for pagination and fence repair
 func (b *WhatsAppBehaviorMixin) OutgoingChunkLimit(ctx context.Context) (int, error) {
 	prefix, err := b.EffectiveReplyPrefix(ctx)
-	return max(1024, whatsappMaxMessageLength-pystr.Len(prefix)), err
+	return max(1024, whatsappMaxMessageLength-utf8.RuneCountInString(prefix)), err
 }
 
 // Whether group messages need a mention for the profile in scope

@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"reflect"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -75,7 +76,7 @@ func acpSupported(ctx context.Context, command string, args []string) *bool {
 	if err != nil || probe.Returncode != 0 {
 		return nil
 	}
-	matched, err := acpFlagRE.MatchString(pystr.DecodeUTF8Replace(probe.Stdout))
+	matched, err := acpFlagRE.MatchString(strings.ToValidUTF8(string(probe.Stdout), "\uFFFD"))
 	if err != nil {
 		return nil
 	}
@@ -218,7 +219,7 @@ func iterate(v any) ([]any, error) {
 		return out, nil
 	case string:
 		out := []any{}
-		for _, r := range pystr.Runes(x) {
+		for _, r := range []rune(x) {
 			out = append(out, string(r))
 		}
 		return out, nil
@@ -490,7 +491,7 @@ func fsReadTextFile(env *tools.Env, params any, cwd string) (any, error) {
 	}
 	line, limit := dictGet(params, "line"), dictGet(params, "limit")
 	if l, ok := pyInt(line); ok && l.Cmp(big.NewInt(1)) > 0 {
-		lines := pystr.Splitlines(content, true)
+		lines := slices.Collect(strings.Lines(content))
 		start := clampIndex(new(big.Int).Sub(l, big.NewInt(1)), len(lines))
 		end := len(lines)
 		if n, ok := pyInt(limit); ok && n.Sign() > 0 {
@@ -572,7 +573,7 @@ func fsWriteTextFile(env *tools.Env, params any, cwd string) (any, error) {
 
 // Code point position of the first WTF-8 encoded lone surrogate, false when the text is valid UTF-8
 func firstSurrogate(s string) (int, bool) {
-	for i, r := range pystr.Runes(s) {
+	for i, r := range []rune(s) {
 		if r >= 0xd800 && r <= 0xdfff {
 			return i, true
 		}
@@ -581,7 +582,7 @@ func firstSurrogate(s string) (int, bool) {
 }
 
 // Surrogate code point at a code point position
-func surrogateAt(s string, pos int) rune { return pystr.Runes(s)[pos] }
+func surrogateAt(s string, pos int) rune { return []rune(s)[pos] }
 
 // Whether the list holds the string
 func containsString(list []string, s string) bool {

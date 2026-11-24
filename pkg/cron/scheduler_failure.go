@@ -1,13 +1,12 @@
 package cron
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -15,11 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Session store a finished cron session's title is written through
@@ -478,7 +478,7 @@ const (
 
 // Evidence of a failure the agent reported with the first line marker, false for any other response
 func cronFailureMarkerError(text string) (string, bool) {
-	lines := pystr.Splitlines(text, false)
+	lines := textutil.Lines(text)
 	if len(lines) == 0 || strings.TrimRightFunc(lines[0], unicode.IsSpace) != CronFailureMarker {
 		return "", false
 	}

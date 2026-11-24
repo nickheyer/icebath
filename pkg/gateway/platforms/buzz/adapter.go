@@ -14,8 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Author and content snippet of an event kept for NIP-10 parent lookups
@@ -261,7 +262,7 @@ func (a *BuzzAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 	selfPubkey := a.selfPubkey
 	a.mu.Unlock()
 	locked, err := a.AcquirePlatformLock(ctx, "buzz", a.relayURL+":"+selfPubkey,
-		fmt.Sprintf("Buzz identity %s… on %s", pystr.Slice(selfPubkey, 0, 8), a.relayURL))
+		fmt.Sprintf("Buzz identity %s… on %s", textutil.First(selfPubkey, 8), a.relayURL))
 	if err != nil {
 		return false, err
 	}
@@ -342,7 +343,7 @@ func (a *BuzzAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 	a.mu.Lock()
 	who := a.displayName
 	if who == "" {
-		who = pystr.Slice(a.selfNpub, 0, 16)
+		who = textutil.First(a.selfNpub, 16)
 	}
 	watched := len(a.state)
 	a.mu.Unlock()
@@ -697,7 +698,7 @@ func (a *BuzzAdapter) SendReaction(ctx context.Context, chatID, messageID, emoji
 		return false, err
 	}
 	if res.code != 0 {
-		pkgLog().Debug(fmt.Sprintf("Buzz: reaction add failed for message %s in %s — %s", pystr.Slice(messageID, 0, 12), chatID, cliErrorMessage(res.stderr, res.code, "")))
+		pkgLog().Debug(fmt.Sprintf("Buzz: reaction add failed for message %s in %s — %s", textutil.First(messageID, 12), chatID, cliErrorMessage(res.stderr, res.code, "")))
 	}
 	return res.code == 0, nil
 }
@@ -865,7 +866,7 @@ func rememberEventLocked(st *channelState, event map[string]any) {
 	}
 	snippet := ""
 	if content, ok := event["content"].(string); ok {
-		snippet = pystr.Slice(content, 0, eventMetaContentCap)
+		snippet = textutil.First(content, eventMetaContentCap)
 	}
 	st.storeMeta(eventID, strings.ToLower(strOf(event["pubkey"])), snippet)
 }

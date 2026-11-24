@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"unicode"
-
 	"context"
 	"fmt"
 	"log/slog"
@@ -14,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
@@ -28,6 +27,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -656,7 +657,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 		if list, ok := loaded.([]any); ok {
 			patterns = list
 		} else {
-			for _, line := range pystr.Splitlines(text, false) {
+			for _, line := range textutil.Lines(text) {
 				for _, part := range strings.Split(line, ",") {
 					patterns = append(patterns, strings.TrimSpace(part))
 				}

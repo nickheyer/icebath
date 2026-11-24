@@ -9,13 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var permanentSendErrors = []string{"invalid", "forbidden", "not found"}
@@ -253,7 +255,7 @@ func (a *QQAdapter) textSenderFor(chatType string, keyboardOK bool) textSender {
 
 // Sends plain content to a guild channel
 func (a *QQAdapter) sendGuildText(ctx context.Context, channelID, content, replyTo string) (gateway.SendResult, error) {
-	body := obj("content", pystr.Slice(content, 0, MaxMessageLength))
+	body := obj("content", textutil.First(content, MaxMessageLength))
 	if replyTo != "" {
 		body.Set("msg_id", replyTo)
 	}
@@ -274,7 +276,7 @@ func (a *QQAdapter) SendWithKeyboard(ctx context.Context, chatID, content string
 	if sender == nil {
 		return gateway.SendResult{Success: false, Error: "Inline keyboards not supported for chat_type " + pyrepr.Repr(chatType), Retryable: false}, nil
 	}
-	truncated := pystr.Slice(a.FormatMessage(content), 0, MaxMessageLength)
+	truncated := textutil.First(a.FormatMessage(content), MaxMessageLength)
 	result, err := sender(ctx, chatID, truncated, replyTo, &keyboard)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -325,7 +327,7 @@ func (a *QQAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, def, s
 // Text message body, markdown when supported and plain content with a message reference otherwise
 func (a *QQAdapter) buildTextBody(content, replyTo string) *pyjson.Object {
 	msgSeq := nextMsgSeq()
-	text := pystr.Slice(content, 0, MaxMessageLength)
+	text := textutil.First(content, MaxMessageLength)
 	if a.markdownSupport {
 		return obj("markdown", obj("content", text), "msg_type", int64(MsgTypeMarkdown), "msg_seq", msgSeq)
 	}
@@ -451,7 +453,7 @@ func (a *QQAdapter) uploadAndSendMedia(ctx context.Context, chatType, chatID, me
 	}
 	body := obj("msg_type", int64(MsgTypeMedia), "media", obj("file_info", fileInfo), "msg_seq", nextMsgSeq())
 	if caption != "" {
-		body.Set("content", pystr.Slice(caption, 0, MaxMessageLength))
+		body.Set("content", textutil.First(caption, MaxMessageLength))
 	}
 	if replyTo != "" {
 		body.Set("msg_id", replyTo)
@@ -473,7 +475,7 @@ func resolveLocalMedia(mediaSource string, placeholderCheck bool) (string, error
 		}
 	}
 	if info, err := os.Stat(localPath); err != nil || !info.Mode().IsRegular() {
-		if placeholderCheck && (strings.HasPrefix(mediaSource, "<") || pystr.Len(mediaSource) < 3) {
+		if placeholderCheck && (strings.HasPrefix(mediaSource, "<") || utf8.RuneCountInString(mediaSource) < 3) {
 			return "", &pyErr{"ValueError", "Invalid media source (looks like a placeholder): " + pyrepr.Repr(mediaSource)}
 		}
 		return "", &pyErr{"FileNotFoundError", "Media file not found: " + localPath}

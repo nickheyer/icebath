@@ -1,10 +1,9 @@
 package discord
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/bwmarrin/discordgo"

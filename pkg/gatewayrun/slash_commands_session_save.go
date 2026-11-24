@@ -1,21 +1,19 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -30,7 +28,7 @@ func osPathBasename(p string) string {
 
 // Exports the current session and sends it to the chat as a document
 func (r *GatewayRunner) handleSaveCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	parts := pystr.SplitWhitespace(event.GetCommandArgs(), -1)
+	parts := strings.Fields(event.GetCommandArgs())
 	redact := len(parts) > 0 && (strings.ToLower(parts[len(parts)-1]) == "redact" || strings.ToLower(parts[len(parts)-1]) == "--redact")
 	if redact {
 		parts = parts[:len(parts)-1]

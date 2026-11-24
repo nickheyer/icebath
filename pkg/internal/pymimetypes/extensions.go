@@ -1,9 +1,8 @@
 package pymimetypes
 
 import (
-	"strings"
-
 	"slices"
+	"strings"
 )
 
 // Extensions known for the lowercased type, strict ones first then any non strict extras

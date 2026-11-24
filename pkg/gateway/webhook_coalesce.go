@@ -1,11 +1,10 @@
 package gateway
 
 import (
-	"strings"
-
 	"fmt"
 	"math"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 

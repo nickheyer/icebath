@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -117,7 +118,7 @@ func CoerceSystemdWatchdogSeconds(value any, key string) int {
 		parsed = n
 	} else if s, ok := value.(string); ok {
 		t := strings.TrimSpace(s)
-		if t != "" && pystr.All(t, func(r rune) bool { return r < utf8.RuneSelf && pystr.IsDecimal(r) }) {
+		if t != "" && pystr.All(t, func(r rune) bool { return r < utf8.RuneSelf && unicode.IsDigit(r) }) {
 			parsed, _ = pyint.Parse(t)
 		}
 	}

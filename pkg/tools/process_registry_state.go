@@ -21,7 +21,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -235,10 +234,10 @@ func checkpointItems(v any) ([]any, error) {
 		}
 		return keys, nil
 	case string:
-		runes := pystr.Runes(t)
+		runes := []rune(t)
 		chars := make([]any, len(runes))
 		for i, r := range runes {
-			chars[i] = pystr.FromRunes([]rune{r})
+			chars[i] = string([]rune{r})
 		}
 		return chars, nil
 	}
@@ -1521,7 +1520,7 @@ func shortTitle(title string) string {
 	return title
 }
 
-func utf8Len(s string) int { return pystr.Len(s) }
+func utf8Len(s string) int { return utf8.RuneCountInString(s) }
 
 // ProcessCompleteDisplayKind names the UI row kind of a process completion
 const ProcessCompleteDisplayKind = "process_complete"

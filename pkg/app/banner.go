@@ -15,11 +15,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // One memoized value, the unset state apart from a computed nil
@@ -256,7 +257,7 @@ func BannerVersionLabel(ctx context.Context) (string, error) {
 	if channel != "main" {
 		label := base + " · " + channel
 		if head := selfupdate.GitStdout([]string{"rev-parse", "HEAD"}, root); head != "" {
-			label += " · local " + pystr.Slice(head, 0, 12)
+			label += " · local " + textutil.First(head, 12)
 		}
 		return label, nil
 	}

@@ -66,7 +66,7 @@ func voiceClip(text any) string {
 	if !pyTruthy(text) {
 		text = ""
 	}
-	s := strings.Join(pystr.SplitWhitespace(pyrepr.Str(text), -1), " ")
+	s := strings.Join(strings.Fields(pyrepr.Str(text)), " ")
 	if utf8.RuneCountInString(s) <= voicesDescriptionMaxChars {
 		return s
 	}

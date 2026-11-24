@@ -9,14 +9,16 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Remote session kernel runner template filled with cell source, capture limit and idle exit
@@ -256,7 +258,7 @@ func spawnRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environme
 			return err
 		}
 		pid := ""
-		for _, line := range pystr.Splitlines(started, false) {
+		for _, line := range textutil.Lines(started) {
 			if stripped := strings.TrimSpace(line); strings.HasPrefix(stripped, "PID:") {
 				pid = strings.TrimSpace(stripped[4:])
 				break
@@ -271,7 +273,7 @@ func spawnRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environme
 		if candidate.isAlive() {
 			kernel = candidate
 		} else if log, err := remoteSh(ctx, envr, "cat "+qDir+"/runner.log", 10); err == nil {
-			pkgLog(env).Warn("remote kernel died at spawn: " + pystr.Slice(log, 0, 500))
+			pkgLog(env).Warn("remote kernel died at spawn: " + textutil.First(log, 500))
 		}
 		return nil
 	}()
@@ -290,7 +292,7 @@ func isPyDigit(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}
@@ -505,7 +507,7 @@ func runAttachedCell(ctx context.Context, env *tools.Env, kernel *remoteKernel, 
 		if !ok {
 			return nil, fmt.Errorf("remote kernel traceback is %s where text was expected", errchain.Kind(tb))
 		}
-		lines := pystr.Splitlines(strings.TrimSpace(text), false)
+		lines := textutil.Lines(strings.TrimSpace(text))
 		if len(lines) == 0 {
 			return nil, errors.New("remote kernel traceback is blank")
 		}

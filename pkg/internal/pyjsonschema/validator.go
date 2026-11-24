@@ -10,7 +10,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Port of jsonschema 4.26.0 validators.create and the six draft validator classes it builds
@@ -213,7 +212,7 @@ func (st *state) compile(pattern string) *regexp2.Regexp {
 // re.search of a pattern over a str, search and _compile on the stack
 func (st *state) search(pattern, s string) bool {
 	st.touch(2)
-	ok, err := st.compile(pattern).MatchRunes(pystr.Runes(s))
+	ok, err := st.compile(pattern).MatchRunes([]rune(s))
 	if err != nil {
 		raise("TimeoutError", err.Error())
 	}

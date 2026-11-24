@@ -1,10 +1,9 @@
 package a2a
 
 import (
-	"strings"
-
 	"context"
 	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"

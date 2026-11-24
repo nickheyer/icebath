@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Redacted share bundle report for a local session's debug local, collected with no network call
@@ -37,9 +37,9 @@ func GatewayDebugUploadReply(ctx context.Context) (string, error) {
 	if err := debugScheduleAutoDelete(ctx, []string{url}, debugAutoDeleteSeconds); err != nil {
 		return "", err
 	}
-	labelWidth := pystr.Len(label)
+	labelWidth := utf8.RuneCountInString(label)
 	lines := []string{DebugGatewayPrivacyNotice, "", i18n.T(ctx, "gateway.debug.header", "", nil), "",
-		fmt.Sprintf("`%s`  %s", pystr.Ljust(label, labelWidth), url), ""}
+		fmt.Sprintf("`%-*s`  %s", labelWidth, label, url), ""}
 	if !debugIsDpasteURL(url) {
 		lines = append(lines, i18n.T(ctx, "gateway.debug.auto_delete", "", nil))
 	}

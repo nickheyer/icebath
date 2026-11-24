@@ -7,7 +7,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type echoRule struct {
@@ -253,7 +252,7 @@ func RejectedReasoningFields(errorBody any, sentMessages any) map[string]bool {
 		return out
 	}
 	sent := sentAssistantCarriers(sentMessages)
-	runes := pystr.Runes(body)
+	runes := []rune(body)
 	named := map[string]bool{}
 	for k := range sent {
 		if m, err := namedFieldRes[k].FindRunesMatch(runes); err == nil && m != nil {

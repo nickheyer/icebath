@@ -1,14 +1,13 @@
 package gatewayrun
 
 import (
-	"unicode"
-
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/agent"

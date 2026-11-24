@@ -2,6 +2,7 @@ package yuanbao
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -10,7 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // ForwardedRecordsParseMiddleware renders forwarded chat records into the raw text and adds their media to the refs
@@ -163,8 +165,8 @@ func walkForwardMsgs(forwardData *pyjson.Object, visit func(sender any, body str
 		if !isStr {
 			return &pyErr{"TypeError", fmt.Sprintf("the rendered forward must be text, got %s", errchain.Kind(rendered))}
 		}
-		if pystr.Len(body) > forwardMsgTextMaxChars {
-			body = pystr.Slice(body, 0, forwardMsgTextMaxChars) + "…(已截断)"
+		if utf8.RuneCountInString(body) > forwardMsgTextMaxChars {
+			body = textutil.First(body, forwardMsgTextMaxChars) + "…(已截断)"
 		}
 		visit(dictGetOr(msg, "sender", ""), body, refs)
 	}

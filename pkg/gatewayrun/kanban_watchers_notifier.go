@@ -3,8 +3,6 @@
 package gatewayrun
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -23,11 +22,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Event kinds the notifier claims for a subscription
@@ -82,9 +82,9 @@ func safeReviewReason(ctx context.Context, value any, limit int) string {
 	if masked, err := kanbanLocalPathRe.Replace(reason, "[local path]", -1, -1); err == nil {
 		reason = masked
 	}
-	reason = strings.Join(pystr.SplitWhitespace(reason, -1), " ")
-	if len(pystr.Runes(reason)) > limit {
-		reason = strings.TrimRightFunc(pystr.Slice(reason, 0, limit-1), unicode.IsSpace) + "…"
+	reason = strings.Join(strings.Fields(reason), " ")
+	if len([]rune(reason)) > limit {
+		reason = strings.TrimRightFunc(textutil.First(reason, limit-1), unicode.IsSpace) + "…"
 	}
 	return reason
 }
@@ -613,16 +613,16 @@ func kanbanClip(ctx context.Context, ev *kanban.Event, key, msgKey string, limit
 	if value == nil {
 		return ""
 	}
-	return kt(ctx, msgKey, map[string]any{"value": pystr.Slice(pyrepr.Str(value), 0, limit)})
+	return kt(ctx, msgKey, map[string]any{"value": textutil.First(pyrepr.Str(value), limit)})
 }
 
 // First line of the stripped text clipped to limit, the clipped text when it has no line
 func kanbanFirstLine(text string, limit int) string {
-	lines := pystr.Splitlines(strings.TrimSpace(text), false)
+	lines := textutil.Lines(strings.TrimSpace(text))
 	if len(lines) > 0 {
-		return pystr.Slice(lines[0], 0, limit)
+		return textutil.First(lines[0], limit)
 	}
-	return pystr.Slice(text, 0, limit)
+	return textutil.First(text, limit)
 }
 
 // Rendered ping of one event with the wake handoff and review detail it sets, nil leaving them untouched
@@ -659,7 +659,7 @@ func fmtReviewRequested(ctx context.Context, ev *kanban.Event, n *kanbanNotifica
 	var wakeHandoff *string
 	if summary := kanbanPayload(ev, "summary"); summary != nil {
 		s := pyrepr.Str(summary)
-		handoff = "\n" + pystr.Slice(s, 0, 200)
+		handoff = "\n" + textutil.First(s, 200)
 		first := kanbanFirstLine(s, 200)
 		wakeHandoff = &first
 	}
@@ -805,7 +805,7 @@ func newKanbanNotification(ctx context.Context, r *GatewayRunner, d *kanbanDeliv
 	if task != nil {
 		title = task.Title
 	}
-	n.title = pystr.Slice(title, 0, 120)
+	n.title = textutil.First(title, 120)
 	if n.boardSlug != "" {
 		n.boardTag = kt(ctx, "gateway.kanban.ping.board_tag", map[string]any{"board": n.boardSlug})
 	}

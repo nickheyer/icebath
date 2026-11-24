@@ -14,9 +14,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -252,12 +253,12 @@ func humanizeImageError(errText string) string {
 			}
 		}
 	}
-	lines := pystr.Splitlines(errText, false)
+	lines := textutil.Lines(errText)
 	first := ""
 	if len(lines) > 0 {
 		first = strings.TrimSpace(lines[0])
 	}
-	return pystr.Slice(first, 0, 200)
+	return textutil.First(first, 200)
 }
 
 // Generates and slices one animation row with retries, nil frames when cancelled or every attempt failed

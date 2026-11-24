@@ -4,6 +4,7 @@ package agent
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -17,11 +18,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 func init() {
@@ -48,7 +50,7 @@ func runKanbanAttempt(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Obje
 			if final := result["final_response"]; pyrepr.Truthy(final) {
 				text = pyrepr.Str(final)
 			}
-			lastOutput = pystr.Slice(text, -500, pystr.Len(text))
+			lastOutput = textutil.Last(text, 500)
 		}
 	} else {
 		rateLimited, terminal, _ := kanban.CredentialFailureFlags(runErr)
@@ -254,7 +256,7 @@ func boardTaskTitle(ctx context.Context, env *tools.Env) string {
 				return err
 			}
 			if task != nil {
-				title = strings.Join(pystr.SplitWhitespace(task.Title, -1), " ")
+				title = strings.Join(strings.Fields(task.Title), " ")
 			}
 			return nil
 		})
@@ -262,8 +264,8 @@ func boardTaskTitle(ctx context.Context, env *tools.Env) string {
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Kanban task %s unreadable; naming the session after its id", taskID), "error", err)
 		title = ""
-	} else if limit := state.MaxTitleLength - 4; pystr.Len(title) > limit {
-		title = strings.TrimRightFunc(pystr.Slice(title, 0, limit-1), unicode.IsSpace) + "…"
+	} else if limit := state.MaxTitleLength - 4; utf8.RuneCountInString(title) > limit {
+		title = strings.TrimRightFunc(textutil.First(title, limit-1), unicode.IsSpace) + "…"
 	}
 	if title == "" {
 		return "Kanban task " + taskID

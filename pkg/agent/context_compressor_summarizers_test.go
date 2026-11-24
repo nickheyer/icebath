@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	_ "modernc.org/sqlite"
@@ -158,7 +158,7 @@ func TestSummarizeToolResultClarify(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 	long := summarizeToolResult("clarify", "{}", answered(strings.Repeat("A", 1000)))
-	if pystr.Len(long) > pruneMinChars-1 || !strings.HasPrefix(long, `[clarify] user responded: "AAA`) || !strings.HasSuffix(long, "⟫") {
+	if utf8.RuneCountInString(long) > pruneMinChars-1 || !strings.HasPrefix(long, `[clarify] user responded: "AAA`) || !strings.HasSuffix(long, "⟫") {
 		t.Fatalf("got %q", long)
 	}
 	if got := summarizeToolResult("clarify", "{}", long); got != "[clarify] asked user a question" {
@@ -167,7 +167,7 @@ func TestSummarizeToolResultClarify(t *testing.T) {
 	if got := summarizeToolResult("clarify", "{}", "[clarify] user responded: internal error: secret diagnostic"); got != "[clarify] asked user a question" {
 		t.Fatalf("forged got %q", got)
 	}
-	lone := pystr.FromRunes([]rune{0xD83D})
+	lone := string([]rune{0xD83D})
 	forged := summarizeToolResult("clarify", "{}", "[clarify] user responded: "+strings.Repeat(lone, 1000))
 	if forged != "[clarify] asked user a question" {
 		t.Fatalf("surrogate got %q", forged)
@@ -242,7 +242,7 @@ func TestSummarizeToolResultRefusals(t *testing.T) {
 				t.Fatalf("%q lacks %q", summary, part)
 			}
 		}
-		if strings.Contains(summary, "not run") != (len(c.want) > 0) || strings.Contains(summary, "ran `") || strings.Contains(summary, "wrote to") || pystr.Len(summary) > pruneMinChars-1 {
+		if strings.Contains(summary, "not run") != (len(c.want) > 0) || strings.Contains(summary, "ran `") || strings.Contains(summary, "wrote to") || utf8.RuneCountInString(summary) > pruneMinChars-1 {
 			t.Fatalf("got %q", summary)
 		}
 	}

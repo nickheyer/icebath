@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
@@ -169,7 +170,7 @@ func foreignDBHolderPIDs(dbPath string) ([]int, bool) {
 	own := os.Getpid()
 	pids := []int{}
 	for _, name := range names {
-		if !pystr.All(name, pystr.IsDigit) {
+		if !pystr.All(name, unicode.IsDigit) {
 			continue
 		}
 		pid, err := strconv.Atoi(name)
@@ -642,11 +643,11 @@ func copyMember(zr *pyzip.ZipReader, member string, dst *os.File) error {
 
 // First n code points of a name
 func nameHead(name string, n int) string {
-	runes := pystr.Runes(name)
+	runes := []rune(name)
 	if len(runes) > n {
 		runes = runes[:n]
 	}
-	return pystr.FromRunes(runes)
+	return string(runes)
 }
 
 // Restores one archive member onto target through a sibling temp file and an atomic rename

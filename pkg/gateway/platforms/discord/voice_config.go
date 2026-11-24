@@ -1,9 +1,8 @@
 package discord
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"

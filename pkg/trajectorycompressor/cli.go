@@ -18,9 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrandom"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // SamplePercent is a sampling percentage with the Python repr it was given as, an int or a float
@@ -144,16 +145,16 @@ func runFileMode(ctx context.Context, inputPath, output string, cfg *Compression
 	}
 	entries := entryValues(loaded)
 	total := len(entries)
-	fmt.Printf("   Loaded %s trajectories from %s\n", pystr.GroupThousands(int64(total)), pathName(inputPath))
+	fmt.Printf("   Loaded %s trajectories from %s\n", textutil.Thousands(int64(total)), pathName(inputPath))
 	if sample != nil {
 		rng := pyrandom.New(seed)
 		if entries, err = pyrandom.Sample(rng, entries, max(1, int(float64(total)*sample.Value/100))); err != nil {
 			return err
 		}
-		fmt.Printf("   Sampled %s trajectories (%s%% of %s)\n", pystr.GroupThousands(int64(len(entries))), sample.Repr, pystr.GroupThousands(int64(total)))
+		fmt.Printf("   Sampled %s trajectories (%s%% of %s)\n", textutil.Thousands(int64(len(entries))), sample.Repr, textutil.Thousands(int64(total)))
 	}
 	if dryRun {
-		printDryRun("📄", pystr.GroupThousands(int64(len(entries)))+" trajectories", outputPath)
+		printDryRun("📄", textutil.Thousands(int64(len(entries)))+" trajectories", outputPath)
 		return nil
 	}
 	tmp, cleanup, err := tempDir()
@@ -261,7 +262,7 @@ func runDirMode(ctx context.Context, inputPath, output string, cfg *CompressionC
 			return err
 		}
 	}
-	fmt.Printf("   Sampled %s from %s total trajectories\n", pystr.GroupThousands(int64(totalSampled)), pystr.GroupThousands(int64(totalOriginal)))
+	fmt.Printf("   Sampled %s from %s total trajectories\n", textutil.Thousands(int64(totalSampled)), textutil.Thousands(int64(totalOriginal)))
 	if dryRun {
 		printDryRun("📁", tmpIn, outputPath)
 		return nil

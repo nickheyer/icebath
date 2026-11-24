@@ -2,8 +2,6 @@
 package pywebbrowser
 
 import (
-	"unicode"
-
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,12 +9,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Failure webbrowser.Error reports, no runnable browser or a bad new value
@@ -181,7 +179,7 @@ func register(name string, klass func() *browser, instance *browser, preferred b
 
 // Clone of a registered controller renamed to a BROWSER entry that names its executable
 func synthesize(name string, preferred bool) (entry, error) {
-	words := pystr.SplitWhitespace(name, -1)
+	words := strings.Fields(name)
 	if len(words) == 0 {
 		return entry{}, &IndexError{Msg: "list index out of range"}
 	}

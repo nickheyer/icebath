@@ -1,13 +1,12 @@
 package manage
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"

@@ -9,14 +9,16 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -116,7 +118,7 @@ func describeContent(value any) any {
 	case []byte:
 		return obj("omitted", true, "type", "bytes", "length", len(t))
 	case string:
-		return obj("omitted", true, "type", "text", "chars", pystr.Len(t))
+		return obj("omitted", true, "type", "text", "chars", utf8.RuneCountInString(t))
 	}
 	if isNumber(value) {
 		return obj("omitted", true, "type", "number")
@@ -160,7 +162,7 @@ func captureContent(value any, parseJSON bool, result *toolResult) any {
 
 // String of value cut to maxChars code points after secret redaction, base64 data URIs replaced by a stub
 func truncateText(value string, maxChars int) any {
-	prefix := strings.ToLower(pystr.Slice(value, 0, 200))
+	prefix := strings.ToLower(textutil.First(value, 200))
 	if strings.HasPrefix(prefix, "data:") && strings.Contains(prefix, ";base64,") {
 		header := "data:"
 		if strings.Contains(value, ",") {
@@ -172,22 +174,22 @@ func truncateText(value string, maxChars int) any {
 				mediaType = mt
 			}
 		}
-		return obj("type", "data_uri", "media_type", mediaType, "omitted", true, "length", pystr.Len(value))
+		return obj("type", "data_uri", "media_type", mediaType, "omitted", true, "length", utf8.RuneCountInString(value))
 	}
 	if captureMode() == "sanitized" {
 		value = redactSecrets(value)
 	}
-	over := pystr.Len(value) - maxChars
+	over := utf8.RuneCountInString(value) - maxChars
 	if over <= 0 {
 		return value
 	}
-	return pystr.Slice(value, 0, maxChars) + fmt.Sprintf("... [truncated %d chars]", over)
+	return textutil.First(value, maxChars) + fmt.Sprintf("... [truncated %d chars]", over)
 }
 
 // JSON object or array a string holds, trailing text kept under _hint or _trailing_text, false when unchanged
 func maybeParseJSONString(value string) (any, bool) {
 	stripped := strings.TrimSpace(value)
-	rs := pystr.Runes(stripped)
+	rs := []rune(stripped)
 	if len(rs) < 2 || (rs[0] != '{' && rs[0] != '[') {
 		return value, false
 	}
@@ -200,7 +202,7 @@ func maybeParseJSONString(value string) (any, bool) {
 			return value, false
 		}
 	}
-	trailing := strings.TrimSpace(pystr.FromRunes(rs[idx:]))
+	trailing := strings.TrimSpace(string(rs[idx:]))
 	if trailing == "" {
 		return parsed, true
 	}
@@ -247,7 +249,7 @@ func normalizePayload(value any, toolName string, args any) (any, bool) {
 	}
 	var lines []any
 	if content != "" {
-		raw := pystr.Splitlines(content, false)
+		raw := textutil.Lines(content)
 		all := len(raw) > 0
 		parsed := make([]any, 0, len(raw))
 		for _, line := range raw {
@@ -288,7 +290,7 @@ func normalizePayload(value any, toolName string, args any) (any, bool) {
 		}
 	}
 	if b64, ok := dget(value, "base64_content").(string); ok && b64 != "" {
-		normalized.Set("base64_content", obj("omitted", true, "length", pystr.Len(b64)))
+		normalized.Set("base64_content", obj("omitted", true, "length", utf8.RuneCountInString(b64)))
 	}
 	return normalized, true
 }
@@ -575,10 +577,10 @@ func pyIter(v any) []any {
 		return out
 	}
 	if s, ok := v.(string); ok {
-		rs := pystr.Runes(s)
+		rs := []rune(s)
 		out := make([]any, len(rs))
 		for i, r := range rs {
-			out[i] = pystr.FromRunes([]rune{r})
+			out[i] = string([]rune{r})
 		}
 		return out
 	}

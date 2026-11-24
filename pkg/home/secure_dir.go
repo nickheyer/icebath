@@ -1,13 +1,12 @@
 package home
 
 import (
-	"strings"
-
 	"context"
 	"math"
 	"math/big"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -33,7 +32,7 @@ func ManagedSystem(ctx context.Context, h string) string {
 		if pathExists(path) {
 			set = true
 			if b, err := os.ReadFile(path); err == nil {
-				marker = strings.ToLower(strings.TrimSpace(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(b))))
+				marker = strings.ToLower(strings.TrimSpace(pystr.TranslateNewlines(strings.ToValidUTF8(string(b), "\uFFFD"))))
 			}
 		}
 	}

@@ -604,7 +604,7 @@ func (s *scanner) scanToNextToken() *scannedComment {
 			if s.flowLevel() == 0 {
 				s.allowSimpleKey = true
 			}
-			return &scannedComment{value: pystr.FromRunes(comment), start: start, end: end}
+			return &scannedComment{value: string(comment), start: start, end: end}
 		}
 		if s.scanLineBreak(false) != "" {
 			start := s.r.getMark()
@@ -780,7 +780,7 @@ func (s *scanner) scanAnchor(kind tokenKind) *token {
 	if length == 0 {
 		panic(scannerError("while scanning an "+name, start, "expected alphabetic or numeric character, but found "+charRepr(ch), s.r.getMark()))
 	}
-	value := pystr.FromRunes(s.r.prefix(length))
+	value := string(s.r.prefix(length))
 	s.r.forward(length)
 	if !in(ch, "\x00 \t\r\n\u0085  ?:,[]{}%@`") {
 		panic(scannerError("while scanning an "+name, start, "expected alphabetic or numeric character, but found "+charRepr(ch), s.r.getMark()))
@@ -902,7 +902,7 @@ func (s *scanner) scanBlockScalar(style rune) *token {
 	} else {
 		trailing = append(trailing, breaks...)
 	}
-	t := &token{kind: tkScalar, value: pystr.FromRunes(chunks), plain: false, start: start, end: end, style: style}
+	t := &token{kind: tkScalar, value: string(chunks), plain: false, start: start, end: end, style: style}
 	if hasComment {
 		t.addPreComments([]any{blockScalarComment})
 	}
@@ -969,7 +969,7 @@ func (s *scanner) scanBlockScalarIgnoredLine(start *Mark) (string, bool) {
 			cs = append(cs, s.r.peek(0))
 			s.r.forward(1)
 		}
-		comment = pystr.FromRunes(cs)
+		comment = string(cs)
 	}
 	if ch := s.r.peek(0); !in(ch, theEnd) {
 		panic(scannerError("while scanning a block scalar", start, "expected a comment or a line break, but found "+charRepr(ch), s.r.getMark()))
@@ -1031,7 +1031,7 @@ func (s *scanner) scanFlowScalar(style rune) *token {
 		chunks = append(chunks, s.scanFlowScalarNonSpaces(double, start)...)
 	}
 	s.r.forward(1)
-	return &token{kind: tkScalar, value: pystr.FromRunes(chunks), plain: false, start: start, end: s.r.getMark(), style: style}
+	return &token{kind: tkScalar, value: string(chunks), plain: false, start: start, end: s.r.getMark(), style: style}
 }
 
 var escapeReplacements = map[rune]rune{
@@ -1187,7 +1187,7 @@ func (s *scanner) scanPlain() *token {
 			break
 		}
 	}
-	t := &token{kind: tkScalar, value: pystr.FromRunes(chunks), plain: true, start: start, end: end}
+	t := &token{kind: tkScalar, value: string(chunks), plain: true, start: start, end: end}
 	if spacesSet && len(spaces) > 0 && spaces[0] == "\n" {
 		t.addPostComment(&token{kind: tkComment, value: strings.Join(spaces, "") + "\n", start: start, end: end})
 	}
@@ -1264,7 +1264,7 @@ func (s *scanner) scanTagURI(name string, start *Mark) string {
 	ch := s.r.peek(length)
 	for isAlnumDash(ch, "-;/?:@&=+$,_.!~*'()[]%") || (s.processingVersion().greater(v11) && ch == '#') {
 		if ch == '%' {
-			chunks = append(chunks, pystr.FromRunes(s.r.prefix(length)))
+			chunks = append(chunks, string(s.r.prefix(length)))
 			s.r.forward(length)
 			length = 0
 			chunks = append(chunks, s.scanURIEscapes(name, start))
@@ -1274,7 +1274,7 @@ func (s *scanner) scanTagURI(name string, start *Mark) string {
 		ch = s.r.peek(length)
 	}
 	if length != 0 {
-		chunks = append(chunks, pystr.FromRunes(s.r.prefix(length)))
+		chunks = append(chunks, string(s.r.prefix(length)))
 		s.r.forward(length)
 	}
 	if len(chunks) == 0 {

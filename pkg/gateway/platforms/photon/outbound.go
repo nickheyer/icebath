@@ -17,8 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // POSTs a JSON body to a sidecar path, the decoded answer when it reports ok
@@ -116,7 +117,7 @@ func (a *PhotonAdapter) sidecarSend(ctx context.Context, spaceID, text string, r
 	text = sidecarPayloadText(text, sendMarkdown)
 	if n := utf8.RuneCountInString(text); n > maxMessageLength {
 		pkgLog().Warn(fmt.Sprintf("[photon] truncating outbound from %d to %d chars", n, maxMessageLength))
-		text = pystr.Slice(text, 0, maxMessageLength)
+		text = textutil.First(text, maxMessageLength)
 	}
 	body := map[string]any{"spaceId": spaceID, "text": text}
 	if sendMarkdown {
@@ -139,7 +140,7 @@ func (a *PhotonAdapter) sidecarSendPoll(ctx context.Context, spaceID, title stri
 	if len(opts) < 2 {
 		return gateway.SendResult{Success: false, Error: "poll needs at least two options"}
 	}
-	shown := pystr.Slice(strings.TrimSpace(title), 0, maxMessageLength)
+	shown := textutil.First(strings.TrimSpace(title), maxMessageLength)
 	return a.postSend(ctx, "/send-poll", map[string]any{"spaceId": spaceID, "title": shown, "options": opts}, false, shown)
 }
 
@@ -323,7 +324,7 @@ func (a *PhotonAdapter) SendRetryIsFinal(result gateway.SendResult) bool {
 
 // Plain text resend without the rich link path so a rich link outage never strands a sendable URL
 func (a *PhotonAdapter) SendPlainFallback(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
-	return a.sidecarSend(ctx, chatID, pystr.Slice(a.FormatMessage(content), 0, maxMessageLength), false, false), nil
+	return a.sidecarSend(ctx, chatID, textutil.First(a.FormatMessage(content), maxMessageLength), false, false), nil
 }
 
 // Send error of a failed standalone call with the sidecar's class and retryability
@@ -340,7 +341,7 @@ func standaloneError(status int, raw string) map[string]any {
 	case errorClass == "target_not_allowed":
 		text, retryable = targetNotAllowedMessage, false
 	case status != http.StatusOK:
-		text = fmt.Sprintf("sidecar returned %d: %s", status, pystr.Slice(raw, 0, 200))
+		text = fmt.Sprintf("sidecar returned %d: %s", status, textutil.First(raw, 200))
 	default:
 		text = pyrepr.Str(orEmpty(data["error"]))
 		if text == "" {
@@ -435,7 +436,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		}
 		if data == nil {
 			sendMarkdown := markdownEnabled(ctx) && richURL == ""
-			body := map[string]any{"spaceId": chatID, "text": pystr.Slice(sidecarPayloadText(message, sendMarkdown), 0, maxMessageLength)}
+			body := map[string]any{"spaceId": chatID, "text": textutil.First(sidecarPayloadText(message, sendMarkdown), maxMessageLength)}
 			if sendMarkdown {
 				body["format"] = "markdown"
 			}

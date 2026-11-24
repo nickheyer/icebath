@@ -1,10 +1,11 @@
 package state
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"reflect"
 	"slices"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestSanitizeSurrogatesAndNonASCII(t *testing.T) {

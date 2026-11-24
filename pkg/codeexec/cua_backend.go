@@ -20,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const cuaNativeWaylandEnvVar = "CUA_DRIVER_RS_ENABLE_WAYLAND"
@@ -58,7 +60,7 @@ type runOpts struct {
 
 // Text of a universal newline decode with invalid bytes replaced
 func textModeDecode(b []byte) string {
-	s := pystr.DecodeUTF8Replace(b)
+	s := strings.ToValidUTF8(string(b), "\uFFFD")
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }
 
@@ -286,8 +288,8 @@ func linuxSessionLocked() *bool {
 		return nil
 	}
 	var seats []string
-	for _, line := range pystr.Splitlines(proc.Stdout, false) {
-		fields := pystr.SplitWhitespace(line, -1)
+	for _, line := range textutil.Lines(proc.Stdout) {
+		fields := strings.Fields(line)
 		if len(fields) >= 2 && strings.Contains(line, "seat") {
 			seats = append(seats, fields[0])
 		}

@@ -1,11 +1,10 @@
 package cron
 
 import (
-	"unicode"
-
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/home"

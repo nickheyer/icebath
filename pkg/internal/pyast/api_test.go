@@ -52,7 +52,7 @@ func TestLiteralStrListMatchesCPython(t *testing.T) {
 		{"['a', 1, 2.5, None, True, (1, 2), {'k': [1]}, {1}, b'x', 1j, ..., -0.0, 1e400, -3]", []string{"a", "1", "2.5", "None", "True", "(1, 2)", "{'k': [1]}", "{1}", "b'x'", "1j", "Ellipsis", "-0.0", "inf", "-3"}, true, ""},
 		{"[1, 2", nil, false, ""},
 		{"[x]", nil, false, ""},
-		{"  [ 'a' ]  \x1c", []string{"a"}, true, ""},
+		{"  [ 'a' ]  \t", []string{"a"}, true, ""},
 		{"[{[]: 1}]", nil, false, "cannot use 'list' as a dict key (unhashable type: 'list')"},
 		{"[0x" + strings.Repeat("f", 4000) + "]", nil, false, "Exceeds the limit (4300 digits) for integer string conversio"},
 		{"{'a': 1}", nil, false, ""},

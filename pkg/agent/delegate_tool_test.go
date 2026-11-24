@@ -3,11 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"math"
 	"runtime"
 	"testing"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"

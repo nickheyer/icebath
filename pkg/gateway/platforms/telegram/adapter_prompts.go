@@ -20,9 +20,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Catalog text of a key with alternating keyword names and values
@@ -1181,7 +1182,7 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 			stderrText := strings.TrimSpace(strings.ToValidUTF8(stderr.String(), "�"))
 			lastLine := tr(ctx, "platform.telegram.gmail_triage.exit_code", "code", strconv.Itoa(exitErr.ExitCode()))
 			if stderrText != "" {
-				lines := pystr.Splitlines(stderrText, false)
+				lines := textutil.Lines(stderrText)
 				lastLine = lines[len(lines)-1]
 			}
 			label = tr(ctx, "platform.telegram.gmail_triage.failed", "verb", verb, "detail", clipRunes(lastLine, 80))

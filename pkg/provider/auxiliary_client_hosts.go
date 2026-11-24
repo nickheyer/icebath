@@ -1,9 +1,8 @@
 package provider
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 )
 
 // Host and provider pair of a credential routing table

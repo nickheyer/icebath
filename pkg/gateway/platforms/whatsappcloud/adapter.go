@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
@@ -22,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -401,7 +401,7 @@ func (a *WhatsAppCloudAdapter) effectiveReplyPrefix() string {
 
 // Chunk budget with room reserved for the reply prefix, floored at 1024
 func (a *WhatsAppCloudAdapter) outgoingChunkLimit() int {
-	return max(1024, maxMessageLength-pystr.Len(a.effectiveReplyPrefix()))
+	return max(1024, maxMessageLength-utf8.RuneCountInString(a.effectiveReplyPrefix()))
 }
 
 // Bare wa_id membership first, then the shared WhatsApp matcher for wildcard and alias entries

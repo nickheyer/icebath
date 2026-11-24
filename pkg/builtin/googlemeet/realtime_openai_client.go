@@ -18,6 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const realtimeURL = "wss://api.openai.com/v1/realtime"
@@ -304,7 +306,7 @@ func (s *realtimeSpeaker) readQueueFile() ([]*pyjson.Object, error) {
 		return nil, err
 	}
 	var out []*pyjson.Object
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}

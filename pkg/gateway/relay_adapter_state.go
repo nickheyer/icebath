@@ -1,9 +1,8 @@
 package gateway
 
 import (
-	"strings"
-
 	"slices"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )

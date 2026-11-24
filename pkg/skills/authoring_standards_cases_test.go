@@ -1,13 +1,12 @@
 package skills
 
 import (
-	"unicode"
-
 	"io/fs"
 	"regexp"
 	"sort"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )

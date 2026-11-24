@@ -7,7 +7,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Words that keep a session listing a plain listing
@@ -69,7 +70,7 @@ func FormatGatewaySessionListing(rows []*pyjson.Object, includeSource bool, titl
 		if v, _ := row.Get("is_current_session"); pyrepr.Truthy(v) {
 			currentPart = " (current)"
 		}
-		preview := pystr.Slice(field(row, "preview"), 0, 40)
+		preview := textutil.First(field(row, "preview"), 40)
 		source := field(row, "source")
 		sourcePart, previewPart := "", ""
 		if includeSource && source != "" {

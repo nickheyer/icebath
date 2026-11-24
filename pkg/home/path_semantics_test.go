@@ -153,14 +153,14 @@ func TestKeyRaisesForAnUnknownUser(t *testing.T) {
 func TestManagedSystemReadsTheMarkerLikeReadText(t *testing.T) {
 	h := t.TempDir()
 	t.Setenv("ICEBATH_MANAGED", "")
-	cases := map[string]string{"NIX\x1c": "nix", "\u0130": "i\u0307", "guix\r\n": "guix", "nix\rdev": "nix\ndev", "\x1c\r\n": "nixos"}
+	cases := map[string]string{"NIX\t": "nix", "guix\r\n": "guix", "nix\rdev": "nix\ndev", "\t\r\n": "nixos"}
 	for body, want := range cases {
 		writeText(t, filepath.Join(h, ".managed"), body)
 		if got := ManagedSystem(context.Background(), h); got != want {
 			t.Errorf("ManagedSystem(%q) = %q, want %q", body, got, want)
 		}
 	}
-	t.Setenv("ICEBATH_MANAGED", "\x1cHomebrew")
+	t.Setenv("ICEBATH_MANAGED", "\tHomebrew")
 	if got := ManagedSystem(context.Background(), h); got != "" {
 		t.Errorf("ignored manager = %q", got)
 	}
@@ -250,11 +250,11 @@ func TestPackagedDirDefaultIsAPathlibPath(t *testing.T) {
 	}
 }
 
-func TestWSLTranslatorsStripPythonWhitespace(t *testing.T) {
-	if got, ok := WindowsPathToWSL("\x1cC:\\Users\\x\x1f"); !ok || got != "/mnt/c/Users/x" {
+func TestWSLTranslatorsTrimWhitespace(t *testing.T) {
+	if got, ok := WindowsPathToWSL("\tC:\\Users\\x\t"); !ok || got != "/mnt/c/Users/x" {
 		t.Fatalf("WindowsPathToWSL = %q %v", got, ok)
 	}
-	if got, ok := WSLUNCPathToPosix("\x1e\\\\wsl$\\Ubuntu\\home\\x"); !ok || got != "/home/x" {
+	if got, ok := WSLUNCPathToPosix("\t\\\\wsl$\\Ubuntu\\home\\x"); !ok || got != "/home/x" {
 		t.Fatalf("WSLUNCPathToPosix = %q %v", got, ok)
 	}
 }

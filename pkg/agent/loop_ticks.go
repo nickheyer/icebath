@@ -1,13 +1,12 @@
 package agent
 
 import (
-	"unicode"
-
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"

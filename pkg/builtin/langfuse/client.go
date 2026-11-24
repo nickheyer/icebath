@@ -8,12 +8,14 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -118,10 +120,10 @@ func validateLangfuseKey(envName, value string, requirePrefix bool) string {
 	}
 	preview := "<empty>"
 	if value != "" {
-		if pystr.Len(value) <= 12 {
+		if utf8.RuneCountInString(value) <= 12 {
 			preview = pyrepr.StrRepr(value)
 		} else {
-			preview = pyrepr.StrRepr(pystr.Slice(value, 0, 6) + "...")
+			preview = pyrepr.StrRepr(textutil.First(value, 6) + "...")
 		}
 	}
 	if requirePrefix && !strings.HasPrefix(value, expected) {

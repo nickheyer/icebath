@@ -1,17 +1,17 @@
 package pm
 
 import (
-	"unicode"
-
 	"errors"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Joined parts made absolute, left joined when the working directory is gone, with the normcase form
@@ -81,7 +81,7 @@ func addSitePackage(entries []string, sitedir, name string, known map[string]boo
 			return entries, pthDecodeError(err)
 		}
 	}
-	for _, line := range pystr.Splitlines(content, false) {
+	for _, line := range textutil.Lines(content) {
 		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" || strings.HasPrefix(line, "import ") || strings.HasPrefix(line, "import\t") {
 			continue
 		}

@@ -13,6 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Non flag resume tokens joined with a literal usage hint wrapper stripped
@@ -278,7 +280,7 @@ func (r *GatewayRunner) resumeListingReply(ctx context.Context, source *gateway.
 		previewValue, _ := s.Get("preview")
 		preview := ""
 		if previewValue != nil {
-			preview = pystr.Slice(pyrepr.Str(previewValue), 0, 40)
+			preview = textutil.First(pyrepr.Str(previewValue), 40)
 		}
 		previewPart := ""
 		if preview != "" {

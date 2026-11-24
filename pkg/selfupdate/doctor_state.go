@@ -31,6 +31,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // doctorStatRow is one rendered state.db stats row, kind info or warn
@@ -334,7 +336,7 @@ func checkDirectoryStructure(ctx context.Context, d *Doctor, shouldFix bool) (*F
 				return err
 			}
 			configured := false
-			for _, line := range pystr.Splitlines(strings.TrimSpace(text), false) {
+			for _, line := range textutil.Lines(strings.TrimSpace(text)) {
 				stripped := strings.TrimSpace(line)
 				if stripped != "" && !strings.HasPrefix(stripped, "<!--") && !strings.HasPrefix(stripped, "-->") && !strings.HasPrefix(stripped, "#") {
 					configured = true

@@ -7,6 +7,7 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -14,6 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -133,7 +136,7 @@ func displayContains(container any, item string) bool {
 func displayLen(v any) int {
 	switch x := v.(type) {
 	case string:
-		return pystr.Len(x)
+		return utf8.RuneCountInString(x)
 	case map[string]any:
 		return len(x)
 	}
@@ -297,7 +300,7 @@ func cuteTrunc(s any) string {
 func cutePath(p any) string {
 	text := pyrepr.Str(p)
 	limit := GetToolPreviewMaxLen()
-	if limit == 0 || pystr.Len(text) <= limit {
+	if limit == 0 || utf8.RuneCountInString(text) <= limit {
 		return text
 	}
 	if limit <= 3 {
@@ -315,14 +318,14 @@ type CuteRow struct {
 // Row with the catalog verb padded to nine cells after the emoji
 func cuteRow(ctx context.Context, emoji, verb, detail string) CuteRow {
 	label := displayT(ctx, "display.cute.verb."+verb, nil)
-	return CuteRow{Text: "┊ " + emoji + " " + pystr.Ljust(label, 9) + " " + detail, Emoji: strings.TrimSpace(emoji), Verb: label, Detail: detail}
+	return CuteRow{Text: "┊ " + emoji + " " + fmt.Sprintf("%-9s", label) + " " + detail, Emoji: strings.TrimSpace(emoji), Verb: label, Detail: detail}
 }
 
 // Row for a tool without a dedicated renderer, its emoji, its name and its preview
 func cuteFallbackRow(ctx context.Context, env *Env, toolName string, args map[string]any) CuteRow {
 	detail := cuteTrunc(BuildToolPreview(env, toolName, args, nil))
 	emoji := GetToolEmoji(ctx, env, toolName, "⚡")
-	return CuteRow{Text: "┊ " + emoji + " " + pystr.Ljust(pystr.Slice(toolName, 0, 9), 9) + " " + detail, Emoji: strings.TrimSpace(emoji), Verb: toolName, Detail: detail}
+	return CuteRow{Text: "┊ " + emoji + " " + fmt.Sprintf("%-9s", textutil.First(toolName, 9)) + " " + detail, Emoji: strings.TrimSpace(emoji), Verb: toolName, Detail: detail}
 }
 
 type cuteRenderer func(ctx context.Context, env *Env, a map[string]any, result any) CuteRow
@@ -438,7 +441,7 @@ func cuteSkillView(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow
 // Python subscript zero of a truthy value, raising for a dict or a non sequence
 func pyFirstItem(v any) any {
 	if s, ok := v.(string); ok {
-		return pystr.Slice(s, 0, 1)
+		return textutil.First(s, 1)
 	}
 	if list, ok := anyList(v); ok {
 		return list[0]
@@ -520,7 +523,7 @@ func cuteDelegate(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow 
 // Python slice of the first twelve items of a str or list, raising for anything unsubscriptable
 func pyHead12(v any) string {
 	if s, ok := v.(string); ok {
-		return pystr.Slice(s, 0, 12)
+		return textutil.First(s, 12)
 	}
 	if list, ok := v.([]any); ok {
 		return pyrepr.Str(list[:min(12, len(list))])
@@ -804,7 +807,7 @@ func GetCuteToolMessage(ctx context.Context, env *Env, toolName string, args map
 		pkgLog().Debug(fmt.Sprintf("Tool completion label failed for %s: %v", toolName, rec))
 		safeName := displayT(ctx, "display.cute.fallback_tool_name", nil)
 		if toolName != "" {
-			safeName = pystr.Slice(toolName, 0, 9)
+			safeName = textutil.First(toolName, 9)
 		}
 		safeDuration, err := pyrepr.Format(duration, ".1f")
 		if err != nil {
@@ -812,7 +815,7 @@ func GetCuteToolMessage(ctx context.Context, env *Env, toolName string, args map
 		} else {
 			safeDuration += "s"
 		}
-		message = displayT(ctx, "display.cute.completed", map[string]any{"tool": pystr.Ljust(safeName, 9), "duration": safeDuration})
+		message = displayT(ctx, "display.cute.completed", map[string]any{"tool": fmt.Sprintf("%-9s", safeName), "duration": safeDuration})
 	}()
 	return renderCuteToolMessage(ctx, env, toolName, pythonDisplayArgs(args), duration, result)
 }

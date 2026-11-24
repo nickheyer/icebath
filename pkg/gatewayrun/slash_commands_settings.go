@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Busy input mode to its status card and set confirmation behavior keys
@@ -48,7 +50,7 @@ func (r *GatewayRunner) handleMemoryCommand(ctx context.Context, event *gateway.
 		return "", err
 	}
 	out, handled, err := memory.HandlePendingSubcommand(ctx, env, tools.WriteApprovalMemory,
-		pystr.SplitWhitespace(strings.TrimSpace(event.GetCommandArgs()), -1), memory.PendingOptions{MemoryStore: store, SetMode: setMode})
+		strings.Fields(strings.TrimSpace(event.GetCommandArgs())), memory.PendingOptions{MemoryStore: store, SetMode: setMode})
 	if err != nil {
 		return "", err
 	}
@@ -61,7 +63,7 @@ func (r *GatewayRunner) handleMemoryCommand(ctx context.Context, event *gateway.
 // Reviews pending skill writes, answering while staged writes remain after the gate turned off
 func (r *GatewayRunner) handleSkillsCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	env := slashToolsEnv(ctx)
-	args := pystr.SplitWhitespace(strings.TrimSpace(event.GetCommandArgs()), -1)
+	args := strings.Fields(strings.TrimSpace(event.GetCommandArgs()))
 	sub := ""
 	if len(args) > 0 {
 		sub = strings.ToLower(args[0])
@@ -83,12 +85,12 @@ func (r *GatewayRunner) handleSkillsCommand(ctx context.Context, event *gateway.
 	if !handled {
 		return i18n.T(ctx, "gateway.skills.unknown_subcommand", "", nil), nil
 	}
-	if sub == "diff" && pystr.Len(out) > 3000 {
+	if sub == "diff" && utf8.RuneCountInString(out) > 3000 {
 		pendingID := "<id>"
 		if len(args) > 1 {
 			pendingID = args[1]
 		}
-		out = pystr.Slice(out, 0, 3000) + i18n.T(ctx, "gateway.skills.diff_truncated", "", map[string]any{"pending_id": pendingID})
+		out = textutil.First(out, 3000) + i18n.T(ctx, "gateway.skills.diff_truncated", "", map[string]any{"pending_id": pendingID})
 	}
 	return out, nil
 }

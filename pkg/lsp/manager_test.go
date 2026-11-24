@@ -3,7 +3,6 @@ package lsp
 import (
 	"context"
 	"errors"
-	"github.com/nickheyer/icebath/pkg/workspaces"
 	"log/slog"
 	"maps"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
 // Enabled service with the given wait timeout and manual installs, shut down at cleanup

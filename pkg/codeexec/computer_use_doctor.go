@@ -14,13 +14,16 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -69,7 +72,7 @@ func firstLine(text string) *string {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
-	l := strings.TrimSpace(pystr.Splitlines(strings.TrimSpace(text), false)[0])
+	l := strings.TrimSpace(textutil.Lines(strings.TrimSpace(text))[0])
 	return &l
 }
 
@@ -282,7 +285,7 @@ func mcpRPC(p *cuMCPProc, msgID int, method string, params any) (*pyjson.Object,
 	if line == "" {
 		tail := "(empty)"
 		if b, err := io.ReadAll(p.stderr); err == nil {
-			lines := pystr.Splitlines(strings.TrimSpace(textModeDecode(b)), false)
+			lines := textutil.Lines(strings.TrimSpace(textModeDecode(b)))
 			lines = lines[max(0, len(lines)-3):]
 			if len(lines) > 0 {
 				items := make([]any, len(lines))
@@ -551,7 +554,7 @@ func cliDoctorRow(txt *string) *doctorRow {
 	}
 	data := pyjson.NewObject()
 	data.Set("snippet", pyPrefix(*txt, 2000))
-	return &doctorRow{status: status, message: strings.TrimSpace(pystr.Splitlines(*txt, false)[0]), data: data}
+	return &doctorRow{status: status, message: strings.TrimSpace(textutil.Lines(*txt)[0]), data: data}
 }
 
 var fallbackProbeTable = []struct {
@@ -613,7 +616,7 @@ func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason s
 		reasonShort = "health_report unavailable"
 	}
 	reasonShort = strings.TrimSpace(reasonShort)
-	if pystr.Len(reasonShort) > 160 {
+	if utf8.RuneCountInString(reasonShort) > 160 {
 		reasonShort = pyPrefix(reasonShort, 157) + "..."
 	}
 	verMsg := verValue
@@ -786,12 +789,12 @@ func cuaDaemonUnits(configDir string) []cuDaemonUnit {
 				continue
 			}
 			text := strings.TrimPrefix(textModeDecode(raw), "\uFEFF")
-			for _, line := range pystr.Splitlines(text, false) {
+			for _, line := range textutil.Lines(text) {
 				stripped := strings.TrimSpace(line)
 				var tokens []string
 				if strings.HasPrefix(stripped, src.key+"=") {
 					_, rest, _ := strings.Cut(stripped, "=")
-					tokens = strings.FieldsFunc(rest, pystr.IsSpace)
+					tokens = strings.FieldsFunc(rest, unicode.IsSpace)
 				}
 				if len(tokens) == 0 || !strings.Contains(tokens[0], "cua-driver") {
 					continue

@@ -16,6 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -196,7 +198,7 @@ func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool
 	}
 	statusLine, _, _ := strings.Cut(string(response), "\r\n")
 	statusLine = pystr.DecodeASCIIReplace([]byte(statusLine))
-	parts := pystr.SplitWhitespace(statusLine, -1)
+	parts := strings.Fields(statusLine)
 	ok := false
 	if len(parts) >= 2 && pystr.StrIsDigit(parts[1]) {
 		if code, err := strconv.Atoi(parts[1]); err == nil {
@@ -214,7 +216,7 @@ func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool
 	if len(body) > scaleToZeroRejectedBodyMaxBytes {
 		body = body[:scaleToZeroRejectedBodyMaxBytes]
 	}
-	dumped, _ := pyjson.Dumps(pystr.DecodeUTF8Replace(body))
-	pkgLog().Warn(fmt.Sprintf("scale-to-zero: flaps suspend rejected: %s %s", statusLine, pystr.Slice(dumped, 0, scaleToZeroRejectedBodyMaxBytes)))
+	dumped, _ := pyjson.Dumps(strings.ToValidUTF8(string(body), "\uFFFD"))
+	pkgLog().Warn(fmt.Sprintf("scale-to-zero: flaps suspend rejected: %s %s", statusLine, textutil.First(dumped, scaleToZeroRejectedBodyMaxBytes)))
 	return false
 }

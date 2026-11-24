@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -19,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -199,7 +202,7 @@ func TestBatchOverflowTrimmedAndSpilledLosslessly(t *testing.T) {
 		if v, _ := r.Get("summary_truncated"); v != true {
 			t.Fatalf("not truncated %v", r.Keys)
 		}
-		if pystr.Len(summary) >= pystr.Len(big) || !strings.Contains(summary, "HEAD_MARKER") || !strings.Contains(summary, "TAIL_MARKER") {
+		if utf8.RuneCountInString(summary) >= utf8.RuneCountInString(big) || !strings.Contains(summary, "HEAD_MARKER") || !strings.Contains(summary, "TAIL_MARKER") {
 			t.Fatalf("head and tail window %q", summary)
 		}
 		path := entryText(r, "summary_full_path")
@@ -295,7 +298,7 @@ func TestChildResultEventsMemoryHooksAndSpillUseRedactedOutput(t *testing.T) {
 			if entryText(entry, "status") != "completed" || strings.Contains(entryText(entry, "summary"), text) {
 				t.Fatalf("entry %v", entry)
 			}
-			if len(completions) == 0 || completions[0] != pystr.Slice(tools.RedactForEgress(env, summary), 0, 160) {
+			if len(completions) == 0 || completions[0] != textutil.First(tools.RedactForEgress(env, summary), 160) {
 				t.Fatalf("completion previews %v", completions)
 			}
 			if len(rec.results) == 0 || strings.Contains(rec.results[len(rec.results)-1], text) {

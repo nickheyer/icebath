@@ -24,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const tccMarkerName = ".tcc-anchor-source"
@@ -178,7 +180,7 @@ func tccInterpreterSource(venvDir, minor string) string {
 		return ""
 	}
 	home := ""
-	for _, l := range pystr.Splitlines(text, false) {
+	for _, l := range textutil.Lines(text) {
 		if strings.HasPrefix(strings.ToLower(l), "home") {
 			_, after, _ := strings.Cut(l, "=")
 			home = strings.TrimSpace(after)
@@ -356,12 +358,12 @@ var tccRunProbe = func(argv []string, env []string, timeout time.Duration) (stri
 	}
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
-		return pystr.DecodeUTF8Replace(out), ee.ExitCode(), nil
+		return strings.ToValidUTF8(string(out), "\uFFFD"), ee.ExitCode(), nil
 	}
 	if err != nil {
 		return "", -1, err
 	}
-	return pystr.DecodeUTF8Replace(out), 0, nil
+	return strings.ToValidUTF8(string(out), "\uFFFD"), 0, nil
 }
 
 // Launches the staged interpreter and demands encodings and the venv prefix, an unrunnable binary passing
@@ -390,7 +392,7 @@ var tccPassesBootGate = func(staged, venvDir string) bool {
 	if code != 0 {
 		return false
 	}
-	printed := pystr.Splitlines(strings.TrimSpace(stdout), false)
+	printed := textutil.Lines(strings.TrimSpace(stdout))
 	if len(printed) == 0 {
 		return false
 	}

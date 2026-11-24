@@ -1,18 +1,18 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"math"
 	"math/rand/v2"
 	"os"
 	"reflect"
+	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const IterationBudgetWarningTemplate = "[SYSTEM NOTICE — iteration budget checkpoint] You have used %d of %d " +
@@ -247,7 +247,7 @@ func announceAPICall(ctx context.Context, a *AIAgent, s *LoopState) error {
 	if !a.quietMode {
 		a.vprint(fmt.Sprintf("\n%s🔄 Making API call #%d/%d...", a.logPrefix, s.APICallCount, a.maxIterations), false, false)
 		a.vprint(fmt.Sprintf("%s   📊 Request size: %d messages, ~%s tokens (~%s chars)", a.logPrefix, len(s.APIMessages),
-			pystr.GroupThousands(int64(s.ApproxTokens)), pystr.GroupThousands(int64(s.TotalChars))), false, false)
+			textutil.Thousands(int64(s.ApproxTokens)), textutil.Thousands(int64(s.TotalChars))), false, false)
 		a.vprint(fmt.Sprintf("%s   🔧 Available tools: %d", a.logPrefix, toolCount), false, false)
 	} else {
 		faces, err := thinkingFaces(ctx)
@@ -272,7 +272,7 @@ func announceAPICall(ctx context.Context, a *AIAgent, s *LoopState) error {
 		}
 		pkgLog().Debug(fmt.Sprintf("API Request - Model: %s, Messages: %d, Tools: %d", a.model, len(s.Messages), toolCount))
 		pkgLog().Debug("Last message role: " + last)
-		pkgLog().Debug(fmt.Sprintf("Total message size: ~%s tokens", pystr.GroupThousands(int64(s.ApproxTokens))))
+		pkgLog().Debug(fmt.Sprintf("Total message size: ~%s tokens", textutil.Thousands(int64(s.ApproxTokens))))
 	}
 	return nil
 }
@@ -307,7 +307,7 @@ func beginIteration(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdict
 		s.TurnExitReason = "review_input_budget_exhausted"
 		if !a.quietMode {
 			a.safePrint(fmt.Sprintf("\n⏹️  Review input budget exhausted (%s tokens) — stopping the review tool loop before the next provider call.",
-				pystr.GroupThousands(int64(a.sessionInputTokens))), true)
+				textutil.Thousands(int64(a.sessionInputTokens))), true)
 		}
 		return PhaseVerdict{Action: "break"}, nil
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -20,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -66,9 +69,9 @@ func liveText(v any) string {
 
 // Single line of the text truncated to the limit with an elided character count
 func oneLine(text any, limit int) string {
-	s := strings.Join(pystr.SplitWhitespace(liveText(text), -1), " ")
-	if n := pystr.Len(s); n > limit {
-		s = pystr.Slice(s, 0, limit) + fmt.Sprintf(" …(+%d chars)", n-limit)
+	s := strings.Join(strings.Fields(liveText(text)), " ")
+	if n := utf8.RuneCountInString(s); n > limit {
+		s = textutil.First(s, limit) + fmt.Sprintf(" …(+%d chars)", n-limit)
 	}
 	return s
 }
@@ -176,7 +179,7 @@ func (w *liveTranscriptWriter) event(role, text string) {
 	if !ok || path == "" {
 		return
 	}
-	line := fmt.Sprintf("%s %s| %s\n", time.Now().Format("15:04:05"), pystr.Ljust(role, 9), liveRedact(text))
+	line := fmt.Sprintf("%s %-9s| %s\n", time.Now().Format("15:04:05"), role, liveRedact(text))
 	w.fileMu.Lock()
 	err := writeLiveText(path, line, os.O_WRONLY|os.O_CREATE|os.O_APPEND)
 	w.fileMu.Unlock()
@@ -254,7 +257,7 @@ func (w *liveTranscriptWriter) addStreamDelta(delta string) {
 		return
 	}
 	w.streamBuf = append(w.streamBuf, delta)
-	w.streamLen += pystr.Len(delta)
+	w.streamLen += utf8.RuneCountInString(delta)
 	full := w.streamLen >= liveStreamBufferFlushChars
 	w.stateMu.Unlock()
 	if full {
@@ -468,7 +471,7 @@ func writeLiveManifest(ctx context.Context, delegationID string, taskList []map[
 			}
 			task := pyjson.NewObject()
 			task.Set("index", i)
-			task.Set("goal", liveRedact(pystr.Slice(goal, 0, 500)))
+			task.Set("goal", liveRedact(textutil.First(goal, 500)))
 			if i < len(paths) {
 				task.Set("log", paths[i])
 			} else {

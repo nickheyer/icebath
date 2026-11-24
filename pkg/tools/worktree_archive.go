@@ -21,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Ref namespace holding worktree archives
@@ -96,7 +98,7 @@ func archiveRun(args []string, cwd string, env map[string]string, timeout time.D
 // Last three hundred characters of stripped stderr as the archive failure text
 func archiveStderrTail(stderr []byte) string {
 	s := strings.TrimSpace(pystr.SurrogateEscapeDecode(stderr))
-	return pystr.Slice(s, -300, pystr.Len(s))
+	return textutil.Last(s, 300)
 }
 
 // Stdout of a git command, an ArchiveError naming the subcommand when it exits non zero
@@ -139,7 +141,7 @@ func archiveRegularEntries(cwd string, env map[string]string) ([]indexEntry, err
 	var entries []indexEntry
 	for _, record := range strings.Split(out, "\x00") {
 		meta, path, _ := strings.Cut(record, "\t")
-		parts := pystr.SplitWhitespace(meta, -1)
+		parts := strings.Fields(meta)
 		if path != "" && len(parts) == 3 && (parts[0] == "100644" || parts[0] == "100755") {
 			entries = append(entries, indexEntry{parts[0], parts[1], path})
 		}
@@ -658,7 +660,7 @@ func archiveCheckedOutBranches(repoRoot string, env map[string]string) (map[stri
 		return nil, err
 	}
 	out := map[string]bool{}
-	for _, line := range pystr.Splitlines(string(r.Stdout), false) {
+	for _, line := range textutil.Lines(string(r.Stdout)) {
 		if strings.HasPrefix(line, "branch refs/heads/") {
 			out[line[len("branch refs/heads/"):]] = true
 		}

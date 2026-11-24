@@ -150,10 +150,10 @@ func (b *rpcBudget) sortedAllowed() []string {
 }
 
 func clipRunes(s string, n int) string {
-	if pystr.Len(s) <= n {
+	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
-	return pystr.FromRunes(pystr.Runes(s)[:n])
+	return string([]rune(s)[:n])
 }
 
 // Enforces the allow list and budget then dispatches one authenticated request, refusals cost nothing

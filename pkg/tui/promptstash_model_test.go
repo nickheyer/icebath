@@ -1,12 +1,13 @@
 package tui
 
 import (
-	"github.com/nickheyer/icebath/pkg/ui/lang"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/nickheyer/icebath/pkg/ui/lang"
 )
 
 type fakeStashClock struct{ now float64 }

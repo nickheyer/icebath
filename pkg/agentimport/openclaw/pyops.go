@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -260,7 +261,7 @@ func pyLen(v any) int {
 	case []any:
 		return len(x)
 	case string:
-		return pystr.Len(x)
+		return utf8.RuneCountInString(x)
 	}
 	raisef("TypeError", "expected a list, mapping or text, got %s", errchain.Kind(v))
 	return 0

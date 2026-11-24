@@ -30,6 +30,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Marker a killed update's git move leaves beside the git dir
@@ -137,7 +139,7 @@ func RecoveryClosureVerified(closure, pre string) bool {
 		return false
 	}
 	listed := map[string]string{}
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		oid, rel, found := strings.Cut(line, " ")
 		if !found {
 			return false
@@ -174,7 +176,7 @@ func isGit(path string) bool {
 	if err != nil {
 		return false
 	}
-	return out.Returncode == 0 && strings.HasPrefix(pystr.DecodeUTF8Replace(out.Stdout), "git version")
+	return out.Returncode == 0 && strings.HasPrefix(strings.ToValidUTF8(string(out.Stdout), "\uFFFD"), "git version")
 }
 
 // Package with a staged binary under a store entry
@@ -250,7 +252,7 @@ func (g restoreGit) runWith(stdin *string, text bool, args ...string) (*gitRun, 
 
 // Last line of a failed git's stderr, the fallback when it printed nothing
 func lastStderrLine(run *gitRun, fallback string) string {
-	lines := pystr.Splitlines(strings.TrimSpace(run.stderr), false)
+	lines := textutil.Lines(strings.TrimSpace(run.stderr))
 	if len(lines) == 0 {
 		return fallback
 	}
@@ -565,7 +567,7 @@ func pathsGitWrote(git restoreGit, root, pre, target string) (*writtenPaths, boo
 					return nil, false, err
 				}
 				if shown.returncode != 0 {
-					return nil, false, errors.New(strings.TrimSpace(pystr.DecodeUTF8Replace([]byte(shown.stderr))))
+					return nil, false, errors.New(strings.TrimSpace(strings.ToValidUTF8(string([]byte(shown.stderr)), "\uFFFD")))
 				}
 				if strings.HasPrefix(shown.stdout, string(content)) {
 					written = true
@@ -693,7 +695,7 @@ func readMarkerFields(marker string) (map[string]string, error) {
 		return nil, err
 	}
 	fields := map[string]string{}
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		key, value, _ := strings.Cut(line, "=")
 		fields[key] = value
 	}
@@ -1099,7 +1101,7 @@ func rememberForeignLock(marker, lock string) error {
 		return err
 	}
 	lines := []string{}
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		if !strings.HasPrefix(line, "foreign_lock=") {
 			lines = append(lines, line)
 		}

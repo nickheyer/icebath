@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Runs the pre API guard chain, Ollama context floor, overflow recheck arming, progress blocker, then preflight compression
@@ -35,7 +35,7 @@ func runPreflightGate(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdi
 		!compressionWarrantsAnotherPreflightPass(*lastPressure, s.RequestPressureTokens, threshold) {
 		s.PreflightCompressionBlocked = true
 		pkgLog().Warn(fmt.Sprintf("Pre-API compression made insufficient progress: ~%s -> ~%s request tokens; skipping additional preflight passes",
-			pystr.GroupThousands(int64(*lastPressure)), pystr.GroupThousands(int64(s.RequestPressureTokens))))
+			textutil.Thousands(int64(*lastPressure)), textutil.Thousands(int64(s.RequestPressureTokens))))
 	}
 	deferPreflight := func(int) bool { return false }
 	if !a.requestPressureAnchored && compressor != nil {

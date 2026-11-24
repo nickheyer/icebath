@@ -1,13 +1,12 @@
 package memory
 
 import (
-	"unicode"
-
 	"context"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/errchain"

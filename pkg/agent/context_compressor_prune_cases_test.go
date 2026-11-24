@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -116,8 +115,8 @@ func TestUnpairedSurrogatesAreSafeThroughPruningAndSqlite(t *testing.T) {
 	}
 	pruned, count := c.pruneOldToolResults(messages, 2, nil, pruneMinChars)
 	summary, _ := pruned[1]["content"].(string)
-	if count != 1 || pystr.Len(summary) > pruneMinChars || !utf8.ValidString(summary) {
-		t.Fatalf("count=%d len=%d valid=%v %q", count, pystr.Len(summary), utf8.ValidString(summary), summary)
+	if count != 1 || utf8.RuneCountInString(summary) > pruneMinChars || !utf8.ValidString(summary) {
+		t.Fatalf("count=%d len=%d valid=%v %q", count, utf8.RuneCountInString(summary), utf8.ValidString(summary), summary)
 	}
 	if !strings.Contains(summary, "Привет 😀") || !strings.Contains(summary, `\ud83d`) {
 		t.Fatalf("summary %q", summary)
@@ -134,8 +133,8 @@ func TestPruneKeepsDenialAcrossPasses(t *testing.T) {
 	cliDenied, _, _ := tools.CommandGateRefusalTexts()
 	args := dumps(t, obj("command", "rm -rf build"))
 	content := tools.TerminalErrorJSON(cliDenied, "blocked")
-	if pystr.Len(content) <= pruneMinChars {
-		t.Fatalf("fixture too short %d", pystr.Len(content))
+	if utf8.RuneCountInString(content) <= pruneMinChars {
+		t.Fatalf("fixture too short %d", utf8.RuneCountInString(content))
 	}
 	messages := []map[string]any{
 		toolCallRow("t1", "terminal", args),

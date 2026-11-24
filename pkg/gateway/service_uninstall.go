@@ -1,13 +1,12 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
@@ -105,7 +106,7 @@ func (a *pruneAudit) info(msg string) {
 		return
 	}
 	line := time.Now().Format("2006-01-02 15:04:05,000") + " " + msg + "\n"
-	if fi, err := os.Stat(a.path); err == nil && fi.Mode().IsRegular() && fi.Size()+int64(pystr.Len(line)) >= pruneLogMaxBytes {
+	if fi, err := os.Stat(a.path); err == nil && fi.Mode().IsRegular() && fi.Size()+int64(utf8.RuneCountInString(line)) >= pruneLogMaxBytes {
 		a.rollover()
 	}
 	f, err := os.OpenFile(a.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o666)
@@ -684,7 +685,7 @@ func linkedWorktreeRepos(entry string) map[string]bool {
 				if err != nil {
 					continue
 				}
-				line := strings.TrimSpace(pystr.DecodeUTF8Replace([]byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf"))))
+				line := strings.TrimSpace(strings.ToValidUTF8(string([]byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf"))), "\uFFFD"))
 				if rest, ok := strings.CutPrefix(line, "gitdir:"); ok {
 					gitdir := filepath.Clean(strings.TrimSpace(rest))
 					parent := filepath.Dir(gitdir)

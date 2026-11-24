@@ -24,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -127,7 +126,7 @@ func jsonObjectGet(node any, key string) (any, bool, bool) {
 
 // Message of the error object in a JSON body, else the first 300 characters of the body
 func defaultErrorMessage(_ int, body []byte) string {
-	text := clipRunes(pystr.DecodeUTF8Replace(body), 300)
+	text := clipRunes(strings.ToValidUTF8(string(body), "\uFFFD"), 300)
 	parsed, err := pyjson.LoadsBytes(body)
 	if err != nil {
 		return text

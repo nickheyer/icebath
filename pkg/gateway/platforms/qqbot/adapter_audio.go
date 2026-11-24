@@ -20,13 +20,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var voiceExtensions = []string{".silk", ".amr", ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".speex", ".flac"}
@@ -79,7 +80,7 @@ func isHTTPStatusError(err error) bool {
 // Downloads a URL and caches it as an image, a converted voice file or a document, empty when the download fails
 func (a *QQAdapter) downloadAndCache(ctx context.Context, url, contentType, originalName string) (string, error) {
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), url) {
-		return "", &pyErr{"ValueError", "Blocked unsafe URL: " + pystr.Slice(url, 0, 80)}
+		return "", &pyErr{"ValueError", "Blocked unsafe URL: " + textutil.First(url, 80)}
 	}
 	a.mu.Lock()
 	client := a.httpClient
@@ -95,7 +96,7 @@ func (a *QQAdapter) downloadAndCache(ctx context.Context, url, contentType, orig
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] Download failed for %s: %s", a.logTag(), pystr.Slice(url, 0, 80), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Download failed for %s: %s", a.logTag(), textutil.First(url, 80), errText(err)))
 		return "", nil
 	}
 	data := resp.Content
@@ -153,7 +154,7 @@ func (a *QQAdapter) qqMediaHeaders() map[string]string {
 // Transcript of a voice attachment from QQ's own text, else STT on the WAV URL, else STT on the converted original
 func (a *QQAdapter) sttVoiceAttachment(ctx context.Context, url, contentType, filename, asrReferText, voiceWAVURL string) (string, error) {
 	if asrReferText != "" {
-		pkgLog().Debug(fmt.Sprintf("[%s] STT: using QQ asr_refer_text: %s", a.logTag(), pyrepr.Repr(pystr.Slice(asrReferText, 0, 100))))
+		pkgLog().Debug(fmt.Sprintf("[%s] STT: using QQ asr_refer_text: %s", a.logTag(), pyrepr.Repr(textutil.First(asrReferText, 100))))
 		return asrReferText, nil
 	}
 	isPreWAV := voiceWAVURL != ""
@@ -166,7 +167,7 @@ func (a *QQAdapter) sttVoiceAttachment(ctx context.Context, url, contentType, fi
 		pkgLog().Debug(fmt.Sprintf("[%s] STT: using voice_wav_url (pre-converted WAV)", a.logTag()))
 	}
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), downloadURL) {
-		pkgLog().Warn(fmt.Sprintf("[QQ] STT blocked unsafe URL: %s", pystr.Slice(downloadURL, 0, 80)))
+		pkgLog().Warn(fmt.Sprintf("[QQ] STT blocked unsafe URL: %s", textutil.First(downloadURL, 80)))
 		return "", nil
 	}
 	transcript, err := a.transcribeVoiceURL(ctx, downloadURL, filename, isPreWAV)
@@ -193,7 +194,7 @@ func (a *QQAdapter) transcribeVoiceURL(ctx context.Context, downloadURL, filenam
 		return "", nil
 	}
 	downloadHeaders := a.qqMediaHeaders()
-	pkgLog().Debug(fmt.Sprintf("[%s] STT: downloading voice from %s (pre_wav=%s, headers=%s)", a.logTag(), pystr.Slice(downloadURL, 0, 80),
+	pkgLog().Debug(fmt.Sprintf("[%s] STT: downloading voice from %s (pre_wav=%s, headers=%s)", a.logTag(), textutil.First(downloadURL, 80),
 		pyrepr.Str(isPreWAV), pyrepr.Str(len(downloadHeaders) > 0)))
 	resp, err := httpRequest(ctx, client, http.MethodGet, downloadURL, downloadHeaders, nil, 30.0)
 	if err != nil {
@@ -235,7 +236,7 @@ func (a *QQAdapter) transcribeVoiceURL(ctx context.Context, downloadURL, filenam
 		return "", err
 	}
 	if transcript != "" {
-		pkgLog().Debug(fmt.Sprintf("[%s] STT success: %s", a.logTag(), pyrepr.Repr(pystr.Slice(transcript, 0, 100))))
+		pkgLog().Debug(fmt.Sprintf("[%s] STT success: %s", a.logTag(), pyrepr.Repr(textutil.First(transcript, 100))))
 	} else {
 		pkgLog().Warn(fmt.Sprintf("[%s] STT: ASR returned empty transcript", a.logTag()))
 	}
@@ -383,7 +384,7 @@ func (a *QQAdapter) convertFFmpegToWAV(ctx context.Context, srcPath, wavPath str
 	}
 	if proc.Returncode != 0 {
 		pkgLog().Warn(fmt.Sprintf("[%s] ffmpeg failed for %s: %s", a.logTag(), pypath.Name(srcPath),
-			pystr.DecodeUTF8Replace(proc.Stderr[:min(200, len(proc.Stderr))])))
+			strings.ToValidUTF8(string(proc.Stderr[:min(200, len(proc.Stderr))]), "\uFFFD")))
 		return ""
 	}
 	if !wavOK(wavPath) {
@@ -435,7 +436,7 @@ func (a *QQAdapter) callSTT(ctx context.Context, wavPath string) (string, error)
 	}
 	transcript, err := a.postTranscription(ctx, cfg, wavPath)
 	if err != nil && ctx.Err() == nil && (isOSError(err) || isHTTPStatusError(err)) {
-		pkgLog().Warn(fmt.Sprintf("[%s] STT API call failed (model=%s, base=%s): %s", a.logTag(), cfg.model, pystr.Slice(cfg.baseURL, 0, 50), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] STT API call failed (model=%s, base=%s): %s", a.logTag(), cfg.model, textutil.First(cfg.baseURL, 50), errText(err)))
 		return "", nil
 	}
 	return transcript, err
@@ -543,7 +544,7 @@ func (a *QQAdapter) convertAudioToWAV(ctx context.Context, audioData []byte, sou
 		return "", ctx.Err()
 	}
 	if converted == "" {
-		pkgLog().Warn(fmt.Sprintf("[%s] audio conversion failed for %s (format=%s)", a.logTag(), pystr.Slice(sourceURL, 0, 60), ext))
+		pkgLog().Warn(fmt.Sprintf("[%s] audio conversion failed for %s (format=%s)", a.logTag(), textutil.First(sourceURL, 60), ext))
 		return cacheDocumentFromBytes(ctx, audioData, "qq_voice"+ext)
 	}
 	wavData, err := os.ReadFile(wavPath)

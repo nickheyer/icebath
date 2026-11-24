@@ -19,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // RelayMediaMaxBytes mirrors the connector media store cap so oversize files fail before the round trip
@@ -103,7 +105,7 @@ func (c *RelayMediaClient) UploadWithError(ctx context.Context, filePath string,
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
-	name := pystr.Slice(baseName, 0, 255)
+	name := textutil.First(baseName, 255)
 	url := c.baseURL + "/relay/media"
 	attempts := len(relayUploadRetryDelays) + 1
 	attempt, reason := 0, ""
@@ -255,7 +257,7 @@ func (c *RelayMediaClient) fetchMedia(url string, headers http.Header, suggested
 	if name != "" {
 		ext = pypath.Suffix(name)
 	}
-	if !relayASCIIAlnumExt(ext) || len(pystr.Runes(ext)) > 16 {
+	if !relayASCIIAlnumExt(ext) || len([]rune(ext)) > 16 {
 		ext = ""
 	}
 	if ext == "" {

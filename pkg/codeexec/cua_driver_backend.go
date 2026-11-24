@@ -1,11 +1,10 @@
 package codeexec
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

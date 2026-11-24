@@ -1,10 +1,9 @@
 package telegram
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 

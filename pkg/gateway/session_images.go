@@ -1,12 +1,11 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"

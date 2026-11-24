@@ -6,12 +6,13 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -229,9 +230,9 @@ func TestSendDMHonoursTheDMPolicyAndCutsLongText(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := delivered.String()
-	if len(frames) != 3 || pystr.Len(firstText(t, frames[0], 5)) != maxTextChunk || !strings.HasPrefix(text, strings.Repeat("好", dmMaxChars)) ||
+	if len(frames) != 3 || utf8.RuneCountInString(firstText(t, frames[0], 5)) != maxTextChunk || !strings.HasPrefix(text, strings.Repeat("好", dmMaxChars)) ||
 		strings.Count(text, "好") != dmMaxChars || !strings.HasSuffix(text, i18n.T(ctx, "platform.shared.truncated_suffix", "", nil)) ||
 		fields.GetString(6) != "grp-9" || fields.GetString(2) != " u1 " {
-		t.Fatalf("long DM went out as %d frames ending %q", len(frames), pystr.Slice(text, pystr.Len(text)-20, pystr.Len(text)))
+		t.Fatalf("long DM went out as %d frames ending %q", len(frames), textutil.Last(text, 20))
 	}
 }

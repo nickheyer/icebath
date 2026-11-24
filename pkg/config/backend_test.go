@@ -475,21 +475,21 @@ func TestFileBackendRefusesAnInMemoryApplyWithARuntimeError(t *testing.T) {
 	}
 }
 
-func TestBackendKindIsStrippedAndLoweredLikePythonStr(t *testing.T) {
+func TestBackendKindIsTrimmedAndLowered(t *testing.T) {
 	backendHome(t)
 	ctx := context.Background()
-	for _, raw := range []string{"\x1c\x1dFILE\x1e\x1f", " File\u0085", " \tfile\n"} {
+	for _, raw := range []string{"FILE", " File\u0085", " \tfile\n"} {
 		t.Setenv(BackendEnv, raw)
 		if b, err := GetConfigBackend(ctx); err != nil || b.Name() != "file" {
 			t.Fatalf("%q: %v %v", raw, b, err)
 		}
 	}
-	t.Setenv(BackendEnv, "\x1fREMOTEΣ\x1c")
+	t.Setenv(BackendEnv, " REMOTEΣ\t")
 	var unavailable *ConfigBackendUnavailable
 	_, err := GetConfigBackend(ctx)
-	want := "ICEBATH_CONFIG_BACKEND='remoteς' is not a config backend this build provides (expected 'file' or 'remote')."
+	want := "ICEBATH_CONFIG_BACKEND='remoteσ' is not a config backend this build provides (expected 'file' or 'remote')."
 	if !errors.As(err, &unavailable) || unavailable.Message != want {
-		t.Fatalf("final sigma selector %v", err)
+		t.Fatalf("unknown selector %v", err)
 	}
 }
 

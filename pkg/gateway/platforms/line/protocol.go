@@ -1,12 +1,11 @@
 package line
 
 import (
-	"unicode"
-
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
@@ -17,7 +16,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -261,8 +261,8 @@ func allowedForSource(source map[string]any, allowAll bool, userIDs, groupIDs, r
 
 // LINE text message capped to the per bubble maximum
 func textMessage(text string) messaging_api.MessageInterface {
-	if pystr.Len(text) > linePerBubbleChars {
-		text = pystr.Slice(text, 0, linePerBubbleChars-1) + "…"
+	if utf8.RuneCountInString(text) > linePerBubbleChars {
+		text = textutil.First(text, linePerBubbleChars-1) + "…"
 	}
 	return &messaging_api.TextMessage{Text: text}
 }
@@ -289,20 +289,20 @@ func postbackData(requestID string) string {
 // Template Buttons bubble whose tap fetches the slow answer, text capped at 160 and alt text at 400
 func buildPostbackButtonMessage(text, buttonLabel, requestID, defaultLabel string) messaging_api.MessageInterface {
 	truncated := text
-	if pystr.Len(text) > 160 {
-		truncated = pystr.Slice(text, 0, 157) + "..."
+	if utf8.RuneCountInString(text) > 160 {
+		truncated = textutil.First(text, 157) + "..."
 	}
 	alt := text
-	if pystr.Len(text) > 400 {
-		alt = pystr.Slice(text, 0, 397) + "..."
+	if utf8.RuneCountInString(text) > 400 {
+		alt = textutil.First(text, 397) + "..."
 	}
-	label := pystr.Slice(buttonLabel, 0, 20)
+	label := textutil.First(buttonLabel, 20)
 	if label == "" {
-		label = pystr.Slice(defaultLabel, 0, 20)
+		label = textutil.First(defaultLabel, 20)
 	}
-	display := pystr.Slice(buttonLabel, 0, 300)
+	display := textutil.First(buttonLabel, 300)
 	if display == "" {
-		display = pystr.Slice(defaultLabel, 0, 300)
+		display = textutil.First(defaultLabel, 300)
 	}
 	action := &messaging_api.PostbackAction{Label: label, Data: postbackData(requestID), DisplayText: display}
 	return &messaging_api.TemplateMessage{AltText: alt,

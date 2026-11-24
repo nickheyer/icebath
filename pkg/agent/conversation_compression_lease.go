@@ -1,12 +1,11 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 

@@ -8,9 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ForwardedUVSettings are the uv index and transport settings that survive into uv
@@ -181,7 +180,7 @@ func (c *rawConfig) parse(path, text string) error {
 	seenOptions := map[string]bool{}
 	defer func() {
 		for _, o := range options {
-			o.target[o.name] = strings.TrimRightFunc(strings.Join(o.lines, "\n"), pystr.IsSpace)
+			o.target[o.name] = strings.TrimRightFunc(strings.Join(o.lines, "\n"), unicode.IsSpace)
 		}
 	}()
 	for i, raw := range strings.Split(universalNewlines(text), "\n") {
@@ -193,7 +192,7 @@ func (c *rawConfig) parse(path, text string) error {
 			}
 			continue
 		}
-		indent := utf8.RuneCountInString(raw) - utf8.RuneCountInString(strings.TrimLeftFunc(raw, pystr.IsSpace))
+		indent := utf8.RuneCountInString(raw) - utf8.RuneCountInString(strings.TrimLeftFunc(raw, unicode.IsSpace))
 		if option != nil && indent > indentLevel {
 			option.lines = append(option.lines, stripped)
 			continue
@@ -223,7 +222,7 @@ func (c *rawConfig) parse(path, text string) error {
 		if cut < 0 {
 			return fmt.Errorf("%s line %d has no = or : between a name and a value", path, lineno)
 		}
-		key := strings.ToLower(strings.TrimRightFunc(stripped[:cut], pystr.IsSpace))
+		key := strings.ToLower(strings.TrimRightFunc(stripped[:cut], unicode.IsSpace))
 		if key == "" {
 			return fmt.Errorf("%s line %d has no name before its = or :", path, lineno)
 		}

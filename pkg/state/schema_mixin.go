@@ -20,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"modernc.org/libc"
 	sqlite3 "modernc.org/sqlite/lib"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Trigger names split by the DDL half that creates them, trigram triggers needing the trigram tokenizer
@@ -105,7 +107,7 @@ func forEachCompleteStatement(script string, fn func(statement string) error) (s
 	tls := libc.NewTLS()
 	defer tls.Close()
 	statement := ""
-	for _, line := range pystr.Splitlines(script, false) {
+	for _, line := range textutil.Lines(script) {
 		statement += line + "\n"
 		p, err := libc.CString(statement)
 		if err != nil {
@@ -368,7 +370,7 @@ func ftsUpdateTriggerNeedsNarrowing(sql any) bool {
 	if !pyTruthy(sql) {
 		return false
 	}
-	compact := strings.ToUpper(strings.Join(pystr.SplitWhitespace(pyStr(sql), -1), " "))
+	compact := strings.ToUpper(strings.Join(strings.Fields(pyStr(sql)), " "))
 	return !strings.Contains(compact, "AFTER UPDATE OF ") && strings.Contains(compact, "AFTER UPDATE ON ")
 }
 
@@ -465,7 +467,7 @@ func executeDDLSkippingSettledTriggers(ctx context.Context, conn SQLiteConn, ddl
 		}
 		if strings.HasPrefix(upper, "CREATE TRIGGER IF NOT EXISTS ") {
 			desired := strings.TrimRight(strings.Replace(current, "IF NOT EXISTS ", "", 1), ";")
-			fields := pystr.SplitWhitespace(desired, 3)
+			fields := textutil.FieldsN(desired, 3)
 			if len(fields) < 3 {
 				return &pyint.Error{Kind: "IndexError", Msg: "a stored trigger statement has no trigger name"}
 			}

@@ -12,13 +12,15 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // TermuxPool is the Termux main package pool the bionic pins come from
@@ -107,7 +109,7 @@ var debField = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9-]*):[ ]?(.*)$`)
 func ParseTermuxIndex(text string) map[string]PoolPackage {
 	pool := map[string]PoolPackage{}
 	fields := map[string]string{}
-	lines := append(pystr.Splitlines(text, false), "")
+	lines := append(textutil.Lines(text), "")
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			if row, ok := poolPackage(fields); ok {
@@ -116,7 +118,7 @@ func ParseTermuxIndex(text string) map[string]PoolPackage {
 			fields = map[string]string{}
 			continue
 		}
-		if r, _ := utf8.DecodeRuneInString(line); !pystr.IsSpace(r) {
+		if r, _ := utf8.DecodeRuneInString(line); !unicode.IsSpace(r) {
 			if m := debField.FindStringSubmatch(line); m != nil {
 				fields[m[1]] = strings.TrimSpace(m[2])
 			}

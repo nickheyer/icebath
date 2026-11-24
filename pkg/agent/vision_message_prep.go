@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
@@ -104,7 +105,7 @@ func contentHasImageParts(content any) bool {
 // Writes a data URL payload to a temp image file and returns its path, empty when the payload is too large
 func materializeDataURLForVision(imageURL any) (string, error) {
 	header, data, _ := strings.Cut(pyStrOr(imageURL, ""), ",")
-	if n := pystr.Len(data); n > maxDataURLBase64Bytes {
+	if n := utf8.RuneCountInString(data); n > maxDataURLBase64Bytes {
 		pkgLog().Warn(fmt.Sprintf("data-URL payload too large (%d bytes), skipping", n))
 		return "", nil
 	}

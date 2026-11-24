@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
@@ -21,8 +22,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -551,7 +553,7 @@ func (a *WeComAdapter) readEvents(ctx context.Context) error {
 func frameLen(data any) int {
 	switch d := data.(type) {
 	case string:
-		return pystr.Len(d)
+		return utf8.RuneCountInString(d)
 	case []byte:
 		return len(d)
 	}
@@ -564,9 +566,9 @@ func (a *WeComAdapter) handleFrame(ctx context.Context, data any, isBinary bool)
 	if isBinary {
 		decoded := "<undecodable>"
 		if b, ok := data.([]byte); ok {
-			decoded = pystr.DecodeUTF8Replace(b)
+			decoded = strings.ToValidUTF8(string(b), "\uFFFD")
 		}
-		pkgLog().Info(fmt.Sprintf("[%s] Inbound BINARY frame received (len=%d) head=%s — attempting JSON parse", a.Name(), dataLen, pyrepr.Repr(pystr.Slice(decoded, 0, 200))))
+		pkgLog().Info(fmt.Sprintf("[%s] Inbound BINARY frame received (len=%d) head=%s — attempting JSON parse", a.Name(), dataLen, pyrepr.Repr(textutil.First(decoded, 200))))
 	}
 	payload := parseJSON(data)
 	switch {
@@ -809,15 +811,15 @@ func parseJSON(raw any) *pyjson.Object {
 	case errors.As(err, &jsonErr):
 		lenientText := text
 		if b, ok := raw.([]byte); ok {
-			lenientText = pystr.DecodeUTF8Replace(b)
+			lenientText = strings.ToValidUTF8(string(b), "\uFFFD")
 		}
 		var err2 error
 		if payload, err2 = pyjson.LoadsLenient(lenientText); err2 != nil {
 			tail := pyrepr.Repr(raw)
 			switch r := raw.(type) {
 			case string:
-				if pystr.Len(r) > 100 {
-					tail = pyrepr.Repr(pystr.Slice(r, -100, pystr.Len(r)))
+				if utf8.RuneCountInString(r) > 100 {
+					tail = pyrepr.Repr(textutil.Last(r, 100))
 				}
 			case []byte:
 				if len(r) > 100 {

@@ -7,10 +7,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Fresh store with the timeline-root desktop session the test fixture creates
@@ -122,7 +122,7 @@ func TestTimelinePagesProjectHumanPromptsWithoutToolPayloads(t *testing.T) {
 	}
 	second := timelinePage(t, db, sid, 1, timelineID(t, pageField(first, "next_cursor")))
 	rows := timelineEntries(second)
-	if len(rows) != 1 || !pyjson.Equal(rowValue(rows[0], "row_id"), expected[1]) || pystr.Len(pyStr(rowValue(rows[0], "preview"))) != 120 {
+	if len(rows) != 1 || !pyjson.Equal(rowValue(rows[0], "row_id"), expected[1]) || utf8.RuneCountInString(pyStr(rowValue(rows[0], "preview"))) != 120 {
 		t.Fatalf("second page %v", pyjson.Plain(second))
 	}
 	if pageField(second, "has_more") != false || pageField(second, "next_cursor") != nil {

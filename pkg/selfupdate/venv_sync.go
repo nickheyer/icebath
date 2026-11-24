@@ -236,7 +236,7 @@ func readCompletionAttempts(record string) (*big.Int, string, bool, error) {
 	if err != nil {
 		return nil, "", false, err
 	}
-	words := pystr.SplitWhitespace(text, -1)
+	words := strings.Fields(text)
 	attempts := new(big.Int)
 	if len(words) > 0 {
 		n, ok := pyint.Parse(words[0])

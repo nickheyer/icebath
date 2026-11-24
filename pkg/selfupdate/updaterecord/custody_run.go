@@ -272,7 +272,9 @@ func runCaptured(ctx context.Context, argv []string, timeout time.Duration, spaw
 	return &GitResult{Args: argv, ReturnCode: code, Stdout: decodeText(stdout), Stderr: decodeText(stderr)}, nil
 }
 
-func decodeText(raw []byte) string { return pystr.TranslateNewlines(pystr.DecodeUTF8Replace(raw)) }
+func decodeText(raw []byte) string {
+	return pystr.TranslateNewlines(strings.ToValidUTF8(string(raw), "\uFFFD"))
+}
 
 func killTreeOf(cmd *exec.Cmd) { proc.KillTree(cmd.Process.Pid) }
 

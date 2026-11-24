@@ -12,11 +12,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Answer of a lock holder probe, Unknown when no platform proof exists and Holder naming a live owner
@@ -97,7 +100,7 @@ func gitArgvBytes(cmdline []byte) []string {
 	var out []string
 	for _, a := range bytes.Split(cmdline, []byte{0}) {
 		if len(a) > 0 {
-			out = append(out, pystr.DecodeUTF8Replace(a))
+			out = append(out, strings.ToValidUTF8(string(a), "\uFFFD"))
 		}
 	}
 	return out
@@ -346,7 +349,7 @@ func procEnviron(pidDir string) (map[string]string, error) {
 		if len(entry) == 0 {
 			continue
 		}
-		key, value, _ := strings.Cut(pystr.DecodeUTF8Replace(entry), "=")
+		key, value, _ := strings.Cut(strings.ToValidUTF8(string(entry), "\uFFFD"), "=")
 		env[key] = value
 	}
 	return env, nil
@@ -495,7 +498,7 @@ func heldOpenLsof(path, root string, anyGit bool) LockHold {
 	if err != nil {
 		return lockUnknown
 	}
-	lines := pystr.Splitlines(pystr.DecodeUTF8Replace(found.Stdout), false)
+	lines := textutil.Lines(strings.ToValidUTF8(string(found.Stdout), "\uFFFD"))
 	if pids := prefixed(lines, "p"); len(pids) > 0 {
 		name := "?"
 		if names := prefixed(lines, "c"); len(names) > 0 {
@@ -523,7 +526,7 @@ func lsofCwds(lsof string, pids []string) (map[string]string, bool) {
 	}
 	cwds := map[string]string{}
 	pid, havePid := "", false
-	for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(out.Stdout), false) {
+	for _, line := range textutil.Lines(strings.ToValidUTF8(string(out.Stdout), "\uFFFD")) {
 		if strings.HasPrefix(line, "p") {
 			pid, havePid = line[1:], true
 		} else if strings.HasPrefix(line, "n") && havePid {
@@ -539,7 +542,7 @@ func digitsInt(s string) (int, bool) {
 		return 0, false
 	}
 	for _, r := range s {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return 0, false
 		}
 	}
@@ -566,9 +569,9 @@ func psGitHolder(lsof, gitDir, root string, anyGit bool) LockHold {
 			return nil, false
 		}
 		rows := [][]string{}
-		for _, line := range pystr.Splitlines(pystr.DecodeUTF8Replace(out.Stdout), false) {
+		for _, line := range textutil.Lines(strings.ToValidUTF8(string(out.Stdout), "\uFFFD")) {
 			if strings.TrimSpace(line) != "" {
-				rows = append(rows, pystr.SplitWhitespace(line, len(columns)-1))
+				rows = append(rows, textutil.FieldsN(line, len(columns)-1))
 			}
 		}
 		return rows, true
@@ -581,7 +584,7 @@ func psGitHolder(lsof, gitDir, root string, anyGit bool) LockHold {
 	argv := map[string][]string{}
 	for _, row := range commands {
 		if len(row) == 2 {
-			argv[row[0]] = pystr.SplitWhitespace(row[1], -1)
+			argv[row[0]] = strings.Fields(row[1])
 		}
 	}
 	var order []string

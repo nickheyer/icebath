@@ -12,8 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Whether the config resolves the client id, client secret and tenant id
@@ -110,7 +111,7 @@ func standalonePost(ctx context.Context, tenantID, clientID, clientSecret, activ
 		return nil, err
 	}
 	if status >= 400 {
-		return gateway.SendError(fmt.Sprintf("Teams standalone send: token request failed (%d): %s", status, pystr.Slice(body, 0, 300))), nil
+		return gateway.SendError(fmt.Sprintf("Teams standalone send: token request failed (%d): %s", status, textutil.First(body, 300))), nil
 	}
 	var tokenPayload map[string]any
 	if err := json.Unmarshal([]byte(body), &tokenPayload); err != nil {
@@ -135,7 +136,7 @@ func standalonePost(ctx context.Context, tenantID, clientID, clientSecret, activ
 		return nil, err
 	}
 	if status >= 400 {
-		return gateway.SendError(fmt.Sprintf("Teams standalone send: activity post failed (%d): %s", status, pystr.Slice(body, 0, 300))), nil
+		return gateway.SendError(fmt.Sprintf("Teams standalone send: activity post failed (%d): %s", status, textutil.First(body, 300))), nil
 	}
 	var sendPayload map[string]any
 	if err := json.Unmarshal([]byte(body), &sendPayload); err != nil {
@@ -155,7 +156,7 @@ func doRead(client *http.Client, req *http.Request) (int, string, error) {
 	if err != nil {
 		return 0, "", err
 	}
-	return resp.StatusCode, pystr.DecodeUTF8Replace(raw), nil
+	return resp.StatusCode, strings.ToValidUTF8(string(raw), "\uFFFD"), nil
 }
 
 // Passive dependency probe, satisfied since the Bot Framework client is compiled into the binary

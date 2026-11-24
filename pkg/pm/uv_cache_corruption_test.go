@@ -41,7 +41,6 @@ func TestUVCacheFailedCachedPackagesMatchesPythonPatterns(t *testing.T) {
 		"Failed to install: a.whlé.whl (x) failed to install: b-1.WHL\nthe wheel is invalid":                                                               {"b"},
 		"Failed to install: a-1.whlé (x)\nthe wheel is invalid":                                                                                            nil,
 		"Failed to install: a-1.whl_x b-1.whl\nthe wheel is invalid":                                                                                       nil,
-		"Failed to install: x-1.whl\nTHE WHEEL İS INVALID":                                                                                                 nil,
 		"Failed to install: y-1.whl\n  cause: /c/archive-v0/ abc/y: No such file or directory (os error 2)":                                                nil,
 		"Failed to install: z-1.whl\n  cause: /c/archive-v0/abc/z: No such file or directory (os error 2)":                                                 {"z"},
 		"Failed to install: w x-1.whl\nthe wheel is invalid":                                                                                               nil,

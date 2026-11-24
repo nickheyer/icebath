@@ -1,8 +1,6 @@
 package agentimport
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -25,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // EntryDelimiter separates entries of the memory store files
@@ -73,7 +74,7 @@ func StripFrontmatter(text string) string {
 
 // NormalizeText collapses whitespace runs to one space and lowercases
 func NormalizeText(text string) string {
-	return strings.ToLower(strings.Join(pystr.SplitWhitespace(strings.TrimSpace(text), -1), " "))
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(text)), " "))
 }
 
 // Reads a file as utf-8-sig text with undecodable bytes replaced and line endings unified like text mode
@@ -139,7 +140,7 @@ func ExtractMarkdownEntries(text string) []string {
 		}
 	}
 	inCode := false
-	for _, raw := range pystr.Splitlines(text, false) {
+	for _, raw := range textutil.Lines(text) {
 		line := strings.TrimRightFunc(raw, unicode.IsSpace)
 		stripped := strings.TrimSpace(line)
 		if strings.HasPrefix(stripped, "```") {

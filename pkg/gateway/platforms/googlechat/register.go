@@ -13,8 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Whether the config carries an HTTP events URL or a project and subscription
@@ -147,7 +148,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		var h *httpError
 		if errors.As(err, &h) {
-			return standaloneError(fmt.Sprintf("API returned %d: %s", h.status, pystr.Slice(h.reason, 0, 300))), nil
+			return standaloneError(fmt.Sprintf("API returned %d: %s", h.status, textutil.First(h.reason, 300))), nil
 		}
 		return gateway.SendError("Google Chat standalone send failed: " + gateway.ProxySafeErrorText(err, gateway.TrustedEnvProxyForRedaction(ctx, "https://chat.googleapis.com"))), nil
 	}

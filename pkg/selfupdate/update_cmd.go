@@ -29,6 +29,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Seconds a network git may run before the updater reports it as a failed run
@@ -162,7 +164,7 @@ func subprocessStderr(err error) string {
 	}
 	var expired *pysubprocess.TimeoutExpired
 	if errors.As(err, &expired) {
-		return pystr.DecodeUTF8Replace(expired.Stderr)
+		return strings.ToValidUTF8(string(expired.Stderr), "\uFFFD")
 	}
 	return ""
 }
@@ -180,7 +182,7 @@ func healStaleShallowCheckout(ctx context.Context, w io.Writer, repoRoot, branch
 			text = launchErrorText(err)
 		}
 		detail := launchErrorClass(err)
-		if lines := pystr.Splitlines(strings.TrimSpace(text), false); len(lines) > 0 {
+		if lines := textutil.Lines(strings.TrimSpace(text)); len(lines) > 0 {
 			detail = lines[len(lines)-1]
 		}
 		fmt.Fprintf(w, "  ⚠ Could not fetch the missing commit history (%s); a very stale install may time out\n", detail)
@@ -341,8 +343,8 @@ func asCalledProcessError(err error) (*calledProcess, bool) {
 	}
 	var plain *pysubprocess.CalledProcessError
 	if errors.As(err, &plain) {
-		return &calledProcess{Cmd: plain.Cmd, ReturnCode: plain.Returncode, Stdout: pystr.DecodeUTF8Replace(plain.Stdout),
-			Stderr: pystr.DecodeUTF8Replace(plain.Stderr)}, true
+		return &calledProcess{Cmd: plain.Cmd, ReturnCode: plain.Returncode, Stdout: strings.ToValidUTF8(string(plain.Stdout), "\uFFFD"),
+			Stderr: strings.ToValidUTF8(string(plain.Stderr), "\uFFFD")}, true
 	}
 	var worker *pm.CalledProcessError
 	if errors.As(err, &worker) {
@@ -424,7 +426,7 @@ func printCalledProcessErrorTail(w io.Writer, exc error, limit int) {
 		blob = called.Stdout
 	}
 	var lines []string
-	for _, line := range pystr.Splitlines(blob, false) {
+	for _, line := range textutil.Lines(blob) {
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}

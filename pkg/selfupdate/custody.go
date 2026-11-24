@@ -326,7 +326,7 @@ func (c *startedChild) communicate(ctx context.Context, opts ChildOptions, onTim
 }
 
 func decodeChildText(raw []byte) string {
-	return pystr.TranslateNewlines(pystr.DecodeUTF8Replace(raw))
+	return pystr.TranslateNewlines(strings.ToValidUTF8(string(raw), "\uFFFD"))
 }
 
 // Pid is the child process id
@@ -479,7 +479,7 @@ func partialClone(gitCmd []string, dir string) (bool, error) {
 		return false, nil
 	}
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
-	return strings.Contains(strings.ToLower(pystr.DecodeUTF8Replace(raw)), "partialclone"), nil
+	return strings.Contains(strings.ToLower(strings.ToValidUTF8(string(raw), "\uFFFD")), "partialclone"), nil
 }
 
 // Path(base or ".") / value, an absolute value replacing the base

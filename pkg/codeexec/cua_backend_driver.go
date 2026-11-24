@@ -17,10 +17,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const cuaDriverDefaultCmd = "cua-driver"
@@ -319,7 +320,7 @@ func pyIterItems(value any) ([]any, error) {
 		return v, nil
 	case string:
 		out := []any{}
-		for _, r := range pystr.Runes(v) {
+		for _, r := range []rune(v) {
 			out = append(out, string(r))
 		}
 		return out, nil
@@ -366,7 +367,7 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 			if text == "" {
 				text = "manifest command failed"
 			}
-			lines := pystr.Splitlines(strings.TrimSpace(text), false)
+			lines := textutil.Lines(strings.TrimSpace(text))
 			if len(lines) == 0 {
 				return nil, errors.New("the manifest command printed only blank lines")
 			}

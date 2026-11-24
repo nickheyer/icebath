@@ -1,13 +1,12 @@
 package plugins
 
 import (
-	"unicode"
-
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

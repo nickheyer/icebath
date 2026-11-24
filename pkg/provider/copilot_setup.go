@@ -15,7 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Seconds a Copilot device code stays valid when GitHub does not say
@@ -198,7 +199,7 @@ func copilotModelFlowBody(r *ModelFlowRun) error {
 		}
 	} else if source == "GITHUB_TOKEN" || source == "GH_TOKEN" || source == "env:GITHUB_TOKEN" || source == "env:GH_TOKEN" {
 		source = strings.TrimPrefix(source, "env:")
-		flowSay(r.Out, fmt.Sprintf("  GitHub token: %s... ✓ (%s%s)", pystr.Slice(apiKey, 0, 8), source, SecretSourceLabel(r.home(), source)), "")
+		flowSay(r.Out, fmt.Sprintf("  GitHub token: %s... ✓ (%s%s)", textutil.First(apiKey, 8), source, SecretSourceLabel(r.home(), source)), "")
 	} else {
 		flowSay(r.Out, "  GitHub token: ✓", "")
 	}

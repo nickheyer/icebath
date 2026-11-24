@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var subagentFailureStatuses = map[string]bool{"failed": true, "error": true, "timeout": true}
@@ -65,7 +67,7 @@ func cleanErrorText(errText any, maxChars int) string {
 		s = pyrepr.Str(errText)
 	}
 	var lines []string
-	for _, ln := range pystr.Splitlines(strings.TrimSpace(tools.RedactChildText(nil, s, false)), false) {
+	for _, ln := range textutil.Lines(strings.TrimSpace(tools.RedactChildText(nil, s, false))) {
 		if t := strings.TrimSpace(ln); t != "" {
 			lines = append(lines, t)
 		}
@@ -77,8 +79,8 @@ func cleanErrorText(errText any, maxChars int) string {
 	if strings.HasPrefix(lines[0], "Traceback") {
 		line = lines[len(lines)-1]
 	}
-	if pystr.Len(line) > maxChars {
-		return pystr.Slice(line, 0, maxChars-3) + "..."
+	if utf8.RuneCountInString(line) > maxChars {
+		return textutil.First(line, maxChars-3) + "..."
 	}
 	return line
 }
@@ -115,8 +117,8 @@ func formatFailureDuration(seconds any) string {
 // Human readable line about a failed or timed out subagent with the next step for the user
 func formatSubagentFailureLine(goal, status string, errText, durationSeconds, failureReason any) string {
 	goalLabel := strings.ReplaceAll(strings.TrimSpace(goal), "\n", " ")
-	if pystr.Len(goalLabel) > 60 {
-		goalLabel = pystr.Slice(goalLabel, 0, 57) + "..."
+	if utf8.RuneCountInString(goalLabel) > 60 {
+		goalLabel = textutil.First(goalLabel, 57) + "..."
 	}
 	goalPart := ""
 	if goalLabel != "" {
@@ -359,8 +361,8 @@ func printCompletionLine(parent *AIAgent, spinner tools.Spinner, line string, co
 }
 
 func shortText(text string, n int) string {
-	if pystr.Len(text) > n {
-		return pystr.Slice(text, 0, n) + "..."
+	if utf8.RuneCountInString(text) > n {
+		return textutil.First(text, n) + "..."
 	}
 	return text
 }

@@ -11,9 +11,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -133,7 +134,7 @@ func (a *GoogleChatAdapter) SendSlashConfirm(ctx context.Context, chatID, title,
 		return a.cardButton(tr(ctx, key, nil), map[string]string{clickKindParam: clickConfirm, "session_key": sessionKey,
 			"confirm_id": confirmID, "choice": choice})
 	}
-	card, err := promptCard("confirm-"+confirmID, pystr.Slice(title, 0, 200), []any{markdownParagraph(pystr.Slice(message, 0, maxTextLength))},
+	card, err := promptCard("confirm-"+confirmID, textutil.First(title, 200), []any{markdownParagraph(textutil.First(message, maxTextLength))},
 		[]any{buttonRow([]any{button("confirm.approve_once", "once"), button("confirm.always_approve", "always"), button("confirm.cancel", "cancel")})})
 	if err != nil {
 		return gateway.SendResult{}, err

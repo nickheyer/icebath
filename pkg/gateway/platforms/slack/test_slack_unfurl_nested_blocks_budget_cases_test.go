@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -35,7 +35,7 @@ func unfurlAttachments(n int) []any {
 func TestNestedBlockTextStopsGrowingWithAttachmentCount(t *testing.T) {
 	sizes := map[int]int{}
 	for _, n := range []int{1, 5, 20} {
-		sizes[n] = pystr.Len(appendLinkUnfurls("intro", unfurlAttachments(n)))
+		sizes[n] = utf8.RuneCountInString(appendLinkUnfurls("intro", unfurlAttachments(n)))
 	}
 	if growth := float64(sizes[20]-sizes[5]) / 15; growth >= 200 {
 		t.Fatalf("per attachment growth %v, sizes %v", growth, sizes)

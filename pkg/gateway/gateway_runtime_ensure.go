@@ -10,9 +10,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Swappable discovery and lock probes the ensure loop reads, the seams ensure tests replace
@@ -45,7 +46,7 @@ func standaloneMultiplexerReason(root string) string {
 	if reason == "" {
 		return ""
 	}
-	return pystr.Slice(reason, 0, 500)
+	return textutil.First(reason, 500)
 }
 
 // Whether an update owns the install by a live or in flight marker, or any marker while the checkout lock is held

@@ -2,6 +2,7 @@ package kanban
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -28,6 +29,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // pyException is a Python exception of a named class this package has no dedicated type for
@@ -112,7 +115,7 @@ func parseBranchFlag(value *string) (*string, error) {
 		return nil, &argumentTypeError{"--branch must not start with '-'"}
 	}
 	for _, r := range branch {
-		if pystr.IsSpace(r) {
+		if unicode.IsSpace(r) {
 			return nil, &argumentTypeError{"--branch must not contain whitespace"}
 		}
 	}
@@ -894,11 +897,11 @@ func orDash(s *string) string {
 
 // First line of text cut to n characters
 func firstLineCut(text string, n int) string {
-	lines := pystr.Splitlines(text, false)
+	lines := textutil.Lines(text)
 	if len(lines) == 0 {
 		return ""
 	}
-	return pystr.Slice(lines[0], 0, n)
+	return textutil.First(lines[0], n)
 }
 
 // Assigns or unassigns a task
@@ -1264,9 +1267,9 @@ func (c *kanbanCLI) cmdComment() (int, error) {
 		if *maxLen < 1 {
 			return cliErr(c.errw, "kanban: --max-len must be positive", 2), nil
 		}
-		if int64(pystr.Len(body)) > *maxLen {
+		if int64(utf8.RuneCountInString(body)) > *maxLen {
 			suffix := fmt.Sprintf("\n\n[trimmed to %d chars by --max-len]", *maxLen)
-			body = strings.TrimRightFunc(pystr.Slice(body, 0, int(max(0, *maxLen-int64(pystr.Len(suffix))))), unicode.IsSpace) + suffix
+			body = strings.TrimRightFunc(textutil.First(body, int(max(0, *maxLen-int64(utf8.RuneCountInString(suffix))))), unicode.IsSpace) + suffix
 		}
 	}
 	author := nsStr(c.ns, "author")
@@ -2161,7 +2164,7 @@ func (c *kanbanCLI) cmdRuns() (int, error) {
 			fmt.Fprintf(c.w, "     → %s\n", firstLineCut(*r.Summary, 100))
 		}
 		if r.Error != nil && *r.Error != "" {
-			fmt.Fprintf(c.w, "     ✖ %s\n", pystr.Slice(*r.Error, 0, 100))
+			fmt.Fprintf(c.w, "     ✖ %s\n", textutil.First(*r.Error, 100))
 		}
 	}
 	return 0, nil

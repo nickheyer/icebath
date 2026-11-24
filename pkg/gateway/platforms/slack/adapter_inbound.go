@@ -2,6 +2,7 @@ package slack
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -20,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Installed by the process wiring over pkg/commands, the native slash names the Slack manifest declares
@@ -328,7 +331,7 @@ func (a *SlackAdapter) assistantSuggestedPrompts() (string, []map[string]any) {
 		promptTitle := strings.TrimSpace(strOrEmpty(m["title"]))
 		promptMessage := strings.TrimSpace(strOrEmpty(m["message"]))
 		if promptTitle != "" && promptMessage != "" {
-			prompts = append(prompts, map[string]any{"title": pystr.Slice(promptTitle, 0, 75), "message": promptMessage})
+			prompts = append(prompts, map[string]any{"title": textutil.First(promptTitle, 75), "message": promptMessage})
 		}
 		if len(prompts) >= 4 {
 			break
@@ -400,8 +403,8 @@ func (a *SlackAdapter) setAssistantThreadTitle(ctx context.Context, channelID, t
 	if title == "" || strings.HasPrefix(title, "/") {
 		return
 	}
-	if pystr.Len(title) > 80 {
-		title = strings.TrimRightFunc(pystr.Slice(title, 0, 77), unicode.IsSpace) + "..."
+	if utf8.RuneCountInString(title) > 80 {
+		title = strings.TrimRightFunc(textutil.First(title, 77), unicode.IsSpace) + "..."
 	}
 	if err := sessionTitleMethod(a.getClient(channelID, teamID))(ctx, channelID, threadTS, title); err != nil {
 		pkgLog().Debug(fmt.Sprintf("[Slack] session title set failed: %v", err))
@@ -843,7 +846,7 @@ func appendBlockText(text string, blocks []any, botUID string) string {
 	blocksText := extractAdditionalTextFromSlackBlocks(blocks, text, botUID)
 	stripped := strings.TrimSpace(blocksText)
 	if stripped != "" {
-		pkgLog().Debug(fmt.Sprintf("Slack: extracted additional text from blocks (likely quoted/forwarded content; chars=%d)", pystr.Len(stripped)))
+		pkgLog().Debug(fmt.Sprintf("Slack: extracted additional text from blocks (likely quoted/forwarded content; chars=%d)", utf8.RuneCountInString(stripped)))
 		text = strings.TrimSpace(strings.TrimSpace(text) + "\n" + stripped)
 	}
 	if payload := serializeSlackBlocksForAgent(blocks, slackUnfurlBlocksMaxChars); payload != "" {

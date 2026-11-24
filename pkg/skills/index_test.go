@@ -2,6 +2,7 @@ package skills
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"encoding/json"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Scope over a fresh home with an empty prompt cache and snapshot before and after the test
@@ -218,7 +218,7 @@ func TestIndexRowsCarryEachNameOnceAndNeverAHalfWord(t *testing.T) {
 		t.Fatal(release)
 	}
 	shown := strings.SplitN(release, ": ", 2)[1]
-	if pystr.Len(shown) > SkillPromptDescLimit || !strings.HasSuffix(shown, "...") {
+	if utf8.RuneCountInString(shown) > SkillPromptDescLimit || !strings.HasSuffix(shown, "...") {
 		t.Fatal(shown)
 	}
 	kept := strings.TrimSuffix(shown, "...")
@@ -235,7 +235,7 @@ func TestClipCutsAtAnyWhitespaceNeverInsideAWord(t *testing.T) {
 	for _, sep := range []string{"\t", " "} {
 		desc := "alpha" + sep + strings.Repeat("bravo"+sep, 12)
 		shown := ClipSkillDescription(desc)
-		if pystr.Len(shown) > SkillPromptDescLimit || !strings.HasSuffix(shown, "...") {
+		if utf8.RuneCountInString(shown) > SkillPromptDescLimit || !strings.HasSuffix(shown, "...") {
 			t.Fatalf("%q", shown)
 		}
 		for _, w := range strings.Split(strings.TrimSuffix(shown, "..."), sep) {

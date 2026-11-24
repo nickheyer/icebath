@@ -6,7 +6,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Cheap checkout fingerprint read from git metadata without spawning git, false on any OSError
@@ -33,7 +34,7 @@ func gitRevisionFingerprint(repoRoot string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		for _, line := range pystr.Splitlines(text, false) {
+		for _, line := range textutil.Lines(text) {
 			key, value, _ := strings.Cut(line, ":")
 			if strings.TrimSpace(key) == "gitdir" && strings.TrimSpace(value) != "" {
 				if gitDir, err = pypath.Resolve(pypath.PathJoin(repoRoot, strings.TrimSpace(value))); err != nil {
@@ -107,7 +108,7 @@ func readPackedRef(commonDir, ref string) string {
 	if err != nil {
 		return ""
 	}
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "^") {
 			continue
 		}

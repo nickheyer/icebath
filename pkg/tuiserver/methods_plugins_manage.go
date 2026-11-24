@@ -1,8 +1,6 @@
 package tuiserver
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"

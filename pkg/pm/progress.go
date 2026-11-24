@@ -12,9 +12,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 
 	"github.com/charmbracelet/x/term"
@@ -171,7 +171,7 @@ func (t *LiveTail) Close(ok bool) {
 
 // Records one output line in the tail and redraws the status line at most every interval
 func (t *LiveTail) line(line string) {
-	line = strings.TrimRightFunc(ansiEscape.ReplaceAllString(lastRunes(line, MaxLine), ""), pystr.IsSpace)
+	line = strings.TrimRightFunc(ansiEscape.ReplaceAllString(lastRunes(line, MaxLine), ""), unicode.IsSpace)
 	if strings.TrimSpace(line) == "" {
 		return
 	}

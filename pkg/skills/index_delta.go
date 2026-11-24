@@ -1,15 +1,15 @@
 package skills
 
 import (
-	"unicode"
-
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -57,7 +57,7 @@ func IndexEntries(prompt any) map[string]string {
 	if m == nil {
 		return entries
 	}
-	for _, line := range pystr.Splitlines(m[1], false) {
+	for _, line := range textutil.Lines(m[1]) {
 		if strings.HasPrefix(strings.TrimSpace(line), "- ") {
 			if name := indexRowName(line); name != "" {
 				if _, seen := entries[name]; !seen {

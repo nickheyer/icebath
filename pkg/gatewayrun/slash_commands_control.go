@@ -14,9 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Copy of the source with only its dataclass fields carried and the edit applied, normalized again
@@ -108,7 +109,7 @@ func (r *GatewayRunner) handleStopCommand(ctx context.Context, event *gateway.Me
 
 // Lists failed and paused adapters or pauses and resumes the reconnect of one by name
 func (r *GatewayRunner) handlePlatformCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	parts := pystr.SplitWhitespace(strings.TrimSpace(event.Text), 2)
+	parts := textutil.FieldsN(strings.TrimSpace(event.Text), 2)
 	if len(parts) > 0 && strings.HasPrefix(strings.TrimLeft(strings.ToLower(parts[0]), "/"), "platform") {
 		parts = parts[1:]
 	}

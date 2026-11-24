@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Prints how to ask each Bot for its export and how to bring it back
@@ -75,7 +74,7 @@ func readClipboardText(ctx context.Context) (string, bool) {
 		if err != nil {
 			continue
 		}
-		return pystr.DecodeUTF8Replace(out), true
+		return strings.ToValidUTF8(string(out), "\uFFFD"), true
 	}
 	return "", false
 }

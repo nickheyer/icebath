@@ -3,10 +3,9 @@
 package tools
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

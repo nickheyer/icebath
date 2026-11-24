@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
@@ -23,7 +24,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Default per adapter bound of concurrently dispatched updates
@@ -155,7 +155,7 @@ func isDigitString(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}

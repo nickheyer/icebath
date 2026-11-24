@@ -1,8 +1,6 @@
 package kanban
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"

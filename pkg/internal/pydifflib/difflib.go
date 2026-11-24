@@ -5,7 +5,6 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // One matching block of size elements starting at I in a and J in b
@@ -144,10 +143,10 @@ func GetCloseMatches(word string, possibilities []string, n int, cutoff float64)
 		score float64
 		text  string
 	}
-	wordRunes := pystr.Runes(word)
+	wordRunes := []rune(word)
 	var results []scored
 	for _, x := range possibilities {
-		if score := NewSequenceMatcher(pystr.Runes(x), wordRunes, true).Ratio(); score >= cutoff {
+		if score := NewSequenceMatcher([]rune(x), wordRunes, true).Ratio(); score >= cutoff {
 			results = append(results, scored{score, x})
 		}
 	}

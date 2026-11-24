@@ -1,10 +1,9 @@
 package commands
 
 import (
-	"strings"
-
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"syscall"
 	"time"

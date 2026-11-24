@@ -46,7 +46,7 @@ func readPackageText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimPrefix(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(raw)), "\xef\xbb\xbf"), nil
+	return strings.TrimPrefix(pystr.TranslateNewlines(strings.ToValidUTF8(string(raw), "\uFFFD")), "\xef\xbb\xbf"), nil
 }
 
 // One external provider root with the discovery source it stands for

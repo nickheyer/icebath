@@ -7,7 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Value under key of a decoded JSON object, nil for a missing key or a non object
@@ -261,7 +262,7 @@ func codexFileChangeSpec(item any) (string, string, any, string) {
 }
 
 // Dumped JSON truncated to n code points
-func cxDumpsCut(v any, n int) string { return pystr.Slice(cxMustDumps(v), 0, n) }
+func cxDumpsCut(v any, n int) string { return textutil.First(cxMustDumps(v), n) }
 
 // Dumped JSON, raising like json.dumps for an undumpable value
 func cxMustDumps(v any) string {
@@ -313,6 +314,6 @@ func codexProjectOpaque(item any, itemType string) CodexProjectionResult {
 	if err != nil {
 		payload = pyrepr.Repr(item)
 	}
-	payload = pystr.Slice(payload, 0, 1500)
+	payload = textutil.First(payload, 1500)
 	return CodexProjectionResult{Messages: []map[string]any{{"role": "assistant", "content": "[codex " + itemType + "] " + payload}}}
 }

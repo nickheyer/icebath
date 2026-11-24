@@ -29,6 +29,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var displayNameSanitizeRe = pyre.MustCompile(`[^\w.\- ]`)
@@ -961,7 +963,7 @@ func (a *FeishuAdapter) processInboundMessage(ctx context.Context, data *larkim.
 		who = "bot"
 	}
 	pkgLog().Info(fmt.Sprintf("[Feishu] Inbound %s message received: id=%s type=%s chat_id=%s sender=%s:%s text=%s media=%d", kind, messageID,
-		string(inboundType), chatID, who, primary, pyrepr.Repr(pystr.Slice(text, 0, 120)), len(content.mediaURLs)))
+		string(inboundType), chatID, who, primary, pyrepr.Repr(textutil.First(text, 120)), len(content.mediaURLs)))
 	info, _ := a.GetChatInfo(ctx, chatID)
 	profile, err := a.ResolveSenderProfile(ctx, sender, isBot)
 	if err != nil {

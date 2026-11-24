@@ -519,7 +519,7 @@ func TestRunGateKeepsDiagnosticsWhenAByteWillNotDecode(t *testing.T) {
 		t.Fatal(err)
 	}
 	passed, code, out := runGate(t, NewGoalGate(`sh "`+script+`"`), "")
-	if passed || code != 1 || !strings.Contains(out, "FAILED: 3 tests broken") || !strings.Contains(out, "�� rerun me") {
+	if passed || code != 1 || !strings.Contains(out, "FAILED: 3 tests broken") || !strings.Contains(out, "� rerun me") {
 		t.Fatalf("%v %d %q", passed, code, out)
 	}
 }

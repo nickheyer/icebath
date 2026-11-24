@@ -1,11 +1,10 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"

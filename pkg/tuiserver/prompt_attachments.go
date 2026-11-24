@@ -8,9 +8,9 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -37,7 +37,7 @@ func tooLarge(label string, size, maxBytes int) string {
 func stripAllSpace(s string) string {
 	var b strings.Builder
 	for _, r := range s {
-		if !pystr.IsSpace(r) {
+		if !unicode.IsSpace(r) {
 			b.WriteRune(r)
 		}
 	}

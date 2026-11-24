@@ -141,12 +141,12 @@ func TestBadPath(t *testing.T) {
 	}
 }
 
-func TestHumanReportPadsByCodePointAndStripsPythonWhitespace(t *testing.T) {
+func TestHumanReportPadsByCodePointAndTrimsTails(t *testing.T) {
 	zero, two, start, refused := 0, 2, "npm start", "connection refused"
 	recipe := &verify.Recipe{Name: "web", Kind: "node", Start: &start}
 	result := &verify.VerifyResult{RecipeName: "web", Phases: []*verify.PhaseResult{
 		{Phase: "büild", Command: "make", ExitCode: &zero, Duration: 1.25, OutputTail: "ok"},
-		{Phase: "t", Command: "pytest", ExitCode: &two, Duration: 0.04, OutputTail: "fail line\n\x1c  "},
+		{Phase: "t", Command: "pytest", ExitCode: &two, Duration: 0.04, OutputTail: "fail line\n\t  "},
 		{Phase: "lint", Command: "ruff", TimedOut: true, Duration: 30},
 	}, Readiness: &verify.ReadinessResult{URL: "http://127.0.0.1:3000/", Error: &refused, Duration: 5, OutputTail: "server crashed \n"}}
 	var out bytes.Buffer

@@ -1,10 +1,9 @@
 package discord
 
 import (
-	"strings"
-
 	"context"
 	"math/big"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"

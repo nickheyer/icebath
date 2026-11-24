@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"compress/flate"
 	"crypto/sha256"
@@ -11,8 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"archive/zip"
 )
 
 const name = "icebath_cli"

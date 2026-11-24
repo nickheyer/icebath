@@ -1,8 +1,6 @@
 package pm
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"io/fs"
@@ -10,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"

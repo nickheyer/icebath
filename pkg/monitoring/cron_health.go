@@ -1,11 +1,10 @@
 package monitoring
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 

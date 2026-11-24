@@ -1,18 +1,16 @@
 package provider
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"io"
 	"math/big"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -408,7 +406,7 @@ func auxConfigMenu(r *ModelFlowRun) error {
 		labels := make([]string, 0, len(menuTasks)+2)
 		for _, t := range menuTasks {
 			keys = append(keys, t.Key)
-			labels = append(labels, pystr.Ljust(t.Name, nameCol)+pystr.Ljust("("+t.Desc+")", descCol)+
+			labels = append(labels, fmt.Sprintf("%-*s", nameCol, t.Name)+fmt.Sprintf("%-*s", descCol, "("+t.Desc+")")+
 				formatAuxCurrent(auxTaskCfgForDisplay(r.ctx(), cfg, t.Key)))
 		}
 		keys = append(keys, "__reset__", "__back__")

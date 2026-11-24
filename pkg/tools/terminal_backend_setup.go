@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"

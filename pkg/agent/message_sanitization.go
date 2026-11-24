@@ -3,6 +3,7 @@ package agent
 import (
 	"slices"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
@@ -88,7 +89,7 @@ func serializedMessagesBytes(messages any) int {
 	}
 	total := 0
 	for _, m := range list {
-		total += pystr.Len(pyrepr.Str(m))
+		total += utf8.RuneCountInString(pyrepr.Str(m))
 	}
 	return total
 }

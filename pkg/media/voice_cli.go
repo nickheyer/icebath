@@ -12,12 +12,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -507,7 +507,7 @@ func speakWholeFile(ctx context.Context, text string) error {
 		return err
 	}
 	mp3Path := filepath.Join(voiceDir, "tts_"+time.Now().Format("20060102_150405")+".mp3")
-	voiceDebug(fmt.Sprintf("speak_text: synthesizing %d chars -> %s", pystr.Len(ttsText), mp3Path))
+	voiceDebug(fmt.Sprintf("speak_text: synthesizing %d chars -> %s", utf8.RuneCountInString(ttsText), mp3Path))
 	raw, err := TextToSpeechTool(ctx, ttsText, mp3Path)
 	if err != nil {
 		return err

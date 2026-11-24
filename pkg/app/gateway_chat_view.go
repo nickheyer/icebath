@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -19,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Characters of a pending admission preview line
@@ -53,9 +56,9 @@ func gatewayPendingPreview(text any) string {
 			b.WriteByte(' ')
 		}
 	}
-	line := strings.Join(pystr.SplitWhitespace(b.String(), -1), " ")
-	if pystr.Len(line) > gatewayPreviewChars {
-		line = pystr.Slice(line, 0, gatewayPreviewChars-1) + "…"
+	line := strings.Join(strings.Fields(b.String()), " ")
+	if utf8.RuneCountInString(line) > gatewayPreviewChars {
+		line = textutil.First(line, gatewayPreviewChars-1) + "…"
 	}
 	return line
 }

@@ -8,10 +8,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Store status, prune and console input of the checkpoints command, the module attributes tests patch
@@ -91,20 +92,20 @@ func checkpointsCmdStatus(env *Env, ns map[string]any, w io.Writer) (int, error)
 			limit = 20
 		}
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "  %s  %s  %s  STATE\n", pystr.Ljust("WORKDIR", 60), pystr.Rjust("COMMITS", 7), pystr.Rjust("LAST TOUCH", 12))
+		fmt.Fprintf(w, "  %-60s  %7s  %12s  STATE\n", "WORKDIR", "COMMITS", "LAST TOUCH")
 		for _, p := range projects[:min(limit, len(projects))] {
 			wd := p.Workdir
 			if wd == "" {
 				wd = "(unknown)"
 			}
-			if n := pystr.Len(wd); n > 60 {
-				wd = "\u2026" + pystr.Slice(wd, n-59, n)
+			if n := utf8.RuneCountInString(wd); n > 60 {
+				wd = "\u2026" + textutil.Last(wd, 59)
 			}
 			state := "orphan"
 			if p.Exists {
 				state = "live"
 			}
-			fmt.Fprintf(w, "  %s  %s  %s  %s\n", pystr.Ljust(wd, 60), pystr.Rjust(fmt.Sprint(p.Commits), 7), pystr.Rjust(checkpointsFmtAge(p.LastTouch), 12), state)
+			fmt.Fprintf(w, "  %-60s  %7s  %12s  %s\n", wd, fmt.Sprint(p.Commits), checkpointsFmtAge(p.LastTouch), state)
 		}
 	}
 	if len(info.LegacyArchives) > 0 {
@@ -122,7 +123,7 @@ func checkpointsCmdStatus(env *Env, ns map[string]any, w io.Writer) (int, error)
 // One line per archive with its name and size
 func checkpointsPrintArchives(w io.Writer, archives []CheckpointLegacyArchive) {
 	for _, arch := range archives {
-		fmt.Fprintf(w, "  %s  %s\n", pystr.Ljust(arch.Name, 40), pystr.Rjust(sizefmtBytes(arch.SizeBytes), 10))
+		fmt.Fprintf(w, "  %-40s  %10s\n", arch.Name, sizefmtBytes(arch.SizeBytes))
 	}
 }
 

@@ -17,6 +17,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -123,7 +125,7 @@ func branchTip(ctx context.Context, repository, branch, root, git, remote string
 	if result.ReturnCode == 2 {
 		return "", true, ""
 	}
-	detail := pystr.Splitlines(strings.TrimSpace(result.Stderr), false)
+	detail := textutil.Lines(strings.TrimSpace(result.Stderr))
 	if len(detail) > 0 {
 		return "", false, firstNonEmpty(failure, "`git ls-remote "+remote+"` failed: "+detail[len(detail)-1])
 	}
@@ -375,7 +377,7 @@ func unhealableReason(ctx context.Context, co sourceCheckout, branch string) str
 	for _, base := range []string{"refs/remotes/origin/main", "refs/heads/main"} {
 		cherry := checkGitRun(ctx, []string{"cherry", base, local}, co.root, 10*time.Second, co.git)
 		if cherry != nil && cherry.ReturnCode == 0 {
-			for _, line := range pystr.Splitlines(cherry.Stdout, false) {
+			for _, line := range textutil.Lines(cherry.Stdout) {
 				if strings.HasPrefix(line, "+") {
 					return "unmerged"
 				}

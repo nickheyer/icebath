@@ -1,8 +1,6 @@
 package discord
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 

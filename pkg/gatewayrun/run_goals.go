@@ -1,12 +1,11 @@
 package gatewayrun
 
 import (
-	"unicode"
-
 	"context"
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/errchain"

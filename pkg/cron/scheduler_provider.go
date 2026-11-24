@@ -1,8 +1,6 @@
 package cron
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
@@ -10,6 +8,7 @@ import (
 	"math"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"

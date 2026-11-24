@@ -3,8 +3,6 @@ package pycodecs
 import (
 	"errors"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // bytes.decode with errors replace, each undecodable byte becoming U+FFFD as the CPython codecs do
@@ -15,9 +13,9 @@ func DecodeReplace(data []byte, name string) (string, error) {
 	}
 	switch mod {
 	case "utf_8", "cp65001":
-		return pystr.DecodeUTF8Replace(data), nil
+		return strings.ToValidUTF8(string(data), "\uFFFD"), nil
 	case "utf_8_sig":
-		return pystr.DecodeUTF8Replace([]byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf"))), nil
+		return strings.ToValidUTF8(string([]byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf"))), "\uFFFD"), nil
 	case "utf_7":
 		return decodeUTF7(data, true)
 	case "unicode_escape":

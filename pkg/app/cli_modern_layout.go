@@ -12,9 +12,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -60,7 +61,7 @@ func modernFg(hexColor string, bold bool) string {
 	digits := strings.TrimLeft(hexColor, "#")
 	var rgb [3]string
 	for i, start := range []int{0, 2, 4} {
-		n, ok := pyint.ParseBase(pystr.Slice(digits, start, start+2), 16)
+		n, ok := pyint.ParseBase(textutil.Between(digits, start, start+2), 16)
 		if !ok {
 			if bold {
 				return modernBold
@@ -82,7 +83,7 @@ func brandGlyph() (string, string) {
 	if skin := config.GetActiveSkin(context.Background()); skin != nil {
 		label = skin.GetBranding("response_label", modernDefaultResponseLabel)
 	}
-	parts := pystr.SplitWhitespace(label, 1)
+	parts := textutil.FieldsN(label, 1)
 	if len(parts) == 2 {
 		return parts[0], strings.TrimSpace(parts[1])
 	}
@@ -143,7 +144,7 @@ func reasoningTextLine(line string) string { return modernDim + line + modernRST
 
 // Reasoning block printed after the fact, a dim bar, ten lines unless full, then the thought summary
 func thoughtRows(seconds *float64, text string, full bool) []string {
-	lines := pystr.Splitlines(strings.TrimSpace(text), false)
+	lines := textutil.Lines(strings.TrimSpace(text))
 	shown := lines
 	if !full && len(lines) > modernReasoningPreviewLines {
 		shown = lines[:modernReasoningPreviewLines]
@@ -187,7 +188,7 @@ func toolRow(ctx context.Context, env *tools.Env, functionName string, args map[
 		} else if mark == "" {
 			mark = "●"
 		}
-		line := mark + " " + modernBold + strings.ToUpper(pystr.Slice(verb, 0, 1)) + pystr.Slice(verb, 1, pystr.Len(verb)) + modernRST
+		line := mark + " " + modernBold + strings.ToUpper(textutil.First(verb, 1)) + textutil.DropFirst(verb, 1) + modernRST
 		if row.Detail != "" {
 			line += " " + row.Detail
 		}

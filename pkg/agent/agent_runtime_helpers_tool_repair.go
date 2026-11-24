@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -140,7 +139,7 @@ func stripToolSuffix(s string) (string, bool) {
 	lc := strings.ToLower(s)
 	for _, sfx := range []string{"_tool", "-tool", "tool"} {
 		if strings.HasSuffix(lc, sfx) {
-			return strings.TrimRight(pystr.Slice(s, 0, -len(sfx)), "_-"), true
+			return strings.TrimRight(s[:len(s)-len(sfx)], "_-"), true
 		}
 	}
 	return "", false

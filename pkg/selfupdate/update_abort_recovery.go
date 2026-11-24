@@ -18,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Fresh recovery process an aborted restart phase consults, replaced by tests
@@ -221,5 +220,5 @@ func recoveryCapture(child *exec.Cmd, timeout time.Duration) (*recoveryCompleted
 		<-done
 		return nil, &recoveryTimeout{argv: child.Args, seconds: timeout.Seconds()}
 	}
-	return &recoveryCompleted{ReturnCode: child.ProcessState.ExitCode(), Stdout: pystr.DecodeUTF8Replace([]byte(stdout.String()))}, nil
+	return &recoveryCompleted{ReturnCode: child.ProcessState.ExitCode(), Stdout: strings.ToValidUTF8(string([]byte(stdout.String())), "\uFFFD")}, nil
 }

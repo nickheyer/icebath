@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
@@ -21,9 +22,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Seconds a route script may run before the webhook is dropped
@@ -144,7 +146,7 @@ func webhookLoadFilterFileValues(ctx context.Context, pathValue any) ([]any, err
 			return nil, err
 		}
 		var lines []any
-		for _, line := range pystr.Splitlines(raw, false) {
+		for _, line := range textutil.Lines(raw) {
 			if stripped := strings.TrimSpace(line); stripped != "" {
 				lines = append(lines, stripped)
 			}
@@ -346,7 +348,7 @@ func webhookIsDigits(text string) bool {
 		return false
 	}
 	for _, r := range text {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}

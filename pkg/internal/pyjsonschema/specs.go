@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 //go:embed metaschemas.json
@@ -72,10 +71,10 @@ func pyIter(v any) []any {
 		}
 		return out
 	case string:
-		rs := pystr.Runes(c)
+		rs := []rune(c)
 		out := make([]any, len(rs))
 		for i := range rs {
-			out[i] = pystr.FromRunes(rs[i : i+1])
+			out[i] = string(rs[i : i+1])
 		}
 		return out
 	}

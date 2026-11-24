@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -15,8 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -480,8 +482,8 @@ func (a *YuanbaoAdapter) SendDM(ctx context.Context, userID, text string, groupC
 	if !allowed {
 		return gateway.SendResult{Success: false, Error: "DM access denied for this user"}, nil
 	}
-	if pystr.Len(text) > dmMaxChars {
-		text = pystr.Slice(text, 0, dmMaxChars) + i18n.T(ctx, "platform.shared.truncated_suffix", "", nil)
+	if utf8.RuneCountInString(text) > dmMaxChars {
+		text = textutil.First(text, dmMaxChars) + i18n.T(ctx, "platform.shared.truncated_suffix", "", nil)
 	}
 	return a.outbound.sender.sendText(ctx, "direct:"+userID, text, "", groupCode)
 }

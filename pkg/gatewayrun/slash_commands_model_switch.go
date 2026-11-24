@@ -12,11 +12,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Reasoning display toggles of the reasoning command, the value the display flag takes
@@ -259,11 +260,11 @@ func (r *GatewayRunner) modelSwitchConfirmation(ctx context.Context, result *pro
 		if configCtx != nil {
 			pin = *configCtx
 		}
-		lines = append(lines, i18n.T(ctx, "gateway.model.context_label", "", map[string]any{"tokens": pystr.GroupThousands(int64(ctxLen))})+
+		lines = append(lines, i18n.T(ctx, "gateway.model.context_label", "", map[string]any{"tokens": textutil.Thousands(int64(ctxLen))})+
 			agent.ContextPinSuffix(ctxLen, pin))
 	}
 	if mi != nil && mi.MaxOutput != 0 {
-		lines = append(lines, i18n.T(ctx, "gateway.model.max_output_label", "", map[string]any{"tokens": pystr.GroupThousands(int64(mi.MaxOutput))}))
+		lines = append(lines, i18n.T(ctx, "gateway.model.max_output_label", "", map[string]any{"tokens": textutil.Thousands(int64(mi.MaxOutput))}))
 	}
 	if mi != nil {
 		lines = append(lines, i18n.T(ctx, "gateway.model.capabilities_label", "", map[string]any{"capabilities": mi.FormatCapabilities()}))

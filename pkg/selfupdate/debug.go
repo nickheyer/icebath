@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -473,7 +474,7 @@ func debugTruncateCompleteLines(text string, maxBytes int) (string, bool) {
 			kept = nil
 		}
 	}
-	return pystr.DecodeUTF8Replace(kept), true
+	return strings.ToValidUTF8(string(kept), "\uFFFD"), true
 }
 
 // Captures a log once, deriving the summary tail and the full upload view from that one read
@@ -507,7 +508,7 @@ func debugCaptureLogSnapshot(ctx context.Context, name string, tailLines int, ma
 		if err != nil {
 			return LogSnapshot{}, err
 		}
-		allText := pystr.DecodeUTF8Replace(raw)
+		allText := strings.ToValidUTF8(string(raw), "\uFFFD")
 		if redact {
 			allText = RedactDebugSupportText(allText)
 		}
@@ -518,7 +519,7 @@ func debugCaptureLogSnapshot(ctx context.Context, name string, tailLines int, ma
 				allText = ""
 			}
 		}
-		lines := pystr.Splitlines(allText, true)
+		lines := slices.Collect(strings.Lines(allText))
 		if tailLines < len(lines) {
 			if tailLines > 0 {
 				lines = lines[len(lines)-tailLines:]
@@ -808,7 +809,7 @@ func runDebugShare(ctx context.Context, ns map[string]any, w io.Writer) (int, er
 	}
 	fmt.Fprintln(w, "\nDebug report uploaded:")
 	for _, k := range result.URLKeys {
-		fmt.Fprintf(w, "  %s  %s\n", pystr.Ljust(k, width), result.URLs[k])
+		fmt.Fprintf(w, "  %-*s  %s\n", width, k, result.URLs[k])
 	}
 	if len(result.Failures) > 0 {
 		fmt.Fprintf(w, "\n  (failed to upload: %s)\n", strings.Join(result.Failures, ", "))

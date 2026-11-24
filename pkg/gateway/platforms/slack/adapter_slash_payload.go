@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Raised like Python AttributeError when the slash command field is a truthy value other than a string
@@ -54,7 +53,7 @@ func SlashCommandText(ctx context.Context, command map[string]any) (string, erro
 	subcommandMap := subcommandMapLive(ctx)
 	subcommandMap["compact"] = "/compress"
 	firstWord := ""
-	if words := pystr.SplitWhitespace(legacyText, -1); len(words) > 0 {
+	if words := strings.Fields(legacyText); len(words) > 0 {
 		firstWord = words[0]
 	}
 	if mapped, ok := subcommandMap[firstWord]; ok {

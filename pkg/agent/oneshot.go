@@ -2,6 +2,7 @@ package agent
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -9,16 +10,17 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Text cut to limit with a truncated marker when longer
 func oneshotTruncate(text string, limit int) string {
-	if pystr.Len(text) <= limit {
+	if utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	return strings.TrimRightFunc(pystr.Slice(text, 0, limit), unicode.IsSpace) + "\n…(truncated)"
+	return strings.TrimRightFunc(textutil.First(text, limit), unicode.IsSpace) + "\n…(truncated)"
 }
 
 const commitInstructions = "You write git commit messages. Given a diff of staged changes, write ONE concise Conventional Commits " +
@@ -129,7 +131,7 @@ func stripCodeFence(text string) string {
 	if !strings.HasPrefix(text, "```") {
 		return text
 	}
-	lines := pystr.Splitlines(text, false)
+	lines := textutil.Lines(text)
 	if len(lines) >= 2 && strings.TrimSpace(lines[len(lines)-1]) == "```" {
 		return strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
 	}

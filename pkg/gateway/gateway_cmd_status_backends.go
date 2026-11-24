@@ -19,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Runs argv with its output streamed to w under a timeout, the uncaptured subprocess run
@@ -264,7 +266,7 @@ func queryWindowsTaskStatus(ctx context.Context) (map[string]string, error) {
 	if code != 0 {
 		return info, nil
 	}
-	for _, raw := range pystr.Splitlines(out, false) {
+	for _, raw := range textutil.Lines(out) {
 		line := strings.TrimSpace(raw)
 		if line == "" || !strings.Contains(line, ":") {
 			continue
@@ -449,7 +451,7 @@ func windowsProbeExitDiag(w io.Writer, diagPath string) {
 		windowsProbe(w, 6, false, fmt.Sprintf("exit-diag log unreadable: %s", err))
 		return
 	}
-	tail := pystr.Splitlines(pystr.DecodeUTF8Replace(raw), false)
+	tail := textutil.Lines(strings.ToValidUTF8(string(raw), "\uFFFD"))
 	lastEvent := ""
 	for i := len(tail) - 1; i >= 0; i-- {
 		if strings.TrimSpace(tail[i]) != "" {

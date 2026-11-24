@@ -211,7 +211,7 @@ func TestClarifyCleanAnswerPrintsDecodedItemsAsPythonStr(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("multi answer %#v, want %#v", got, want)
 	}
-	if got := clarifyCleanAnswer("\x1c b (recommended)\x1f", false); got != "b" {
+	if got := clarifyCleanAnswer("\t b (recommended)\t", false); got != "b" {
 		t.Fatalf("single answer %q", got)
 	}
 }

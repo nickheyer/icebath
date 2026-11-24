@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"

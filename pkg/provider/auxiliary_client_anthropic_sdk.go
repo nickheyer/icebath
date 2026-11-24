@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Anthropic SDK style client over the Messages wire, taking raw api kwargs and returning raw Message maps
@@ -358,8 +357,8 @@ func (c *anthropicSDKClient) create(ctx context.Context, apiKwargs map[string]an
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		apiErr := Classify(c.inner.route.Provider, c.inner.route.Model, resp.StatusCode, pystr.DecodeUTF8Replace(data), err)
-		apiErr.Message = "Provider returned a non-JSON message body: " + truncate(redactSensitiveText(strings.TrimSpace(pystr.DecodeUTF8Replace(data))), 300)
+		apiErr := Classify(c.inner.route.Provider, c.inner.route.Model, resp.StatusCode, strings.ToValidUTF8(string(data), "\uFFFD"), err)
+		apiErr.Message = "Provider returned a non-JSON message body: " + truncate(redactSensitiveText(strings.TrimSpace(strings.ToValidUTF8(string(data), "\uFFFD"))), 300)
 		return nil, apiErr
 	}
 	return payload, nil

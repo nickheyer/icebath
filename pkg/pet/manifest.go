@@ -1,12 +1,11 @@
 package pet
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 

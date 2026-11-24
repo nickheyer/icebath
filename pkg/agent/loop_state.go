@@ -1,10 +1,9 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"

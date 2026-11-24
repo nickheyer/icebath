@@ -74,8 +74,8 @@ func TestNormalizeProfileNameLiteralZeroStringIsAValidExplicitName(t *testing.T)
 	}
 }
 
-func TestNormalizeProfileNameDefaultCaseAndBlankAndUnicodeFolds(t *testing.T) {
-	for in, want := range map[string]string{"DEFAULT": "default", "\x1cDeFault\x1f": "default", "İX": "i̇x"} {
+func TestNormalizeProfileNameDefaultCaseAndBlank(t *testing.T) {
+	for in, want := range map[string]string{"DEFAULT": "default", "\tDeFault\t": "default"} {
 		if got, err := NormalizeProfileName(in); err != nil || got != want {
 			t.Fatalf("%q -> %q %v", in, got, err)
 		}

@@ -4,11 +4,11 @@ import (
 	"context"
 	"math"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -49,7 +49,7 @@ func delegationShape(payload *pyjson.Object, keys ...string) error {
 // Refuses a value that is not a non empty string of at most 512 characters
 func delegationText(value any) error {
 	text, isText := value.(string)
-	if !isText || text == "" || pystr.Len(text) > 512 {
+	if !isText || text == "" || utf8.RuneCountInString(text) > 512 {
 		return runtimeRefusal("invalid_params")
 	}
 	return nil

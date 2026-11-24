@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -70,7 +69,7 @@ func outln(c *cliui.Console, text string) { fmt.Fprintln(c.Out, text) }
 func printBanner(c *cliui.Console, title string) {
 	outln(c, "")
 	rule := strings.Repeat("─", 57)
-	for _, line := range []string{"┌" + rule + "┐", "│          󰆧 Icebath — " + pystr.Ljust(title, 35) + "│", "└" + rule + "┘"} {
+	for _, line := range []string{"┌" + rule + "┐", "│          󰆧 Icebath — " + fmt.Sprintf("%-35s", title) + "│", "└" + rule + "┘"} {
 		outln(c, c.Color(line, cliui.Magenta))
 	}
 }
@@ -146,14 +145,14 @@ func posixProbe(argv []string, timeout time.Duration) (*probeResult, error) {
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			return &probeResult{code: ee.ExitCode(), stdout: pystr.DecodeUTF8Replace(out.Bytes())}, nil
+			return &probeResult{code: ee.ExitCode(), stdout: strings.ToValidUTF8(string(out.Bytes()), "\uFFFD")}, nil
 		}
 		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	return &probeResult{code: 0, stdout: pystr.DecodeUTF8Replace(out.Bytes())}, nil
+	return &probeResult{code: 0, stdout: strings.ToValidUTF8(string(out.Bytes()), "\uFFFD")}, nil
 }
 
 // Running OpenClaw processes and services, exact binary names and node processes running an openclaw script
@@ -162,7 +161,7 @@ func detectOpenClawProcesses() ([]string, error) {
 	if runtime.GOOS == "windows" {
 		for _, exe := range []string{"openclaw.exe", "clawd.exe"} {
 			r := tools.BoundedProbeRun([]string{"tasklist", "/FI", "IMAGENAME eq " + exe}, 5*time.Second, nil, "", nil)
-			if r != nil && strings.Contains(lower(pystr.DecodeUTF8Replace([]byte(r.Stdout))), exe) {
+			if r != nil && strings.Contains(lower(strings.ToValidUTF8(string([]byte(r.Stdout)), "\uFFFD")), exe) {
 				found = append(found, "process: "+exe)
 			}
 		}
@@ -171,7 +170,7 @@ func detectOpenClawProcesses() ([]string, error) {
 			`Select-Object -First 1 ProcessId`
 		r := tools.BoundedProbeRun([]string{"powershell", "-NoProfile", "-Command", psCmd}, 5*time.Second, nil, "", nil)
 		if r != nil {
-			if pid := strip(pystr.DecodeUTF8Replace([]byte(r.Stdout))); pid != "" {
+			if pid := strip(strings.ToValidUTF8(string([]byte(r.Stdout)), "\uFFFD")); pid != "" {
 				found = append(found, "node.exe process with openclaw in command line (PID "+pid+")")
 			}
 		}
@@ -191,7 +190,7 @@ func detectOpenClawProcesses() ([]string, error) {
 			return nil, err
 		}
 		if r != nil && r.code == 0 {
-			pids = append(pids, pystr.SplitWhitespace(r.stdout, -1)...)
+			pids = append(pids, strings.Fields(r.stdout)...)
 		}
 	}
 	if len(pids) > 0 {
@@ -628,9 +627,9 @@ func printMigrationReport(c *cliui.Console, report *Report, dryRun, compactSkipp
 			kind := item.Kind
 			switch {
 			case g.status != StatusMigrated:
-				rows = append(rows, pystr.Ljust(kind, 22)+"  "+item.Reason)
+				rows = append(rows, fmt.Sprintf("%-22s", kind)+"  "+item.Reason)
 			case item.Destination != nil && *item.Destination != "":
-				rows = append(rows, pystr.Ljust(kind, 22)+" → "+strings.ReplaceAll(*item.Destination, userHome, "~"))
+				rows = append(rows, fmt.Sprintf("%-22s", kind)+" → "+strings.ReplaceAll(*item.Destination, userHome, "~"))
 			default:
 				rows = append(rows, kind)
 			}

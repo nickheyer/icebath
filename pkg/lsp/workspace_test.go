@@ -1,12 +1,13 @@
 package lsp
 
 import (
-	"github.com/nickheyer/icebath/pkg/workspaces"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"testing"
+
+	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
 func TestFindGitWorktreeFindsDotgit(t *testing.T) {

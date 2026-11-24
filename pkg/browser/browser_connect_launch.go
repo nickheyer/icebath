@@ -18,8 +18,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -219,7 +220,7 @@ func (l ChromeDebugLaunch) Hint() string {
 	}
 	for _, a := range l.Attempts {
 		if a.State == "exited" && a.StderrTail != "" {
-			lines := pystr.Splitlines(a.StderrTail, false)
+			lines := textutil.Lines(a.StderrTail)
 			return filepath.Base(a.Binary) + " exited before the debug port opened: " + strings.TrimSpace(lines[len(lines)-1])
 		}
 	}

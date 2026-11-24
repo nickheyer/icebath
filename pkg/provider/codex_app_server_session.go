@@ -1,8 +1,6 @@
 package provider
 
 import (
-	"unicode"
-
 	"errors"
 	"fmt"
 	"os"
@@ -11,12 +9,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const codexStderrTailLines = 12
@@ -228,7 +228,7 @@ func (e *CodexThreadResumeError) As(target any) bool {
 
 func newCodexThreadResumeError(threadID, detail string) *CodexThreadResumeError {
 	return &CodexThreadResumeError{
-		CodexAppServerError: CodexAppServerError{Code: -32600, Message: fmt.Sprintf("codex thread %s could not be resumed: %s", pystr.Slice(threadID, 0, 8), detail)},
+		CodexAppServerError: CodexAppServerError{Code: -32600, Message: fmt.Sprintf("codex thread %s could not be resumed: %s", textutil.First(threadID, 8), detail)},
 		ThreadID:            threadID,
 	}
 }
@@ -399,7 +399,7 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 		}
 		threadID = resumed
 		s.serviceTierSent = codexTierState{unknown: true}
-		pkgLog().Info(fmt.Sprintf("codex app-server thread resumed: id=%s cwd=%s", pystr.Slice(threadID, 0, 8), s.cwd))
+		pkgLog().Info(fmt.Sprintf("codex app-server thread resumed: id=%s cwd=%s", textutil.First(threadID, 8), s.cwd))
 	} else {
 		if s.historySeed != "" {
 			var parts []string
@@ -429,7 +429,7 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 		}
 		threadID = cxIDText(raw)
 		s.serviceTierSent = codexTierState{}
-		pkgLog().Info(fmt.Sprintf("codex app-server thread started: id=%s profile=%s cwd=%s", pystr.Slice(threadID, 0, 8), s.permissionProfile, s.cwd))
+		pkgLog().Info(fmt.Sprintf("codex app-server thread started: id=%s profile=%s cwd=%s", textutil.First(threadID, 8), s.permissionProfile, s.cwd))
 	}
 	s.threadID = threadID
 	return threadID, nil
@@ -452,7 +452,7 @@ func (s *CodexAppServerSession) resumeThread(client CodexRPCClient, wanted strin
 		return "", err
 	}
 	if got := codexExtractThreadID(result); got != wanted {
-		return "", newCodexThreadResumeError(wanted, fmt.Sprintf("app-server answered with thread %s", pyrepr.Repr(pystr.Slice(pyrepr.Str(got), 0, 8))))
+		return "", newCodexThreadResumeError(wanted, fmt.Sprintf("app-server answered with thread %s", pyrepr.Repr(textutil.First(pyrepr.Str(got), 8))))
 	}
 	return wanted, nil
 }

@@ -1,10 +1,9 @@
 package telegram
 
 import (
-	"strings"
-
 	"math/big"
 	"regexp"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"

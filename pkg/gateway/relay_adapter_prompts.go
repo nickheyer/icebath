@@ -414,7 +414,7 @@ func (a *RelayAdapter) CreateHandoffThread(ctx context.Context, parentChatID, na
 
 // Renames a thread through the connector, its no clobber guard preferred over the legacy name guard
 func (a *RelayAdapter) RenameThread(ctx context.Context, threadID, name string, opts ThreadRenameOptions) (bool, error) {
-	cleaned := strings.TrimSpace(strings.Join(pystr.SplitWhitespace(name, -1), " "))
+	cleaned := strings.TrimSpace(strings.Join(strings.Fields(name), " "))
 	if cleaned == "" || threadID == "" {
 		return false, nil
 	}

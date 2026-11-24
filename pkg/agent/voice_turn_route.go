@@ -1,19 +1,19 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"maps"
 	"reflect"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const voiceChatTask = "voice_chat"
@@ -198,7 +198,7 @@ func voiceBindFailureReason(message, className string) string {
 	if message == "" {
 		return className
 	}
-	return pystr.Splitlines(message, false)[0]
+	return textutil.Lines(message)[0]
 }
 
 // Binds the voice route of a marked turn and returns the system prompt the turn sends

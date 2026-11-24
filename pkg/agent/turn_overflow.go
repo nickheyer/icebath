@@ -8,10 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const overflowRetryHint = "   💡 Try /new to start a fresh conversation, or /compress to retry compression."
@@ -307,7 +308,7 @@ func recoverContextLength(r *overflowRecovery, errorMsg string) (PhaseVerdict, e
 				"❌ The provider rejected the request because the requested output length exceeds its output cap for this model, and the error did not state the allowed limit.",
 				"   💡 Icebath has no user setting for the output cap — check the endpoint's default max output (completion) tokens for this model on the server or proxy. (This is an output-cap error, not a context overflow — compression cannot fix it.)",
 			},
-			log:      fmt.Sprintf("%sOutput-cap error not routed into compression (max_tokens over provider cap): %s", a.logPrefix, pystr.Slice(errorMsg, 0, 200)),
+			log:      fmt.Sprintf("%sOutput-cap error not routed into compression (max_tokens over provider cap): %s", a.logPrefix, textutil.First(errorMsg, 200)),
 			softExit: true,
 		})
 	}
@@ -322,7 +323,7 @@ func recoverContextLength(r *overflowRecovery, errorMsg string) (PhaseVerdict, e
 				"   💡 Wait a moment and /retry; another request on the same server (e.g. a background review) may have been holding its context.",
 			},
 			log: fmt.Sprintf("%sProvider context rejection not explained by request size (~%s of %s tokens); skipping compression: %s",
-				a.logPrefix, groupThousands(requestTokens), groupThousands(window), pystr.Slice(errorMsg, 0, 200)),
+				a.logPrefix, groupThousands(requestTokens), groupThousands(window), textutil.First(errorMsg, 200)),
 			softExit: true, reason: string(provider.ReasonServerError), retryable: true,
 		})
 	}

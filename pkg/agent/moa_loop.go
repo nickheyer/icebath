@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"unicode"
-
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"

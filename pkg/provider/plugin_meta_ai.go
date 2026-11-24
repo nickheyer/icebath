@@ -2,10 +2,11 @@ package provider
 
 import (
 	"context"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Live catalog prefixes of image generation and transcription models kept out of the agent picker

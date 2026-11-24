@@ -3,8 +3,8 @@ package skills
 import (
 	"context"
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 

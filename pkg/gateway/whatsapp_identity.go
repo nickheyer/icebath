@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -41,7 +42,7 @@ func isBarePhone(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !pystr.IsDecimal(r) && !pystr.IsSpace(r) && !strings.ContainsRune("().-", r) {
+		if !unicode.IsDigit(r) && !unicode.IsSpace(r) && !strings.ContainsRune("().-", r) {
 			return false
 		}
 	}
@@ -65,7 +66,7 @@ func ToWhatsAppJID(value string) string {
 	if isBarePhone(normalized) {
 		var digits strings.Builder
 		for _, r := range normalized {
-			if pystr.IsDecimal(r) {
+			if unicode.IsDigit(r) {
 				digits.WriteRune(r)
 			}
 		}

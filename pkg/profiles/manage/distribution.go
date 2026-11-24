@@ -1,8 +1,6 @@
 package manage
 
 import (
-	"unicode"
-
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -17,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"

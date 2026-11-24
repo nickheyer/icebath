@@ -1,15 +1,15 @@
 package telegram
 
 import (
-	"unicode"
-
 	"context"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Plain text of a rich message inline node, its text or children flattened recursively
@@ -54,7 +54,7 @@ func flattenRichBlocks(blocks any) string {
 				if !ok {
 					continue
 				}
-				itemLines := pystr.Splitlines(flattenRichBlocks(item["blocks"]), false)
+				itemLines := textutil.Lines(flattenRichBlocks(item["blocks"]))
 				if len(itemLines) == 0 {
 					continue
 				}
@@ -68,7 +68,7 @@ func flattenRichBlocks(blocks any) string {
 			continue
 		}
 		if text := flattenRichInlineText(block["text"]); text != "" {
-			lines = append(lines, pystr.Splitlines(text, false)...)
+			lines = append(lines, textutil.Lines(text)...)
 		}
 	}
 	var kept []string

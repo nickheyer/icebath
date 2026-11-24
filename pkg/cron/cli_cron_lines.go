@@ -11,6 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Catalog text under cli.commands in the active language, formatted with alternating keyword pairs
@@ -28,7 +30,7 @@ func cliT(ctx context.Context, key string, kv ...any) string {
 // Each line of a catalog value prefixed with pad, blank lines kept blank
 func cliLines(text, pad string) []string {
 	var out []string
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		if line == "" {
 			out = append(out, "")
 		} else {
@@ -109,8 +111,8 @@ func (s *Store) cronOverviewLines(ctx context.Context) []string {
 	}
 	out = append(out, "  "+cliT(ctx, "cron.current_jobs"), "  "+strings.Repeat("-", 63))
 	for _, job := range jobs {
-		out = append(out, fmt.Sprintf("    %s | %s | %s", pystr.Ljust(pystr.Slice(pyrepr.Str(field(job, "job_id", nil)), 0, 12), 12),
-			pystr.Ljust(pyrepr.Str(field(job, "schedule", nil)), 15), pystr.Ljust(pyrepr.Str(field(job, "repeat", "?")), 8)))
+		out = append(out, fmt.Sprintf("    %-12s | %-15s | %-8s", textutil.First(pyrepr.Str(field(job, "job_id", nil)), 12),
+			pyrepr.Str(field(job, "schedule", nil)), pyrepr.Str(field(job, "repeat", "?"))))
 		if pyrepr.Truthy(field(job, "skills", nil)) {
 			out = append(out, "      "+cliT(ctx, "cron.skills", "skills", joinedSkills(job)))
 		}

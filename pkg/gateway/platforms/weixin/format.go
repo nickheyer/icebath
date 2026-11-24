@@ -2,6 +2,7 @@ package weixin
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -41,7 +44,7 @@ type markdownLine struct {
 func walkMarkdownLines(content string) []markdownLine {
 	var out []markdownLine
 	inCodeBlock := false
-	for _, raw := range pystr.Splitlines(content, false) {
+	for _, raw := range textutil.Lines(content) {
 		line := strings.TrimRightFunc(raw, unicode.IsSpace)
 		isFence := matches(fenceRE, strings.TrimSpace(line))
 		out = append(out, markdownLine{line, isFence, inCodeBlock})
@@ -82,7 +85,7 @@ func wrapCopyFriendlyLinesForWeixin(content string) string {
 	var wrapped []string
 	for _, l := range walkMarkdownLines(content) {
 		stripped := strings.TrimSpace(l.line)
-		keep := l.isFence || l.inCodeBlock || pystr.Len(l.line) <= weixinCopyLineWidth || stripped == "" || strings.HasPrefix(stripped, "|")
+		keep := l.isFence || l.inCodeBlock || utf8.RuneCountInString(l.line) <= weixinCopyLineWidth || stripped == "" || strings.HasPrefix(stripped, "|")
 		if keep || matches(tableRuleRE, stripped) {
 			wrapped = append(wrapped, l.line)
 			continue
@@ -132,7 +135,7 @@ func splitMarkdownBlocks(content string) []string {
 func splitDeliveryUnitsForWeixin(content string) []string {
 	var units []string
 	for _, block := range splitMarkdownBlocks(content) {
-		lines := pystr.Splitlines(block, false)
+		lines := textutil.Lines(block)
 		if matches(fenceRE, strings.TrimSpace(lines[0])) {
 			units = append(units, block)
 			continue
@@ -164,7 +167,7 @@ func splitDeliveryUnitsForWeixin(content string) []string {
 // Whether a line reads as a short chat line rather than a list, quote, heading or table row
 func looksLikeChattyLineForWeixin(line string) bool {
 	stripped := strings.TrimSpace(line)
-	if stripped == "" || pystr.Len(stripped) > 48 || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+	if stripped == "" || utf8.RuneCountInString(stripped) > 48 || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
 		return false
 	}
 	for _, prefix := range []string{">", "-", "*", "【", "#", "|"} {
@@ -178,7 +181,7 @@ func looksLikeChattyLineForWeixin(line string) bool {
 // Whether a block of two to six chatty lines without a heading first line splits into separate bubbles
 func shouldSplitShortChatBlockForWeixin(block string) bool {
 	var lines []string
-	for _, line := range pystr.Splitlines(block, false) {
+	for _, line := range textutil.Lines(block) {
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
@@ -187,7 +190,7 @@ func shouldSplitShortChatBlockForWeixin(block string) bool {
 		return false
 	}
 	first := strings.TrimSpace(lines[0])
-	if matches(headerRE, first) || (pystr.Len(first) <= 24 && (strings.HasSuffix(first, ":") || strings.HasSuffix(first, "："))) {
+	if matches(headerRE, first) || (utf8.RuneCountInString(first) <= 24 && (strings.HasSuffix(first, ":") || strings.HasSuffix(first, "："))) {
 		return false
 	}
 	for _, line := range lines {
@@ -200,7 +203,7 @@ func shouldSplitShortChatBlockForWeixin(block string) bool {
 
 // Markdown blocks packed greedily under the length cap, an oversized block truncated on its own
 func packMarkdownBlocksForWeixin(content string, maxLength int) []string {
-	if pystr.Len(content) <= maxLength {
+	if utf8.RuneCountInString(content) <= maxLength {
 		return []string{content}
 	}
 	overflow := func(block string) []string { return gateway.TruncateMessage(block, maxLength, nil) }
@@ -213,13 +216,13 @@ func splitTextForWeixinDelivery(content string, maxLength int, splitPerLine bool
 		return []string{}
 	}
 	if splitPerLine {
-		if pystr.Len(content) <= maxLength && !strings.Contains(content, "\n") {
+		if utf8.RuneCountInString(content) <= maxLength && !strings.Contains(content, "\n") {
 			return []string{content}
 		}
 		var chunks []string
 		for _, unit := range splitDeliveryUnitsForWeixin(content) {
 			packed := []string{unit}
-			if pystr.Len(unit) > maxLength {
+			if utf8.RuneCountInString(unit) > maxLength {
 				packed = packMarkdownBlocksForWeixin(unit, maxLength)
 			}
 			for _, chunk := range packed {
@@ -233,7 +236,7 @@ func splitTextForWeixinDelivery(content string, maxLength int, splitPerLine bool
 		}
 		return chunks
 	}
-	if pystr.Len(content) > maxLength {
+	if utf8.RuneCountInString(content) > maxLength {
 		if packed := packMarkdownBlocksForWeixin(content, maxLength); len(packed) > 0 {
 			return packed
 		}

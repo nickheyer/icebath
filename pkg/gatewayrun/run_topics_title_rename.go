@@ -1,13 +1,12 @@
 package gatewayrun
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -15,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -54,7 +52,7 @@ func collapseTitle(ctx context.Context, title string) string {
 	var b strings.Builder
 	inSpace := false
 	for _, r := range title {
-		if pystr.IsSpace(r) {
+		if unicode.IsSpace(r) {
 			if !inSpace {
 				b.WriteByte(' ')
 			}

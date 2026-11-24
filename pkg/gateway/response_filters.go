@@ -7,7 +7,8 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -40,7 +41,7 @@ func bracketedMarkers() []string {
 
 // Upper cased text with whitespace runs collapsed to single spaces
 func canonicalSilenceCandidate(text string) string {
-	return strings.Join(pystr.SplitWhitespace(strings.ToUpper(strings.TrimSpace(text)), -1), " ")
+	return strings.Join(strings.Fields(strings.ToUpper(strings.TrimSpace(text))), " ")
 }
 
 // Punctuation other than square brackets
@@ -163,7 +164,7 @@ func IsAutonomousSilenceResponse(response any) bool {
 		return false
 	}
 	var lines []string
-	for _, ln := range pystr.Splitlines(stripped, false) {
+	for _, ln := range textutil.Lines(stripped) {
 		if strings.TrimSpace(ln) != "" {
 			lines = append(lines, ln)
 		}

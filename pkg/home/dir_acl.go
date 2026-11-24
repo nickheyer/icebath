@@ -106,7 +106,7 @@ func cachedWhoamiSID() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text := strings.ReplaceAll(strings.ReplaceAll(pystr.DecodeUTF8Replace(out), "\r\n", "\n"), "\r", "\n")
+	text := strings.ReplaceAll(strings.ReplaceAll(strings.ToValidUTF8(string(out), "\uFFFD"), "\r\n", "\n"), "\r", "\n")
 	stripped := strings.TrimSpace(text)
 	sid := strings.Trim(strings.TrimSpace(stripped[strings.LastIndex(stripped, ",")+1:]), `"`)
 	if !strings.HasPrefix(strings.ToUpper(sid), "S-1-") {

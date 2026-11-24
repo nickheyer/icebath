@@ -22,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -665,13 +664,13 @@ func findAdHocMatch(command, root string, exitCode int) ([]string, bool, error) 
 
 // Stripped output capped to head and tail with the omitted count between
 func summarizeVerifyOutput(output string) string {
-	runes := pystr.Runes(strings.TrimSpace(output))
+	runes := []rune(strings.TrimSpace(output))
 	if len(runes) <= maxVerifyOutputSummaryChars {
-		return pystr.FromRunes(runes)
+		return string(runes)
 	}
 	head := maxVerifyOutputSummaryChars / 3
-	return fmt.Sprintf("%s\n... [%d chars omitted] ...\n%s", pystr.FromRunes(runes[:head]),
-		len(runes)-maxVerifyOutputSummaryChars, pystr.FromRunes(runes[len(runes)-(maxVerifyOutputSummaryChars-head):]))
+	return fmt.Sprintf("%s\n... [%d chars omitted] ...\n%s", string(runes[:head]),
+		len(runes)-maxVerifyOutputSummaryChars, string(runes[len(runes)-(maxVerifyOutputSummaryChars-head):]))
 }
 
 // Bounds ledger growth per session root, by age and in total without dropping referenced events
@@ -1001,8 +1000,8 @@ func mergeChangedPaths(existing any, changed []string) ([]any, error) {
 			items = append(items, k)
 		}
 	case string:
-		for _, r := range pystr.Runes(v) {
-			items = append(items, pystr.FromRunes([]rune{r}))
+		for _, r := range []rune(v) {
+			items = append(items, string([]rune{r}))
 		}
 	default:
 		return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("recorded changed paths are %s where a list was expected", errchain.Kind(existing))}

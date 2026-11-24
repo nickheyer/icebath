@@ -9,7 +9,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const blackholeDevice = "BlackHole 2ch"
@@ -168,7 +169,7 @@ func parseModuleID(stdout string) (int, error) {
 	if text == "" {
 		return 0, errors.New("pactl load-module returned empty stdout")
 	}
-	fields := strings.Fields(strings.TrimSpace(pystr.Splitlines(text, false)[0]))
+	fields := strings.Fields(strings.TrimSpace(textutil.Lines(text)[0]))
 	token := fields[len(fields)-1]
 	n, ok := pyint.Parse(token)
 	if !ok || !n.IsInt64() {

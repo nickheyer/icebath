@@ -279,15 +279,15 @@ func pathsAMoveCouldWrite(ctx context.Context, root string) (map[string]bool, bo
 		return nil, false
 	default:
 		raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
-		fetched = strings.Split(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(raw)), "\n")
+		fetched = strings.Split(pystr.TranslateNewlines(strings.ToValidUTF8(string(raw), "\uFFFD")), "\n")
 	}
 	targets := map[string]bool{}
 	for _, line := range fetched {
-		if fields := pystr.SplitWhitespace(line, -1); len(fields) > 0 {
+		if fields := strings.Fields(line); len(fields) > 0 {
 			targets[fields[0]] = true
 		}
 	}
-	for _, ref := range pystr.SplitWhitespace(refs.Stdout, -1) {
+	for _, ref := range strings.Fields(refs.Stdout) {
 		targets[ref] = true
 	}
 	if len(targets) == 0 || len(targets) > maxMoveTargets {

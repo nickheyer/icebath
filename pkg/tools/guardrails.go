@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"unicode"
-
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"

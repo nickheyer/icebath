@@ -19,6 +19,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
@@ -186,7 +187,7 @@ func iterProcFDTargets(fn func(pid int, target, fdPath string)) error {
 		return err
 	}
 	for _, pidStr := range pids {
-		if pidStr == "" || !pystr.All(pidStr, pystr.IsDigit) {
+		if pidStr == "" || !pystr.All(pidStr, unicode.IsDigit) {
 			continue
 		}
 		fdDir := "/proc/" + pidStr + "/fd"
@@ -320,7 +321,7 @@ func iterDarwinFDTargetsWith(loadLib func() (darwinLibprocAPI, error), allPIDs f
 			if i := slices.Index(raw, 0); i >= 0 {
 				raw = raw[:i]
 			}
-			fn(pid, fd, pystr.DecodeUTF8Replace(raw), identity)
+			fn(pid, fd, strings.ToValidUTF8(string(raw), "\uFFFD"), identity)
 		}
 	}
 	return nil
@@ -462,7 +463,7 @@ func ownDescriptorForIdentity(identity FileIdentity) (int, bool) {
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			if name == "" || !pystr.All(name, pystr.IsDigit) {
+			if name == "" || !pystr.All(name, unicode.IsDigit) {
 				continue
 			}
 			fd, err := strconv.Atoi(name)

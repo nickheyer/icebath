@@ -1,13 +1,12 @@
 package commands
 
 import (
-	"strings"
-
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"

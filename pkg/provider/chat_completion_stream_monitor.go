@@ -8,9 +8,9 @@ import (
 	"net/url"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -224,7 +224,7 @@ func (c *streamCall) current() int {
 func (c *streamCall) discard(attempt int, chunk any) {
 	size := 0
 	if chunk != nil {
-		size = pystr.Len(pyrepr.Repr(chunk))
+		size = utf8.RuneCountInString(pyrepr.Repr(chunk))
 	}
 	c.mu.Lock()
 	c.discardedChunks++

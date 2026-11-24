@@ -1,14 +1,13 @@
 package skills
 
 import (
-	"strings"
-
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

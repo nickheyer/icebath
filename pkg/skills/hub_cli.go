@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -240,7 +239,7 @@ func skillMDPreview(b *SkillBundle) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	lines := strings.Split(pystr.DecodeUTF8Replace(data), "\n")
+	lines := strings.Split(strings.ToValidUTF8(string(data), "\uFFFD"), "\n")
 	more := ""
 	if len(lines) > 50 {
 		more = fmt.Sprintf("\n\n... (%d more lines)", len(lines)-50)

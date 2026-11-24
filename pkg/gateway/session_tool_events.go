@@ -1,9 +1,12 @@
 package gateway
 
 import (
+	"unicode/utf8"
+
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Viewer payload ceiling of one tool event field, the full input and output stay in canonical history
@@ -34,12 +37,12 @@ func boundedArgs(args any) any {
 			break
 		}
 		value := object.Vals[key]
-		name := pystr.Slice(key, 0, 256)
+		name := textutil.First(key, 256)
 		text, isText := value.(string)
 		if !isText {
 			text = toolEventJSON(value)
 		}
-		text = pystr.Slice(text, 0, min(4096, remaining))
+		text = textutil.First(text, min(4096, remaining))
 		result.Set(name, text)
 		remaining -= len(toolEventJSON([]any{name, text}))
 	}
@@ -52,14 +55,14 @@ func boundedResult(result any, isError bool) string {
 	if !isText {
 		text = toolEventJSON(result)
 	}
-	if pystr.Len(text) <= maxToolEventChars {
+	if utf8.RuneCountInString(text) <= maxToolEventChars {
 		return text
 	}
 	key := "output"
 	if isError {
 		key = "error"
 	}
-	return toolEventJSON(pyjson.ObjectOf(key, pystr.Slice(text, 0, maxToolEventChars/2), "truncated", true))
+	return toolEventJSON(pyjson.ObjectOf(key, textutil.First(text, maxToolEventChars/2), "truncated", true))
 }
 
 // Tool arguments within the viewer ceiling, for the managed worker child

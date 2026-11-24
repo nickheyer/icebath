@@ -22,6 +22,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -90,7 +92,7 @@ type jobRunOutcome struct {
 // False only when the last non blank stdout line is a JSON object whose wakeAgent is exactly false
 func parseWakeGate(scriptOutput string) bool {
 	var lines []string
-	for _, line := range pystr.Splitlines(scriptOutput, false) {
+	for _, line := range textutil.Lines(scriptOutput) {
 		if strings.TrimSpace(line) != "" {
 			lines = append(lines, line)
 		}
@@ -266,7 +268,7 @@ func silentAuditDocument(candidate string) bool {
 	}
 	header, _, _ := strings.Cut(candidate, "\n---\n")
 	header, _, _ = strings.Cut(header, "\n## Prompt")
-	for _, line := range pystr.Splitlines(header, false) {
+	for _, line := range textutil.Lines(header) {
 		if strings.HasPrefix(line, "**Status:** no_change") || strings.HasPrefix(line, "**Status:** silent") || strings.HasPrefix(line, "Script gate returned `wakeAgent=false`") {
 			return true
 		}

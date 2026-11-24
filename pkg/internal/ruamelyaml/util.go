@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -21,7 +20,7 @@ func itoa(n int) string { return strconv.Itoa(n) }
 func pyStrRepr(s string) string { return pyrepr.StrRepr(s) }
 
 // Python repr of one character, a surrogate kept as its own code point
-func charRepr(r rune) string { return pyrepr.StrRepr(pystr.FromRunes([]rune{r})) }
+func charRepr(r rune) string { return pyrepr.StrRepr(string([]rune{r})) }
 
 // Digits Python int() converts before the str conversion limit refuses the text
 const intMaxStrDigits = 4300

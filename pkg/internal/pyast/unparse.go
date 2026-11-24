@@ -931,7 +931,7 @@ func escapeChar(r rune, special bool) string {
 		return `\\`
 	}
 	if pystr.IsPrintable(r) {
-		return pystr.FromRunes([]rune{r})
+		return string([]rune{r})
 	}
 	switch r {
 	case '\t':
@@ -953,7 +953,7 @@ func escapeChar(r rune, special bool) string {
 // String literal text and usable quote styles minimizing escapes, as _str_literal_helper
 func strLiteralHelper(s string, quotes []string, special bool) (string, []string) {
 	var b strings.Builder
-	for _, r := range pystr.Runes(s) {
+	for _, r := range []rune(s) {
 		b.WriteString(escapeChar(r, special))
 	}
 	escaped := b.String()

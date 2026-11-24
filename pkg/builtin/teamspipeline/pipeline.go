@@ -25,10 +25,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Job states that end a run, states of a run in flight and recording suffixes that need no audio extraction
@@ -319,7 +320,7 @@ func sections(payload *TeamsMeetingSummaryPayload) []summarySection {
 func summaryHead(v any) (any, error) {
 	switch t := v.(type) {
 	case string:
-		return pystr.Slice(t, 0, 1900), nil
+		return textutil.First(t, 1900), nil
 	case []any:
 		return append([]any{}, t[:min(len(t), 1900)]...), nil
 	case *pyjson.Object, map[string]any:
@@ -1270,7 +1271,7 @@ func buildSummaryPrompt(meetingRef *TeamsMeetingRef, transcriptText string, arti
 	return "Meeting ID: " + meetingRef.MeetingID + "\n" +
 		"Title: " + pyrepr.Str(or(get(meetingRef.Metadata, "subject"), "Unknown")) + "\n" +
 		"Artifacts:\n" + listing + "\n\n" +
-		"Transcript:\n" + pystr.Slice(transcriptText, 0, 18000)
+		"Transcript:\n" + textutil.First(transcriptText, 18000)
 }
 
 // Stripped text of every item whose text is not blank
@@ -1335,7 +1336,7 @@ func parseSummaryJSON(content string) (summaryFields, error) {
 // Summary fields derived from the transcript lines without a model
 func heuristicSummary(transcriptText string) summaryFields {
 	lines, lowered := []string{}, []string{}
-	for _, line := range pystr.Splitlines(transcriptText, false) {
+	for _, line := range textutil.Lines(transcriptText) {
 		if strings.TrimSpace(line) != "" {
 			stripped := strings.Trim(line, " -*\t")
 			lines, lowered = append(lines, stripped), append(lowered, strings.ToLower(stripped))
@@ -1350,7 +1351,7 @@ func heuristicSummary(transcriptText string) summaryFields {
 		}
 		return out
 	}
-	summary := pystr.Slice(strings.Join(lines[:min(3, len(lines))], " "), 0, 1200)
+	summary := textutil.First(strings.Join(lines[:min(3, len(lines))], " "), 1200)
 	if summary == "" {
 		summary = "Transcript unavailable or too sparse for a confident summary."
 	}

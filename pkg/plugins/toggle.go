@@ -1,14 +1,13 @@
 package plugins
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sort"
+	"strings"
 
 	xterm "github.com/charmbracelet/x/term"
 

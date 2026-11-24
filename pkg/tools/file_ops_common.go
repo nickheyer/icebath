@@ -354,7 +354,7 @@ func pyLower(s string) string {
 	if isASCIIString(s) {
 		return strings.ToLower(s)
 	}
-	rs := pystr.Runes(s)
+	rs := []rune(s)
 	var b strings.Builder
 	for i, at := 0, 0; at < len(s); i++ {
 		r, size := pystr.DecodeRune(s[at:])

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -31,6 +32,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -322,7 +325,7 @@ func decryptFileBytes(encryptedData []byte, aesKey string) ([]byte, error) {
 	if aesKey == "" {
 		return nil, &pyErr{"ValueError", "aes_key is required"}
 	}
-	key, err := pybase64.B64Decode(aesKey + strings.Repeat("=", (4-pystr.Len(aesKey)%4)%4))
+	key, err := pybase64.B64Decode(aesKey + strings.Repeat("=", (4-utf8.RuneCountInString(aesKey)%4)%4))
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +356,7 @@ func decryptFileBytes(encryptedData []byte, aesKey string) ([]byte, error) {
 // Downloads a remote media under the SSRF guard and the size cap, returning its bytes and lowercased headers
 func (a *WeComAdapter) downloadRemoteBytes(ctx context.Context, url string, maxBytes int) ([]byte, map[string]string, error) {
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), url) {
-		return nil, nil, &pyErr{"ValueError", "Blocked unsafe URL (SSRF protection): " + pystr.Slice(url, 0, 80)}
+		return nil, nil, &pyErr{"ValueError", "Blocked unsafe URL (SSRF protection): " + textutil.First(url, 80)}
 	}
 	a.mu.Lock()
 	client := a.httpClient

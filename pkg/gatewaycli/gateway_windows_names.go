@@ -1,14 +1,13 @@
 package gatewaycli
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/profiles"

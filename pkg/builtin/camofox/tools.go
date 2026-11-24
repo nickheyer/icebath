@@ -19,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -69,7 +71,7 @@ func (s *scope) fetchSnapshot(ss *session) (string, any, error) {
 	if !ok {
 		return "", nil, &pyError{"TypeError", "object of type 'NoneType' has no len()"}
 	}
-	if int64(pystr.Len(snapshot)) > threshold {
+	if int64(utf8.RuneCountInString(snapshot)) > threshold {
 		snapshot = s.truncateSnapshot(snapshot, threshold)
 	}
 	refs, err := get(data, "refsCount", int64(0))
@@ -588,7 +590,7 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 // Netscape cookie file text as Playwright cookie objects, BOM, HttpOnly prefix and tab bearing values handled
 func netscapeParse(text string) []*pyjson.Object {
 	var cookies []*pyjson.Object
-	for _, rawLine := range pystr.Splitlines(strings.TrimLeft(text, "\uFEFF"), false) {
+	for _, rawLine := range textutil.Lines(strings.TrimLeft(text, "\uFEFF")) {
 		line := strings.TrimSpace(rawLine)
 		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "#HttpOnly_")) {
 			continue

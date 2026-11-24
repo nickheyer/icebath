@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
@@ -22,6 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Keyword arguments of one JSON-RPC call beyond its method and params
@@ -214,7 +217,7 @@ func splitSignalFormattedMessage(plainText string, textStyles []string, maxLengt
 		return []signalChunk{{plainText, textStyles}}
 	}
 	bodyLimit := max(1, maxLength-10)
-	runes := pystr.Runes(plainText)
+	runes := []rune(plainText)
 	offsets := utf16Offsets(runes)
 	var chunks []signalChunk
 	startIdx, totalU16 := 0, offsets[len(offsets)-1]
@@ -225,7 +228,7 @@ func splitSignalFormattedMessage(plainText string, textStyles []string, maxLengt
 			endIdx++
 		}
 		endIdx = max(endIdx-1, startIdx+1)
-		chunks = append(chunks, signalChunk{pystr.FromRunes(runes[startIdx:endIdx]), stylesForChunk(textStyles, offsets[startIdx], offsets[endIdx])})
+		chunks = append(chunks, signalChunk{string(runes[startIdx:endIdx]), stylesForChunk(textStyles, offsets[startIdx], offsets[endIdx])})
 		startIdx = endIdx
 	}
 	if len(chunks) == 1 {
@@ -276,7 +279,7 @@ func (a *SignalAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 		} else if len(chunk.styles) > 0 {
 			params.Set("textStyles", chunk.styles)
 		}
-		pkgLog().Info(fmt.Sprintf("[Signal] Sending response chunk %d/%d (%d chars) to %s", idx+1, len(chunks), pystr.Len(chunk.text), chatID))
+		pkgLog().Info(fmt.Sprintf("[Signal] Sending response chunk %d/%d (%d chars) to %s", idx+1, len(chunks), utf8.RuneCountInString(chunk.text), chatID))
 		result, failed, err := a.rpcSend(ctx, params, "RPC send failed")
 		if err != nil {
 			return gateway.SendResult{}, err
@@ -408,7 +411,7 @@ func (a *SignalAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 	}
 	scheduler := GetScheduler()
 	pkgLog().Info(fmt.Sprintf("Signal send_multiple_images: received %d image(s) for %s — scheduler state: %s", len(images),
-		pystr.Slice(chatID, 0, 30), pyrepr.Str(scheduler.State())))
+		textutil.First(chatID, 30), pyrepr.Str(scheduler.State())))
 	if err := a.stopTypingIndicator(ctx, chatID); err != nil {
 		return gateway.SendResult{}, err
 	}
@@ -696,7 +699,7 @@ func (a *SignalAdapter) sendReaction(ctx context.Context, chatID, emoji string, 
 		return false, err
 	}
 	if !ok {
-		pkgLog().Debug(fmt.Sprintf("Signal: sendReaction failed (chat=%s, emoji=%s)", pystr.Slice(chatID, 0, 20), emoji))
+		pkgLog().Debug(fmt.Sprintf("Signal: sendReaction failed (chat=%s, emoji=%s)", textutil.First(chatID, 20), emoji))
 	}
 	return ok, nil
 }

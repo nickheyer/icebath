@@ -4,6 +4,7 @@ package gatewayrun
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -14,8 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/kanban"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Task id of the kanban CLI create success line
@@ -66,8 +68,8 @@ func (r *GatewayRunner) runKanbanCommand(ctx context.Context, event *gateway.Mes
 			}
 		}
 	}
-	if pystr.Len(output) > 3800 {
-		output = pystr.Slice(output, 0, 3800) + "\n" + i18n.T(ctx, "gateway.kanban.truncated_suffix", "", nil)
+	if utf8.RuneCountInString(output) > 3800 {
+		output = textutil.First(output, 3800) + "\n" + i18n.T(ctx, "gateway.kanban.truncated_suffix", "", nil)
 	}
 	if output == "" {
 		return i18n.T(ctx, "gateway.kanban.no_output", "", nil), nil

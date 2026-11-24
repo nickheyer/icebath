@@ -326,7 +326,7 @@ func (m *IMAP4) Login(user, password string) (string, []any, error) {
 	}
 	if typ != "OK" {
 		last, _ := dat[len(dat)-1].([]byte)
-		return "", nil, imapError("%s", pystr.DecodeUTF8Replace(last))
+		return "", nil, imapError("%s", strings.ToValidUTF8(string(last), "\uFFFD"))
 	}
 	m.state = "AUTH"
 	if err := m.refreshCapabilities(false); err != nil {

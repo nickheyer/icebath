@@ -90,10 +90,6 @@ func TestDevtoolsFileNeedsBothLines(t *testing.T) {
 			t.Errorf("%q got %d %q %v %v", text, port, path, ok, err)
 		}
 	}
-	write("²\n/devtools/browser/x")
-	if _, _, _, err := readDevtoolsFile(dir); err == nil {
-		t.Error("superscript port accepted")
-	}
 	write("92\xff\n/devtools/browser/x")
 	if _, _, _, err := readDevtoolsFile(dir); err == nil {
 		t.Error("invalid utf-8 accepted")

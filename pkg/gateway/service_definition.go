@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -11,13 +9,15 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Raised when the account a system service should run as cannot be chosen or found
@@ -244,7 +244,7 @@ func prepareServiceLauncher(ctx context.Context, system bool, runAsUser string) 
 
 // Definition text trimmed with every line right stripped so whitespace drift never reads as stale
 func normalizeServiceDefinition(text string) string {
-	lines := pystr.Splitlines(strings.TrimSpace(text), false)
+	lines := textutil.Lines(strings.TrimSpace(text))
 	for i, line := range lines {
 		lines[i] = strings.TrimRightFunc(line, unicode.IsSpace)
 	}

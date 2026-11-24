@@ -4,8 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"unicode/utf8"
 )
 
 type sanitizeProbeError struct{ msg string }
@@ -53,8 +52,8 @@ func TestStripsBareFence(t *testing.T) {
 
 func TestCapsLongInput(t *testing.T) {
 	body := strings.TrimPrefix(SanitizeToolError(strings.Repeat("A", toolErrorMaxLen*2)), "[TOOL_ERROR] ")
-	if pystr.Len(body) != toolErrorMaxLen || !strings.HasSuffix(body, "...") {
-		t.Fatalf("capped body length %d", pystr.Len(body))
+	if utf8.RuneCountInString(body) != toolErrorMaxLen || !strings.HasSuffix(body, "...") {
+		t.Fatalf("capped body length %d", utf8.RuneCountInString(body))
 	}
 }
 

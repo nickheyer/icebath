@@ -17,8 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -245,7 +246,7 @@ func unitEnvironmentValue(unitPath, name string) (string, error) {
 		return "", errUnitDecode
 	}
 	text := strings.TrimPrefix(string(raw), "\ufeff")
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		body := strings.TrimSpace(line)
 		if !strings.HasPrefix(body, "Environment=") {
 			continue

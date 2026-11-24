@@ -3,10 +3,10 @@ package gateway
 import (
 	"context"
 	"math"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -217,7 +217,7 @@ func (c *PendingControls) respond(sessionID string, generation int64, promptID s
 			field = "answer"
 		}
 		value, ok := responseField(response, field)
-		if !ok || pystr.Len(value) > 16384 || (kind == "approval" && !offered(value)) {
+		if !ok || utf8.RuneCountInString(value) > 16384 || (kind == "approval" && !offered(value)) {
 			return nil, runtimeRefusal("invalid_params")
 		}
 		if err := responder(kind, promptID, value); err != nil {

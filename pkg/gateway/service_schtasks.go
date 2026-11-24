@@ -34,6 +34,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -1059,7 +1061,7 @@ func startOrReportRunning(ctx context.Context, pids []int, scanned bool) error {
 
 // Installs the Startup folder fallback unless a task survives, then starts once when asked
 func installWindowsStartupFallback(ctx context.Context, scriptPath string, startNow bool, detail string) error {
-	lines := pystr.Splitlines(detail, false)
+	lines := textutil.Lines(detail)
 	if len(lines) == 0 {
 		return errors.New("the scheduled task refusal has no detail to report")
 	}
@@ -1207,7 +1209,7 @@ func WindowsInstall(ctx context.Context, o WindowsInstallOptions) error {
 			return err
 		}
 		if !admin {
-			lines := pystr.Splitlines(detail, false)
+			lines := textutil.Lines(detail)
 			if len(lines) == 0 {
 				return errors.New("the scheduled task refusal has no detail to report")
 			}

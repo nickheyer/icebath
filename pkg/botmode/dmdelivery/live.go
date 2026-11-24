@@ -237,8 +237,8 @@ func pyDict(v any) (map[string]any, error) {
 	var items []any
 	switch t := v.(type) {
 	case string:
-		for _, r := range pystr.Runes(t) {
-			items = append(items, pystr.FromRunes([]rune{r}))
+		for _, r := range []rune(t) {
+			items = append(items, string([]rune{r}))
 		}
 	case []any:
 		items = t
@@ -252,8 +252,8 @@ func pyDict(v any) (map[string]any, error) {
 		case []any:
 			pair = t
 		case string:
-			for _, r := range pystr.Runes(t) {
-				pair = append(pair, pystr.FromRunes([]rune{r}))
+			for _, r := range []rune(t) {
+				pair = append(pair, string([]rune{r}))
 			}
 		default:
 			if d, ok := pyjson.AsObject(item); ok {

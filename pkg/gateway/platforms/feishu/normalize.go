@@ -1,9 +1,8 @@
 package feishu
 
 import (
-	"unicode"
-
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
@@ -14,7 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -337,7 +337,7 @@ func buildMarkdownPostRows(content string) []any {
 		}
 		current = nil
 	}
-	for _, raw := range pystr.Splitlines(content, false) {
+	for _, raw := range textutil.Lines(content) {
 		fenceRe := markdownFenceOpenRe
 		if inCode {
 			fenceRe = markdownFenceCloseRe

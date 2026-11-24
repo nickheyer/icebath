@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Reasons the overflow recovery paths handle
@@ -37,7 +38,7 @@ func capLongContextTier(a *AIAgent) int {
 			c.contextProbePersistable = false
 		}
 		a.bufferVprint(fmt.Sprintf("⚠️  Anthropic long-context tier requires extra usage — reducing context: %s → %s tokens",
-			pystr.GroupThousands(int64(oldCtx)), pystr.GroupThousands(longContextTierCap)))
+			textutil.Thousands(int64(oldCtx)), textutil.Thousands(longContextTierCap)))
 	}
 	return oldCtx
 }

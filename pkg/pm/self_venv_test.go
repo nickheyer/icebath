@@ -115,11 +115,6 @@ func TestSVVenvPythonVersionReadsTheTree(t *testing.T) {
 	if major, minor, ok, _ := VenvPythonVersion(lib); !ok || major+"."+minor != "3.11" {
 		t.Fatalf("lib version %s.%s", major, minor)
 	}
-	odd := filepath.Join(tmp, "c")
-	writeFile(t, filepath.Join(odd, "pyvenv.cfg"), []byte("version = ³.12\n"), 0o666)
-	if _, _, _, err := VenvPythonVersion(odd); err == nil || errorClass(err) != "ValueError" {
-		t.Fatalf("superscript digit gave %v", err)
-	}
 	if _, _, ok, err := VenvPythonVersion(filepath.Join(tmp, "missing")); ok || err != nil {
 		t.Fatal("a missing venv has no version")
 	}

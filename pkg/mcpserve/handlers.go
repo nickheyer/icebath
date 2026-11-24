@@ -12,8 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // MCP server name clients see in the initialize reply
@@ -147,7 +148,7 @@ func (h *toolHandlers) messagesRead(kw *pyjson.Object) string {
 		}
 		if content != "" {
 			filtered = append(filtered, pyjson.ObjectOf("id", pyrepr.Str(pyGet(msg, "id", "")), "role", role,
-				"content", pystr.Slice(content, 0, 2000), "timestamp", pyGet(msg, "timestamp", "")))
+				"content", textutil.First(content, 2000), "timestamp", pyGet(msg, "timestamp", "")))
 		}
 	}
 	messages := filtered[max(int64(len(filtered))-limit, 0):]

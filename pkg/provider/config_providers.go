@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"net/url"
@@ -10,8 +11,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"context"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"

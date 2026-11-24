@@ -1,15 +1,16 @@
 package tools
 
 import (
-	"unicode"
-
 	"strings"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Cap prepare_spoken_text applies when its caller passes no max_chars
@@ -202,7 +203,7 @@ func isDenseIdentifier(token string) bool {
 			return true
 		}
 	}
-	digits := strings.IndexFunc(token, pystr.IsDigit) >= 0
+	digits := strings.IndexFunc(token, unicode.IsDigit) >= 0
 	if strings.Contains(token, "/") && (ttsMatches(ttsFilenameExtRe, token) || digits) {
 		return true
 	}
@@ -252,7 +253,7 @@ func SmoothWhitespaceForTTS(text string) string {
 	if text == "" {
 		return ""
 	}
-	rawLines := pystr.Splitlines(text, false)
+	rawLines := textutil.Lines(text)
 	contentLines := 0
 	for _, raw := range rawLines {
 		if strings.TrimSpace(strings.ReplaceAll(raw, spokenHeadingMark, "")) != "" {
@@ -342,8 +343,8 @@ func PrepareSpokenText(text string, maxChars *int) string {
 		spoken = step(spoken)
 	}
 	if maxChars != nil && *maxChars > 0 {
-		if rs := pystr.Runes(spoken); len(rs) > *maxChars {
-			spoken = strings.TrimRightFunc(pystr.FromRunes(rs[:*maxChars]), unicode.IsSpace)
+		if rs := []rune(spoken); len(rs) > *maxChars {
+			spoken = strings.TrimRightFunc(string(rs[:*maxChars]), unicode.IsSpace)
 		}
 	}
 	return spoken

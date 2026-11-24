@@ -20,9 +20,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	_ "modernc.org/sqlite"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Events the bridge queue keeps, the oldest dropped past it
@@ -739,7 +740,7 @@ func (b *EventBridge) pollOnce(db *state.DB) {
 				continue
 			}
 			b.enqueue(&QueueEvent{Type: "message", SessionKey: key, Data: pyjson.ObjectOf(
-				"role", pyGet(msg, "role", ""), "content", pystr.Slice(content, 0, 500),
+				"role", pyGet(msg, "role", ""), "content", textutil.First(content, 500),
 				"timestamp", pyrepr.Str(pyGet(msg, "timestamp", "")), "message_id", pyrepr.Str(pyGet(msg, "id", "")))})
 		}
 		if latest := latestTS(messages); latest > lastSeen {

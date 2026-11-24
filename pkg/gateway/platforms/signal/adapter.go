@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
@@ -30,6 +31,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -230,7 +233,7 @@ func remuxAACToM4A(ctx context.Context, aacData []byte) ([]byte, bool) {
 		return nil, false
 	}
 	if proc.Returncode != 0 {
-		pkgLog().Warn(fmt.Sprintf("Signal: AAC→M4A remux failed (ffmpeg exit %d): %s", proc.Returncode, pystr.Slice(pystr.DecodeUTF8Replace(proc.Stderr), 0, 300)))
+		pkgLog().Warn(fmt.Sprintf("Signal: AAC→M4A remux failed (ffmpeg exit %d): %s", proc.Returncode, textutil.First(strings.ToValidUTF8(string(proc.Stderr), "\uFFFD"), 300)))
 		return nil, false
 	}
 	out, err := os.ReadFile(dstPath)
@@ -285,9 +288,7 @@ func renderMentions(text string, mentions any) (string, error) {
 	}
 	sort.SliceStable(parsed, func(i, j int) bool { return parsed[i].start > parsed[j].start })
 	for _, m := range parsed {
-		n := pystr.Len(text)
-		head, tail := pystr.Slice(text, 0, m.start), pystr.Slice(text, m.start+m.length, n)
-		text = head + "@" + m.identifier + tail
+		text = textutil.First(text, m.start) + "@" + m.identifier + textutil.DropFirst(text, m.start+m.length)
 	}
 	return text, nil
 }
@@ -296,7 +297,7 @@ func renderMentions(text string, mentions any) (string, error) {
 func parsesAsUUID(value string) bool {
 	hex := strings.ReplaceAll(strings.ReplaceAll(value, "urn:", ""), "uuid:", "")
 	hex = strings.ReplaceAll(strings.Trim(hex, "{}"), "-", "")
-	if pystr.Len(hex) != 32 {
+	if utf8.RuneCountInString(hex) != 32 {
 		return false
 	}
 	_, ok := pyint.ParseBase(hex, 16)
@@ -321,7 +322,7 @@ func looksLikeE164Number(value string) bool {
 		return false
 	}
 	digits := value[1:]
-	n := pystr.Len(digits)
+	n := utf8.RuneCountInString(digits)
 	return pystr.StrIsDigit(digits) && 7 <= n && n <= 15
 }
 
@@ -574,7 +575,7 @@ func (a *SignalAdapter) handleSSELine(ctx context.Context, line string) error {
 	a.touchSSEActivity()
 	envelope, err := pyjson.Loads(dataStr)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Signal SSE: invalid JSON: %s", pystr.Slice(dataStr, 0, 100)))
+		pkgLog().Debug(fmt.Sprintf("Signal SSE: invalid JSON: %s", textutil.First(dataStr, 100)))
 		return nil
 	}
 	if err := a.handleEnvelope(ctx, envelope); err != nil {
@@ -619,7 +620,7 @@ func (a *SignalAdapter) readSSEStream(ctx context.Context, rawURL string, backof
 			return nil
 		}
 		if readErr == nil {
-			if line := strings.TrimSpace(pystr.DecodeUTF8Replace(raw[:len(raw)-1])); line != "" {
+			if line := strings.TrimSpace(strings.ToValidUTF8(string(raw[:len(raw)-1]), "\uFFFD")); line != "" {
 				if err := a.handleSSELine(ctx, line); err != nil {
 					return err
 				}
@@ -1057,7 +1058,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 	event.ReplyToAuthorID = replyToAuthor
 	event.ReplyToAuthorName = optText(pyrepr.Or(quoteData["authorName"], quoteData["authorProfileName"]))
 	event.ReplyToIsOwnMessage = a.quoteReferencesOwnMessage(replyToID, replyToAuthor)
-	pkgLog().Debug(fmt.Sprintf("Signal: message from %s in %s: %s", gateway.RedactPhone(sender), pystr.Slice(chatID, 0, 20), pystr.Slice(text, 0, 50)))
+	pkgLog().Debug(fmt.Sprintf("Signal: message from %s in %s: %s", gateway.RedactPhone(sender), textutil.First(chatID, 20), textutil.First(text, 50)))
 	return a.HandleMessage(ctx, event)
 }
 
@@ -1070,7 +1071,7 @@ func (a *SignalAdapter) groupAllowed(groupID string) bool {
 	if !a.groupAllowFrom["*"] && !a.groupAllowFrom[groupID] {
 		label := "?"
 		if groupID != "" {
-			label = pystr.Slice(groupID, 0, 8)
+			label = textutil.First(groupID, 8)
 		}
 		pkgLog().Debug(fmt.Sprintf("Signal: group %s not in allowlist", label))
 		return false

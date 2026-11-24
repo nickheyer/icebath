@@ -1,8 +1,6 @@
 package provider
 
 import (
-	"unicode"
-
 	"bufio"
 	"bytes"
 	"errors"
@@ -17,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -626,7 +625,7 @@ func (c *CodexAppServerClient) readStderr(r io.ReadCloser) {
 	for {
 		raw, err := reader.ReadBytes('\n')
 		if len(raw) > 0 {
-			c.appendStderr(strings.TrimRightFunc(pystr.DecodeUTF8Replace(raw), unicode.IsSpace))
+			c.appendStderr(strings.TrimRightFunc(strings.ToValidUTF8(string(raw), "\uFFFD"), unicode.IsSpace))
 		}
 		if err != nil {
 			return
@@ -679,11 +678,11 @@ func CheckCodexBinary(codexBin string, minVersion [3]int) (bool, string, error) 
 	case errors.As(err, &timeout):
 		return false, "codex --version timed out", nil
 	case errors.As(err, &called):
-		return false, fmt.Sprintf("codex --version exited %d: %s", called.Returncode, strings.TrimSpace(pystr.TranslateNewlines(pystr.DecodeUTF8Replace(stderr)))), nil
+		return false, fmt.Sprintf("codex --version exited %d: %s", called.Returncode, strings.TrimSpace(pystr.TranslateNewlines(strings.ToValidUTF8(string(stderr), "\uFFFD")))), nil
 	case err != nil:
 		return false, "", err
 	}
-	out := pystr.TranslateNewlines(pystr.DecodeUTF8Replace(stdout))
+	out := pystr.TranslateNewlines(strings.ToValidUTF8(string(stdout), "\uFFFD"))
 	version, ok := ParseCodexVersion(out)
 	if !ok {
 		return false, fmt.Sprintf("could not parse codex version from: %s", pyrepr.Repr(out)), nil

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -18,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // ReleaseDate is the release date shown beside the version in banners
@@ -39,7 +42,7 @@ func hexToANSI(hexColor string, bold bool) string {
 	hexColor = maybeRemapForLightMode(hexColor)
 	var rgb [3]int64
 	for i, start := range []int{1, 3, 5} {
-		n, err := strconv.ParseInt(strings.TrimSpace(pystr.Slice(hexColor, start, start+2)), 16, 0)
+		n, err := strconv.ParseInt(strings.TrimSpace(textutil.Between(hexColor, start, start+2)), 16, 0)
 		if err != nil {
 			if bold {
 				return accentANSIDefault
@@ -61,7 +64,7 @@ var lightDefaultTermPrograms = map[string]bool{}
 // Rec. 709 luma in the unit range of a #RGB or #RRGGBB color, false when malformed
 func luminanceFromHex(hexStr string) (float64, bool) {
 	s := strings.TrimLeft(strings.TrimSpace(hexStr), "#")
-	if pystr.Len(s) == 3 {
+	if utf8.RuneCountInString(s) == 3 {
 		var b strings.Builder
 		for _, c := range s {
 			b.WriteRune(c)
@@ -69,7 +72,7 @@ func luminanceFromHex(hexStr string) (float64, bool) {
 		}
 		s = b.String()
 	}
-	if pystr.Len(s) != 6 {
+	if utf8.RuneCountInString(s) != 6 {
 		return 0, false
 	}
 	for _, c := range s {
@@ -212,7 +215,7 @@ var richANSITokenRe = regexp.MustCompile(`(?:\x1b\](.*?)\x1b\\)|(?:\x1b([(@-Z\\-
 
 // Plain text of ANSI output as rich Text.from_ansi reads it, lines rejoined by newlines
 func richPlainFromANSI(text string) string {
-	lines := pystr.Splitlines(text, false)
+	lines := textutil.Lines(text)
 	for i, line := range lines {
 		lines[i] = richANSITokenRe.ReplaceAllString(line, "")
 	}
@@ -276,7 +279,9 @@ func terminalColumns() int {
 }
 
 // Display cells inside the streamed response box with a small margin for resize races
-func terminalWidthForStreaming() int { return max(20, terminalColumns()-pystr.Len(streamPad)-2) }
+func terminalWidthForStreaming() int {
+	return max(20, terminalColumns()-utf8.RuneCountInString(streamPad)-2)
+}
 
 // Final assistant content as markdown, stripped text or raw text
 func renderFinalAssistantContent(text, mode string) pyrich.Renderable {

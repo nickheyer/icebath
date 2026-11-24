@@ -1,18 +1,16 @@
 package tools
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
 	"reflect"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -167,7 +165,7 @@ func CollectParentLoadedSkills(parent any, messages []map[string]any, limit int)
 
 // Viewer friendly goal and the complete reviewer briefing
 func BuildReviewTask(snapshot []map[string]string, userPrompt string, loadedSkills []string) (string, string) {
-	focus := strings.Join(pystr.SplitWhitespace(userPrompt, -1), " ")
+	focus := strings.Join(strings.Fields(userPrompt), " ")
 	goal := "Review recent work"
 	if focus != "" {
 		goal = "Review: " + focus

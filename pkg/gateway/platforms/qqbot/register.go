@@ -1,10 +1,9 @@
 package qqbot
 
 import (
-	"strings"
-
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/plugins"

@@ -1,10 +1,9 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/gateway"

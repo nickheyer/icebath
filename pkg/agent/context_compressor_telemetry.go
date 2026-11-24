@@ -1,10 +1,9 @@
 package agent
 
 import (
-	"unicode"
-
 	"context"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 

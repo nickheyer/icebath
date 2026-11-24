@@ -1,10 +1,9 @@
 package agent
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"

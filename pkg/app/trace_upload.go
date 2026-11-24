@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -240,7 +239,7 @@ func traceGitBranch(ctx context.Context, cwd string) string {
 	if err != nil || done.Returncode != 0 {
 		return ""
 	}
-	return strings.TrimSpace(pystr.DecodeUTF8Replace(done.Stdout))
+	return strings.TrimSpace(strings.ToValidUTF8(string(done.Stdout), "\uFFFD"))
 }
 
 // Assistant turn with text and tool_use blocks, one empty text block when it has neither

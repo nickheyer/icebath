@@ -12,11 +12,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Bounds of the per profile managed worker stderr sink
@@ -98,7 +101,7 @@ func redactWorkerLine(line string, scrub func() []string) string {
 			secrets = append(secrets, value)
 		}
 	}
-	sort.SliceStable(secrets, func(i, j int) bool { return pystr.Len(secrets[i]) > pystr.Len(secrets[j]) })
+	sort.SliceStable(secrets, func(i, j int) bool { return utf8.RuneCountInString(secrets[i]) > utf8.RuneCountInString(secrets[j]) })
 	for _, value := range secrets {
 		line = strings.ReplaceAll(line, value, "***")
 	}
@@ -140,10 +143,10 @@ func drainWorkerStderr(ctx context.Context, stream io.ReadCloser, path string, p
 			continue
 		}
 		skipping = !whole
-		line := redactWorkerLine(pystr.DecodeUTF8Replace(chunk), scrub)
+		line := redactWorkerLine(strings.ToValidUTF8(string(chunk), "\uFFFD"), scrub)
 		entry := fmt.Sprintf("[pid %d] %s", pid, line)
 		if !whole {
-			entry = fmt.Sprintf("[pid %d] %s [truncated]\n", pid, pystr.Slice(line, 0, keptWorkerLineChars))
+			entry = fmt.Sprintf("[pid %d] %s [truncated]\n", pid, textutil.First(line, keptWorkerLineChars))
 		}
 		if werr := appendWorkerLog(ctx, path, entry); werr != nil && !warned {
 			warned = true

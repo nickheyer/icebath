@@ -26,7 +26,7 @@ var insightsDashFlagRe = regexp.MustCompile(`[\x{2012}\x{2013}\x{2014}\x{2015}](
 
 // Agents rows for one background delegation with its live per child activity
 func agentsDelegationLines(ctx context.Context, d map[string]any) []string {
-	goal := clipText(strings.Join(pystr.SplitWhitespace(pyrepr.Str(pyrepr.Or(d["goal"], "")), -1), " "), 70)
+	goal := clipText(strings.Join(strings.Fields(pyrepr.Str(pyrepr.Or(d["goal"], ""))), " "), 70)
 	status, ok := d["status"]
 	if !ok {
 		status = "?"
@@ -190,7 +190,7 @@ func (r *GatewayRunner) handleAgentsCommand(ctx context.Context, event *gateway.
 	})...)
 	lines = append(lines, "", i18n.T(ctx, "gateway.agents.running_processes", "", map[string]any{"count": len(runningProcs)}))
 	lines = append(lines, cappedRows(ctx, runningProcs, func(p map[string]any) []string {
-		cmd := clipText(strings.Join(pystr.SplitWhitespace(pyrepr.Str(pyrepr.Or(p["command"], "")), -1), " "), 90)
+		cmd := clipText(strings.Join(strings.Fields(pyrepr.Str(pyrepr.Or(p["command"], ""))), " "), 90)
 		sessionID, ok := p["session_id"]
 		if !ok {
 			sessionID = "?"
@@ -217,7 +217,7 @@ func (r *GatewayRunner) handleUsageCommand(ctx context.Context, event *gateway.M
 	}
 	rawArgs := strings.TrimSpace(event.GetCommandArgs())
 	var args []string
-	for _, a := range pystr.SplitWhitespace(rawArgs, -1) {
+	for _, a := range strings.Fields(rawArgs) {
 		args = append(args, strings.ToLower(a))
 	}
 	wantsReset := len(args) > 0 && args[0] == "reset"
@@ -343,7 +343,7 @@ func (r *GatewayRunner) persistedBillingRoute(ctx context.Context, source *gatew
 func (r *GatewayRunner) handleInsightsCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	args := insightsDashFlagRe.ReplaceAllString(strings.TrimSpace(event.GetCommandArgs()), "--$1")
 	days, source := 30, ""
-	parts := pystr.SplitWhitespace(args, -1)
+	parts := strings.Fields(args)
 	for i := 0; i < len(parts); {
 		flag := parts[i]
 		hasValue := i+1 < len(parts)

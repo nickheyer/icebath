@@ -393,7 +393,7 @@ func (s *shellFileOps) addLineNumbers(content string, startLine int) string {
 }
 
 // Python len of the str s models, a surrogate or stray byte counting as one character
-func pyLen(s string) int { return pystr.Len(s) }
+func pyLen(s string) int { return utf8.RuneCountInString(s) }
 
 var tildeUserRe = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 

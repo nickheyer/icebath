@@ -1,12 +1,11 @@
 package gateway
 
 import (
-	"unicode"
-
 	"context"
 	"os"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"

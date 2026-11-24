@@ -7,11 +7,15 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Field shape check returning ok or the reason the value is malformed
@@ -46,31 +50,31 @@ func rulesValidator(label string, rules ...cloudRule) cloudValidator {
 func numericIDValidator(label string, lo, hi int, expected string) cloudValidator {
 	return rulesValidator(label,
 		cloudRule{func(s string) bool { return !pystr.StrIsDigit(s) }, fixed(label + " must be numeric")},
-		cloudRule{func(s string) bool { return pystr.Len(s) < lo || pystr.Len(s) > hi }, fixed(fmt.Sprintf("%s looks wrong (expected %s)", label, expected))})
+		cloudRule{func(s string) bool { return utf8.RuneCountInString(s) < lo || utf8.RuneCountInString(s) > hi }, fixed(fmt.Sprintf("%s looks wrong (expected %s)", label, expected))})
 }
 
 var (
 	validatePhoneNumberID = rulesValidator("Phone Number ID",
 		cloudRule{func(s string) bool { return !pystr.StrIsDigit(s) }, fixed("Phone Number ID must be numeric (no '+', spaces, or dashes)")},
-		cloudRule{func(s string) bool { return 10 <= pystr.Len(s) && pystr.Len(s) <= 12 }, fixed("That looks like a phone number — but this field needs the " +
+		cloudRule{func(s string) bool { return 10 <= utf8.RuneCountInString(s) && utf8.RuneCountInString(s) <= 12 }, fixed("That looks like a phone number — but this field needs the " +
 			"Phone Number ID (Meta's internal ID, 15-17 digits, e.g. " +
 			"'7794189252778687'). Look just BELOW the 'From' dropdown in " +
 			"API Setup → it's labelled 'Phone number ID'.")},
-		cloudRule{func(s string) bool { return pystr.Len(s) < 13 }, fixed("Phone Number ID looks too short (expected 13-18 digits)")},
-		cloudRule{func(s string) bool { return pystr.Len(s) > 20 }, fixed("Phone Number ID looks too long (expected 13-18 digits)")})
+		cloudRule{func(s string) bool { return utf8.RuneCountInString(s) < 13 }, fixed("Phone Number ID looks too short (expected 13-18 digits)")},
+		cloudRule{func(s string) bool { return utf8.RuneCountInString(s) > 20 }, fixed("Phone Number ID looks too long (expected 13-18 digits)")})
 	validateWabaID    = numericIDValidator("WABA ID", 10, 25, "10-25 digits")
 	validateAppID     = numericIDValidator("App ID", 13, 20, "15-16 digits")
 	validateAppSecret = rulesValidator("App Secret",
 		cloudRule{func(s string) bool { return !lowerHex(strings.ToLower(s)) }, fixed("App Secret should be a hex string (only digits 0-9 and " +
 			"letters a-f). Make sure you copied the 'App secret' from " +
 			"Settings → Basic, not some other token.")},
-		cloudRule{func(s string) bool { return pystr.Len(s) != 32 }, func(s string) string {
-			return fmt.Sprintf("App Secret should be exactly 32 hex characters (got %d)", pystr.Len(s))
+		cloudRule{func(s string) bool { return utf8.RuneCountInString(s) != 32 }, func(s string) string {
+			return fmt.Sprintf("App Secret should be exactly 32 hex characters (got %d)", utf8.RuneCountInString(s))
 		}})
 	validateAccessToken = rulesValidator("Access token",
 		cloudRule{func(s string) bool { return !strings.HasPrefix(s, "EAA") }, notMetaTokenReason},
-		cloudRule{func(s string) bool { return pystr.Len(s) < 100 }, func(s string) string {
-			return fmt.Sprintf("Access token looks too short (%d chars, expected 100+)", pystr.Len(s))
+		cloudRule{func(s string) bool { return utf8.RuneCountInString(s) < 100 }, func(s string) string {
+			return fmt.Sprintf("Access token looks too short (%d chars, expected 100+)", utf8.RuneCountInString(s))
 		}})
 )
 
@@ -158,7 +162,7 @@ func (wz *cloudWizard) prompt(message, def string, secret bool) string {
 // Repeats the prompt until a valid value, empty when the user gives up
 func (wz *cloudWizard) promptValidated(message string, validator cloudValidator, current, helpText string, secret bool) string {
 	if helpText != "" {
-		for _, line := range pystr.Splitlines(strings.TrimSpace(helpText), false) {
+		for _, line := range textutil.Lines(strings.TrimSpace(helpText)) {
 			fmt.Fprintf(wz.out, "  %s\n", line)
 		}
 	}
@@ -285,7 +289,7 @@ func (wz *cloudWizard) credentialStep(step credentialStep) (bool, error) {
 	}
 	shown := current
 	if step.preview > 0 && current != "" {
-		shown = pystr.Slice(current, 0, step.preview) + "..."
+		shown = textutil.First(current, step.preview) + "..."
 	}
 	value := wz.promptValidated(step.label, step.validator, shown, step.helpText, step.secret)
 	effective, err := wz.persist(step.envVar, value, current, step.saved, step.kept)
@@ -338,7 +342,7 @@ func (wz *cloudWizard) stepVerifyToken() (string, error) {
 	}
 	regen := "y"
 	if verifyToken != "" {
-		fmt.Fprintf(wz.out, "  An existing verify token is already set (%s...).\n", pystr.Slice(verifyToken, 0, 8))
+		fmt.Fprintf(wz.out, "  An existing verify token is already set (%s...).\n", textutil.First(verifyToken, 8))
 		answer, err := wz.console.Input("  Generate a new one? [y/N]: ")
 		if err != nil {
 			answer = "n"
@@ -367,7 +371,7 @@ func (wz *cloudWizard) stepVerifyToken() (string, error) {
 func cleanRecipient(part string) string {
 	var b strings.Builder
 	for _, r := range part {
-		if !pystr.IsSpace(r) && r != '-' && r != '+' {
+		if !unicode.IsSpace(r) && r != '-' && r != '+' {
 			b.WriteRune(r)
 		}
 	}

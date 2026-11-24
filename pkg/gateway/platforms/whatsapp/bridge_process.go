@@ -24,6 +24,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // SIGTERM grace before SIGKILL and the wait for a stopped bridge to release its port
@@ -85,7 +87,7 @@ func listenerPidsOnPortLive(port int) ([]int, error) {
 	}
 	if err == nil {
 		if stripped := strings.TrimSpace(out); stripped != "" {
-			pids = safeInts(pystr.Splitlines(stripped, false))
+			pids = safeInts(textutil.Lines(stripped))
 		}
 		if len(pids) > 0 {
 			return pids, nil
@@ -169,7 +171,7 @@ func windowsListenerPids(port int) ([]int, error) {
 	}
 	tokens := []string{}
 	suffix := fmt.Sprintf(":%d", port)
-	for _, line := range pystr.Splitlines(out, false) {
+	for _, line := range textutil.Lines(out) {
 		p := strings.Fields(line)
 		if len(p) >= 5 && p[3] == "LISTENING" && strings.HasSuffix(p[1], suffix) {
 			tokens = append(tokens, p[4])

@@ -28,6 +28,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Seams of the dump the tests patch, the project root, version identity, gateway snapshot and git readers
@@ -49,7 +51,7 @@ func dotenvKeyNames(h string) map[string]bool {
 	if err != nil {
 		return names
 	}
-	for _, line := range pystr.Splitlines(pystr.DecodeUTF8SigIgnore(raw), false) {
+	for _, line := range textutil.Lines(pystr.DecodeUTF8SigIgnore(raw)) {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
 			continue
@@ -71,7 +73,7 @@ func dumpGitOutput(projectRoot string, args ...string) string {
 	if err != nil || res.Returncode != 0 {
 		return ""
 	}
-	return strings.TrimSpace(pystr.DecodeUTF8Replace(res.Stdout))
+	return strings.TrimSpace(strings.ToValidUTF8(string(res.Stdout), "\uFFFD"))
 }
 
 // Reports whether root resolves to the running install the version stamp describes

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -19,7 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -343,7 +343,7 @@ func dropTrailingCommas(text string) string {
 			inString = true
 		} else if ch == ',' {
 			j := i + 1
-			for j < len(rs) && pystr.IsSpace(rs[j]) {
+			for j < len(rs) && unicode.IsSpace(rs[j]) {
 				j++
 			}
 			if j < len(rs) && (rs[j] == '}' || rs[j] == ']') {
@@ -586,7 +586,7 @@ func skillMarkdown(skill *pyjson.Object, name string) string {
 	} else {
 		description = "Imported Grok Bot skill: " + pyrepr.Str(skill.Vals["name"])
 	}
-	description = strings.Join(pystr.SplitWhitespace(description, -1), " ")
+	description = strings.Join(strings.Fields(description), " ")
 	if rs := []rune(description); len(rs) > 300 {
 		description = string(rs[:300])
 	}

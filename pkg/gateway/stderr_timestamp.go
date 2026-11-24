@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 )
 
@@ -87,7 +86,7 @@ func copyLinesWithTimestamps(src io.Reader, dst io.Writer) error {
 	for {
 		line, err := r.ReadBytes('\n')
 		if len(line) > 0 {
-			if werr := writeTimestampedLine(dst, pystr.DecodeUTF8Replace(line)); werr != nil {
+			if werr := writeTimestampedLine(dst, strings.ToValidUTF8(string(line), "\uFFFD")); werr != nil {
 				return werr
 			}
 		}

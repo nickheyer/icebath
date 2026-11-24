@@ -1,11 +1,10 @@
 package gateway
 
 import (
-	"unicode"
-
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )

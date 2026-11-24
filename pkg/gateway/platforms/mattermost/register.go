@@ -1,8 +1,6 @@
 package mattermost
 
 import (
-	"strings"
-
 	"cmp"
 	"context"
 	"errors"
@@ -10,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -17,9 +16,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Paths of the media_files argument, a dict item read through its path key
@@ -142,7 +142,7 @@ func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message stri
 			return nil, err
 		}
 		if resp.status != 200 && resp.status != 201 {
-			return gateway.SendError(fmt.Sprintf("Mattermost file upload failed (%d): %s", resp.status, pystr.Slice(resp.text(), 0, 400))), nil
+			return gateway.SendError(fmt.Sprintf("Mattermost file upload failed (%d): %s", resp.status, textutil.First(resp.text(), 400))), nil
 		}
 		uploadData, err := resp.json()
 		if err != nil {
@@ -179,7 +179,7 @@ func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message stri
 		return nil, err
 	}
 	if resp.status != 200 && resp.status != 201 {
-		return gateway.SendError(fmt.Sprintf("Mattermost API error (%d): %s", resp.status, pystr.Slice(resp.text(), 0, 400))), nil
+		return gateway.SendError(fmt.Sprintf("Mattermost API error (%d): %s", resp.status, textutil.First(resp.text(), 400))), nil
 	}
 	data, err := resp.json()
 	if err != nil {

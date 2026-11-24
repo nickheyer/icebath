@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -117,7 +118,7 @@ func headRunes(s string, n int) string {
 
 // One page of inline results whose first query token filters the catalog and whose rest becomes the command argument
 func BuildInlineResults(ctx context.Context, query, offset string, pageSize int) ([]InlineResult, string) {
-	parts := pystr.SplitWhitespace(strings.TrimSpace(query), 1)
+	parts := textutil.FieldsN(strings.TrimSpace(query), 1)
 	term, args := "", ""
 	if len(parts) > 0 {
 		term = parts[0]

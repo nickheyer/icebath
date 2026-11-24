@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -1265,7 +1264,7 @@ var runtimeEnvAssignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 func runtimeSplitWords(segment string) []string {
 	words, err := shlexSplit(segment)
 	if err != nil {
-		return pystr.SplitWhitespace(segment, -1)
+		return strings.Fields(segment)
 	}
 	return words
 }

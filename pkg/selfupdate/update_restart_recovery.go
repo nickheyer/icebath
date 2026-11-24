@@ -78,7 +78,7 @@ func runRecoveryCommand(argv []string, timeout time.Duration, o recoveryRunOptio
 	if err != nil && !errors.As(err, &exit) {
 		return nil
 	}
-	return &recoveryCompleted{ReturnCode: cmd.ProcessState.ExitCode(), Stdout: pystr.DecodeUTF8Replace(stdout.Bytes())}
+	return &recoveryCompleted{ReturnCode: cmd.ProcessState.ExitCode(), Stdout: strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD")}
 }
 
 func recoveryStdout(result *recoveryCompleted) string {

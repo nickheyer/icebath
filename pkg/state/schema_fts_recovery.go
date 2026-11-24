@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Holder deferral escalation thresholds and the bounded doubling backoff of the in process stale FTS retry
@@ -56,11 +55,11 @@ func holderCmdline(pid int) string {
 	if !ok || len(argv) == 0 {
 		return "<cmdline unavailable>"
 	}
-	runes := pystr.Runes(strings.Join(argv, " "))
+	runes := []rune(strings.Join(argv, " "))
 	if len(runes) > 120 {
 		runes = runes[:120]
 	}
-	return pystr.FromRunes(runes)
+	return string(runes)
 }
 
 // Python repr of a holder list, a list of pid and path tuples

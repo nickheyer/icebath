@@ -1,14 +1,13 @@
 package kanban
 
 import (
-	"strings"
-	"unicode"
-
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"

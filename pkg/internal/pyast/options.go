@@ -343,7 +343,7 @@ func decodeReplace(spec string, b []byte) (string, bool) {
 	}
 	switch name {
 	case "utf_8", "utf_8_sig", "utf8":
-		return pystr.DecodeUTF8Replace(b), true
+		return strings.ToValidUTF8(string(b), "\uFFFD"), true
 	case "ascii":
 		var sb strings.Builder
 		for _, c := range b {

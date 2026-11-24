@@ -16,11 +16,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // GatewayPolicyID is the pseudo platform owning gateway wide allowlist and allow all policy keys
@@ -651,7 +652,7 @@ func readSigText(p string) (string, error) {
 		return "", err
 	}
 	raw = []byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
-	return readTextNewlines(pystr.DecodeUTF8Replace(raw)), nil
+	return readTextNewlines(strings.ToValidUTF8(string(raw), "\uFFFD")), nil
 }
 
 // Index of the ambient scope when ix is nil
@@ -677,7 +678,7 @@ func StripChannelEnvFile(ctx context.Context, envPath string, ix *ChannelKeyInde
 		return nil, err
 	}
 	var kept []string
-	for _, line := range pystr.Splitlines(text, false) {
+	for _, line := range textutil.Lines(text) {
 		key := envKeyOfLine(line)
 		platform := ""
 		if key != "" {
@@ -873,7 +874,7 @@ func ChannelPlatformsConfigured(ctx context.Context, profileDir string) ([]strin
 		if err != nil {
 			return nil, err
 		}
-		for _, line := range pystr.Splitlines(text, false) {
+		for _, line := range textutil.Lines(text) {
 			if key := envKeyOfLine(line); key != "" {
 				if p := ix.PlatformFor(key); p != "" && p != GatewayPolicyID {
 					found[p] = true

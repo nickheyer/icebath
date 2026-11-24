@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Completion is one prompt completion replacing the word under the cursor
@@ -615,7 +616,7 @@ func (c *SlashCompleter) Complete(text string) []Completion {
 		}
 		return nil
 	}
-	parts := pystr.SplitWhitespace(text, 1)
+	parts := textutil.FieldsN(text, 1)
 	base := strings.ToLower(parts[0])
 	if len(parts) > 1 || strings.HasSuffix(text, " ") {
 		sub := ""

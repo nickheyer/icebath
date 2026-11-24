@@ -2,13 +2,13 @@ package state
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Plain language description of a persistence failure shared by every surface
@@ -157,14 +157,14 @@ func StorageFailureDetails(excOrStr any, limit int) string {
 	if pyTruthy(excOrStr) {
 		raw = errText(excOrStr)
 	}
-	text := strings.Join(pystr.SplitWhitespace(raw, -1), " ")
-	if pystr.Len(text) <= limit {
+	text := strings.Join(strings.Fields(raw), " ")
+	if utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	runes := pystr.Runes(text)
+	runes := []rune(text)
 	cut := limit - 3
 	if cut < 0 {
 		cut = max(len(runes)+cut, 0)
 	}
-	return strings.TrimRightFunc(pystr.FromRunes(runes[:min(cut, len(runes))]), unicode.IsSpace) + "..."
+	return strings.TrimRightFunc(string(runes[:min(cut, len(runes))]), unicode.IsSpace) + "..."
 }

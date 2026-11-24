@@ -1,11 +1,10 @@
 package tools
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 )

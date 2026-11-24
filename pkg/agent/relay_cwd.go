@@ -1,9 +1,8 @@
 package agent
 
 import (
-	"strings"
-
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"

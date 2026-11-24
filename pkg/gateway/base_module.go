@@ -30,12 +30,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Encodes the file to voip tuned Ogg Opus through ffmpeg, empty when ffmpeg is missing or the encode fails
@@ -248,7 +249,7 @@ func detectMacOSSystemProxy(ctx context.Context) string {
 // First enabled HTTPS then HTTP proxy in scutil output as an http URL
 func parseScutilProxy(out string) string {
 	props := map[string]string{}
-	for _, line := range pystr.Splitlines(out, false) {
+	for _, line := range textutil.Lines(out) {
 		if key, val, ok := strings.Cut(strings.TrimSpace(line), " : "); ok {
 			props[strings.TrimSpace(key)] = strings.TrimSpace(val)
 		}

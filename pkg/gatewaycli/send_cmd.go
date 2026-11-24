@@ -1,8 +1,6 @@
 package gatewaycli
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"unicode"
 
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/gateway"

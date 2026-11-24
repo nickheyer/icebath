@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -22,8 +24,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Session sources hidden from browsing and searching, integrations, delegate runs and kanban workers
@@ -195,7 +198,7 @@ func formatTimestamp(ts any) string {
 	}
 	if s, ok := ts.(string); ok {
 		digits := strings.ReplaceAll(strings.ReplaceAll(s, ".", ""), "-", "")
-		if digits == "" || strings.ContainsFunc(digits, func(r rune) bool { return !pystr.IsDigit(r) }) {
+		if digits == "" || strings.ContainsFunc(digits, func(r rune) bool { return !unicode.IsDigit(r) }) {
 			return s
 		}
 	}
@@ -268,7 +271,7 @@ func isCompactionSummary(content any) bool {
 	if !ok || s == "" {
 		return false
 	}
-	trimmed := strings.TrimLeftFunc(s, pystr.IsSpace)
+	trimmed := strings.TrimLeftFunc(s, unicode.IsSpace)
 	for _, p := range compactionPrefixes {
 		if strings.HasPrefix(trimmed, p) {
 			return true
@@ -510,10 +513,10 @@ func shapeMessage(m *pyjson.Object, anchorID any, maxContentLen int) *pyjson.Obj
 	if anchorID != nil && sameInt(oget(m, "id"), anchorID) {
 		entry.Set("anchor", true)
 	}
-	if s, ok := content.(string); ok && maxContentLen > 0 && s != "" && pystr.Len(s) > maxContentLen {
-		entry.Set("content", pystr.Slice(s, 0, maxContentLen)+"…")
+	if s, ok := content.(string); ok && maxContentLen > 0 && s != "" && utf8.RuneCountInString(s) > maxContentLen {
+		entry.Set("content", textutil.First(s, maxContentLen)+"…")
 		entry.Set("content_truncated", true)
-		entry.Set("original_content_chars", pystr.Len(s))
+		entry.Set("original_content_chars", utf8.RuneCountInString(s))
 	}
 	out := pyjson.NewObject()
 	for _, k := range entry.Keys {

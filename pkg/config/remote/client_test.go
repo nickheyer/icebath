@@ -56,16 +56,16 @@ func requestError(t *testing.T, base string) error {
 	return err
 }
 
-func TestBaseURLAndInstanceIDStripLikePythonStr(t *testing.T) {
-	t.Setenv(URLEnv, " \x1c\thttps://plane.test/x//\x1d ")
+func TestBaseURLAndInstanceIDAreTrimmed(t *testing.T) {
+	t.Setenv(URLEnv, " \t\thttps://plane.test/x//\t ")
 	if got := BaseURL(); got != "https://plane.test/x" {
 		t.Fatalf("base url %q", got)
 	}
-	t.Setenv(URLEnv, "\x1f \x1e")
+	t.Setenv(URLEnv, "\t \t")
 	if got := BaseURL(); got != "" {
 		t.Fatalf("a blank setting leaves no plane, got %q", got)
 	}
-	t.Setenv(InstanceEnv, "\x1einst-1\x1f\n")
+	t.Setenv(InstanceEnv, "\tinst-1\t\n")
 	if got := InstanceID(); got != "inst-1" {
 		t.Fatalf("instance id %q", got)
 	}

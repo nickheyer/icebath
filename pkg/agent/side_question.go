@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -60,18 +62,18 @@ func RenderHistoryForSideQuestion(history []map[string]any, charBudget int) stri
 			lines = append(lines, "ASSISTANT [called tools: "+strings.Join(names, ", ")+"]")
 		}
 		if label, ok := sideQuestionRoleLabels[role]; ok && text != "" {
-			lines = append(lines, label+": "+pystr.Slice(text, 0, sideQuestionPerMessageCap))
+			lines = append(lines, label+": "+textutil.First(text, sideQuestionPerMessageCap))
 		}
 	}
 	var kept []string
 	used := 0
 	for i := len(lines) - 1; i >= 0; i-- {
 		line := lines[i]
-		if used+pystr.Len(line)+1 > charBudget && len(kept) > 0 {
+		if used+utf8.RuneCountInString(line)+1 > charBudget && len(kept) > 0 {
 			break
 		}
 		kept = append(kept, line)
-		used += pystr.Len(line) + 1
+		used += utf8.RuneCountInString(line) + 1
 	}
 	if len(kept) == 0 {
 		return "(no prior conversation)"

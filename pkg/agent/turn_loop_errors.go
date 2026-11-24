@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -144,18 +143,18 @@ func (a *AIAgent) handleOuterLoopError(ctx context.Context, e error, outerErrorC
 	outerErrorCap := min(maxOuterLoopErrors, max(1, a.maxIterations))
 	if isLocal || apiCallCount >= a.maxIterations-1 || outerErrorCount >= outerErrorCap {
 		detail := ShortDetail(e, 200)
-		head := pystr.Runes(errorMsg)
+		head := []rune(errorMsg)
 		head = head[:min(len(head), 80)]
 		code := "loop_error"
 		switch {
 		case isLocal:
-			turnExitReason = "local_processing_error(" + pystr.FromRunes(head) + ")"
+			turnExitReason = "local_processing_error(" + string(head) + ")"
 			code = "local_processing_error"
 		case outerErrorCount >= outerErrorCap:
 			failed = true
-			turnExitReason = "repeated_outer_errors(" + pystr.FromRunes(head) + ")"
+			turnExitReason = "repeated_outer_errors(" + string(head) + ")"
 		default:
-			turnExitReason = "error_near_max_iterations(" + pystr.FromRunes(head) + ")"
+			turnExitReason = "error_near_max_iterations(" + string(head) + ")"
 		}
 		text, err := tools.SiteCopy(ctx, code, map[string]any{"detail": detail})
 		if err != nil {

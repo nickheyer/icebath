@@ -28,7 +28,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -1511,7 +1510,7 @@ func configuredOperatorPhone(ctx context.Context) (string, error) {
 		return "", err
 	}
 	var candidates []string
-	for _, part := range strings.FieldsFunc(allowed, func(r rune) bool { return r == ',' || pystr.IsSpace(r) }) {
+	for _, part := range strings.FieldsFunc(allowed, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
 		if n := normalizePhone(part); E164RE.MatchString(n) {
 			candidates = append(candidates, n)
 		}

@@ -21,8 +21,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -596,7 +597,7 @@ func renderPackReview(console *Console, pack *PluginPack, resolved []ResolvedPac
 		if source == "" {
 			source = "[red]unresolved: " + rp.ResolveError + "[/red]"
 		}
-		table.AddRow(rp.Entry.Display(), source, pystr.Slice(rp.Entry.Ref, 0, 12), caps)
+		table.AddRow(rp.Entry.Display(), source, textutil.First(rp.Entry.Ref, 12), caps)
 	}
 	console.printTable(table)
 	if len(pack.Config) > 0 {
@@ -676,7 +677,7 @@ func InstallPackPlugins(ctx context.Context, pack *PluginPack, resolved []Resolv
 			failed(display, rp.ResolveError)
 			continue
 		}
-		console.Print(fmt.Sprintf("[dim]Installing %s @ %s...[/dim]", display, pystr.Slice(rp.Entry.Ref, 0, 12)))
+		console.Print(fmt.Sprintf("[dim]Installing %s @ %s...[/dim]", display, textutil.First(rp.Entry.Ref, 12)))
 		_, manifest, installedName, err := packInstallCore(ctx, rp.Identifier, installCoreOptions{Force: force, Ref: rp.Entry.Ref})
 		if err != nil {
 			if _, isOp := err.(*PluginOperationError); !isOp {

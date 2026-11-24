@@ -8,10 +8,12 @@ import (
 	"reflect"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // StreamDiagHeaders lists the lowercased upstream headers captured per attempt
@@ -88,7 +90,7 @@ func StreamDiagCaptureResponse(diag *StreamDiag, resp *http.Response) {
 	captured := [][2]string{}
 	for _, name := range StreamDiagHeaders {
 		if val := resp.Header.Get(name); val != "" {
-			captured = append(captured, [2]string{name, pystr.Slice(val, 0, 120)})
+			captured = append(captured, [2]string{name, textutil.First(val, 120)})
 		}
 	}
 	diag.Headers = captured
@@ -112,8 +114,8 @@ func FlattenExceptionChain(err error) string {
 	parts := make([]string, len(seen))
 	for i, e := range seen {
 		msg := strings.ReplaceAll(strings.TrimSpace(e.Error()), "\n", " ")
-		if pystr.Len(msg) > 140 {
-			msg = pystr.Slice(msg, 0, 140) + "…"
+		if utf8.RuneCountInString(msg) > 140 {
+			msg = textutil.First(msg, 140) + "…"
 		}
 		if msg != "" {
 			parts[i] = fmt.Sprintf("%s(%s)", pyrepr.TypeName(e), msg)
@@ -211,8 +213,8 @@ func LogStreamRetry(agent StreamDiagAgent, kind string, err error, attempt, maxA
 		}
 	}()
 	summary := summarizeForRetryLog(agent, err)
-	if summary != "" && pystr.Len(summary) > 240 {
-		summary = pystr.Slice(summary, 0, 240) + "…"
+	if summary != "" && utf8.RuneCountInString(summary) > 240 {
+		summary = textutil.First(summary, 240) + "…"
 	}
 	subagentID, depth := "-", 0
 	if ident, ok := agent.(subagentIdentity); ok {

@@ -21,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Install stamp updateMechanism values a build lane may write
@@ -344,7 +346,7 @@ func firstToken(line string) string {
 		}
 		return text[1 : end+1]
 	}
-	fields := pystr.SplitWhitespace(text, 1)
+	fields := textutil.FieldsN(text, 1)
 	return fields[0]
 }
 
@@ -362,7 +364,7 @@ func launcherBinary(target string) string {
 		return ""
 	}
 	text := string(data)
-	lines := pystr.Splitlines(strings.TrimPrefix(text, "\ufeff"), false)
+	lines := textutil.Lines(strings.TrimPrefix(text, "\ufeff"))
 	if strings.EqualFold(filepath.Ext(target), ".cmd") {
 		for _, entry := range lines[min(1, len(lines)):] {
 			if strings.TrimSpace(entry) != "" && !strings.HasPrefix(entry, "@rem "+storeRecordPrefix) {
@@ -397,7 +399,7 @@ func launcherStore(target string) string {
 		return ""
 	}
 	cmd := strings.EqualFold(filepath.Ext(target), ".cmd")
-	for _, line := range pystr.Splitlines(strings.TrimPrefix(string(data), "\ufeff"), false) {
+	for _, line := range textutil.Lines(strings.TrimPrefix(string(data), "\ufeff")) {
 		if cmd {
 			if rest, ok := strings.CutPrefix(line, "@rem "+storeRecordPrefix); ok {
 				return firstToken(rest)

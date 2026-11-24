@@ -3,11 +3,10 @@
 package selfupdate
 
 import (
-	"strings"
-
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"

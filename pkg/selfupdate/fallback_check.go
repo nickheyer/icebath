@@ -11,9 +11,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Providers that are no single fixed route, auto picking its backend per call and moa fanning out a preset, so they keep their static verdict
@@ -63,8 +64,8 @@ func fallbackCheckMark(value *bool) string {
 
 // One table line of the seven columns at their fixed widths
 func fallbackCheckRow(index, label, configured, auth, live, latency, status string) string {
-	return "  " + pystr.Ljust(index, 3) + pystr.Ljust(label, 44) + pystr.Ljust(configured, 8) + pystr.Ljust(auth, 8) +
-		pystr.Ljust(live, 8) + pystr.Ljust(latency, 10) + status
+	return "  " + fmt.Sprintf("%-3s", index) + fmt.Sprintf("%-44s", label) + fmt.Sprintf("%-8s", configured) + fmt.Sprintf("%-8s", auth) +
+		fmt.Sprintf("%-8s", live) + fmt.Sprintf("%-10s", latency) + status
 }
 
 // Prints the header, one row per entry with its error on the next line, and the static only note when no probe was asked for
@@ -80,7 +81,7 @@ func printFallbackCheckTable(w io.Writer, results []*provider.FallbackEntryCheck
 		if r.Configured {
 			auth = &r.AuthReady
 		}
-		fmt.Fprintln(w, fallbackCheckRow(strconv.Itoa(i+1), pystr.Slice(r.Provider+" / "+r.Model, 0, 43), fallbackCheckMark(&r.Configured),
+		fmt.Fprintln(w, fallbackCheckRow(strconv.Itoa(i+1), textutil.First(r.Provider+" / "+r.Model, 43), fallbackCheckMark(&r.Configured),
 			fallbackCheckMark(auth), fallbackCheckMark(r.InferenceReady), latency, r.Status()))
 		if r.Error != "" {
 			fmt.Fprintln(w, "     "+r.Error)

@@ -14,8 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -229,7 +230,7 @@ func extractEmailAddress(raw string) string {
 	if addr == "" {
 		if m, _ := singleBracketFromRE.FindStringMatch(value); m != nil {
 			display, bracketed := strings.TrimSpace(stripComments(m.GroupByNumber(1).String())), m.GroupByNumber(2).String()
-			inner := pystr.Slice(bracketed, 1, -1)
+			inner := textutil.DropLast(textutil.DropFirst(bracketed, 1), 1)
 			if strings.Contains(inner, "@") && !strings.ContainsAny(display, ";:()") &&
 				(!strings.Contains(display, "@") || strings.ToLower(display) == strings.ToLower(bracketed)) {
 				addr = bracketed
@@ -333,7 +334,7 @@ func verifySenderAuthentication(msg *pyemail.Message, fromAddr, authservID strin
 	if len(headers) == 0 {
 		return false, noAuthResultsReason
 	}
-	trusted := strings.Join(pystr.SplitWhitespace(headers[0].Str(), -1), " ")
+	trusted := strings.Join(strings.Fields(headers[0].Str()), " ")
 	clauses, balanced := arClauses(trusted)
 	if !balanced {
 		return false, "unbalanced quote or comment in Authentication-Results"
@@ -389,7 +390,7 @@ func verifySenderAuthentication(msg *pyemail.Message, fromAddr, authservID strin
 			return true, "dkim=pass aligned"
 		}
 	}
-	return false, fmt.Sprintf("authentication failed (%s)", pystr.Slice(trusted, 0, 120))
+	return false, fmt.Sprintf("authentication failed (%s)", textutil.First(trusted, 120))
 }
 
 // One attachment cached to disk with its original name, kind and declared media type

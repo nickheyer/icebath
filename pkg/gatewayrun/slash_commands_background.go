@@ -1,13 +1,12 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"

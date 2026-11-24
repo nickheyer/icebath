@@ -2,13 +2,13 @@ package home
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"context"
 	"os"
 	"runtime"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Longest temp root that leaves room for Chrome and code kernel AF_UNIX socket names
@@ -23,7 +23,7 @@ func SocketSafeTmpdir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if st, serr := os.Stat("/tmp"); pystr.Len(candidate) <= SocketTmpdirMaxLen || serr != nil || !st.IsDir() {
+	if st, serr := os.Stat("/tmp"); utf8.RuneCountInString(candidate) <= SocketTmpdirMaxLen || serr != nil || !st.IsDir() {
 		return candidate, nil
 	}
 	return "/tmp", nil

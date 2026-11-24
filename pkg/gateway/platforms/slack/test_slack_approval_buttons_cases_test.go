@@ -5,9 +5,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Adapter of the approval cases, workspace T1 owning channel C1 with bot U_BOT
@@ -137,7 +137,7 @@ func TestSlackApprovalActionTruncatesInflatedOriginalText(t *testing.T) {
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "alice", "id": "U_ALICE"}}
 	ack := &ackRecorder{}
 	a.handleApprovalAction(context.Background(), ack.ack, body, map[string]any{"action_id": "icebath_approve_once", "value": "session-key"})
-	if n := pystr.Len(updatedSectionText(t, f)); n > 3000 {
+	if n := utf8.RuneCountInString(updatedSectionText(t, f)); n > 3000 {
 		t.Fatalf("section text %d chars", n)
 	}
 }
@@ -193,7 +193,7 @@ func TestSlackSlashConfirmActionTruncatesInflatedOriginalText(t *testing.T) {
 		"channel": map[string]any{"id": "C1"}, "user": map[string]any{"name": "owner", "id": "U_OWNER"}}
 	ack := &ackRecorder{}
 	a.handleSlashConfirmAction(context.Background(), ack.ack, body, map[string]any{"action_id": "icebath_confirm_once", "value": "agent:main:slack:group:C1:1111|confirm-1"})
-	if n := pystr.Len(updatedSectionText(t, f)); n > 3000 {
+	if n := utf8.RuneCountInString(updatedSectionText(t, f)); n > 3000 {
 		t.Fatalf("section text %d chars", n)
 	}
 }

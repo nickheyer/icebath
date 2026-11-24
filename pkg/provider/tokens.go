@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"maps"
 	"math/big"
 	"reflect"
@@ -14,8 +13,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -483,13 +482,13 @@ func payloadChars(v any, imageCost int) int {
 			for _, k := range []string{"image_url", "image", "source", "file_id"} {
 				if _, has := c[k]; has {
 					text, _ := c["text"].(string)
-					return imageCost*4 + pystr.Len(text)
+					return imageCost*4 + utf8.RuneCountInString(text)
 				}
 			}
 		}
 		sum := 0
 		for k, val := range c {
-			sum += pystr.Len(k) + 6 + payloadChars(val, imageCost)
+			sum += utf8.RuneCountInString(k) + 6 + payloadChars(val, imageCost)
 		}
 		return sum
 	case []any:
@@ -499,22 +498,22 @@ func payloadChars(v any, imageCost int) int {
 		}
 		return sum
 	case string:
-		return pystr.Len(c)
+		return utf8.RuneCountInString(c)
 	case json.Number:
-		return pystr.Len(string(c))
+		return utf8.RuneCountInString(string(c))
 	case json.RawMessage:
 		var decoded any
 		dec := json.NewDecoder(bytes.NewReader(c))
 		dec.UseNumber()
 		if err := dec.Decode(&decoded); err != nil {
-			return pystr.Len(string(c))
+			return utf8.RuneCountInString(string(c))
 		}
 		return payloadChars(decoded, imageCost)
 	}
 	if generic, ok := payloadGeneric(v); ok {
 		return payloadChars(generic, imageCost)
 	}
-	return pystr.Len(pyrepr.Str(v))
+	return utf8.RuneCountInString(pyrepr.Str(v))
 }
 
 // Typed Go slices and string keyed maps viewed as the list and dict values the wire body holds

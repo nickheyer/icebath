@@ -2,10 +2,10 @@ package agent
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -42,7 +42,7 @@ func trajectoryJSONBlocks(text string) []trajectoryJSONBlock {
 		bodyStart := open + len(tag) + 2
 		for bodyStart < len(text) {
 			r, size := utf8.DecodeRuneInString(text[bodyStart:])
-			if !pystr.IsSpace(r) {
+			if !unicode.IsSpace(r) {
 				break
 			}
 			bodyStart += size
@@ -57,7 +57,7 @@ func trajectoryJSONBlocks(text string) []trajectoryJSONBlock {
 		bodyEnd := closeAt
 		for bodyEnd > bodyStart {
 			r, size := utf8.DecodeLastRuneInString(text[bodyStart:bodyEnd])
-			if !pystr.IsSpace(r) {
+			if !unicode.IsSpace(r) {
 				break
 			}
 			bodyEnd -= size

@@ -1,20 +1,20 @@
 package plugins
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Argument vector of the command line a hook directory names, a program that sits inside the directory resolved to its full path
@@ -74,7 +74,7 @@ func RunDirectoryHook(ctx context.Context, eventType, hookDir string, argv []str
 		return nil, fmt.Errorf("hook command timed out after %ds", timeout)
 	case r.ReturnCode != nil && *r.ReturnCode != 0:
 		return nil, fmt.Errorf("hook command exited with status %d: %s", *r.ReturnCode,
-			pystr.Slice(strings.TrimSpace(r.Stderr), 0, shellHookStderrLimit))
+			textutil.First(strings.TrimSpace(r.Stderr), shellHookStderrLimit))
 	}
 	stdout := strings.TrimSpace(r.Stdout)
 	if stdout == "" {

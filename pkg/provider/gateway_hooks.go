@@ -2,7 +2,6 @@ package provider
 
 import (
 	"strings"
-
 	"unicode/utf8"
 )
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"fmt"
@@ -19,11 +20,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Text of tool result content with content block lists flattened and dicts serialized
@@ -101,7 +103,7 @@ func looksLikeErrorOutput(content any) bool {
 		}
 	}
 	first := ""
-	if lines := pystr.Splitlines(text, false); len(lines) > 0 {
+	if lines := textutil.Lines(text); len(lines) > 0 {
 		first = strings.ToLower(strings.TrimSpace(lines[0]))
 	}
 	for _, marker := range []string{"error:", "failed:", "traceback ", "exception:"} {
@@ -187,7 +189,7 @@ func extractOutputTail(env *tools.Env, result map[string]any, maxEntries, maxCha
 		}
 		row := pyjson.NewObject()
 		row.Set("tool", toolName)
-		row.Set("preview", pystr.Slice(content, 0, maxChars))
+		row.Set("preview", textutil.First(content, maxChars))
 		row.Set("is_error", looksLikeErrorOutput(content))
 		tail = append(tail, row)
 	}
@@ -220,7 +222,7 @@ func sanitizeToolTarget(env *tools.Env, key string, value any, force bool) any {
 	if !ok || s == "" {
 		return nil
 	}
-	bounded := pystr.Slice(tools.RedactChildText(env, s, force), 0, 1024)
+	bounded := textutil.First(tools.RedactChildText(env, s, force), 1024)
 	if toolInputURLKeys[key] {
 		parsed, err := pyurl.Split(bounded)
 		if err != nil {
@@ -277,7 +279,7 @@ func inputSummary(env *tools.Env, keys any, targets any, force bool) *pyjson.Obj
 		}
 	}
 	for _, key := range keyList[:min(64, len(keyList))] {
-		argumentKeys = append(argumentKeys, pystr.Slice(tools.RedactChildText(env, pyrepr.Str(key), force), 0, 128))
+		argumentKeys = append(argumentKeys, textutil.First(tools.RedactChildText(env, pyrepr.Str(key), force), 128))
 	}
 	out := pyjson.NewObject()
 	out.Set("argument_keys", argumentKeys)
@@ -377,7 +379,7 @@ func subagentStopToolCallHistory(env *tools.Env, toolTrace any) ([]any, error) {
 			status = "unknown"
 		}
 		row := pyjson.NewObject()
-		row.Set("tool_name", pystr.Slice(toolName, 0, 256))
+		row.Set("tool_name", textutil.First(toolName, 256))
 		row.Set("tool_input", inputSummary(env, argKeys, targets, true))
 		row.Set("input_bytes", inBytes)
 		row.Set("output_bytes", outBytes)
@@ -444,7 +446,7 @@ func trimSummaryWithFooter(ctx context.Context, env *tools.Env, summary any, cap
 
 // Line snapped three quarter head and quarter tail of a summary with a footer locating the omitted middle
 func headTailWithFooter(summary string, cap int, spillPath string) string {
-	runes := pystr.Runes(summary)
+	runes := []rune(summary)
 	originalLen := len(runes)
 	headBudget := int(float64(cap) * 0.75)
 	tailBudget := cap - headBudget
@@ -459,11 +461,11 @@ func headTailWithFooter(summary string, cap int, spillPath string) string {
 	if nl := slices.Index(tail, '\n'); nl >= 0 && float64(nl) < float64(tailBudget)*0.5 {
 		tail = tail[nl+1:]
 	}
-	headText, tailText := pystr.FromRunes(head), pystr.FromRunes(tail)
+	headText, tailText := string(head), string(tail)
 	footer := []string{
 		"", strings.Repeat("─", 8) + " [SUMMARY TRUNCATED] " + strings.Repeat("─", 8),
 		fmt.Sprintf("Showing %s chars (head) + %s chars (tail) of %s total — trimmed to protect the parent's context window.",
-			pystr.GroupThousands(int64(len(head))), pystr.GroupThousands(int64(len(tail))), pystr.GroupThousands(int64(originalLen))),
+			textutil.Thousands(int64(len(head))), textutil.Thousands(int64(len(tail))), textutil.Thousands(int64(originalLen))),
 	}
 	if spillPath != "" {
 		footer = append(footer, "Full subagent output saved to: "+spillPath,
@@ -655,7 +657,7 @@ func applySummaryBudget(ctx context.Context, results []*pyjson.Object, parent *A
 	for _, entry := range summaries {
 		summary, _ := entry.Get("summary")
 		text, _ := summaryText(summary)
-		length := pystr.Len(text)
+		length := utf8.RuneCountInString(text)
 		if length <= limit {
 			continue
 		}

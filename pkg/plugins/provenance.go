@@ -11,7 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Install provenance class of a plugin directory
@@ -82,7 +83,7 @@ func gitOriginURL(ctx context.Context, pluginDir string) string {
 		return ""
 	}
 	inOrigin := false
-	for _, line := range pystr.Splitlines(strings.TrimPrefix(strings.ToValidUTF8(string(raw), "\uFFFD"), "\uFEFF"), false) {
+	for _, line := range textutil.Lines(strings.TrimPrefix(strings.ToValidUTF8(string(raw), "\uFFFD"), "\uFEFF")) {
 		stripped := strings.TrimSpace(line)
 		if stripped == `[remote "origin"]` {
 			inOrigin = true

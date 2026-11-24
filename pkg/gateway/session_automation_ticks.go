@@ -1,8 +1,6 @@
 package gateway
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

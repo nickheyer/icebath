@@ -1,14 +1,13 @@
 package batchrun
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/agent"

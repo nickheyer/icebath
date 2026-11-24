@@ -1,8 +1,6 @@
 package qqbot
 
 import (
-	"strings"
-
 	"bytes"
 	"cmp"
 	"context"
@@ -14,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 

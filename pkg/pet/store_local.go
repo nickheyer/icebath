@@ -12,6 +12,8 @@ import (
 	"github.com/HugoSmits86/nativewebp"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var slugifyRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -27,14 +29,14 @@ func Slugify(name string) string {
 
 // Short name of the first three capitalized words of a concept cut to 28 runes, empty for none
 func DisplayNameFor(concept string) string {
-	words := pystr.SplitWhitespace(concept, -1)
+	words := strings.Fields(concept)
 	if len(words) > 3 {
 		words = words[:3]
 	}
 	for i, w := range words {
 		words[i] = pystr.Capitalize(w)
 	}
-	return strings.TrimSpace(pystr.Slice(strings.Join(words, " "), 0, 28))
+	return strings.TrimSpace(textutil.First(strings.Join(words, " "), 28))
 }
 
 // Slug of the name that does not collide with an existing pet directory

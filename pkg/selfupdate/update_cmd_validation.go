@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
@@ -59,7 +58,7 @@ func criticalModuleImportFailures(ctx context.Context, root string, reportRuntim
 		}
 		return nil, nil, err
 	}
-	output := pystr.DecodeUTF8Replace(result.Stdout)
+	output := strings.ToValidUTF8(string(result.Stdout), "\uFFFD")
 	cut := strings.LastIndex(output, marker)
 	if cut < 0 {
 		order, failures := probeFailure("ProbeTerminated", fmt.Sprintf("terminated before reporting import health (exit code %d)", result.Returncode))

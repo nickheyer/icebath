@@ -1,12 +1,11 @@
 package discord
 
 import (
-	"strings"
-
 	"context"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"

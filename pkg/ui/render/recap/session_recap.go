@@ -2,6 +2,7 @@ package recap
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"fmt"
 	"os"
@@ -12,8 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -284,11 +286,11 @@ func joinCapped(items []string, limit int) string {
 
 // Sanitized one line text cut to limit characters with an ellipsis
 func truncate(text string, limit int) string {
-	text = strings.Join(pystr.SplitWhitespace(tools.SanitizeDisplayText(text), -1), " ")
-	if pystr.Len(text) <= limit {
+	text = strings.Join(strings.Fields(tools.SanitizeDisplayText(text)), " ")
+	if utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	return strings.TrimRightFunc(pystr.Slice(text, 0, limit-1), unicode.IsSpace) + "…"
+	return strings.TrimRightFunc(textutil.First(text, limit-1), unicode.IsSpace) + "…"
 }
 
 // Plain multi line recap of recent session activity built from in memory history
@@ -297,7 +299,7 @@ func BuildRecap(messages []any, sessionTitle, sessionID string) string {
 	if sessionTitle != "" || sessionID != "" {
 		label := sessionTitle
 		if label == "" {
-			label = pystr.Slice(sessionID, 0, 8)
+			label = textutil.First(sessionID, 8)
 		}
 		lines[0] += " — " + label
 	}

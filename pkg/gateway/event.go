@@ -1,15 +1,15 @@
 package gateway
 
 import (
-	"unicode"
-
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var attachmentRefRE = regexp.MustCompile(`(?i)^(?:@(?:image|file|url):[^\n]+\n?)+`)
@@ -213,7 +213,7 @@ func (e *MessageEvent) GetCommand() (string, bool) {
 	if !e.IsCommand() {
 		return "", false
 	}
-	raw := strings.ToLower(pystr.SplitWhitespace(e.commandText(), 1)[0][1:])
+	raw := strings.ToLower(textutil.FieldsN(e.commandText(), 1)[0][1:])
 	raw, _, _ = strings.Cut(raw, "@")
 	if strings.Contains(raw, "/") {
 		return "", false
@@ -226,7 +226,7 @@ func (e *MessageEvent) GetCommandArgs() string {
 	if !e.IsCommand() {
 		return e.Text
 	}
-	parts := pystr.SplitWhitespace(strings.TrimLeftFunc(e.commandText(), unicode.IsSpace), 1)
+	parts := textutil.FieldsN(strings.TrimLeftFunc(e.commandText(), unicode.IsSpace), 1)
 	args := ""
 	if len(parts) > 1 {
 		args = parts[1]

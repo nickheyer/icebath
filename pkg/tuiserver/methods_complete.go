@@ -22,12 +22,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -264,7 +265,7 @@ func backendDirEntries(ctx context.Context, searchDir, sessionKey string) (entri
 	if pyrepr.Truthy(result["output"]) {
 		output = pyrepr.Str(result["output"])
 	}
-	for _, line := range pystr.Splitlines(output, false) {
+	for _, line := range textutil.Lines(output) {
 		name := strings.TrimRight(line, "/")
 		if name != "" && !strings.Contains(name, "/") {
 			entries = append(entries, dirEntry{name, strings.HasSuffix(line, "/")})

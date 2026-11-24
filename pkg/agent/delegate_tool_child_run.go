@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -20,11 +21,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var (
@@ -237,7 +239,7 @@ func diagSizes(child *AIAgent) []string {
 		if sys == "" {
 			sys = child.cachedSystemPrompt
 		}
-		return []string{fmt.Sprintf("  system_prompt_bytes: %d", len(sys)), fmt.Sprintf("  system_prompt_chars: %d", pystr.Len(sys))}, nil
+		return []string{fmt.Sprintf("  system_prompt_bytes: %d", len(sys)), fmt.Sprintf("  system_prompt_chars: %d", utf8.RuneCountInString(sys))}, nil
 	}
 	toolsFn := func() ([]string, error) {
 		if child.tools == nil {
@@ -786,7 +788,7 @@ func buildToolTrace(env *tools.Env, messages any) []any {
 				arguments, _ := fn["arguments"].(string)
 				entry := pyjson.NewObject()
 				entry.Set("tool", name)
-				entry.Set("args_bytes", pystr.Len(arguments))
+				entry.Set("args_bytes", utf8.RuneCountInString(arguments))
 				entry.Set("input_summary", summarizeToolArguments(env, fn["arguments"]))
 				trace = append(trace, entry)
 				last = entry
@@ -808,7 +810,7 @@ func buildToolTrace(env *tools.Env, messages any) []any {
 				}
 				target = last
 			}
-			target.Set("result_bytes", pystr.Len(content))
+			target.Set("result_bytes", utf8.RuneCountInString(content))
 			target.Set("status", status)
 		}
 	}
@@ -1391,7 +1393,7 @@ func (r *childRun) accountBackgroundProcesses(entry *pyjson.Object) {
 			for _, s := range leftover {
 				o := pyjson.NewObject()
 				o.Set("session_id", s.ID)
-				o.Set("command", pystr.Slice(tools.RedactChildText(r.child.env, s.Command, false), 0, 200))
+				o.Set("command", textutil.First(tools.RedactChildText(r.child.env, s.Command, false), 200))
 				o.Set("runtime_seconds", int(math.RoundToEven(now-s.StartedAt)))
 				list = append(list, o)
 			}
@@ -1402,14 +1404,14 @@ func (r *childRun) accountBackgroundProcesses(entry *pyjson.Object) {
 			for _, s := range unread {
 				o := pyjson.NewObject()
 				o.Set("session_id", s.ID)
-				o.Set("command", pystr.Slice(tools.RedactChildText(r.child.env, s.Command, false), 0, 200))
+				o.Set("command", textutil.First(tools.RedactChildText(r.child.env, s.Command, false), 200))
 				var code any
 				if s.ExitCode != nil {
 					code = *s.ExitCode
 				}
 				o.Set("exit_code", code)
-				tail := tools.RedactChildText(r.child.env, tools.OutputTail(s, pystr.Len(s.OutputBuffer)), false)
-				o.Set("output_tail", pystr.Slice(tail, max(0, pystr.Len(tail)-600), pystr.Len(tail)))
+				tail := tools.RedactChildText(r.child.env, tools.OutputTail(s, utf8.RuneCountInString(s.OutputBuffer)), false)
+				o.Set("output_tail", textutil.Last(tail, 600))
 				list = append(list, o)
 			}
 			entry.Set("unread_completions", list)
@@ -1464,7 +1466,7 @@ func (r *childRun) emitComplete(result map[string]any, entry *pyjson.Object, dur
 	}
 	preview, longSummary := errText, errText
 	if summary != "" {
-		preview, longSummary = pystr.Slice(summary, 0, 160), pystr.Slice(summary, 0, 500)
+		preview, longSummary = textutil.First(summary, 160), textutil.First(summary, 500)
 	}
 	status, _ := entry.Get("status")
 	apiCalls, _ := entry.Get("api_calls")

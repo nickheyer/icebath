@@ -23,8 +23,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Hidden first argument that routes a binary to the Meet bot through DispatchMeetBotEntry
@@ -485,7 +486,7 @@ func macAudioDeviceIndex(deviceName string) string {
 		return "0"
 	}
 	needle := strings.ToLower(strings.TrimSpace(deviceName))
-	for _, line := range pystr.Splitlines(strings.ToValidUTF8(stderr.String(), "�"), false) {
+	for _, line := range textutil.Lines(strings.ToValidUTF8(stderr.String(), "�")) {
 		if m := avfoundationDeviceRe.FindStringSubmatch(line); m != nil && strings.ToLower(strings.TrimSpace(m[2])) == needle {
 			return m[1]
 		}

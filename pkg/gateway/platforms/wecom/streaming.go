@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
@@ -212,7 +213,7 @@ func (s *Streamer) sendReplyQueued(ctx context.Context, reqID string, body *pyjs
 	s.mu.Unlock()
 	id, finish := streamDesc(body)
 	pkgLog().Debug(fmt.Sprintf("[%s] _send_reply_queued: req_id=%s is_final=%s skip_if_pending=%s stream_id=%s finish=%s content_len=%d",
-		s.Host.Name(), normalized, pyrepr.Str(isFinal), pyrepr.Str(skipIfPending), id, finish, pystr.Len(pyrepr.Str(getOr(streamOf(body), "content", "")))))
+		s.Host.Name(), normalized, pyrepr.Str(isFinal), pyrepr.Str(skipIfPending), id, finish, utf8.RuneCountInString(pyrepr.Str(getOr(streamOf(body), "content", "")))))
 	if err := s.Host.SendJSON(ctx, obj("cmd", AppCmdResponse, "headers", obj("req_id", normalized), "body", body)); err != nil {
 		s.mu.Lock()
 		s.releasePending(queue, normalized, frame)
@@ -434,7 +435,7 @@ func (s *Streamer) sendStreamReply(ctx context.Context, reqID, streamID, content
 	if err != nil {
 		return nil, err
 	}
-	if pystr.Len(content) != pystr.Len(truncated) {
+	if utf8.RuneCountInString(content) != utf8.RuneCountInString(truncated) {
 		pkgLog().Warn(fmt.Sprintf("[%s] Stream content truncated for stream_id=%s", s.Host.Name(), streamID))
 	}
 	body := obj("msgtype", "stream", "stream", obj("id", streamID, "finish", finish, "content", truncated))

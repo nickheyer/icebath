@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -17,6 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Names of the signals a shutdown snapshot recognises by number
@@ -42,7 +45,7 @@ func readProcField(pid int, key string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	for _, line := range pystr.Splitlines(string(data), false) {
+	for _, line := range textutil.Lines(string(data)) {
 		if strings.HasPrefix(line, key+":") {
 			return strings.TrimSpace(line[len(key)+1:]), true
 		}
@@ -237,7 +240,7 @@ func CheckSystemdTimingAlignment(ctx context.Context, drainTimeout, cronDrainTim
 	}
 	unitName := ""
 	if data, err := os.ReadFile("/proc/self/cgroup"); err == nil {
-		for _, line := range pystr.Splitlines(string(data), true) {
+		for _, line := range slices.Collect(strings.Lines(string(data))) {
 			parts := strings.Split(strings.TrimSpace(line), "/")
 			for i := len(parts) - 1; i >= 0; i-- {
 				if strings.HasSuffix(parts[i], ".service") {
@@ -281,7 +284,7 @@ func systemdTimeoutStopUS(ctx context.Context, unitName string) *big.Int {
 		if err != nil || result.Returncode != 0 {
 			continue
 		}
-		for _, line := range pystr.Splitlines(strings.ToValidUTF8(string(result.Stdout), "\ufffd"), false) {
+		for _, line := range textutil.Lines(strings.ToValidUTF8(string(result.Stdout), "\ufffd")) {
 			if !strings.HasPrefix(line, "TimeoutStopUSec=") {
 				continue
 			}

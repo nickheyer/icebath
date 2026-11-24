@@ -1,12 +1,11 @@
 package gateway
 
 import (
-	"unicode"
-
 	"context"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 

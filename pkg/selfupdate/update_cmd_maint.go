@@ -3,8 +3,6 @@
 package selfupdate
 
 import (
-	"unicode"
-
 	"context"
 	"database/sql"
 	"errors"
@@ -16,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/config"
@@ -36,6 +35,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -219,7 +220,7 @@ func printCuratorRecentRunNotice(ctx context.Context, w io.Writer) {
 	if text, ok := summary.(string); ok && strings.Contains(text, "\n") {
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "ℹ Skill curator — last run %s\n", formatTimeAgo(lastRunAt))
-		for _, line := range pystr.Splitlines(text, false) {
+		for _, line := range textutil.Lines(text) {
 			fmt.Fprintf(w, "  %s\n", line)
 		}
 		fmt.Fprintln(w, "  (This message shows once per curator run. View anytime: icebath curator status)")
@@ -268,7 +269,7 @@ func checkoutVersion(ctx context.Context) *string {
 func updateCompleteMessage(ctx context.Context, preVersion *string) string {
 	shown := func(version string) string {
 		for _, r := range version {
-			if pystr.IsDigit(r) {
+			if unicode.IsDigit(r) {
 				return "v" + version
 			}
 			break
@@ -484,7 +485,7 @@ func ensureFHSPathGuard(ctx context.Context, w io.Writer) error {
 			continue
 		}
 		guarded := false
-		for _, line := range pystr.Splitlines(pystr.DecodeUTF8SigReplace(raw), false) {
+		for _, line := range textutil.Lines(pystr.DecodeUTF8SigReplace(raw)) {
 			if strings.Contains(line, "/usr/local/bin") && strings.Contains(line, "PATH") && !strings.HasPrefix(strings.TrimLeftFunc(line, unicode.IsSpace), "#") {
 				guarded = true
 				break
@@ -921,7 +922,7 @@ func maintLastLine(err error) string {
 			text = called.Stderr
 		}
 	}
-	lines := pystr.Splitlines(strings.TrimSpace(text), false)
+	lines := textutil.Lines(strings.TrimSpace(text))
 	if len(lines) == 0 {
 		return pm.ErrorClass(err)
 	}

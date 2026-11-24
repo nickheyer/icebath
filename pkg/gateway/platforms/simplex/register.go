@@ -1,11 +1,10 @@
 package simplex
 
 import (
-	"strings"
-
 	"cmp"
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"

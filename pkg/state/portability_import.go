@@ -1,14 +1,13 @@
 package state
 
 import (
-	"strings"
-
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"sort"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"

@@ -2,9 +2,9 @@ package state
 
 import (
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Turn boundary notices and the display kind a failed turn row carries
@@ -54,7 +54,7 @@ func FormatReferenceValue(value string) string {
 
 // Whether a rune is Python whitespace or one of the bracket and quote characters a bare reference cannot hold
 func referenceNeedsQuoting(r rune) bool {
-	return pystr.IsSpace(r) || strings.ContainsRune("()[]{}<>\"'`", r)
+	return unicode.IsSpace(r) || strings.ContainsRune("()[]{}<>\"'`", r)
 }
 
 // String content or the newline joined text of dict parts, empty for anything else

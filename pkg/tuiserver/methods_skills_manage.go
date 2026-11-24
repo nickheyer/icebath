@@ -13,9 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // One skills.manage action handler given the fitted params
@@ -86,7 +87,7 @@ func skillsInstall(ctx context.Context, rid any, p tuigateway.SkillsManageParams
 	message := "skill install failed"
 	var logValue any
 	if log != "" {
-		split := pystr.Splitlines(log, false)
+		split := textutil.Lines(log)
 		message, logValue = strings.TrimPrefix(split[len(split)-1], "Error: "), log
 	}
 	return rpcErr(rid, 5031, message, map[string]any{"installed": false, "name": identifier, "log": logValue}), nil

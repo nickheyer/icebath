@@ -1,11 +1,13 @@
 package home
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestOpenRouterVariantBase(t *testing.T) {
 	for in, want := range map[string]string{
 		"x-ai/grok-4:nitro": "x-ai/grok-4", "x-ai/grok-4:NITRO": "x-ai/grok-4", "x-ai/grok-4:free": "",
-		"x-ai/grok-4": "", ":nitro": "", "": "", "a:b:online": "a:b", "x:NİTRO": "",
+		"x-ai/grok-4": "", ":nitro": "", "": "", "a:b:online": "a:b",
 	} {
 		if got := OpenRouterVariantBase(in); got != want {
 			t.Errorf("%q -> %q, want %q", in, got, want)

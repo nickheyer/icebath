@@ -1,11 +1,10 @@
 package media
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 )

@@ -15,8 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Seams over the host facts the posture audit reads, replaced by tests
@@ -55,8 +56,8 @@ func auditIterSshdConfigLinesLive() []string {
 		if err != nil {
 			continue
 		}
-		text := pystr.DecodeUTF8Replace(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
-		for _, raw := range pystr.Splitlines(text, false) {
+		text := strings.ToValidUTF8(string(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))), "\uFFFD")
+		for _, raw := range textutil.Lines(text) {
 			s := strings.TrimSpace(raw)
 			if s != "" && !strings.HasPrefix(s, "#") {
 				lines = append(lines, s)
@@ -123,7 +124,7 @@ func pathIsMounted(path string) bool {
 	for _, p := range pypath.PathParents(target) {
 		parents[p] = true
 	}
-	for _, line := range pystr.Splitlines(strings.ToValidUTF8(string(data), "\ufffd"), false) {
+	for _, line := range textutil.Lines(strings.ToValidUTF8(string(data), "\ufffd")) {
 		parts := strings.Fields(line)
 		if len(parts) < 3 {
 			continue

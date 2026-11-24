@@ -1,11 +1,10 @@
 package discord
 
 import (
-	"strings"
-
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"

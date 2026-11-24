@@ -13,7 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -889,8 +890,8 @@ func BuildToolLabel(env *Env, toolName string, args map[string]any, maxLen *int)
 // VerboseToolArgsText renders the typed ordered args as json.dumps does, capped at maxLen, code blocked with real line breaks
 func VerboseToolArgsText(args *pyjson.Object, maxLen int, codeBlock bool) string {
 	text := pyDumps(args, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
-	if maxLen > 0 && len(pystr.Runes(text)) > maxLen {
-		text = pystr.Slice(text, 0, maxLen-3) + "..."
+	if maxLen > 0 && len([]rune(text)) > maxLen {
+		text = textutil.First(text, maxLen-3) + "..."
 	}
 	if !codeBlock || strings.Contains(text, "```") {
 		return text

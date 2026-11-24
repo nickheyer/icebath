@@ -17,6 +17,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Recipe is a runnable verification recipe whose command lists are shell strings run in the project root
@@ -591,7 +593,7 @@ func detectMakeRecipe(root string) (*Recipe, error) {
 	}
 	var targets []string
 	present := map[string]bool{}
-	for _, line := range pystr.Splitlines(*makefile, false) {
+	for _, line := range textutil.Lines(*makefile) {
 		m, err := makeTarget.FindStringMatch(line)
 		if err != nil {
 			return nil, err

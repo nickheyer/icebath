@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var codexToolItemTypes = map[string]bool{"commandExecution": true, "fileChange": true, "mcpToolCall": true, "dynamicToolCall": true, "webSearch": true}
@@ -106,7 +107,7 @@ func codexItemToArgs(item any) any {
 func codexItemToPreview(item any) any {
 	itemType := cxStr(item, "type", "")
 	if field, ok := codexPreviewFields[itemType]; ok {
-		if s := pystr.Slice(cxStr(item, field, ""), 0, 120); s != "" {
+		if s := textutil.First(cxStr(item, field, ""), 120); s != "" {
 			return s
 		}
 		return nil
@@ -131,7 +132,7 @@ func codexItemToPreview(item any) any {
 		args := cxOr(cxGet(item, "arguments"), map[string]any{})
 		if cxIsObject(args) && cxTruthy(args) {
 			if text, err := cxDumps(args); err == nil {
-				return pystr.Slice(text, 0, 120)
+				return textutil.First(text, 120)
 			}
 		}
 	}

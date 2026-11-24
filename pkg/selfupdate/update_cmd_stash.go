@@ -21,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -121,7 +123,7 @@ func printNonempty(w io.Writer, text, prefix string) {
 // Prints the first line of stripped text indented unless it is blank
 func printFirstLine(w io.Writer, text string) {
 	if stripped := strings.TrimSpace(text); stripped != "" {
-		fmt.Fprintln(w, "  "+pystr.Splitlines(stripped, false)[0])
+		fmt.Fprintln(w, "  "+textutil.Lines(stripped)[0])
 	}
 }
 
@@ -431,7 +433,7 @@ func resolveStashSelector(ctx context.Context, gitCmd []string, cwd, stashRef st
 	if err != nil {
 		return "", false, err
 	}
-	for _, line := range pystr.Splitlines(listed.Stdout, false) {
+	for _, line := range textutil.Lines(listed.Stdout) {
 		selector, commit, _ := strings.Cut(line, " ")
 		if strings.TrimSpace(commit) != stashRef {
 			continue
@@ -471,7 +473,7 @@ func warnOrphanedUpdateAutostashes(ctx context.Context, w io.Writer, gitCmd []st
 	}
 	cutoff := time.Now().UTC().Add(-autostashWarnAgeDays * 24 * time.Hour)
 	var stale [][2]string
-	for _, line := range pystr.Splitlines(listed.Stdout, false) {
+	for _, line := range textutil.Lines(listed.Stdout) {
 		selector, subject, _ := strings.Cut(strings.TrimSpace(line), " ")
 		pos := strings.Index(subject, autostashNamePrefix)
 		if pos < 0 {
@@ -530,7 +532,7 @@ func printStashCleanupGuidance(w io.Writer, stashRef, stashSelector string) {
 // True when a stash apply failure is only about untracked files that already exist in the tree
 func stashApplyFailedOnlyOnExistingUntracked(stderr string) bool {
 	sawUntrackedError := false
-	for _, raw := range pystr.Splitlines(stderr, false) {
+	for _, raw := range textutil.Lines(stderr) {
 		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
@@ -548,7 +550,7 @@ func stashApplyFailedOnlyOnExistingUntracked(stderr string) bool {
 func untrackedFilesReplacedByUpdate(ctx context.Context, gitCmd []string, cwd, stashRef, stderr string) ([]string, error) {
 	var replaced []string
 	const suffix = " already exists, no checkout"
-	for _, raw := range pystr.Splitlines(stderr, false) {
+	for _, raw := range textutil.Lines(stderr) {
 		line := strings.TrimSpace(raw)
 		if !strings.HasSuffix(line, suffix) {
 			continue
@@ -681,7 +683,7 @@ func rejectUnsafeStashRestore(ctx context.Context, w io.Writer, gitCmd []string,
 	fmt.Fprintln(w, "✗ Restored local changes made the Icebath agent unexecutable.")
 	fmt.Fprintf(w, "  Health check failed: %s\n", failingTarget)
 	if detail != "" {
-		lines := pystr.Splitlines(detail, false)
+		lines := textutil.Lines(detail)
 		for _, line := range lines[:min(len(lines), 6)] {
 			fmt.Fprintf(w, "    %s\n", line)
 		}
@@ -809,7 +811,7 @@ func applyStash(ctx context.Context, w io.Writer, gitCmd []string, cwd, stashRef
 	printNonempty(w, restore.Stderr, "")
 	if conflictedFiles != "" {
 		fmt.Fprintln(w, "\nConflicted files:")
-		for _, file := range pystr.Splitlines(conflictedFiles, false) {
+		for _, file := range textutil.Lines(conflictedFiles) {
 			fmt.Fprintf(w, "  • %s\n", file)
 		}
 	}

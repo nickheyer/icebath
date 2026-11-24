@@ -4,16 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Fresh cache and no env zone for the test, both restored afterwards
@@ -71,7 +68,7 @@ func TestInvalidTimezoneFallsBackToServerLocal(t *testing.T) {
 	}
 }
 
-func TestSafeStrftimeValidLocaleTextIsByteIdentical(t *testing.T) {
+func TestSafeStrftimeWritesZoneNamesAsGiven(t *testing.T) {
 	paris := requireZone(t, "Europe/Paris")
 	format := "%a %A %b %B %d %Y %H:%M:%S %Z %z %%Z"
 	cases := map[string]time.Time{
@@ -79,37 +76,9 @@ func TestSafeStrftimeValidLocaleTextIsByteIdentical(t *testing.T) {
 		"Tue Tuesday Jul July 14 2026 13:05:00 Hora estándar de Argentina -0300 %Z": time.Date(2026, 7, 14, 13, 5, 0, 0, time.FixedZone("Hora estándar de Argentina", -3*3600)),
 	}
 	for want, value := range cases {
-		got, err := SafeStrftimeChecked(value, format)
-		if err != nil || got != want || got != pydatetime.Strftime(value, format) || SafeStrftime(value, format) != want {
-			t.Errorf("SafeStrftime = %q, %v, want %q", got, err, want)
+		if got := SafeStrftime(value, format); got != want {
+			t.Errorf("SafeStrftime = %q, want %q", got, want)
 		}
-	}
-}
-
-func TestSafeStrftimeSurrogateZoneNameRendersJSONSafe(t *testing.T) {
-	escaped := pystr.SurrogateEscapeDecode([]byte("Paris, Madrid (heure d'\xe9t\xe9)"))
-	value := time.Date(2026, 7, 14, 13, 5, 0, 0, time.FixedZone(escaped, 2*3600))
-	rendered, err := SafeStrftimeChecked(value, "%a %Y-%m-%d %H:%M %Z %z %%Z")
-	if err != nil || !utf8.ValidString(rendered) {
-		t.Fatalf("SafeStrftime = %q, %v", rendered, err)
-	}
-	if !strings.HasPrefix(rendered, "Tue 2026-07-14 13:05 Paris, Madrid (heure d'") || !strings.HasSuffix(rendered, ") +0200 %Z") {
-		t.Fatalf("rendered = %q", rendered)
-	}
-	if got := RepairSurrogates(escaped, "cp1252"); got != "Paris, Madrid (heure d'été)" {
-		t.Fatalf("RepairSurrogates = %q", got)
-	}
-	if got := RepairSurrogates("valid été", ""); got != "valid été" {
-		t.Fatalf("valid text changed to %q", got)
-	}
-	if got := RepairSurrogates(escaped+"é", "cp1252"); got != "Paris, Madrid (heure d'�t�)é" {
-		t.Fatalf("mixed text = %q", got)
-	}
-	if got := RepairSurrogates(escaped, "no-such-codec"); got != "Paris, Madrid (heure d'�t�)" {
-		t.Fatalf("unknown codec = %q", got)
-	}
-	if _, err := SafeStrftimeChecked(value, escaped); err == nil {
-		t.Fatal("format holding surrogates rendered")
 	}
 }
 

@@ -5,10 +5,10 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // ZoneInfoNotFoundError is zoneinfo.ZoneInfoNotFoundError, a KeyError whose str is the quoted message
@@ -50,7 +50,7 @@ func validateZoneKey(key string) error {
 		return &ZoneKeyError{"ZoneInfo keys may not be absolute paths, got: " + key}
 	}
 	normalized := pypath.Normpath(key)
-	if pystr.Len(normalized) != pystr.Len(key) {
+	if utf8.RuneCountInString(normalized) != utf8.RuneCountInString(key) {
 		return &ZoneKeyError{"ZoneInfo keys must be normalized relative paths, got: " + key}
 	}
 	base := pypath.Normpath(pypath.Join("_", "_"))

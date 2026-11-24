@@ -13,7 +13,8 @@ import (
 	"github.com/line/line-bot-sdk-go/v8/linebot/messaging_api"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Messaging API and content API hosts the client talks to
@@ -77,7 +78,7 @@ func (c *lineClient) postMessages(ctx context.Context, path, label string, paylo
 	defer res.Body.Close()
 	if res.StatusCode >= 400 {
 		text, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("LINE %s %d: %s", label, res.StatusCode, pystr.Slice(pystr.DecodeUTF8Replace(text), 0, 200))
+		return fmt.Errorf("LINE %s %d: %s", label, res.StatusCode, textutil.First(strings.ToValidUTF8(string(text), "\uFFFD"), 200))
 	}
 	return nil
 }

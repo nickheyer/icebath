@@ -26,6 +26,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -130,7 +132,7 @@ func matchPins(specs []string) [][2]string {
 // Exact pins of a requirements file, comments and options skipped
 func parseRequirements(text string) [][2]string {
 	var specs []string
-	for _, raw := range pystr.Splitlines(text, false) {
+	for _, raw := range textutil.Lines(text) {
 		line := strings.TrimSpace(raw)
 		if line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "-") {
 			specs = append(specs, line)
@@ -535,7 +537,7 @@ func renderHuman(findings []auditFinding, total int) string {
 			lines = append(lines, "["+c.Source+"]")
 			lastSource, haveLast = c.Source, true
 		}
-		lines = append(lines, fmt.Sprintf("  %s  %s==%s  %s", pystr.Ljust(v.Severity, 8), c.Name, c.Version, v.OSVID))
+		lines = append(lines, fmt.Sprintf("  %-8s  %s==%s  %s", v.Severity, c.Name, c.Version, v.OSVID))
 		if v.Summary != "" {
 			summary := v.Summary
 			if r := []rune(summary); len(r) > 100 {

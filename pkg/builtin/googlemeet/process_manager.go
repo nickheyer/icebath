@@ -21,6 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Meetings workspace under the profile home, swapped by tests
@@ -312,7 +314,7 @@ func pmTranscript(ctx context.Context, last int) (*pyjson.Object, error) {
 	raw = []byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
 	text := strings.ToValidUTF8(string(raw), "�")
 	var all []string
-	for _, ln := range pystr.Splitlines(text, false) {
+	for _, ln := range textutil.Lines(text) {
 		if strings.TrimSpace(ln) != "" {
 			all = append(all, ln)
 		}

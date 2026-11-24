@@ -50,38 +50,6 @@ func TestWTF8DecodeRune(t *testing.T) {
 	}
 }
 
-func TestWTF8RuneCountMatchesPythonLen(t *testing.T) {
-	cases := map[string]int{
-		"":                         0,
-		"a\xed\xa0\x80b":           3,
-		"\x80\x81":                 2,
-		"h\xc3\xa9llo":             5,
-		"\xed\xa0":                 2,
-		"\xed\xb2\x80\xed\xb2\x80": 2,
-		"\xed\x9f\xbf\xed\xa0\x80": 2,
-		"\xf0\x9f\x98\x80\xed":     2,
-	}
-	for in, want := range cases {
-		if got := pystr.Len(in); got != want || len(pystr.Runes(in)) != want {
-			t.Errorf("%q = %d runes %d, want %d", in, got, len(pystr.Runes(in)), want)
-		}
-	}
-	if got := pystr.Len(pystr.SurrogateEscapeDecode([]byte("caf\xc3\xa9\x80"))); got != 5 {
-		t.Errorf("python len of the surrogateescape decode is 5, got %d", got)
-	}
-}
-
-func TestWTF8RunesRoundTrip(t *testing.T) {
-	for _, s := range []string{"plain", "\xed\xa0\x80\xed\xb8\x80", "a\xed\xb3\xbfb", "\xf0\x9f\x98\x80"} {
-		if got := pystr.FromRunes(pystr.Runes(s)); got != s {
-			t.Errorf("%q round tripped to %q", s, got)
-		}
-	}
-	if got := pystr.FromRunes(pystr.Runes("a\x80")); got != "a\xed\xb2\x80" {
-		t.Errorf("stray byte canonical form %q", got)
-	}
-}
-
 func TestSurrogateEscapeDecodeMatchesPython(t *testing.T) {
 	cases := map[string]string{
 		"\xff\x00\xfe":       "\xed\xb3\xbf\x00\xed\xb3\xbe",

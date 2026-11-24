@@ -1,10 +1,9 @@
 package gateway
 
 import (
+	"context"
 	"strings"
 	"unicode"
-
-	"context"
 )
 
 // Text with a terminal run of end of sequence tokens cut and the remainder right stripped

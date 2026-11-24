@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -19,11 +20,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -566,8 +568,8 @@ func A2AHistory(ctx context.Context, args map[string]any) string {
 	for _, m := range messages {
 		raw, _ := m.Get("text")
 		text := strings.TrimSpace(pyrepr.Str(pyOr(raw, "")))
-		if pystr.Len(text) > 1000 {
-			text = pystr.Slice(text, 0, 1000) + " …[truncated]"
+		if utf8.RuneCountInString(text) > 1000 {
+			text = textutil.First(text, 1000) + " …[truncated]"
 		}
 		role, ok := m.Get("role")
 		if !ok {
@@ -661,7 +663,7 @@ func A2AOrchestrate(ctx context.Context, args map[string]any) string {
 		pick := successes[0]
 		if mode == "best" {
 			for _, s := range successes[1:] {
-				if pystr.Len(s[1]) > pystr.Len(pick[1]) {
+				if utf8.RuneCountInString(s[1]) > utf8.RuneCountInString(pick[1]) {
 					pick = s
 				}
 			}

@@ -8,14 +8,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -100,7 +102,7 @@ type devtoolsAddr struct {
 
 // DevTools port and browser path from DevToolsActivePort text, false when malformed
 func parseDevtoolsLines(stdout []byte) (devtoolsAddr, bool) {
-	lines := pystr.Splitlines(pystr.DecodeUTF8Replace(stdout), false)
+	lines := textutil.Lines(strings.ToValidUTF8(string(stdout), "\uFFFD"))
 	if len(lines) < 2 || !strIsDigit(strings.TrimSpace(lines[0])) || !strings.HasPrefix(lines[1], "/devtools/browser/") {
 		return devtoolsAddr{}, false
 	}
@@ -114,7 +116,7 @@ func parseDevtoolsLines(stdout []byte) (devtoolsAddr, bool) {
 // str.isdigit of s
 func strIsDigit(s string) bool {
 	for _, r := range s {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}
@@ -204,12 +206,12 @@ func startSandboxChromium(env *tools.Env, e tools.Environment, user, exe, udd st
 	}
 	var words []string
 	if proc.ReturnCode == 0 {
-		if lines := pystr.Splitlines(strings.TrimSpace(pystr.DecodeUTF8Replace(proc.Stdout)), false); len(lines) > 0 {
-			words = strings.FieldsFunc(lines[len(lines)-1], pystr.IsSpace)
+		if lines := textutil.Lines(strings.TrimSpace(strings.ToValidUTF8(string(proc.Stdout), "\uFFFD"))); len(lines) > 0 {
+			words = strings.FieldsFunc(lines[len(lines)-1], unicode.IsSpace)
 		}
 	}
 	if len(words) == 0 || !strIsDigit(words[0]) {
-		stderr := []rune(pystr.DecodeUTF8Replace(proc.Stderr))
+		stderr := []rune(strings.ToValidUTF8(string(proc.Stderr), "\uFFFD"))
 		if len(stderr) > 500 {
 			stderr = stderr[len(stderr)-500:]
 		}

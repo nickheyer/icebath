@@ -1,14 +1,11 @@
 package gateway
 
 import (
-	"unicode"
-
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python str whitespace as a regexp class body
@@ -82,7 +79,7 @@ func FenceStateAfter(text string, inCode bool, lang string) (bool, string) {
 			continue
 		}
 		inCode, lang = true, ""
-		if tag := pystr.SplitWhitespace(stripped[3:], -1); len(tag) > 0 {
+		if tag := strings.Fields(stripped[3:]); len(tag) > 0 {
 			lang = tag[0]
 		}
 	}

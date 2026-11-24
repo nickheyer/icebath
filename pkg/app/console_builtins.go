@@ -2,6 +2,7 @@ package app
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"errors"
@@ -16,10 +17,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Session export calls of the console, swapped by tests that track SessionDB methods
@@ -56,7 +58,7 @@ func consoleCaptured(fn func(e *ConsoleEngine, args []string) (int, error)) cons
 // Whether a line is a rule of eight or more dashes or box drawing dashes
 func consoleIsStatusFooterRule(line string) bool {
 	stripped := strings.TrimSpace(tools.StripANSI(line))
-	if pystr.Len(stripped) < 8 {
+	if utf8.RuneCountInString(stripped) < 8 {
 		return false
 	}
 	return strings.Trim(strings.ReplaceAll(stripped, "─", "-"), "-") == ""
@@ -72,7 +74,7 @@ func consoleDropTrailingBlank(lines []string) []string {
 
 // Status text without its doctor and setup hint footer and the rule above it
 func consoleStripStatusFooter(text string) string {
-	lines := consoleDropTrailingBlank(pystr.Splitlines(text, false))
+	lines := consoleDropTrailingBlank(textutil.Lines(text))
 	if len(lines) < 2 {
 		return strings.TrimRightFunc(text, unicode.IsSpace)
 	}
@@ -93,19 +95,19 @@ func consoleFormatSessions(sessions []*pyjson.Object) string {
 	if len(sessions) == 0 {
 		return "No sessions found."
 	}
-	lines := []string{fmt.Sprintf("%s %s %5s  Title / Preview", pystr.Ljust("ID", 32), pystr.Ljust("Source", 12), "Msgs"),
+	lines := []string{fmt.Sprintf("%-32s %-12s %5s  Title / Preview", "ID", "Source", "Msgs"),
 		strings.Repeat("-", 82)}
 	field := func(row *pyjson.Object, key string) any {
 		v, _ := row.Get(key)
 		return v
 	}
 	for _, s := range sessions {
-		sid := pystr.Slice(pyrepr.Str(pyrepr.Or(field(s, "id"), "")), 0, 32)
-		source := pystr.Slice(pyrepr.Str(pyrepr.Or(field(s, "source"), "-")), 0, 12)
+		sid := textutil.First(pyrepr.Str(pyrepr.Or(field(s, "id"), "")), 32)
+		source := textutil.First(pyrepr.Str(pyrepr.Or(field(s, "source"), "-")), 12)
 		messages, _ := pyrepr.Format(pyrepr.Or(field(s, "message_count"), 0), ">5")
 		title := pyrepr.Or(field(s, "title"), pyrepr.Or(field(s, "preview"), ""))
-		titleText := pystr.Slice(strings.ReplaceAll(pyrepr.Str(title), "\n", " "), 0, 60)
-		lines = append(lines, fmt.Sprintf("%s %s %s  %s", pystr.Ljust(sid, 32), pystr.Ljust(source, 12), messages, titleText))
+		titleText := textutil.First(strings.ReplaceAll(pyrepr.Str(title), "\n", " "), 60)
+		lines = append(lines, fmt.Sprintf("%-32s %-12s %s  %s", sid, source, messages, titleText))
 	}
 	return strings.Join(lines, "\n")
 }

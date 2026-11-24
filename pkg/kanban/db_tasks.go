@@ -19,6 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Keyword arguments of task creation, nil pointers and nil slices standing for None
@@ -1075,7 +1077,7 @@ func firstLine(text *string, limit int) string {
 	if text != nil {
 		s = *text
 	}
-	lines := pystr.Splitlines(strings.TrimSpace(s), false)
+	lines := textutil.Lines(strings.TrimSpace(s))
 	if len(lines) == 0 {
 		return ""
 	}

@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -60,7 +59,7 @@ func valueOf(candidates ...any) string {
 
 // Webhook body as JSON, else a form with a JSON payload, data or message field
 func parseWebhookBody(raw []byte) (any, error) {
-	body := pystr.DecodeUTF8Replace(raw)
+	body := strings.ToValidUTF8(string(raw), "\uFFFD")
 	if v, err := pyjson.Loads(body); err == nil {
 		return v, nil
 	}

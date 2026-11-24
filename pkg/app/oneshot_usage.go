@@ -1,12 +1,11 @@
 package app
 
 import (
-	"strings"
-
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/errchain"

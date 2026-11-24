@@ -1,10 +1,9 @@
 package pyemail
 
 import (
-	"unicode"
-
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 var (

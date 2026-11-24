@@ -3,7 +3,6 @@ package settings
 import (
 	"context"
 	"fmt"
-
 	"sort"
 	"strings"
 	"sync"

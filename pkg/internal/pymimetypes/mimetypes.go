@@ -86,7 +86,7 @@ func (d *DB) Read(filename string, strict bool) error {
 func (d *DB) ReadText(text string, strict bool) {
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
 	for _, line := range strings.SplitAfter(text, "\n") {
-		words := pystr.SplitWhitespace(line, -1)
+		words := strings.Fields(line)
 		for i, w := range words {
 			if strings.HasPrefix(w, "#") {
 				words = words[:i]

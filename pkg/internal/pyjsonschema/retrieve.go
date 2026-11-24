@@ -312,7 +312,7 @@ func followRedirect(full, location string, code int, visited map[string]int, f *
 func quoteLatin1Punctuation(s string) string {
 	const punctuation = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
 	var b strings.Builder
-	for _, r := range pystr.Runes(s) {
+	for _, r := range []rune(s) {
 		switch {
 		case r < 0x80 && (r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune(punctuation, r)):
 			b.WriteRune(r)

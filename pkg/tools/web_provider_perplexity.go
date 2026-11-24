@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -153,7 +153,7 @@ func perplexityQueryForURLs(urls []string) (string, error) {
 			return "", verbatim(err.Error())
 		}
 		path := strings.NewReplacer("-", " ", "_", " ", "/", " ").Replace(parsed.Path)
-		for _, token := range pystr.SplitWhitespace(path, -1) {
+		for _, token := range strings.Fields(path) {
 			lowered := strings.ToLower(token)
 			if !seen[lowered] && !pyStrIsDigit(token) {
 				seen[lowered] = true
@@ -177,7 +177,7 @@ func pyStrIsDigit(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if !pystr.IsDigit(r) {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}

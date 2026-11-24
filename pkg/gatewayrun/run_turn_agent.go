@@ -1,9 +1,8 @@
 package gatewayrun
 
 import (
-	"strings"
-
 	"context"
+	"strings"
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/gateway"

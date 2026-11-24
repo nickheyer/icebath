@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -785,11 +784,11 @@ func maskSecret(value string, head, tail, floor int) string {
 	if value == "" {
 		return ""
 	}
-	runes := pystr.Runes(value)
+	runes := []rune(value)
 	if len(runes) < floor {
 		return "***"
 	}
-	return pystr.FromRunes(runes[:head]) + "..." + pystr.FromRunes(runes[len(runes)-tail:])
+	return string(runes[:head]) + "..." + string(runes[len(runes)-tail:])
 }
 
 // Exported maskSecret
@@ -923,7 +922,7 @@ func looksLikeOpaqueCredential(value string) bool {
 	if value == "***" || strings.HasPrefix(value, "«redacted:") {
 		return true
 	}
-	n := pystr.Len(value)
+	n := utf8.RuneCountInString(value)
 	if n >= 16 && hexRe.MatchString(value) {
 		return true
 	}
@@ -948,7 +947,7 @@ func looksLikeOpaqueCredential(value string) bool {
 
 // Reports whether a dot free segment is long and mixes case and digits like a secret
 func opaquePathSegment(seg string) bool {
-	if strings.Contains(seg, ".") || pystr.Len(seg) < 16 {
+	if strings.Contains(seg, ".") || utf8.RuneCountInString(seg) < 16 {
 		return false
 	}
 	return strings.ContainsAny(seg, "abcdefghijklmnopqrstuvwxyz") && strings.ContainsAny(seg, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") &&

@@ -1,8 +1,6 @@
 package mattermost
 
 import (
-	"unicode"
-
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 
@@ -22,10 +21,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -278,7 +278,7 @@ func (a *MattermostAdapter) api(ctx context.Context, method, path string, payloa
 			a.lastPostError = text
 			a.mu.Unlock()
 		}
-		pkgLog().Error(fmt.Sprintf("MM API %s %s → %d: %s", method, path, resp.status, pystr.Slice(text, 0, 200)))
+		pkgLog().Error(fmt.Sprintf("MM API %s %s → %d: %s", method, path, resp.status, textutil.First(text, 200)))
 		return map[string]any{}, nil
 	}
 	data, err := resp.json()
@@ -410,7 +410,7 @@ func (a *MattermostAdapter) uploadFile(ctx context.Context, channelID string, fi
 		return nil, err
 	}
 	if resp.status >= 400 {
-		pkgLog().Error(fmt.Sprintf("MM file upload → %d: %s", resp.status, pystr.Slice(resp.text(), 0, 200)))
+		pkgLog().Error(fmt.Sprintf("MM file upload → %d: %s", resp.status, textutil.First(resp.text(), 200)))
 		return nil, nil
 	}
 	data, err := resp.json()
@@ -658,7 +658,7 @@ func (a *MattermostAdapter) sendURLAsFile(ctx context.Context, chatID, rawURL, c
 		case err != nil:
 			return gateway.SendResult{}, err
 		case (resp.status >= 500 || resp.status == 429) && attempt < 2:
-			pkgLog().Debug(fmt.Sprintf("Mattermost download retry %d/2 for %s (status %d)", attempt+1, pystr.Slice(rawURL, 0, 80), resp.status))
+			pkgLog().Debug(fmt.Sprintf("Mattermost download retry %d/2 for %s (status %d)", attempt+1, textutil.First(rawURL, 80), resp.status))
 		case resp.status >= 400:
 			return fallback()
 		default:
@@ -748,11 +748,11 @@ func (a *MattermostAdapter) loadBatchImage(ctx context.Context, imageURL string,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("Mattermost: download failed for %s: %s", pystr.Slice(imageURL, 0, 80), err.Error()))
+		pkgLog().Warn(fmt.Sprintf("Mattermost: download failed for %s: %s", textutil.First(imageURL, 80), err.Error()))
 		return nil, nil
 	}
 	if resp.status >= 400 {
-		pkgLog().Warn(fmt.Sprintf("Mattermost: failed to download image (HTTP %d): %s", resp.status, pystr.Slice(imageURL, 0, 80)))
+		pkgLog().Warn(fmt.Sprintf("Mattermost: failed to download image (HTTP %d): %s", resp.status, textutil.First(imageURL, 80)))
 		return nil, nil
 	}
 	contentType := "image/png"
@@ -1151,7 +1151,7 @@ func (a *MattermostAdapter) handleWSEvent(ctx context.Context, event any) error 
 	if threadID == "" && a.replyMode == "thread" && !isDM && pyrepr.Truthy(postIDValue) {
 		threadID = postID
 	}
-	if first := pystr.Slice(messageText, 0, 1); first != "" && strings.TrimSpace(first) == "" && strings.HasPrefix(strings.TrimLeftFunc(messageText, unicode.IsSpace), "/") {
+	if first := textutil.First(messageText, 1); first != "" && strings.TrimSpace(first) == "" && strings.HasPrefix(strings.TrimLeftFunc(messageText, unicode.IsSpace), "/") {
 		messageText = strings.TrimLeftFunc(messageText, unicode.IsSpace)
 	}
 	fileIDs, _ := postMap["file_ids"].([]any)

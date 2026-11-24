@@ -6,11 +6,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -92,13 +92,13 @@ func tokenHex(n int) string {
 func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, sessionID string, payload *pyjson.Object,
 	epoch int64, executionID string, identity map[string]any, principal string, limits [2]int64, refused *string) (*pyjson.Object, error) {
 	secret, isText := payload.GetOr("secret", nil).(string)
-	if !frameKeysAre(payload, "secret") || !isText || pystr.Len(secret) < 16 || pystr.Len(secret) > 256 {
+	if !frameKeysAre(payload, "secret") || !isText || utf8.RuneCountInString(secret) < 16 || utf8.RuneCountInString(secret) > 256 {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	prefix := executionID + state.ChildSeparator
 	low, high := state.DescendantRange(executionID)
 	row, err := state.ConnRow(ctx, conn, "SELECT COUNT(*) AS n FROM worker_executions WHERE execution_id>=? AND execution_id<? "+
-		"AND instr(substr(execution_id,?),'/')=0 AND status!='terminal'", low, high, pystr.Len(prefix)+1)
+		"AND instr(substr(execution_id,?),'/')=0 AND status!='terminal'", low, high, utf8.RuneCountInString(prefix)+1)
 	if err != nil {
 		return nil, err
 	}

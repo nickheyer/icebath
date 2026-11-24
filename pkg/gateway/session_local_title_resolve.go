@@ -1,10 +1,9 @@
 package gateway
 
 import (
-	"strings"
-
 	"context"
 	"sort"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"

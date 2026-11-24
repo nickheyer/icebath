@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
@@ -56,11 +55,11 @@ func pyStrOf(v any) string {
 
 // First n code points of a registry str
 func pyHead(v any, n int) string {
-	rs := pystr.Runes(pyStrOf(v))
+	rs := []rune(pyStrOf(v))
 	if len(rs) > n {
 		rs = rs[:n]
 	}
-	return pystr.FromRunes(rs)
+	return string(rs)
 }
 
 // Registry tag list as strings, empty when the value is not a list
@@ -668,8 +667,8 @@ func (b *BrowseShSource) itemToMeta(item any) *SkillMeta {
 		return nil
 	}
 	description := pyStrOf(desc)
-	if rs := pystr.Runes(description); len(rs) > 1024 {
-		description = pystr.FromRunes(rs[:1021]) + "..."
+	if rs := []rune(description); len(rs) > 1024 {
+		description = string(rs[:1021]) + "..."
 	}
 	return &SkillMeta{Name: pyrepr.Str(name), Description: description, Source: "browse-sh", Identifier: "browse-sh/" + pyrepr.Str(slug),
 		TrustLevel: "community", Tags: tagStrings(pyGet(item, "tags", []any{})),

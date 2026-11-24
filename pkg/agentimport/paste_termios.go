@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"golang.org/x/sys/unix"
 )
@@ -52,7 +51,7 @@ func readTerminalPaste(c *cliui.Console) (string, error) {
 	if i := bytes.IndexByte(all, 0x04); i >= 0 {
 		all = all[:i]
 	}
-	return strings.ReplaceAll(pystr.DecodeUTF8Replace(all), "\r", "\n"), nil
+	return strings.ReplaceAll(strings.ToValidUTF8(string(all), "\uFFFD"), "\r", "\n"), nil
 }
 
 // Drops the rest of a paste still streaming in, flushing until the input stays quiet for half a second

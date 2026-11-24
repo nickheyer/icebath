@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
 	"testing/iotest"
 
 	"github.com/nickheyer/icebath/pkg/config"

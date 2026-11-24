@@ -1,12 +1,12 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"io"
 	"net/http"
 	"time"
+	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Adds one real chunk to the attempt diagnostics, stamping the first chunk time once
@@ -29,7 +29,7 @@ func estimateChunkBytes(chunk map[string]any) int {
 		m, _ := obj.(map[string]any)
 		for _, k := range keys {
 			if v, ok := m[k].(string); ok {
-				size += pystr.Len(v)
+				size += utf8.RuneCountInString(v)
 			}
 		}
 	}

@@ -8,12 +8,12 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 type prefixMatcher struct {
@@ -149,7 +149,7 @@ func unboundedQuantifierFollows(pattern []rune, j int) bool {
 			return false
 		}
 		for _, r := range body[:len(body)-1] {
-			if !pystr.IsDigit(r) {
+			if !unicode.IsDigit(r) {
 				return false
 			}
 		}

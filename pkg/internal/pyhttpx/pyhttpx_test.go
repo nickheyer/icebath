@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
-	"github.com/andybalholm/brotli"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/andybalholm/brotli"
 )
 
 func TestMergeParamsKeepsOrderAndReplacesKeys(t *testing.T) {

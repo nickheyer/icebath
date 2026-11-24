@@ -6,12 +6,12 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -53,7 +53,7 @@ func (c *ContextCompressor) resolveCompactCursor(messages []map[string]any, head
 		if recovered != "" {
 			c.microCompactRollingSummary = recovered
 			messages[last][state.MicroCompactMarkerKey] = true
-			pkgLog().Info(fmt.Sprintf("Micro-compaction: recovered rolling summary from transcript (%d chars)", pystr.Len(recovered)))
+			pkgLog().Info(fmt.Sprintf("Micro-compaction: recovered rolling summary from transcript (%d chars)", utf8.RuneCountInString(recovered)))
 		}
 	}
 	c.microCompactCursor = cursor
@@ -207,7 +207,7 @@ func (c *ContextCompressor) defragRollingSummary(messages []map[string]any) (boo
 			break
 		}
 	}
-	pkgLog().Info(fmt.Sprintf("Micro-compaction defrag: rolling summary re-summarized (%d -> %d chars)", pystr.Len(oldSummary), pystr.Len(*fresh)))
+	pkgLog().Info(fmt.Sprintf("Micro-compaction defrag: rolling summary re-summarized (%d -> %d chars)", utf8.RuneCountInString(oldSummary), utf8.RuneCountInString(*fresh)))
 	return true, nil
 }
 

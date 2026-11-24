@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tokenizers/sentencepiece"
 )
 
@@ -73,7 +72,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 		return nil, err
 	}
 	for _, line := range lines {
-		toks := pystr.SplitWhitespace(strings.TrimSpace(line), -1)
+		toks := strings.Fields(strings.TrimSpace(line))
 		if len(toks) != 2 {
 			return nil, &PyError{Class: "AssertionError", Msg: fmt.Sprint(len(toks))}
 		}
@@ -107,7 +106,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 	case "cjkchar":
 		for _, text := range texts {
 			chars := []string{}
-			for _, r := range strings.Join(pystr.SplitWhitespace(text, -1), "") {
+			for _, r := range strings.Join(strings.Fields(text), "") {
 				chars = append(chars, string(r))
 			}
 			textsList = append(textsList, chars)

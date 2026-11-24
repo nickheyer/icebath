@@ -9,7 +9,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -145,7 +144,7 @@ func (a *AIAgent) recordStreamedAssistantText(text string) {
 
 // Whitespace runs collapsed to one space and the ends stripped
 func normalizeInterimVisibleText(text string) string {
-	return strings.Join(pystr.SplitWhitespace(text, -1), " ")
+	return strings.Join(strings.Fields(text), " ")
 }
 
 // Think stripped and normalized visible content and streamed text

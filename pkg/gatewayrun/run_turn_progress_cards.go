@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"unicode"
+	"unicode/utf8"
 
 	"context"
 	"strings"
@@ -9,8 +10,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pythread"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Adapter rendering tool progress as native plan and task cards
@@ -54,11 +56,11 @@ func taskCardCompact(value any, limit int) string {
 	if pyrepr.Truthy(value) {
 		raw = pyrepr.Str(value)
 	}
-	text := strings.Join(pystr.SplitWhitespace(raw, -1), " ")
-	if pystr.Len(text) <= limit {
+	text := strings.Join(strings.Fields(raw), " ")
+	if utf8.RuneCountInString(text) <= limit {
 		return text
 	}
-	return strings.TrimRightFunc(pystr.Slice(text, 0, limit-3), unicode.IsSpace) + "..."
+	return strings.TrimRightFunc(textutil.First(text, limit-3), unicode.IsSpace) + "..."
 }
 
 // The last eight tasks in start order

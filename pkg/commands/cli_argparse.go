@@ -4,9 +4,9 @@ import (
 	"errors"
 	"math"
 	"strconv"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +35,7 @@ func (v *nonNegativeKeep) Set(text string) error {
 		return refusal
 	}
 	for _, r := range text {
-		if !pystr.IsDecimal(r) {
+		if !unicode.IsDigit(r) {
 			return refusal
 		}
 	}

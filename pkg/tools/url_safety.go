@@ -15,11 +15,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"golang.org/x/net/idna"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -319,7 +319,7 @@ func authorityAmbiguity(raw string, floor bool) (string, error) {
 	if strings.Contains(host, "%") {
 		return "percent-encoding in host", nil
 	}
-	if strings.IndexFunc(host, pystr.IsSpace) >= 0 {
+	if strings.IndexFunc(host, unicode.IsSpace) >= 0 {
 		return "whitespace in host", nil
 	}
 	if _, _, err := parts.Port(); err != nil {

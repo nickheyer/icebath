@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -172,7 +171,7 @@ func HandleSuggestionsCommand(ctx context.Context, args string, origin map[strin
 	if origin == nil {
 		origin = resolveSuggestionOrigin(ctx, s)
 	}
-	parts := pystr.SplitWhitespace(strings.TrimSpace(args), -1)
+	parts := strings.Fields(strings.TrimSpace(args))
 	sub := ""
 	if len(parts) > 0 {
 		sub = strings.ToLower(parts[0])

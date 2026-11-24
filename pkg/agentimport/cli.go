@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -540,7 +539,7 @@ func printImportReport(ctx context.Context, c *cliui.Console, report *Report, dr
 			} else {
 				tail = " " + it.Reason
 			}
-			fmt.Fprintf(c.Out, "      %s %s\n", pystr.Ljust(it.Kind, 22), tail)
+			fmt.Fprintf(c.Out, "      %-22s %s\n", it.Kind, tail)
 		}
 		fmt.Fprintln(c.Out)
 	}

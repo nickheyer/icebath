@@ -11,9 +11,10 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Uniform draw in [lo, hi] for the human delay, swapped by tests
@@ -138,7 +139,7 @@ func (b *BasePlatformAdapter) wantsAutoTTS(event *MessageEvent, sessionKey strin
 // Plays one synthesized TTS file, true when the reply text rode along as the first Telegram caption
 func (b *BasePlatformAdapter) playTTSFile(ctx context.Context, event *MessageEvent, textContent, ttsPath string, first bool, metadata map[string]any, recordDelivery func(SendResult)) (bool, error) {
 	caption := ""
-	if first && b.Platform == PlatformTelegram && textContent != "" && pystr.Slice(textContent, 0, 1024) == textContent {
+	if first && b.Platform == PlatformTelegram && textContent != "" && textutil.First(textContent, 1024) == textContent {
 		caption = textContent
 	}
 	result, err := b.Self().PlayTTS(ctx, event.Source.ChatID, ttsPath, caption, "", metadata, nil)

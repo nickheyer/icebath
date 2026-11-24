@@ -1,8 +1,6 @@
 package discord
 
 import (
-	"unicode"
-
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/bwmarrin/discordgo"
 

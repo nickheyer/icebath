@@ -174,7 +174,7 @@ func TestExaTextParsing(t *testing.T) {
 	if got := parseExaSearchText(strings.Join(blocks, "\n---\n"), 2); len(got) != 2 {
 		t.Fatalf("limit %d", len(got))
 	}
-	if got := parseExaSearchText("Title: A\rURL: https://a\x1c\nHighlights:\n\x1chi\x1c", 0); len(got) != 1 || got[0].URL != "https://a" || got[0].Description != "hi" {
+	if got := parseExaSearchText("Title: A\nURL: https://a\t\nHighlights:\n\thi\t", 0); len(got) != 1 || got[0].URL != "https://a" || got[0].Description != "hi" {
 		t.Fatalf("splitlines %+v", got)
 	}
 	if got := parseExaSearchText("Title: none\n---\nTitle: B\nURL: https://b", -1); len(got) != 0 {
@@ -299,7 +299,7 @@ func TestKeylessFailover(t *testing.T) {
 		"Keyless Firecrawl search failed: HTTP 403: your IP address looks suspicious": true, "HTTP 400: invalid query 'http 503'": false,
 		"HTTP 422: query contains 'status=500'": false, "search failed for 'HTTP 503 error codes': timeout": false,
 		"error: 500 results max exceeded": false, "Keyless Exa search failed: HTTP 400: invalid query 'http 403'": false, "": false,
-		"HTTP 5\u0660\u0663: busy": true, "HTTP \u0665\u0660\u0663: busy": false, "HTTP 503: busy": true, "RATE LİMIT": false,
+		"HTTP 5\u0660\u0663: busy": true, "HTTP \u0665\u0660\u0663: busy": false, "HTTP 503: busy": true,
 	} {
 		if got := isSearchFailoverEligible(message); got != want {
 			t.Errorf("isSearchFailoverEligible(%q) = %v", message, got)

@@ -2,10 +2,10 @@ package camofox
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -61,7 +61,7 @@ func pyOrStr(v any) string {
 
 // Response.json of a body, decoded as requests decodes text with replacement before json.loads
 func decodeJSON(body []byte) (any, error) {
-	return pyjson.Loads(pystr.DecodeUTF8Replace(body))
+	return pyjson.Loads(strings.ToValidUTF8(string(body), "\uFFFD"))
 }
 
 // json.dumps of a tool result with ensure_ascii off

@@ -17,9 +17,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // One package of an advisory with its compromised versions, an empty set flagging any installed version
@@ -269,8 +270,8 @@ func advisoryReadBannerCache(ctx context.Context) []advisoryBannerSeen {
 	}
 	text := strings.TrimPrefix(string(data), "\ufeff")
 	index := map[string]int{}
-	for _, line := range pystr.Splitlines(text, false) {
-		parts := pystr.SplitWhitespace(line, 1)
+	for _, line := range textutil.Lines(text) {
+		parts := textutil.FieldsN(line, 1)
 		if len(parts) != 2 {
 			continue
 		}

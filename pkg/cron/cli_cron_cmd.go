@@ -1,8 +1,6 @@
 package cron
 
 import (
-	"unicode"
-
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -22,9 +21,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // CronArgs is the parsed icebath cron argument namespace, any fields carrying the parser value or nil
@@ -136,7 +136,7 @@ func mapObject(m map[string]any) *pyjson.Object {
 func printBanner(w io.Writer, title string) {
 	fmt.Fprintln(w)
 	rule := strings.Repeat("─", 73)
-	for _, line := range []string{"┌" + rule + "┐", "│" + strings.Repeat(" ", 25) + pystr.Ljust(title, 48) + "│", "└" + rule + "┘"} {
+	for _, line := range []string{"┌" + rule + "┐", "│" + strings.Repeat(" ", 25) + fmt.Sprintf("%-48s", title) + "│", "└" + rule + "┘"} {
 		say(w, color(line, cliui.Cyan))
 	}
 	fmt.Fprintln(w)
@@ -207,7 +207,7 @@ func (s *Store) cronList(ctx context.Context, w io.Writer, showAll bool) error {
 		}
 		fmt.Fprintf(w, "  %s %s\n", color(pyrepr.Str(field(j.obj, "id", "?")), cliui.Yellow), color(badge[0], badge[1]))
 		for _, row := range s.jobRows(j.obj) {
-			fmt.Fprintf(w, "    %s%s\n", pystr.Ljust(row[0]+":", 11), row[1])
+			fmt.Fprintf(w, "    %-11s%s\n", row[0]+":", row[1])
 		}
 		for _, line := range jobWarnings(j.obj) {
 			fmt.Fprintf(w, "    %s\n", line)
@@ -325,7 +325,7 @@ func shortReason(text any, limit int) string {
 	if pyrepr.Truthy(text) {
 		t = pyrepr.Str(text)
 	}
-	lines := pystr.Splitlines(strings.TrimSpace(t), false)
+	lines := textutil.Lines(strings.TrimSpace(t))
 	reason := ""
 	if len(lines) > 0 {
 		reason = strings.TrimSpace(collapseWhitespace(lines[0]))
@@ -414,7 +414,7 @@ func (s *Store) cronRuns(ctx context.Context, w io.Writer, jobID *string, limit 
 		return "?"
 	}
 	for _, r := range records {
-		fmt.Fprintf(w, "%s  %s  job=%s  source=%s  %s\n", get(r, "id"), pystr.Ljust(get(r, "status"), 9), get(r, "job_id"), get(r, "source"), get(r, "claimed_at"))
+		fmt.Fprintf(w, "%s  %-9s  job=%s  source=%s  %s\n", get(r, "id"), get(r, "status"), get(r, "job_id"), get(r, "source"), get(r, "claimed_at"))
 		if pyrepr.Truthy(r["error"]) {
 			fmt.Fprintf(w, "    %s\n", pyrepr.Str(r["error"]))
 		}
@@ -484,7 +484,7 @@ func (s *Store) cronIncidents(ctx context.Context, w io.Writer, a *CronArgs) (in
 		fmt.Fprintf(w, "  %s  %s\n", color(inc.ID, cliui.Yellow), color(inc.State, code))
 		for _, row := range [][2]string{{"Job", inc.JobID}, {"Type", inc.FailureType}, {"First seen", inc.FirstSeenAt}, {"Last seen", inc.LastSeenAt}, {"Error", errText}, {"Output", output}} {
 			if row[0] != "Output" || row[1] != "" {
-				fmt.Fprintf(w, "    %s%s\n", pystr.Ljust(row[0]+":", 12), row[1])
+				fmt.Fprintf(w, "    %-12s%s\n", row[0]+":", row[1])
 			}
 		}
 		fmt.Fprintln(w)

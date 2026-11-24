@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 )
 
@@ -216,7 +215,7 @@ func (c *safeConstructor) constructUnknown(n *ry.Node) any {
 
 // Python int() raising an IndexError for an empty string index the way value_s[0] does
 func strIndex(s string, i int) rune {
-	r := pystr.Runes(s)
+	r := []rune(s)
 	if i >= len(r) {
 		panic(pyErr("IndexError", fmt.Sprintf("YAML text has no character at position %d", i)))
 	}
@@ -231,7 +230,7 @@ func (c *safeConstructor) constructIntRT(n *ry.Node) any {
 		if first == '-' {
 			sign = big.NewInt(-1)
 		}
-		valueS = string(pystr.Runes(valueS)[1:])
+		valueS = string([]rune(valueS)[1:])
 	}
 	mul := func(v *big.Int) any { return new(big.Int).Mul(sign, v) }
 	switch {
@@ -241,7 +240,7 @@ func (c *safeConstructor) constructIntRT(n *ry.Node) any {
 		return mul(yamlIntOf(valueS[2:], 16))
 	case strings.HasPrefix(valueS, "0o"):
 		return mul(yamlIntOf(valueS[2:], 8))
-	case len(pystr.Runes(valueS)) > 1 && strIndex(valueS, 0) == '0':
+	case len([]rune(valueS)) > 1 && strIndex(valueS, 0) == '0':
 		return mul(yamlIntOf(valueS, 8))
 	case strings.Contains(valueS, ":"):
 		parts := strings.Split(valueS, ":")
@@ -267,7 +266,7 @@ func (c *safeConstructor) constructFloatRT(n *ry.Node) any {
 		sign = -1
 	}
 	if first := strIndex(valueS, 0); first == '+' || first == '-' {
-		valueS = string(pystr.Runes(valueS)[1:])
+		valueS = string([]rune(valueS)[1:])
 	}
 	switch {
 	case valueS == ".inf":

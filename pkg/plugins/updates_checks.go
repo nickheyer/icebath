@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -157,7 +156,7 @@ func defaultLsRemote(ctx context.Context, source string) (string, error) {
 		return "", err
 	}
 	if err != nil {
-		msg := strings.TrimSpace(pystr.DecodeUTF8Replace([]byte(stderr.String())))
+		msg := strings.TrimSpace(strings.ToValidUTF8(string([]byte(stderr.String())), "\uFFFD"))
 		if msg == "" {
 			msg = "ls-remote failed"
 		}
@@ -166,7 +165,7 @@ func defaultLsRemote(ctx context.Context, source string) (string, error) {
 		}
 		return "", errors.New(msg)
 	}
-	out := strings.TrimSpace(pystr.DecodeUTF8Replace([]byte(stdout.String())))
+	out := strings.TrimSpace(strings.ToValidUTF8(string([]byte(stdout.String())), "\uFFFD"))
 	if out == "" {
 		return "", nil
 	}

@@ -1,6 +1,9 @@
 package tools
 
 import (
+	"slices"
+	"unicode"
+
 	"bytes"
 	"context"
 	"fmt"
@@ -11,7 +14,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -258,14 +260,14 @@ func isMarkdownHeading(line string) bool {
 		return false
 	}
 	r, size := utf8.DecodeRuneInString(line[loc[1]:])
-	return size > 0 && !pystr.IsSpace(r)
+	return size > 0 && !unicode.IsSpace(r)
 }
 
 // Markdown headings starting inside the omitted span, fenced code comments skipped, capped with an ellipsis
 func omittedHeadings(runes []rune, start, end, limit int) []string {
 	headings := []string{}
 	offset, fenced := 0, false
-	for _, line := range pystr.Splitlines(string(runes), true) {
+	for _, line := range slices.Collect(strings.Lines(string(runes))) {
 		stripped := strings.TrimSpace(line)
 		if strings.HasPrefix(stripped, "```") || strings.HasPrefix(stripped, "~~~") {
 			fenced = !fenced

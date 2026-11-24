@@ -28,6 +28,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -218,7 +220,7 @@ func safeID(value any) string {
 	if raw == "" {
 		return "?"
 	}
-	return pystr.Slice(raw, 0, 8)
+	return textutil.First(raw, 8)
 }
 
 // Data padded to the AES block size the PKCS7 way
@@ -569,7 +571,7 @@ func apiRequest(ctx context.Context, session *ilinkSession, method, baseURL, end
 	}
 	raw := resp.Text()
 	if resp.StatusCode >= 400 {
-		return nil, runtimeError(fmt.Sprintf("iLink %s %s HTTP %d: %s", method, endpoint, resp.StatusCode, pystr.Slice(raw, 0, 200)))
+		return nil, runtimeError(fmt.Sprintf("iLink %s %s HTTP %d: %s", method, endpoint, resp.StatusCode, textutil.First(raw, 200)))
 	}
 	decoded, err := pyjson.Loads(raw)
 	if err != nil {
@@ -654,7 +656,7 @@ func uploadCiphertext(ctx context.Context, session *ilinkSession, ciphertext []b
 			return param, nil
 		}
 	}
-	raw := pystr.Slice(resp.Text(), 0, 200)
+	raw := textutil.First(resp.Text(), 200)
 	if resp.StatusCode == 200 {
 		return "", runtimeError("CDN upload missing x-encrypted-param header: " + raw)
 	}

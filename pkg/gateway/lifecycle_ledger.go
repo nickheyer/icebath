@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -85,7 +84,7 @@ func procFields(path string, wanted map[string]string) *pyjson.Object {
 		if !ok {
 			continue
 		}
-		fields := pystr.SplitWhitespace(line, -1)
+		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			return pyjson.NewObject()
 		}

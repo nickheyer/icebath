@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -146,7 +145,7 @@ func rewritten(msg map[string]any, content any) map[string]any {
 func failureSuffix(reason any, label string) string {
 	preview := ""
 	if pyrepr.Truthy(reason) {
-		preview = strings.Join(pystr.SplitWhitespace(pyrepr.Str(reason), -1), " ")
+		preview = strings.Join(strings.Fields(pyrepr.Str(reason)), " ")
 		if rs := []rune(preview); len(rs) > 80 {
 			preview = string(rs[:80])
 		}

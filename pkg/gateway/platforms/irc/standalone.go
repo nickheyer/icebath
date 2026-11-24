@@ -1,8 +1,6 @@
 package irc
 
 import (
-	"unicode"
-
 	"bytes"
 	"context"
 	"errors"
@@ -11,14 +9,16 @@ import (
 	"net"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Largest line the asyncio stream reader buffers before it reports an overrun
@@ -107,7 +107,7 @@ func (c *standaloneConn) pump(ctx context.Context, timeout time.Duration, onMsg 
 		if err != nil {
 			return nil, err
 		}
-		msg := parseIRCMessage(strings.TrimRight(pystr.DecodeUTF8Replace(rawLine), "\r\n"))
+		msg := parseIRCMessage(strings.TrimRight(strings.ToValidUTF8(string(rawLine), "\uFFFD"), "\r\n"))
 		if msg.command == "PING" {
 			token := ""
 			if len(msg.params) > 0 {
@@ -135,7 +135,7 @@ func (c *standaloneConn) close() {
 }
 
 // First thirty code points of a nick
-func clipNick(nick string) string { return pystr.Slice(nick, 0, 30) }
+func clipNick(nick string) string { return textutil.First(nick, 30) }
 
 // Sends PASS, NICK and USER and waits for the welcome, retrying nick collisions, an error envelope on failure
 func saRegister(ctx context.Context, conn *standaloneConn, nickBase string, serverPassword any) (map[string]any, error) {
@@ -257,7 +257,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	nickBase := pystr.Slice(strings.TrimRight(nickText, "_0123456789-"), 0, 24)
+	nickBase := textutil.First(strings.TrimRight(nickText, "_0123456789-"), 24)
 	if nickBase == "" {
 		nickBase = "icebath-bot"
 	}

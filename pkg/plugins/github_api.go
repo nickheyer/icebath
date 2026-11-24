@@ -66,7 +66,7 @@ func probeGhCLIToken() (string, bool) {
 	}
 	token := ""
 	if err == nil {
-		token = strings.TrimSpace(pystr.DecodeUTF8Replace(out))
+		token = strings.TrimSpace(strings.ToValidUTF8(string(out), "\uFFFD"))
 	}
 	ghCLICache = token
 	return token, token != ""

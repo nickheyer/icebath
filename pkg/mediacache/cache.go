@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -196,7 +195,7 @@ func CacheImageFromBytes(ctx context.Context, h string, data []byte, ext string)
 		if len(head) > 80 {
 			head = head[:80]
 		}
-		snippet := pystr.DecodeUTF8Replace(head)
+		snippet := strings.ToValidUTF8(string(head), "\uFFFD")
 		return "", &ValueError{Msg: fmt.Sprintf("Refusing to cache non-image data as %s (starts with: %s)", ext, pyrepr.Repr(snippet))}
 	}
 	dir, err := ImageCacheDir(ctx, h)

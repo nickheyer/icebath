@@ -22,8 +22,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -902,7 +903,7 @@ func StateDBHasStructuralDamage(dbPath string) (bool, error) {
 			if err := rows.Scan(&v); err != nil {
 				return err
 			}
-			lines = append(lines, pystr.Splitlines(pyStr(v), false)...)
+			lines = append(lines, textutil.Lines(pyStr(v))...)
 		}
 		return rows.Err()
 	}()

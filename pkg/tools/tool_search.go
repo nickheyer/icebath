@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -387,8 +386,8 @@ func toolSearchSharedToolRecord(entry CatalogEntry) *pyjson.Object {
 					if !ok {
 						continue
 					}
-					if runes := pystr.Runes(s); len(runes) > 64 {
-						s = pystr.FromRunes(runes[:64])
+					if runes := []rune(s); len(runes) > 64 {
+						s = string(runes[:64])
 					}
 					required = append(required, s)
 					if len(required) == 32 {

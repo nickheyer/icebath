@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Batch number in a batch file name, for the lines that name a filtered entry
@@ -84,8 +86,8 @@ func (r *Runner) combineBatchFiles() (kept, found int, err error) {
 			}
 			if invalid := r.unknownTool(row); invalid != "" {
 				filtered++
-				if pystr.Len(invalid) > 50 {
-					invalid = pystr.Slice(invalid, 0, 50) + "..."
+				if utf8.RuneCountInString(invalid) > 50 {
+					invalid = textutil.First(invalid, 50) + "..."
 				}
 				r.printf("   ⚠️  Filtering corrupted entry (batch %s): invalid tool '%s'\n", batchNum, invalid)
 				continue
@@ -108,7 +110,7 @@ func (r *Runner) combineBatchFiles() (kept, found int, err error) {
 
 // Text padded on the right to width characters, longer text left as it is
 func padRight(text string, width int) string {
-	if n := pystr.Len(text); n < width {
+	if n := utf8.RuneCountInString(text); n < width {
 		return text + strings.Repeat(" ", width-n)
 	}
 	return text
@@ -142,14 +144,14 @@ func (r *Runner) printSummary(processed, kept, files, discarded int, usage *tool
 	}
 	r.printf("\n🧠 Reasoning Coverage:\n%s\n", rule)
 	if reasoning.total > 0 {
-		r.printf("   Total assistant turns:    %s\n", pystr.GroupThousands(int64(reasoning.total)))
-		r.printf("   With reasoning:           %s (%s%%)\n", pystr.GroupThousands(int64(reasoning.with)), percentOf(reasoning.with, reasoning.total))
-		r.printf("   Without reasoning:        %s (%s%%)\n", pystr.GroupThousands(int64(reasoning.without)), percentOf(reasoning.without, reasoning.total))
+		r.printf("   Total assistant turns:    %s\n", textutil.Thousands(int64(reasoning.total)))
+		r.printf("   With reasoning:           %s (%s%%)\n", textutil.Thousands(int64(reasoning.with)), percentOf(reasoning.with, reasoning.total))
+		r.printf("   Without reasoning:        %s (%s%%)\n", textutil.Thousands(int64(reasoning.without)), percentOf(reasoning.without, reasoning.total))
 	} else {
 		r.printf("   No assistant turns recorded.\n")
 	}
 	if discarded > 0 {
-		r.printf("   🚫 Samples discarded (zero reasoning): %s\n", pystr.GroupThousands(int64(discarded)))
+		r.printf("   🚫 Samples discarded (zero reasoning): %s\n", textutil.Thousands(int64(discarded)))
 	}
 	r.printf("\n💾 Results saved to: %s\n", r.outputDir)
 	r.printf("   - Trajectories: trajectories.jsonl (combined)\n")

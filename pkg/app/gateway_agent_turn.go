@@ -12,7 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 // Server request methods a modal of the CLI answers in the response frame
@@ -85,7 +86,7 @@ func (a *GatewayAgent) stageContentParts(parts []any) (string, []any, error) {
 			if pyrepr.Truthy(part["text"]) {
 				text = pyrepr.Str(part["text"])
 			}
-			for _, line := range pystr.Splitlines(text, false) {
+			for _, line := range textutil.Lines(text) {
 				if !strings.HasPrefix(line, "[Image attached") {
 					kept = append(kept, line)
 				}

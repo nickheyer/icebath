@@ -13,8 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 const (
@@ -42,7 +43,7 @@ func unitStopStartBudgets(ctx context.Context, scopeCmd []string, svcName string
 		return 0, 0, err
 	}
 	if show.Returncode == 0 {
-		for _, line := range pystr.Splitlines(completedStdout(show), false) {
+		for _, line := range textutil.Lines(completedStdout(show)) {
 			key, raw, _ := strings.Cut(line, "=")
 			if _, known := budgets[key]; !known {
 				continue
@@ -104,7 +105,7 @@ func unitJobState(ctx context.Context, scopeCmd []string, svcName string) (map[s
 	if show.Returncode != 0 {
 		return state, nil
 	}
-	for _, line := range pystr.Splitlines(completedStdout(show), false) {
+	for _, line := range textutil.Lines(completedStdout(show)) {
 		if key, value, found := strings.Cut(line, "="); found {
 			state[key] = value
 		}
@@ -185,7 +186,7 @@ func serviceRestartSec(ctx context.Context, scopeCmd []string, svcName string, f
 		return fallback, nil
 	}
 	total, matched := 0.0, false
-	for _, part := range pystr.SplitWhitespace(raw, -1) {
+	for _, part := range strings.Fields(raw) {
 		for _, unit := range restartSecUnits {
 			if !strings.HasSuffix(part, unit.suffix) {
 				continue

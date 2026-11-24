@@ -1,10 +1,9 @@
 package pet
 
 import (
-	"strings"
-
 	"context"
 	"io"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"

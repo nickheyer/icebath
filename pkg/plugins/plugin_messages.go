@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"github.com/nickheyer/icebath/pkg/internal/textutil"
 )
 
 var pluginMessageTimeout = 30 * time.Second
@@ -225,7 +226,7 @@ func runOnGatewayLoop(ctx context.Context, op func(context.Context) (map[string]
 	case <-pending.done:
 		if pending.err != nil {
 			pkgLog().Warn("plugin_message: gateway hand-off failed", "error", pending.err)
-			return messageErr("send_failed", pystr.Slice(pending.err.Error(), 0, 512))
+			return messageErr("send_failed", textutil.First(pending.err.Error(), 512))
 		}
 		return pending.result
 	case <-time.After(pluginMessageTimeout):
