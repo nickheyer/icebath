@@ -21,13 +21,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Versions of the pinned openai SDK and httpx whose wire identity the model clients present
@@ -40,12 +38,12 @@ const (
 var httpxDecoders = []string{"gzip", "deflate"}
 
 // Default headers of an httpx.Client built with none of its own
-func httpxClientHeaders() *pyhttpx.Headers {
-	return pyhttpx.NewHeaders(
-		pyhttpx.HeaderLine{Name: "Accept", Value: "*/*"},
-		pyhttpx.HeaderLine{Name: "Accept-Encoding", Value: strings.Join(httpxDecoders, ", ")},
-		pyhttpx.HeaderLine{Name: "Connection", Value: "keep-alive"},
-		pyhttpx.HeaderLine{Name: "User-Agent", Value: "python-httpx/" + httpxVersion})
+func httpxClientHeaders() http.Header {
+	return headerOf(
+		headerField{Name: "Accept", Value: "*/*"},
+		headerField{Name: "Accept-Encoding", Value: strings.Join(httpxDecoders, ", ")},
+		headerField{Name: "Connection", Value: "keep-alive"},
+		headerField{Name: "User-Agent", Value: "python-httpx/" + httpxVersion})
 }
 
 // Operating system label get_platform of a Stainless SDK reports for this host
@@ -97,8 +95,8 @@ func pinnedPythonRuntimeVersion() string {
 }
 
 // X-Stainless platform headers of a Stainless SDK at the given version on the pinned CPython
-func stainlessPlatformHeaders(version string) []pyhttpx.HeaderLine {
-	return []pyhttpx.HeaderLine{
+func stainlessPlatformHeaders(version string) []headerField {
+	return []headerField{
 		{Name: "X-Stainless-Lang", Value: "python"},
 		{Name: "X-Stainless-Package-Version", Value: version},
 		{Name: "X-Stainless-OS", Value: stainlessOS()},
@@ -109,7 +107,7 @@ func stainlessPlatformHeaders(version string) []pyhttpx.HeaderLine {
 }
 
 // Ordered str keyed dict with the case sensitive key identity of a Python dict, a removal standing for Omit
-type sdkHeaderDict struct{ lines []pyhttpx.HeaderLine }
+type sdkHeaderDict struct{ lines []headerField }
 
 // Replaces the value of an existing key in place, else appends the key
 func (d *sdkHeaderDict) set(name, value string) {
@@ -119,7 +117,7 @@ func (d *sdkHeaderDict) set(name, value string) {
 			return
 		}
 	}
-	d.lines = append(d.lines, pyhttpx.HeaderLine{Name: name, Value: value})
+	d.lines = append(d.lines, headerField{Name: name, Value: value})
 }
 
 // Removes the key the way an Omit value drops it from the merged mapping
@@ -145,7 +143,7 @@ type pyHeaderEntry struct {
 type pyHeaderDict struct{ entries []pyHeaderEntry }
 
 // Dict of the lines in order, the later of two equal keys winning in the first slot
-func pyHeaderDictOf(lines ...pyhttpx.HeaderLine) *pyHeaderDict {
+func pyHeaderDictOf(lines ...headerField) *pyHeaderDict {
 	d := &pyHeaderDict{}
 	for _, l := range lines {
 		d.set(l.Name, l.Value)
@@ -228,19 +226,19 @@ func (d *pyHeaderDict) omitted(name string) bool {
 }
 
 // Lines of the dict with every Omit entry dropped
-func (d *pyHeaderDict) stripped() []pyhttpx.HeaderLine {
-	out := make([]pyhttpx.HeaderLine, 0, len(d.entries))
+func (d *pyHeaderDict) stripped() []headerField {
+	out := make([]headerField, 0, len(d.entries))
 	for _, e := range d.entries {
 		if !e.omit {
-			out = append(out, pyhttpx.HeaderLine{Name: e.name, Value: e.value})
+			out = append(out, headerField{Name: e.name, Value: e.value})
 		}
 	}
 	return out
 }
 
 // Header mapping as str pairs in declaration order, None values dropped, a string map in its recorded order
-func orderedExtraHeaders(raw any) []pyhttpx.HeaderLine {
-	var out []pyhttpx.HeaderLine
+func orderedExtraHeaders(raw any) []headerField {
+	var out []headerField
 	switch m := raw.(type) {
 	case *jsonutil.Object:
 		if m == nil {
@@ -248,27 +246,27 @@ func orderedExtraHeaders(raw any) []pyhttpx.HeaderLine {
 		}
 		for _, k := range m.Keys() {
 			if v := m.Value(k); v != nil {
-				out = append(out, pyhttpx.HeaderLine{Name: k, Value: cfgString(v)})
+				out = append(out, headerField{Name: k, Value: cfgString(v)})
 			}
 		}
 	case map[string]any:
 		for _, k := range config.MappingKeys(m) {
 			if v := m[k]; v != nil {
-				out = append(out, pyhttpx.HeaderLine{Name: k, Value: cfgString(v)})
+				out = append(out, headerField{Name: k, Value: cfgString(v)})
 			}
 		}
 	case map[string]string:
 		for _, k := range slices.Sorted(maps.Keys(m)) {
-			out = append(out, pyhttpx.HeaderLine{Name: k, Value: m[k]})
+			out = append(out, headerField{Name: k, Value: m[k]})
 		}
-	case []pyhttpx.HeaderLine:
+	case []headerField:
 		out = append(out, m...)
 	}
 	return out
 }
 
 // extra_headers of the first route matching custom provider entry declaring any, in declaration order
-func customProviderExtraHeaderLines(baseURL string, customProviders []map[string]any) []pyhttpx.HeaderLine {
+func customProviderExtraHeaderLines(baseURL string, customProviders []map[string]any) []headerField {
 	for _, entry := range entriesForRoute(baseURL, customProviders) {
 		if lines := orderedExtraHeaders(entry["extra_headers"]); len(lines) > 0 {
 			return lines
@@ -277,14 +275,17 @@ func customProviderExtraHeaderLines(baseURL string, customProviders []map[string
 	return nil
 }
 
-// MergeHeaderMaps is the dict merge of header maps left to right, later values keeping earlier slots and new keys appended
-func MergeHeaderMaps(maps ...map[string]string) map[string]string {
-	return pyhttpx.MergeHeaderMaps(maps...)
+// MergeHeaderMaps is one map holding the fields of every header map, a later map winning over an earlier one
+func MergeHeaderMaps(headers ...map[string]string) map[string]string {
+	out := map[string]string{}
+	for _, h := range headers {
+		maps.Copy(out, h)
+	}
+	return out
 }
 
 // OrderedHeaders records the key order of a header map and returns the map
 func OrderedHeaders(m map[string]string, keys []string) map[string]string {
-	pyhttpx.SetHeaderOrder(m, keys)
 	return m
 }
 
@@ -293,11 +294,11 @@ func HeaderKeys(m map[string]string) []string { return slices.Sorted(maps.Keys(m
 
 // AnyHeaderMap is a header mapping of arbitrary values as a string map in declaration order, values printed with fmt
 func AnyHeaderMap(m map[string]any) map[string]string {
-	var lines []pyhttpx.HeaderLine
+	var lines []headerField
 	for _, k := range config.MappingKeys(m) {
-		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: fmt.Sprint(m[k])})
+		lines = append(lines, headerField{Name: k, Value: fmt.Sprint(m[k])})
 	}
-	return pyhttpx.OrderedHeaderMap(lines...)
+	return fieldMap(lines...)
 }
 
 // Header keys the Stainless merge_headers accumulates instead of replacing
@@ -430,7 +431,7 @@ func anthStreamCallHeaders(extra *pyHeaderDict) *pyHeaderDict {
 var errAnthNoAuthentication = errors.New(`"Could not resolve authentication method. Expected one of api_key, auth_token, or credentials to be set. Or for one of the ` + "`X-Api-Key` or `Authorization`" + ` headers to be explicitly omitted"`)
 
 // Header lines of one attempt as _build_headers merges them and the SDK httpx client sends them
-func (s anthSDKClientSpec) requestLines(call anthSDKCall, retries int) (*pyhttpx.Headers, error) {
+func (s anthSDKClientSpec) requestLines(call anthSDKCall, retries int) (http.Header, error) {
 	timeoutText := call.timeoutText
 	if timeoutText == "" {
 		timeoutText = "NOT_GIVEN"
@@ -446,7 +447,7 @@ func (s anthSDKClientSpec) requestLines(call anthSDKCall, retries int) (*pyhttpx
 			return nil, &auxTypeError{Message: errAnthNoAuthentication.Error()}
 		}
 	}
-	sdk := pyhttpx.NewHeaders(merged.stripped()...)
+	sdk := headerOf(merged.stripped()...)
 	custom := map[string]bool{}
 	if call.headers != nil {
 		for _, e := range call.headers.entries {
@@ -466,18 +467,18 @@ func (s anthSDKClientSpec) requestLines(call anthSDKCall, retries int) (*pyhttpx
 		}
 	}
 	h := httpxClientHeaders()
-	h.Update(sdk.Lines())
+	setFields(h, fieldsOf(sdk))
 	return h, nil
 }
 
 // Lines an httpx request holds once built, Host first and the Content-Length of a body or body method last, as request hooks see them
-func httpxPreparedLines(req *http.Request, h *pyhttpx.Headers, length int) *pyhttpx.Headers {
-	lines := append([]pyhttpx.HeaderLine{{Name: "Host", Value: req.Host}}, h.Lines()...)
+func httpxPreparedLines(req *http.Request, h http.Header, length int) http.Header {
+	lines := append([]headerField{{Name: "Host", Value: req.Host}}, fieldsOf(h)...)
 	switch {
 	case length > 0, req.Method == http.MethodPost, req.Method == http.MethodPut, req.Method == http.MethodPatch:
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Content-Length", Value: strconv.Itoa(length)})
+		lines = append(lines, headerField{Name: "Content-Length", Value: strconv.Itoa(length)})
 	}
-	return pyhttpx.NewHeaders(lines...)
+	return headerOf(lines...)
 }
 
 // Guardrail headers of the AnthropicBedrock client in the order bedrock_guardrail_headers declares them
@@ -493,13 +494,13 @@ func bedrockGuardrailHeaderDict(ctx context.Context) *pyHeaderDict {
 }
 
 // Lines after the AnthropicBedrock request hook signs them with botocore SigV4Auth, every line but Connection re-added in botocore order
-func botocoreSignedLines(req *http.Request, lines *pyhttpx.Headers, body []byte, creds awsCredentials, service, region string, now time.Time) (*pyhttpx.Headers, error) {
+func botocoreSignedLines(req *http.Request, lines http.Header, body []byte, creds awsCredentials, service, region string, now time.Time) (http.Header, error) {
 	if !creds.valid() {
 		return nil, errors.New("could not resolve credentials from session")
 	}
-	signing := pyhttpx.NewHeaders(lines.Lines()...)
+	signing := headerOf(fieldsOf(lines)...)
 	signing.Del("connection")
-	var aws []pyhttpx.HeaderLine
+	var aws []headerField
 	for _, l := range httpxItems(signing) {
 		aws = append(aws, l)
 	}
@@ -524,39 +525,39 @@ func botocoreSignedLines(req *http.Request, lines *pyhttpx.Headers, body []byte,
 	drop("Authorization")
 	if has("Date") {
 		drop("Date")
-		aws = append(aws, pyhttpx.HeaderLine{Name: "Date", Value: ts.Format(botocoreDateFormat)})
+		aws = append(aws, headerField{Name: "Date", Value: ts.Format(botocoreDateFormat)})
 		drop("X-Amz-Date")
 	} else {
 		drop("X-Amz-Date")
-		aws = append(aws, pyhttpx.HeaderLine{Name: "X-Amz-Date", Value: ts.Format(sigV4TimeFormat)})
+		aws = append(aws, headerField{Name: "X-Amz-Date", Value: ts.Format(sigV4TimeFormat)})
 	}
 	if creds.SessionToken != "" {
 		drop("X-Amz-Security-Token")
-		aws = append(aws, pyhttpx.HeaderLine{Name: "X-Amz-Security-Token", Value: creds.SessionToken})
+		aws = append(aws, headerField{Name: "X-Amz-Security-Token", Value: creds.SessionToken})
 	}
 	signed := &http.Request{Method: req.Method, URL: req.URL, Host: req.Host, Header: http.Header{}}
 	for _, l := range aws {
 		signed.Header[strings.ToLower(l.Name)] = append(signed.Header[strings.ToLower(l.Name)], l.Value)
 	}
 	res := sigV4Compute(signed, sigV4PayloadHash(signed, body), creds, service, region, ts, nil)
-	aws = append(aws, pyhttpx.HeaderLine{Name: "Authorization", Value: res.Authorization})
-	out := pyhttpx.NewHeaders(lines.Lines()...)
-	out.Update(aws)
+	aws = append(aws, headerField{Name: "Authorization", Value: res.Authorization})
+	out := headerOf(fieldsOf(lines)...)
+	setFields(out, aws)
 	return out, nil
 }
 
 // httpx Headers.items, lowercased names in first appearance order with repeated names joined by a comma and space
-func httpxItems(h *pyhttpx.Headers) []pyhttpx.HeaderLine {
-	var out []pyhttpx.HeaderLine
+func httpxItems(h http.Header) []headerField {
+	var out []headerField
 	at := map[string]int{}
-	for _, l := range h.Lines() {
+	for _, l := range fieldsOf(h) {
 		name := strings.ToLower(l.Name)
 		if i, ok := at[name]; ok {
 			out[i].Value += ", " + l.Value
 			continue
 		}
 		at[name] = len(out)
-		out = append(out, pyhttpx.HeaderLine{Name: name, Value: l.Value})
+		out = append(out, headerField{Name: name, Value: l.Value})
 	}
 	return out
 }
@@ -583,7 +584,7 @@ const requestsVersion = "2.34.2"
 var requestsDecoders = []string{"gzip", "deflate", "zstd"}
 
 // Lines a requests call writes, the session defaults updated case insensitively by the call headers, None values dropped
-func requestsLines(call ...pyhttpx.HeaderLine) *pyhttpx.Headers {
+func requestsLines(call ...headerField) http.Header {
 	type entry struct{ name, value string }
 	var merged []entry
 	at := map[string]int{}
@@ -602,43 +603,25 @@ func requestsLines(call ...pyhttpx.HeaderLine) *pyhttpx.Headers {
 	for _, l := range call {
 		set(l.Name, l.Value)
 	}
-	out := pyhttpx.NewHeaders()
+	out := headerOf()
 	for _, e := range merged {
 		out.Set(e.name, e.value)
 	}
 	return out
 }
 
-// HTTP/1.1 wire transport of a urllib3 or http.client stack, the proxy the chooser names and the http.client CONNECT head
-func pyStackWireTransport(choose func(*url.URL) (*url.URL, error), connect time.Duration, maxIdle int) *http.Transport {
-	dial := netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext)
-	t := &http.Transport{MaxIdleConns: maxIdle, MaxIdleConnsPerHost: maxIdle, IdleConnTimeout: 90 * time.Second, DisableCompression: true}
-	t.Proxy = func(req *http.Request) (*url.URL, error) {
-		if req.URL.Scheme != "http" {
-			return nil, nil
-		}
-		return choose(req.URL)
+// HTTP/1.1 transport with a connect limit, the proxy the environment or the system names and the platform trust store
+func pyStackWireTransport(connect time.Duration, maxIdle int) *http.Transport {
+	return &http.Transport{
+		Proxy:               httputil.Proxy,
+		DialContext:         netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext),
+		TLSClientConfig:     PlatformTLSConfig(),
+		TLSHandshakeTimeout: connect,
+		MaxIdleConns:        maxIdle,
+		MaxIdleConnsPerHost: maxIdle,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
 	}
-	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		if _, err := pyhttpx.RequestTarget(ctx); err != nil {
-			return nil, err
-		}
-		return pyhttpx.DialWire(ctx, dial, nil, network, address)
-	}
-	t.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		target, err := pyhttpx.RequestTarget(ctx)
-		if err != nil {
-			return nil, err
-		}
-		proxy, err := choose(target)
-		if err != nil {
-			return nil, err
-		}
-		cctx, cancel := context.WithTimeout(ctx, connect)
-		defer cancel()
-		return pyhttpx.DialWireTLSStyle(cctx, dial, proxy, network, address, PlatformTLSConfig(), pyhttpx.TunnelHTTPClient)
-	}
-	return t
 }
 
 // Pool settings of an httpx client, its connection caps and keepalive expiry
@@ -659,15 +642,11 @@ func httpxWireTransport(limits httpxLimits, connect time.Duration, wrap func(net
 	return httpxWireTransportTLS(limits, connect, wrap, PlatformTLSConfig())
 }
 
-// HTTP/1.1 transport of an httpx client built with the given verify context
+// HTTP/1.1 transport with the given pool limits and TLS settings, sockets passed through wrap when given
 func httpxWireTransportTLS(limits httpxLimits, connect time.Duration, wrap func(net.Conn) net.Conn, cfg *tls.Config) (*http.Transport, error) {
-	proxies, err := pyhttpx.NewEnvProxies(httputil.Proxies())
-	if err != nil {
-		return nil, err
-	}
-	base := netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext)
-	dial := base
+	dial := netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext)
 	if wrap != nil {
+		base := dial
 		dial = func(ctx context.Context, network, address string) (net.Conn, error) {
 			c, err := base(ctx, network, address)
 			if err != nil {
@@ -676,39 +655,18 @@ func httpxWireTransportTLS(limits httpxLimits, connect time.Duration, wrap func(
 			return wrap(c), nil
 		}
 	}
-	t := &http.Transport{MaxIdleConns: limits.maxKeepalive, MaxIdleConnsPerHost: limits.maxKeepalive, MaxConnsPerHost: limits.maxConns,
-		IdleConnTimeout: limits.expiry, ExpectContinueTimeout: time.Second, DisableCompression: true}
-	wireEnvDials(t, dial, cfg, connect, proxies)
-	return t, nil
-}
-
-// Points a transport at wire capable HTTP/1.1 connections routed by the environment proxy mounts httpx trust_env reads
-func wireEnvDials(t *http.Transport, dial pyhttpx.DialFunc, cfg *tls.Config, connect time.Duration, proxies *pyhttpx.EnvProxies) {
-	t.Proxy = func(req *http.Request) (*url.URL, error) {
-		if req.URL.Scheme != "http" {
-			return nil, nil
-		}
-		return pyhttpx.ForwardProxy(proxies.For(req.URL))
-	}
-	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		target, err := pyhttpx.RequestTarget(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return pyhttpx.DialWire(ctx, dial, proxies.For(target), network, address)
-	}
-	t.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		target, err := pyhttpx.RequestTarget(ctx)
-		if err != nil {
-			return nil, err
-		}
-		cctx, cancel := ctx, context.CancelFunc(func() {})
-		if connect > 0 {
-			cctx, cancel = context.WithTimeout(ctx, connect)
-		}
-		defer cancel()
-		return pyhttpx.DialWireTLS(cctx, dial, proxies.For(target), network, address, cfg)
-	}
+	return &http.Transport{
+		Proxy:                 httputil.Proxy,
+		DialContext:           dial,
+		TLSClientConfig:       cfg,
+		TLSHandshakeTimeout:   connect,
+		MaxIdleConns:          limits.maxKeepalive,
+		MaxIdleConnsPerHost:   limits.maxKeepalive,
+		MaxConnsPerHost:       limits.maxConns,
+		IdleConnTimeout:       limits.expiry,
+		ExpectContinueTimeout: time.Second,
+		DisableCompression:    true,
+	}, nil
 }
 
 // Versions of the pinned boto3 and botocore whose user agent the AWS clients carry
@@ -772,7 +730,7 @@ func botocoreUAComponent(s string) string {
 // User-Agent of a boto3 client, sdk, platform, language, features, retry mode, app id and the boto3 extra
 func (c *awsServiceClient) botocoreUserAgent(features []string) string {
 	parts := []string{"Boto3/" + boto3Version, "md/Botocore#" + botocoreVersion, "ua/2.1"}
-	osName := strings.ToLower(pyplatform.System())
+	osName := strings.ToLower(hostutil.OSName())
 	switch osName {
 	case "windows", "linux", "macos", "android", "ios", "watchos", "tvos":
 	case "darwin":
@@ -784,7 +742,7 @@ func (c *awsServiceClient) botocoreUserAgent(features []string) string {
 	if osName != "" {
 		parts = append(parts, "os/"+osName+"#"+release)
 	} else {
-		parts = append(parts, "os/other", "md/"+botocoreUAComponent(pyplatform.System())+"#"+release)
+		parts = append(parts, "os/other", "md/"+botocoreUAComponent(hostutil.OSName())+"#"+release)
 	}
 	if machine := strings.ToLower(hostutil.Machine()); machine != "" {
 		parts = append(parts, "md/arch#"+botocoreUAComponent(machine))
@@ -831,8 +789,8 @@ func (c *awsServiceClient) botocoreFeatures(source string, bearerFromEnv bool) [
 }
 
 // Head lines botocore and urllib3 write for one attempt, serializer headers, user agent, auth, retry headers and length
-func (c *awsServiceClient) botocoreLines(ctx context.Context, req *http.Request, body []byte, call http.Header, r botocoreRetries) (*pyhttpx.Headers, error) {
-	aws := pyhttpx.NewHeaders()
+func (c *awsServiceClient) botocoreLines(ctx context.Context, req *http.Request, body []byte, call http.Header, r botocoreRetries) (http.Header, error) {
+	aws := headerOf()
 	for _, name := range sortedHeaderKeys(call) {
 		for _, v := range call[name] {
 			aws.Set(name, v)
@@ -858,7 +816,7 @@ func (c *awsServiceClient) botocoreLines(ctx context.Context, req *http.Request,
 			aws.Set("X-Amz-Security-Token", creds.SessionToken)
 		}
 		signed := &http.Request{Method: req.Method, URL: req.URL, Host: req.Host, Header: http.Header{}}
-		for _, l := range aws.Lines() {
+		for _, l := range fieldsOf(aws) {
 			signed.Header[strings.ToLower(l.Name)] = append(signed.Header[strings.ToLower(l.Name)], l.Value)
 		}
 		res := sigV4Compute(signed, sigV4PayloadHash(signed, body), creds, c.signingName, c.region, ts, nil)
@@ -871,74 +829,35 @@ func (c *awsServiceClient) botocoreLines(ctx context.Context, req *http.Request,
 	default:
 		aws.Set("Content-Length", strconv.Itoa(len(body)))
 	}
-	lines := []pyhttpx.HeaderLine{{Name: "Host", Value: req.Host}}
-	if _, has := aws.Get("Accept-Encoding"); !has {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Accept-Encoding", Value: "identity"})
+	lines := []headerField{{Name: "Host", Value: req.Host}}
+	if aws.Get("Accept-Encoding") == "" {
+		lines = append(lines, headerField{Name: "Accept-Encoding", Value: "identity"})
 	}
-	return pyhttpx.NewHeaders(append(lines, aws.Lines()...)...), nil
+	return headerOf(append(lines, fieldsOf(aws)...)...), nil
 }
 
 // Default addheaders of a urllib opener, the Python-urllib user agent of the pinned CPython
-func urllibAddHeaders() []pyhttpx.HeaderLine {
+func urllibAddHeaders() []headerField {
 	version := pinnedPythonRuntimeVersion()
 	if parts := strings.Split(version, "."); len(parts) >= 2 {
 		version = parts[0] + "." + parts[1]
 	}
-	return []pyhttpx.HeaderLine{{Name: "User-agent", Value: "Python-urllib/" + version}}
+	return []headerField{{Name: "User-agent", Value: "Python-urllib/" + version}}
 }
 
-// HTTP/1.1 transport of a urllib opener, one connection per request, ProxyHandler routing and http.client CONNECT tunnels
+// HTTP/1.1 transport opening one connection per request through the proxy the environment or the system names
 func urllibWireTransport(tlsCfg *tls.Config, connect time.Duration) *http.Transport {
 	if tlsCfg == nil {
 		tlsCfg = PlatformTLSConfig()
 	}
-	dial := netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext)
-	forward := func(target *url.URL) (*url.URL, error) {
-		proxy := pyhttpx.URLLibProxy(target)
-		if proxy == nil {
-			return nil, nil
-		}
-		switch strings.ToLower(proxy.Scheme) {
-		case "http", "https":
-		default:
-			return nil, &pyurl.URLError{Reason: "unknown url type: " + strings.ToLower(proxy.Scheme)}
-		}
-		bare := *proxy
-		bare.User = nil
-		return &bare, nil
+	return &http.Transport{
+		Proxy:               httputil.Proxy,
+		DialContext:         netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext),
+		TLSClientConfig:     tlsCfg,
+		TLSHandshakeTimeout: connect,
+		DisableKeepAlives:   true,
+		DisableCompression:  true,
 	}
-	t := &http.Transport{DisableKeepAlives: true, DisableCompression: true}
-	t.Proxy = func(req *http.Request) (*url.URL, error) {
-		if req.URL.Scheme != "http" {
-			return nil, nil
-		}
-		proxy, err := forward(req.URL)
-		if err != nil || proxy == nil {
-			return nil, err
-		}
-		return pyhttpx.ForwardProxy(proxy)
-	}
-	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		target, err := pyhttpx.RequestTarget(ctx)
-		if err != nil {
-			return nil, err
-		}
-		proxy, err := forward(target)
-		if err != nil {
-			return nil, err
-		}
-		return pyhttpx.DialWire(ctx, dial, proxy, network, address)
-	}
-	t.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		target, err := pyhttpx.RequestTarget(ctx)
-		if err != nil {
-			return nil, err
-		}
-		cctx, cancel := context.WithTimeout(ctx, connect)
-		defer cancel()
-		return pyhttpx.DialWireTLSStyle(cctx, dial, pyhttpx.URLLibProxy(target), network, address, tlsCfg, pyhttpx.TunnelURLLib)
-	}
-	return t
 }
 
 // One urllib request, the headers argument then add_header calls in order, opened by urlopen or open_credentialed_url
@@ -948,7 +867,7 @@ type urllibCall struct {
 	url    string
 	// Request body, nil for a request without data
 	data    []byte
-	headers []pyhttpx.HeaderLine
+	headers http.Header
 	// open_credentialed_url, addheaders moved onto the request and headers scoped to the first origin
 	credentialed bool
 	tls          *tls.Config
@@ -957,18 +876,14 @@ type urllibCall struct {
 	base http.RoundTripper
 }
 
-// Sends the call as urllib does hop by hop, each head written as do_request_, ProxyHandler, do_open and http.client build it
+// Sends the call and follows its redirects hop by hop, body headers dropped after the first hop and, for a credentialed call, every header but the safe ones dropped once a hop leaves the first origin
 func urllibOpen(ctx context.Context, c urllibCall) (*http.Response, error) {
-	cur := pyhttpx.NewURLLibRequest(c.headers...)
-	var addheaders []pyhttpx.HeaderLine
-	if c.credentialed {
-		for _, l := range urllibAddHeaders() {
-			if !cur.HasHeader(l.Name) {
-				cur.AddHeader(l.Name, l.Value)
-			}
-		}
-	} else {
-		addheaders = urllibAddHeaders()
+	header := c.headers.Clone()
+	if header == nil {
+		header = http.Header{}
+	}
+	if header.Get("User-Agent") == "" {
+		setFields(header, urllibAddHeaders())
 	}
 	origin, err := URLOrigin(c.url)
 	if err != nil {
@@ -978,7 +893,7 @@ func urllibOpen(ctx context.Context, c urllibCall) (*http.Response, error) {
 	if base == nil {
 		base = urllibWireTransport(c.tls, c.timeout)
 	}
-	client := &http.Client{Transport: pyhttpx.WireTransport{Base: base},
+	client := &http.Client{Transport: httputil.DecodingTransport(base),
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }, Timeout: c.timeout}
 	target := c.url
 	method, data := c.method, c.data
@@ -995,19 +910,19 @@ func urllibOpen(ctx context.Context, c urllibCall) (*http.Response, error) {
 			return nil, err
 		}
 		u.Fragment, u.RawFragment = "", ""
-		cur.DoRequest(u.Host, data, data != nil, addheaders)
 		if c.credentialed {
 			hopOrigin, err := URLOrigin(u.String())
 			if err != nil {
 				return nil, err
 			}
 			if hopOrigin != origin {
-				cur.StripHeaders(crossOriginSafeHeaders)
+				for name := range header {
+					if !crossOriginSafeHeaders[strings.ToLower(name)] {
+						header.Del(name)
+					}
+				}
 			}
 		}
-		proxy := pyhttpx.URLLibProxy(u)
-		cur.AddProxyAuthorization(proxy)
-		tunnel := proxy != nil && u.Scheme == "https"
 		var body io.Reader
 		if data != nil {
 			body = bytes.NewReader(data)
@@ -1017,7 +932,7 @@ func urllibOpen(ctx context.Context, c urllibCall) (*http.Response, error) {
 			return nil, err
 		}
 		req.Close = true
-		resp, err := client.Do(pyhttpx.WithWire(req, cur.WireLines(method, pyhttpx.URLLibPutHost(u), tunnel, data, data != nil)))
+		resp, err := client.Do(withHeader(req, header))
 		if err != nil {
 			return nil, err
 		}
@@ -1031,20 +946,12 @@ func urllibOpen(ctx context.Context, c urllibCall) (*http.Response, error) {
 		visited[next]++
 		_, _ = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
-		cur = cur.Redirected()
+		header.Del("Content-Length")
+		header.Del("Content-Type")
 		if method != http.MethodHead {
 			method = http.MethodGet
 		}
 		data = nil
-		if c.credentialed {
-			hopOrigin, err := URLOrigin(next)
-			if err != nil {
-				return nil, err
-			}
-			if hopOrigin != origin {
-				cur.StripHeaders(crossOriginSafeHeaders)
-			}
-		}
 		target = next
 	}
 }
@@ -1070,7 +977,7 @@ func urllibRedirectTarget(resp *http.Response, current, method string) (string, 
 	if !has || len(location) == 0 {
 		return "", false
 	}
-	parts, err := pyurl.Parse(location[0])
+	parts, err := urlutil.Split(location[0])
 	if err != nil {
 		return "", false
 	}
@@ -1079,12 +986,16 @@ func urllibRedirectTarget(resp *http.Response, current, method string) (string, 
 	default:
 		return "", false
 	}
-	if parts.Path == "" && parts.Netloc != "" {
+	if parts.Path == "" && parts.Authority != "" {
 		parts.Path = "/"
 	}
-	next, err := pyurl.Join(current, pyurl.Quote(pyurl.Unparse(parts), "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"))
+	base, err := url.Parse(current)
 	if err != nil {
 		return "", false
 	}
-	return strings.ReplaceAll(next, " ", "%20"), true
+	next, err := base.Parse(urlutil.Escape(parts.String(), "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"))
+	if err != nil {
+		return "", false
+	}
+	return strings.ReplaceAll(next.String(), " ", "%20"), true
 }

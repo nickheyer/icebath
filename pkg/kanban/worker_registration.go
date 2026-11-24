@@ -2,12 +2,14 @@ package kanban
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Environment value only when this worker is scoped to the task, not ok otherwise
@@ -24,7 +26,7 @@ var runIDBeyondSQLite = func() *int64 { v := int64(-1); return &v }()
 // Failure sqlite3 raises binding a run id past its integer range, nil for every other id
 func runIDBindable(id *int64) error {
 	if id == runIDBeyondSQLite {
-		return &RuntimeError{"the number is too large for a SQLite INTEGER"}
+		return errSQLiteIntegerTooLarge
 	}
 	return nil
 }
@@ -35,14 +37,13 @@ func workerRunIDArg(taskID string) *int64 {
 	if raw == "" {
 		return nil
 	}
-	parsed, ok := pyint.Parse(raw)
-	if !ok {
-		return nil
-	}
-	if !parsed.IsInt64() {
+	id, err := textutil.ParseInt(raw)
+	if errors.Is(err, strconv.ErrRange) {
 		return runIDBeyondSQLite
 	}
-	id := parsed.Int64()
+	if err != nil {
+		return nil
+	}
 	return &id
 }
 

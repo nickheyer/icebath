@@ -22,8 +22,8 @@ var (
 // ValueError a retry raises before any destructive mutation
 type retryRefusal struct{ msg string }
 
-func (e *retryRefusal) Error() string      { return e.msg }
-func (e *retryRefusal) PyTypeName() string { return "ValueError" }
+func (e *retryRefusal) Error() string     { return e.msg }
+func (e *retryRefusal) ErrorKind() string { return "ValueError" }
 
 // Python ValueError reasons a retry refuses with before any destructive mutation
 var (
@@ -253,14 +253,14 @@ func (o pyObject) PyItems() iter.Seq2[any, any] {
 // Requested user turn is not a rewindable target of the active transcript, a ValueError subclass
 type RewindTargetUnavailableError struct{ Msg string }
 
-func (e *RewindTargetUnavailableError) Error() string      { return e.Msg }
-func (e *RewindTargetUnavailableError) PyTypeName() string { return "RewindTargetUnavailableError" }
+func (e *RewindTargetUnavailableError) Error() string     { return e.Msg }
+func (e *RewindTargetUnavailableError) ErrorKind() string { return "RewindTargetUnavailableError" }
 
 // Python RuntimeError raised when the warm and durable histories disagree or an identity is missing
 type RewindRuntimeError struct{ Msg string }
 
-func (e *RewindRuntimeError) Error() string      { return e.Msg }
-func (e *RewindRuntimeError) PyTypeName() string { return "RuntimeError" }
+func (e *RewindRuntimeError) Error() string     { return e.Msg }
+func (e *RewindRuntimeError) ErrorKind() string { return "RuntimeError" }
 
 // Keyword arguments of a user turn rewind
 type RewindUserTurnOptions struct {
@@ -425,8 +425,8 @@ func (d *SessionDB) RewindUserTurn(ctx context.Context, sessionID string, userOr
 		PreserveCompactionHandoff: plan.Scaffold != nil, ExpectedActiveIDs: plan.ExpectedActiveIDs,
 		ExpectedTargetContent: plan.ExpectedTargetContent})
 	if err != nil {
-		var typed interface{ PyTypeName() string }
-		if errors.As(err, &typed) && typed.PyTypeName() == "ValueError" {
+		var typed interface{ ErrorKind() string }
+		if errors.As(err, &typed) && typed.ErrorKind() == "ValueError" {
 			return nil, &RewindTargetUnavailableError{err.Error()}
 		}
 		return nil, err

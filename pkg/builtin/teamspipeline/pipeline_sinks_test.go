@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -106,13 +107,14 @@ func TestNotionWriterFailures(t *testing.T) {
 	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj(), nil); !errors.As(err, &sinkErr) || err.Error() != "Notion sink requires database_id or an existing page_id." {
 		t.Fatalf("no target %v", err)
 	}
-	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj("databaseId", "db"), nil); pyrepr.ExceptionName(err) != "KeyError" || err.Error() != "missing id" {
+	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj("databaseId", "db"), nil); errorutil.Kind(err) != "KeyError" || err.Error() != "missing id" {
 		t.Fatalf("missing id %v", err)
 	}
 	refused, _ := NewNotionWriter(context.Background(), "k", &sinkTransport{status: 400, body: `{"message": "bad"}`})
 	_, err = refused.WriteSummary(context.Background(), sinkPayload(), obj("database_id", "db"), nil)
-	want := "Client error '400 Bad Request' for url 'https://api.notion.com/v1/pages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
-	if pyrepr.ExceptionName(err) != "HTTPStatusError" || err.Error() != want {
+	var statusErr *httputil.StatusError
+	want := "client error 400 Bad Request for https://api.notion.com/v1/pages"
+	if errorutil.Kind(err) != "HTTPStatusError" || err.Error() != want || !errors.As(err, &statusErr) || statusErr.StatusCode != 400 {
 		t.Fatalf("status error %v", err)
 	}
 }
@@ -173,7 +175,7 @@ func TestLinearWriterCreatesThenUpdatesIssue(t *testing.T) {
 		t.Fatalf("failed write %v", err)
 	}
 	transport.body = `[1]`
-	if _, err := writer.WriteSummary(context.Background(), sinkPayload(), obj("team_id", "t"), nil); pyrepr.ExceptionName(err) != "AttributeError" {
+	if _, err := writer.WriteSummary(context.Background(), sinkPayload(), obj("team_id", "t"), nil); errorutil.Kind(err) != "AttributeError" {
 		t.Fatalf("list payload %v", err)
 	}
 }
@@ -192,10 +194,10 @@ func TestSummaryParsingAndHeuristicFallback(t *testing.T) {
 		empty.ConfidenceNotes != "Generated with heuristic fallback because no LLM summary response was available." {
 		t.Fatalf("empty %+v err %v", empty, err)
 	}
-	if _, err := parseSummaryJSON("[1]"); pyrepr.ExceptionName(err) != "AttributeError" || err.Error() != "expected a mapping, got a list" {
+	if _, err := parseSummaryJSON("[1]"); errorutil.Kind(err) != "AttributeError" || err.Error() != "expected a mapping, got a list" {
 		t.Fatalf("list %v", err)
 	}
-	if _, err := parseSummaryJSON(`{"summary": "x", "risks": null}`); pyrepr.ExceptionName(err) != "TypeError" || err.Error() != "expected a list, got nothing" {
+	if _, err := parseSummaryJSON(`{"summary": "x", "risks": null}`); errorutil.Kind(err) != "TypeError" || err.Error() != "expected a list, got nothing" {
 		t.Fatalf("null risks %v", err)
 	}
 	if _, err := parseSummaryJSON("no json here"); err == nil {
@@ -237,10 +239,10 @@ func TestTeamsPipelineConfigFromDictReadsSnakeAndCamelKeys(t *testing.T) {
 	if _, err := TeamsPipelineConfigFromDict(obj("transcript_min_chars", "many")); err == nil {
 		t.Fatal("bad transcript_min_chars accepted")
 	}
-	if _, err := TeamsPipelineConfigFromDict(obj("tmp_dir", int64(5))); pyrepr.ExceptionName(err) != "TypeError" {
+	if _, err := TeamsPipelineConfigFromDict(obj("tmp_dir", int64(5))); errorutil.Kind(err) != "TypeError" {
 		t.Fatalf("tmp_dir %v", err)
 	}
-	if _, err := TeamsPipelineConfigFromDict("on"); pyrepr.ExceptionName(err) != "ValueError" || err.Error() != "expected a mapping, got text" {
+	if _, err := TeamsPipelineConfigFromDict("on"); errorutil.Kind(err) != "ValueError" || err.Error() != "expected a mapping, got text" {
 		t.Fatalf("string config %v", err)
 	}
 	kept := NewTeamsPipelineConfig()

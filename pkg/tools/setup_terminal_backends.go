@@ -12,7 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Adds the wizard steps of the plugins tier backends
@@ -61,11 +61,11 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 			return f, err == nil
 		}},
 		{"container_memory", "  Memory in MB (5120 = 5GB)", 5120, func(text string) (any, bool) {
-			n, ok := pyint.Parse(text)
-			if !ok {
+			n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+			if err != nil {
 				return nil, false
 			}
-			return pyint.Native(n), true
+			return int(n), true
 		}},
 	}
 	for _, r := range resources {

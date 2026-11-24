@@ -12,14 +12,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/kanban"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Task id of the kanban CLI create success line
-var kanbanCreatedRe = pyre.MustCompile(`Created\s+(t_[0-9a-f]+)\b`)
+var kanbanCreatedRe = regexutil.MustCompile(`Created\s+(t_[0-9a-f]+)\b`)
 
 // Kanban CLI output for the slash arguments, auto subscribing the chat to a task it created
 func (r *GatewayRunner) runKanbanCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {

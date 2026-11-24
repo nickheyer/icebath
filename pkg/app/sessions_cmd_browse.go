@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -361,13 +360,13 @@ func fallbackPicker(r *sessionsRun, sessions []*jsonutil.Object) (string, error)
 		if lowered := strings.ToLower(val); val == "" || lowered == "q" || lowered == "quit" || lowered == "exit" {
 			return "", nil
 		}
-		n, ok := pyint.Parse(val)
-		if !ok {
+		n, err := strconv.ParseInt(strings.TrimSpace(val), 10, 64)
+		if err != nil {
 			r.print("  Invalid input. Enter a number or q to cancel.")
 			continue
 		}
-		if n.IsInt64() && 1 <= n.Int64() && n.Int64() <= int64(len(sessions)) {
-			return rowText(sessions[n.Int64()-1], "id"), nil
+		if 1 <= n && n <= int64(len(sessions)) {
+			return rowText(sessions[n-1], "id"), nil
 		}
 		r.printf("  Invalid selection. Enter 1-%d or q to cancel.", len(sessions))
 	}

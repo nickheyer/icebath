@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Evicts the cached agent when a fallback model served a successful run, failed runs left cached

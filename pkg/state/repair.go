@@ -20,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -752,7 +754,7 @@ func openExclusive(ctx context.Context, dbPath, begin string) (*TrackedConn, err
 func exclusiveRepairDBGuard(ctx context.Context, dbPath string, fn func(guard SQLiteConn, guardErr error) error) error {
 	guard, err := openExclusive(ctx, dbPath, "BEGIN EXCLUSIVE")
 	if err != nil {
-		if _, ok := sqliteClassOf(err); !ok && !isOSError(err) {
+		if _, ok := sqliteClassOf(err); !ok && !errorutil.IsSystem(err) {
 			return err
 		}
 		return fn(nil, err)
@@ -1132,7 +1134,7 @@ func restoreJournalModeAfterRepair(ctx context.Context, dbPath, beforeMode strin
 		after, err = applyWALFn(ctx, conn, label, false)
 	}
 	if err != nil {
-		if _, ok := sqliteClassOf(err); !ok && !isOSError(err) {
+		if _, ok := sqliteClassOf(err); !ok && !errorutil.IsSystem(err) {
 			return err
 		}
 		pkgLog().Warn(fmt.Sprintf("state.db repair at %s: post-surgery journal-mode restore failed (%s); verify with PRAGMA "+

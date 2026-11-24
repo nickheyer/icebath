@@ -12,7 +12,6 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,9 +22,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -106,7 +104,7 @@ func parseDataURI(data string) ([]byte, string, error) {
 	if parts[0] == "" {
 		return nil, "", errors.New("Content type is empty")
 	}
-	decoded, err := pybase64.B64Decode(strings.NewReplacer("-", "+", "_", "/").Replace(actual))
+	decoded, err := base64util.Decode(strings.NewReplacer("-", "+", "_", "/").Replace(actual))
 	if err != nil {
 		return nil, "", err
 	}

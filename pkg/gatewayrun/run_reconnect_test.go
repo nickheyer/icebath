@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Home under root whose config sets the reconnect attention threshold

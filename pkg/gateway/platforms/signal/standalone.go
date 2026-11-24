@@ -1,7 +1,6 @@
 package signal
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -13,6 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transport of out of process sends, a clone of the default transport when nil

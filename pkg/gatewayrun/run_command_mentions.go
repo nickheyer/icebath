@@ -4,11 +4,11 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Slash command mention not preceded by a word character, colon or slash
-var telegramCommandMentionRe = pyre.MustCompile(`(?<![\w:/])/([A-Za-z0-9][A-Za-z0-9_-]*)`)
+var telegramCommandMentionRe = regexutil.MustCompile(`(?<![\w:/])/([A-Za-z0-9][A-Za-z0-9_-]*)`)
 
 // Lowercased hyphen folded command name Telegram accepts, assigned in cmd/icebath wiring
 var SanitizeTelegramName func(raw string) string

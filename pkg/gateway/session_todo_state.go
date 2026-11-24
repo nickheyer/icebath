@@ -2,11 +2,10 @@ package gateway
 
 import (
 	"context"
-	"math/big"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -25,17 +24,17 @@ func normalizeTodoState(value any) *jsonutil.Object {
 	if !pyTruthy(rawRevision) {
 		rawRevision = int64(0)
 	}
-	parsed, err := pyint.Of(rawRevision)
+	parsed, err := anyutil.ToInt(rawRevision)
 	if err != nil {
 		return nil
 	}
-	if parsed.Sign() < 0 {
-		parsed = big.NewInt(0)
+	if parsed < 0 {
+		parsed = 0
 	}
-	if len(todos) == 0 && parsed.Sign() == 0 {
+	if len(todos) == 0 && parsed == 0 {
 		return nil
 	}
-	return jsonutil.ObjectOf("todos", append([]any(nil), todos...), "revision", pyint.Value(parsed))
+	return jsonutil.ObjectOf("todos", append([]any(nil), todos...), "revision", parsed)
 }
 
 // Cold resume todo snapshot of a session from its persisted todo results, nil when none is usable

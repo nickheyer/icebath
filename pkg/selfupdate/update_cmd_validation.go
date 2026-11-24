@@ -61,7 +61,7 @@ func criticalModuleImportFailures(ctx context.Context, root string, reportRuntim
 	output := strings.ToValidUTF8(string(result.Stdout), "\uFFFD")
 	cut := strings.LastIndex(output, marker)
 	if cut < 0 {
-		order, failures := probeFailure("ProbeTerminated", fmt.Sprintf("terminated before reporting import health (exit code %d)", result.Returncode))
+		order, failures := probeFailure("ProbeTerminated", fmt.Sprintf("terminated before reporting import health (exit code %d)", result.ExitCode))
 		return order, failures, nil
 	}
 	order, failures, ok := importHealthPayload(output[cut+len(marker):])

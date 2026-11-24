@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Telegram message entity as the bot API delivers it, fields untyped so malformed values are skipped like Python
@@ -60,11 +60,11 @@ func codePointIndex(text string, offset int) (int, bool) {
 
 // Integer of an entity field, false where Python int raises
 func entityInt(v any) (int, bool) {
-	n, err := pyint.Of(v)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(v)
+	if err != nil {
 		return 0, false
 	}
-	return int(n.Int64()), true
+	return int(n), true
 }
 
 type textLink struct {

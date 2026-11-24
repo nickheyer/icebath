@@ -342,7 +342,7 @@ func (c *connectionManager) extractConnectID(decoded *jsonutil.Object) string {
 		pkgLog().Warn(fmt.Sprintf("[%s] Failed to extract connectId: %s", name, err.Error()))
 		return ""
 	}
-	if code := fields.GetVarint(1); !equalsInt(code, 0) {
+	if code := fields.GetVarint(1); code != 0 {
 		pkgLog().Error(fmt.Sprintf("[%s] AuthBindRsp error: code=%s message=%s", name, anyutil.String(code), strconv.Quote(fields.GetString(2))))
 		return ""
 	}

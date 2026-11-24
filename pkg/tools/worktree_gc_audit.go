@@ -16,9 +16,9 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -71,13 +71,13 @@ type ExternalTreeRecord struct {
 func gcGit(args []string, cwd string, timeout time.Duration) (*worktreeGitResult, error) {
 	env := NoninteractiveRepoGitEnv(cwd, nil)
 	if env == nil {
-		return &worktreeGitResult{Returncode: 1, Stderr: gitFilterDiscoveryFailed}, nil
+		return &worktreeGitResult{ExitCode: 1, Stderr: gitFilterDiscoveryFailed}, nil
 	}
 	r, err := worktreeGit(args, cwd, timeout, env)
 	if err != nil {
 		var expired *executil.TimeoutError
 		if errors.As(err, &expired) {
-			return &worktreeGitResult{Returncode: 124, Stderr: fmt.Sprintf("timeout after %ds", int(timeout/time.Second))}, nil
+			return &worktreeGitResult{ExitCode: 124, Stderr: fmt.Sprintf("timeout after %ds", int(timeout/time.Second))}, nil
 		}
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func gcGit(args []string, cwd string, timeout time.Duration) (*worktreeGitResult
 // Whether tracked files changed and which paths are untracked, a failed status read as real work
 func gcDirtySplit(path string) (bool, []string) {
 	r, err := gcGit([]string{"status", "--porcelain", "--untracked-files=normal"}, path, 10*time.Second)
-	if err != nil || r.Returncode != 0 {
+	if err != nil || r.ExitCode != 0 {
 		return true, nil
 	}
 	var lines, untracked []string
@@ -190,7 +190,7 @@ func AuditExternalTrees(repoRoot string) ([]ExternalTreeRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.Returncode != 0 {
+	if r.ExitCode != 0 {
 		return nil, nil
 	}
 	managedRoot := gcRealpath(filepath.Join(repoRoot, ".worktrees"))
@@ -260,7 +260,7 @@ func PruneMissingRegistrations(repoRoot string, dryRun bool) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.Returncode != 0 {
+	if r.ExitCode != 0 {
 		return []string{"failed to prune stale registrations: " + strings.TrimSpace(r.Stderr)}, nil
 	}
 	for _, s := range stale {
@@ -300,7 +300,7 @@ func AuditWorktrees(ctx context.Context, repoRoot string, withSizes bool, olderT
 		}
 		verdict, reason, untracked := gcClassifyTree(repoRoot, path, mergeCache, remoteHeads)
 		if olderThanDays != nil && gcReapVerdicts[verdict] && ageDays < *olderThanDays {
-			threshold, _ := pyrepr.Format(*olderThanDays, "g")
+			threshold, _ := templateutil.Format("{v:g}", map[string]any{"v": *olderThanDays})
 			verdict, reason, untracked = "keep", fmt.Sprintf("reapable but only %.1fd old (--older-than %s)", ageDays, threshold), nil
 		}
 		var size *int
@@ -351,7 +351,7 @@ func ReclaimWorktrees(ctx context.Context, repoRoot string, dryRun bool, records
 			actions = append(actions, fmt.Sprintf("failed to remove %s: %s", record.Name, err))
 			continue
 		}
-		if remove.Returncode != 0 {
+		if remove.ExitCode != 0 {
 			actions = append(actions, fmt.Sprintf("failed to remove %s: %s", record.Name, strings.TrimSpace(remove.Stderr)))
 			continue
 		}
@@ -393,7 +393,7 @@ func AuditBranches(repoRoot string) ([]BranchRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	if r.Returncode != 0 {
+	if r.ExitCode != 0 {
 		return nil, nil
 	}
 	branches := gcLines(r)
@@ -443,7 +443,7 @@ func AuditBranches(repoRoot string) ([]BranchRecord, error) {
 		if err != nil {
 			return BranchRecord{}, err
 		}
-		if cherry.Returncode != 0 {
+		if cherry.ExitCode != 0 {
 			return BranchRecord{branch, "keep", "could not verify (git cherry failed)"}, nil
 		}
 		lines := gcLines(cherry)
@@ -507,7 +507,7 @@ func ReclaimBranches(repoRoot string, dryRun bool, records []BranchRecord) ([]st
 		if err != nil {
 			return nil, err
 		}
-		if r.Returncode == 0 {
+		if r.ExitCode == 0 {
 			actions = append(actions, "deleted branch "+record.Name)
 		} else {
 			actions = append(actions, fmt.Sprintf("failed to delete %s: %s", record.Name, strings.TrimSpace(r.Stderr)))

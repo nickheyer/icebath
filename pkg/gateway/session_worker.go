@@ -3,13 +3,11 @@ package gateway
 import (
 	"context"
 	"crypto/subtle"
-	"math/big"
 	"os"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -24,11 +22,11 @@ func workerParamsAre(params *jsonutil.Object, extra ...string) bool {
 }
 
 // Int value of a param that is a Python int and not a bool
-func strictInt(value any) (*big.Int, bool) {
+func strictInt(value any) (int64, bool) {
 	if _, isBool := value.(bool); isBool {
-		return nil, false
+		return 0, false
 	}
-	return pyrepr.Int(value)
+	return anyutil.Int(value)
 }
 
 // Number of a param that is a Python int or float and not a bool
@@ -37,8 +35,7 @@ func strictNumber(value any) (float64, bool) {
 		return f, true
 	}
 	if n, isInt := strictInt(value); isInt {
-		f, _ := new(big.Float).SetInt(n).Float64()
-		return f, true
+		return float64(n), true
 	}
 	return 0, false
 }
@@ -55,11 +52,11 @@ func workerClaim(ctx context.Context, c *AuthorityConnection, params *jsonutil.O
 	pidValue, pidInt := strictInt(params.ValueOr("pid", nil))
 	birth, birthNumber := strictNumber(params.ValueOr("birth", nil))
 	secret, secretText := params.ValueOr("secret", nil).(string)
-	if !pidInt || pidValue.Sign() <= 0 || !pidValue.IsInt64() || pidValue.Int64() == int64(os.Getpid()) || !birthNumber ||
+	if !pidInt || pidValue <= 0 || pidValue == int64(os.Getpid()) || !birthNumber ||
 		!secretText || utf8.RuneCountInString(secret) < 16 || utf8.RuneCountInString(secret) > 256 {
 		return "", runtimeRefusal("invalid_params")
 	}
-	pid := int(pidValue.Int64())
+	pid := int(pidValue)
 	started, err := proc.WorkerBirth(pid)
 	if err != nil {
 		return "", runtimeRefusal("worker_not_live")
@@ -121,8 +118,8 @@ func verifyWorkerClaim(ctx context.Context, c *AuthorityConnection, params *json
 
 // Ledger int of a param, a value no stored generation or epoch ever holds when it is not an int
 func workerLedgerInt(value any) int64 {
-	if n, isInt := strictInt(value); isInt && n.IsInt64() {
-		return n.Int64()
+	if n, isInt := strictInt(value); isInt {
+		return n
 	}
 	return -1
 }

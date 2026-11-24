@@ -2,10 +2,10 @@ package botmode
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -27,7 +27,7 @@ func IcebathCLI() string {
 			return candidate
 		}
 	}
-	if found, ok := pyshutil.Which("icebath", nil); ok {
+	if found, err := exec.LookPath("icebath"); err == nil {
 		return found
 	}
 	return "icebath"

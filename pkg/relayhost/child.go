@@ -75,7 +75,9 @@ func finalize(h *cpythonutil.Host, code int) int {
 		fmt.Fprintf(os.Stderr, "relay host: Py_FinalizeEx did not return within %s\n", finalizeDeadline)
 		os.Exit(exitFinalizeHung)
 	})
-	rc, err := h.Finalize(finalizeDeadline)
+	ctx, cancel := context.WithTimeout(context.Background(), finalizeDeadline)
+	rc, err := h.Finalize(ctx)
+	cancel()
 	timer.Stop()
 	if (err != nil || rc != 0) && code == 0 {
 		fmt.Fprintf(os.Stderr, "relay host: Py_FinalizeEx returned %d: %v\n", rc, err)

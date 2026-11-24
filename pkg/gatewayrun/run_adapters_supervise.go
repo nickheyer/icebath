@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Supervision class attributes of the runner with their values
@@ -118,7 +119,7 @@ func (r *GatewayRunner) spawnSupervised(factory func(ctx context.Context) error,
 		if err == nil {
 			return
 		}
-		pkgLog().Error(fmt.Sprintf("Supervised task %s died: %s", name, pyrepr.ExceptionRepr(err)), "exc_info", err)
+		pkgLog().Error(fmt.Sprintf("Supervised task %s died: %s", name, err.Error()), "exc_info", err)
 		if !(restart && r.running.Load()) {
 			return
 		}

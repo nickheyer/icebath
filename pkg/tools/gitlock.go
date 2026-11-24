@@ -110,7 +110,7 @@ func gitProcRunning(env *Env) bool {
 		return true
 	}
 	if gitlockWindows {
-		if res.Returncode != 0 {
+		if res.ExitCode != 0 {
 			return true
 		}
 		for _, line := range textutil.Lines(strings.ToValidUTF8(string(res.Stdout), "\uFFFD")) {
@@ -121,7 +121,7 @@ func gitProcRunning(env *Env) bool {
 		}
 		return false
 	}
-	return res.Returncode != 1
+	return res.ExitCode != 1
 }
 
 // Scans the process table for a git, a failed scan or an unreadable name answering true
@@ -375,7 +375,7 @@ func GitlockStdoutLines(ctx context.Context, repoRoot string, args []string) []s
 		envLog(nil).Debug(fmt.Sprintf("git query failed: %s", anyutil.Quote(anySlice(args))))
 		return nil
 	}
-	if res.Returncode != 0 {
+	if res.ExitCode != 0 {
 		return nil
 	}
 	var out []string
@@ -420,7 +420,7 @@ func batchMissingParentsErr(ctx context.Context, repoRoot string, candidates []s
 	if err != nil {
 		return nil, err
 	}
-	if res.Returncode != 0 {
+	if res.ExitCode != 0 {
 		return nil, nil
 	}
 	data := res.Stdout
@@ -478,7 +478,7 @@ func batchMissingParentsErr(ctx context.Context, repoRoot string, candidates []s
 	if err != nil {
 		return nil, err
 	}
-	if check.Returncode != 0 {
+	if check.ExitCode != 0 {
 		return nil, nil
 	}
 	missing := map[string]bool{}
@@ -608,7 +608,7 @@ func repairBrokenShallowBoundaries(ctx context.Context, repoRoot string) (int, e
 	if err != nil {
 		return 0, err
 	}
-	if probe.Returncode == 0 {
+	if probe.ExitCode == 0 {
 		return 0, nil
 	}
 	repaired := 0
@@ -766,7 +766,7 @@ func PartialCloneFilter(ctx context.Context, repoRoot string, kw executil.Option
 	if err != nil {
 		return "", err
 	}
-	if res.Returncode != 0 || strings.ToLower(strings.TrimSpace(strings.ToValidUTF8(string(res.Stdout), "\uFFFD"))) != "true" {
+	if res.ExitCode != 0 || strings.ToLower(strings.TrimSpace(strings.ToValidUTF8(string(res.Stdout), "\uFFFD"))) != "true" {
 		return "", nil
 	}
 	configured, err := gitlockKwRun(ctx, repoRoot, kw, "config", "--get", "remote.origin.partialclonefilter")
@@ -829,7 +829,7 @@ func FetchFullCommitGraph(ctx context.Context, repoRoot string, extraRefspecs []
 	}
 	args = append(append(args, "--no-tags", "origin", "refs/tags/v*:refs/tags/v*"), extraRefspecs...)
 	o := kw
-	o.Dir, o.Check, o.Timeout = repoRoot, true, tagRefreshTimeout
+	o.Dir, o.RequireSuccess, o.Timeout = repoRoot, true, tagRefreshTimeout
 	if shallow {
 		o.Timeout = historyFetchTimeout
 	}
@@ -864,7 +864,7 @@ func FetchWithPartialCloneRecovery(runner func(gitCmd, args []string) (*executil
 	if err != nil {
 		return nil, err
 	}
-	if result.Returncode == 0 || !IsPartialClonePackObjectsCrash(strings.ToValidUTF8(string(result.Stderr), "\uFFFD")) {
+	if result.ExitCode == 0 || !IsPartialClonePackObjectsCrash(strings.ToValidUTF8(string(result.Stderr), "\uFFFD")) {
 		return result, nil
 	}
 	MarkUnmarkedPacksPromisor(repoRoot)
@@ -902,14 +902,14 @@ func ConvertTreelessCheckout(ctx context.Context, repoRoot string, kw executil.O
 	}
 	if !complete {
 		headKw := kw
-		headKw.Dir, headKw.Check, headKw.Timeout = repoRoot, true, 30*time.Second
+		headKw.Dir, headKw.RequireSuccess, headKw.Timeout = repoRoot, true, 30*time.Second
 		res, err := gitlockSubprocessRun(ctx, []string{"git", "rev-parse", "HEAD"}, headKw)
 		if err != nil {
 			return false, err
 		}
 		head := strings.TrimSpace(strings.ToValidUTF8(string(res.Stdout), "\uFFFD"))
 		checked := fetchKw
-		checked.Check = true
+		checked.RequireSuccess = true
 		if _, err := gitlockSubprocessRun(ctx, append(slices.Clone(refetch), head), checked); err != nil {
 			return false, err
 		}
@@ -921,7 +921,7 @@ func ConvertTreelessCheckout(ctx context.Context, repoRoot string, kw executil.O
 		}
 	}
 	cfgKw := kw
-	cfgKw.Dir, cfgKw.Check, cfgKw.Timeout = repoRoot, true, 30*time.Second
+	cfgKw.Dir, cfgKw.RequireSuccess, cfgKw.Timeout = repoRoot, true, 30*time.Second
 	if _, err := gitlockSubprocessRun(ctx, []string{"git", "config", "remote.origin.partialclonefilter", "blob:none"}, cfgKw); err != nil {
 		return false, err
 	}
@@ -1006,7 +1006,7 @@ func historyTreesComplete(ctx context.Context, repoRoot string, kw executil.Opti
 	if err != nil {
 		return false, err
 	}
-	if walk.Returncode != 0 {
+	if walk.ExitCode != 0 {
 		return false, nil
 	}
 	for _, line := range textutil.Lines(strings.ToValidUTF8(string(walk.Stdout), "\uFFFD")) {

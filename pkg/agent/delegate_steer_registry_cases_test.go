@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
@@ -137,7 +136,7 @@ func TestStatusSnapshotNeverLeaksOwnerOrLifecycleMetadata(t *testing.T) {
 		t.Fatalf("snapshot leaks the owner %v", snapshot)
 	}
 	for _, v := range snapshot {
-		if v == any(ownerTransport) || pyrepr.Is(v, ownerSessionRecord) {
+		if v == any(ownerTransport) || sameRecord(v, ownerSessionRecord) {
 			t.Fatalf("snapshot leaks an authority object %v", snapshot)
 		}
 	}

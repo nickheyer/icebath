@@ -4,8 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // AuxSDKError is the OpenAI SDK APIError shape an auxiliary SDK client raises, status zero when status less
@@ -51,29 +49,16 @@ var auxSDKExceptionParents = map[string]string{
 	"LengthFinishReasonError": "OpenAIError", "ContentFilterFinishReasonError": "OpenAIError",
 }
 
-// Class names of the SDK exception through BaseException as type(exc).__mro__ lists them
-func (e *AuxSDKError) PyExceptionMRO() []string {
-	return pyrepr.ExceptionMROFrom(e.PyTypeName(), auxSDKExceptionParents)
-}
-
-// Class names of the httpx transport exception through BaseException as type(exc).__mro__ lists them
-func (e *AuxTransportError) PyExceptionMRO() []string {
-	return pyrepr.ExceptionMROFrom(e.Class, auxSDKExceptionParents)
-}
-
 var (
-	_ interface{ PyExceptionMRO() []string } = (*AuxSDKError)(nil)
-	_ interface{ PyExceptionMRO() []string } = (*AuxTransportError)(nil)
-	_ interface{ PyModule() string }         = (*AuxSDKError)(nil)
-	_ interface{ PyModule() string }         = (*AuxTransportError)(nil)
-	_ interface{ PyModule() string }         = (*AWSServiceError)(nil)
-	_ interface{ PyModule() string }         = (*AWSReadTimeoutError)(nil)
-	_ interface{ PyModule() string }         = (*AWSCredentialError)(nil)
-	_ interface{ PyModule() string }         = (*lmHTTPStatusError)(nil)
+	_ interface{ PyModule() string } = (*AuxSDKError)(nil)
+	_ interface{ PyModule() string } = (*AuxTransportError)(nil)
+	_ interface{ PyModule() string } = (*AWSServiceError)(nil)
+	_ interface{ PyModule() string } = (*AWSReadTimeoutError)(nil)
+	_ interface{ PyModule() string } = (*AWSCredentialError)(nil)
 )
 
 // Python exception class the SDK raised, APIError when unclassified
-func (e *AuxSDKError) PyTypeName() string {
+func (e *AuxSDKError) ErrorKind() string {
 	if e.Class == "" {
 		return "APIError"
 	}

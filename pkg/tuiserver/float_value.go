@@ -4,12 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Python float of a number, bool or numeric string, a ValueError or TypeError otherwise
@@ -55,9 +54,8 @@ func pyFloat(v any) (float64, error) {
 		}
 		return 0, fmt.Errorf("%s is not a number", n)
 	}
-	if whole, ok := pyrepr.Int(v); ok {
-		f, _ := new(big.Float).SetInt(whole).Float64()
-		return f, nil
+	if whole, ok := anyutil.Int(v); ok {
+		return float64(whole), nil
 	}
 	return 0, fmt.Errorf("expected a number, got %s", errchain.Kind(v))
 }

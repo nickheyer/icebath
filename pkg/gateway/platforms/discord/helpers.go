@@ -22,11 +22,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var (
@@ -55,7 +55,7 @@ var discordNonconversationalHistoryMessagePatterns = func() []*regexp2.Regexp {
 		`^\s*(?:✅|❌)\s+(?:Icebath|Hermes) update\s+(?:finished|failed|timed out)[\s\S]*$`,
 		`^\s*♻️?\s+Gateway\s+(?:restarted successfully|online\b)[\s\S]*$`,
 	} {
-		re, err := pyre.CompileIgnoreCase(p)
+		re, err := regexutil.Compile(p, regexutil.IgnoreCase())
 		if err != nil {
 			panic(err)
 		}
@@ -83,7 +83,7 @@ func formatDiscordMarkdownLink(label, rawURL string) string {
 		label = label[loc[1]:]
 	}
 	escapedLabel := discordMarkdownLinkLabelRE.ReplaceAllString(label, `\$1`)
-	escapedURL := pyurl.Quote(rawURL, ":/?#[]@!$&'*+,;=%")
+	escapedURL := urlutil.Escape(rawURL, ":/?#[]@!$&'*+,;=%")
 	return "[" + escapedLabel + "](<" + escapedURL + ">)"
 }
 

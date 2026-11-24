@@ -17,32 +17,34 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
-	logFormat        = "%(asctime)s %(levelname)s%(session_tag)s %(name)s: %(message)s"
-	logFormatVerbose = "%(asctime)s - %(name)s - %(levelname)s%(session_tag)s - %(message)s"
+	logFormat        = "{asctime} {levelname}{session_tag} {name}: {message}"
+	logFormatVerbose = "{asctime} - {name} - {levelname}{session_tag} - {message}"
 )
 
 var processStart = time.Now()
 
-// Renders records through a Python logging format, redacting the whole line when built with the redaction hook
+// Renders records through a {field} template, redacting the whole line when built with the redaction hook
 type Formatter struct {
-	format  string
-	datefmt string
-	redact  slog.Handler
+	format    *templateutil.Template
+	formatErr error
+	datefmt   string
+	redact    slog.Handler
 }
 
-// Formatter for a printf style format and strftime date format, the default message format when empty
+// Formatter for a {field} template and strftime date format, the default message format when empty
 func NewFormatter(format, datefmt string) *Formatter {
 	if format == "" {
-		format = "%(message)s"
+		format = "{message}"
 	}
-	return &Formatter{format: format, datefmt: datefmt}
+	tmpl, err := templateutil.Parse(format)
+	return &Formatter{format: tmpl, formatErr: err, datefmt: datefmt}
 }
 
 // Formatter whose output passes through the redaction hook, the RedactingFormatter form
@@ -124,11 +126,14 @@ func (f *Formatter) Format(ctx context.Context, rec *Record) (string, error) {
 		}
 		return nil, false
 	}
-	line, err := pyrepr.PercentMap(f.format, lookup)
+	if f.formatErr != nil {
+		return "", f.formatErr
+	}
+	line, err := f.format.Render(lookup)
 	if err != nil {
-		var pe *pyrepr.PercentError
-		if errors.As(err, &pe) && pe.Class == "KeyError" {
-			return "", fmt.Errorf("the log format names field %s, which a log record does not have", pe.Msg)
+		var missing *templateutil.MissingError
+		if errors.As(err, &missing) {
+			return "", fmt.Errorf("the log format names field %s, which a log record does not have", missing.Name)
 		}
 		return "", err
 	}
@@ -243,10 +248,6 @@ func handleErrorBase(rec *Record, err error) {
 
 // Python exception class name an error stands for
 func errorClass(err error) string {
-	var pe *pyrepr.PercentError
-	if errors.As(err, &pe) {
-		return pe.Class
-	}
 	var lt *lockTimeoutError
 	if errors.As(err, &lt) {
 		return "RuntimeError"
@@ -255,7 +256,7 @@ func errorClass(err error) string {
 		return "ValueError"
 	}
 	if isOSError(err) {
-		return pypath.OSErrorClass(err)
+		return errorutil.Kind(err)
 	}
 	if cls, _, ok := strings.Cut(err.Error(), ": "); ok && strings.HasSuffix(cls, "Error") && !strings.ContainsAny(cls, " .") {
 		return cls
@@ -265,10 +266,6 @@ func errorClass(err error) string {
 
 // Python str of the exception an error stands for
 func errorText(err error) string {
-	var pe *pyrepr.PercentError
-	if errors.As(err, &pe) {
-		return pe.Msg
-	}
 	if errors.Is(err, os.ErrClosed) {
 		return "I/O operation on closed file."
 	}

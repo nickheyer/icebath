@@ -12,13 +12,10 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -243,23 +240,12 @@ var systemdExecStartRE = regexp.MustCompile(`^\{ path=(.*?) ; argv\[\]=(.*?) ; i
 
 // Account of a systemd user field, a decimal uid or a passwd name
 func systemdServiceUID(user string) (int, error) {
-	decimal := user != ""
-	for _, r := range user {
-		decimal = decimal && unicode.IsDigit(r)
-	}
-	if decimal {
-		digits := strings.Map(func(r rune) rune {
-			if v, ok := pystr.DecimalValue(r); ok {
-				return rune('0' + v)
-			}
-			return r
-		}, user)
-		return strconv.Atoi(digits)
+	if textutil.IsDigits(user) {
+		return strconv.Atoi(user)
 	}
 	p, err := userutil.Lookup(user)
 	if err != nil {
-		var keyErr *pypwd.KeyError
-		if errors.As(err, &keyErr) {
+		if errors.Is(err, userutil.ErrNotFound) {
 			return 0, unverifiedIdentity()
 		}
 		return 0, err
@@ -345,7 +331,7 @@ func VerifySystemd(props map[string]string, managerEnv, h string, system bool) e
 			if err != nil {
 				return err
 			}
-			base = account.Dir
+			base = account.Home
 		}
 		abs, err := identityAbsolute(base)
 		if err != nil {

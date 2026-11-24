@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Command listing every command the shared gateway serves

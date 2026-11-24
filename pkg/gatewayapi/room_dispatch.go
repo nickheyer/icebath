@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -161,7 +162,7 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 		if input := dict.ValueOr("input", nil); input != nil && !anyutil.Equal(input, dispatch.Prompt) {
 			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room dispatch input does not match its prompt"}
 		}
-		expectedKey := "room:" + dispatch.TaskID + ":" + dispatch.ExecutionGeneration.String()
+		expectedKey := "room:" + dispatch.TaskID + ":" + strconv.FormatInt(dispatch.ExecutionGeneration, 10)
 		if strings.TrimSpace(request.Header.Get("Idempotency-Key")) != expectedKey {
 			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room dispatch idempotency key is invalid"}
 		}

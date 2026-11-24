@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var displayIndexMissingSQL = "SELECT 1 FROM messages WHERE session_id = ?" + displayActiveClause +
@@ -390,8 +391,8 @@ func (d *SessionDB) GetMessages(ctx context.Context, sessionID string, o GetMess
 // A ValueError carrying message
 type stateValueError struct{ msg string }
 
-func (e *stateValueError) Error() string      { return e.msg }
-func (e *stateValueError) PyTypeName() string { return "ValueError" }
+func (e *stateValueError) Error() string     { return e.msg }
+func (e *stateValueError) ErrorKind() string { return "ValueError" }
 
 func pyValueError(msg string) error { return &stateValueError{msg} }
 

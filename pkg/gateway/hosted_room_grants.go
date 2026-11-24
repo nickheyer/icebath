@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,7 +19,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -299,7 +297,7 @@ func IssueRoomGrant(ctx context.Context, secret []byte, o RoomGrantIssue) (strin
 			if err != nil {
 				return "", err
 			}
-			payload.Set(name, pyint.Value(epoch))
+			payload.Set(name, epoch)
 			continue
 		}
 		value, err := hostedIdentifier(scope[name], name)
@@ -438,7 +436,7 @@ func VerifyRoomGrant(secret []byte, token string, dispatch *HostedMemberDispatch
 	if err != nil {
 		return nil, err
 	}
-	if !anyutil.Equal(payload.ValueOr(hostedGrantVersionField, nil), pyint.Value(dispatch.ProtocolVersion)) {
+	if !anyutil.Equal(payload.ValueOr(hostedGrantVersionField, nil), dispatch.ProtocolVersion) {
 		return nil, hostedGrantError("room grant protocol does not match dispatch")
 	}
 	coordinates := dispatch.AsMapping()
@@ -452,16 +450,10 @@ func VerifyRoomGrant(secret []byte, token string, dispatch *HostedMemberDispatch
 
 // Canonical wire mapping of the dispatch in field order, the one fingerprinting reads
 func (d *HostedMemberDispatch) AsMapping() *jsonutil.Object {
-	value := func(n *big.Int) any {
-		if n == nil {
-			return nil
-		}
-		return pyint.Value(n)
-	}
-	mapping := jsonutil.ObjectOf("protocol_version", value(d.ProtocolVersion), "room_id", d.RoomID, "home_install_id", d.HomeInstallID,
-		"authority_gateway_id", d.AuthorityGatewayID, "authority_epoch", value(d.AuthorityEpoch), "member_id", d.MemberID,
+	mapping := jsonutil.ObjectOf("protocol_version", d.ProtocolVersion, "room_id", d.RoomID, "home_install_id", d.HomeInstallID,
+		"authority_gateway_id", d.AuthorityGatewayID, "authority_epoch", d.AuthorityEpoch, "member_id", d.MemberID,
 		"target_install_id", d.TargetInstallID, "target_profile", d.TargetProfile, "task_id", d.TaskID,
-		"execution_generation", value(d.ExecutionGeneration), "source_event_seq", value(d.SourceEventSeq),
+		"execution_generation", d.ExecutionGeneration, "source_event_seq", d.SourceEventSeq,
 		"cancellation_scope_id", d.CancellationScopeID, "prompt", d.Prompt, "prompt_digest", d.PromptDigest,
 		"capability_digest", d.CapabilityDigest, "execution_policy_digest", d.ExecutionPolicyDigest, "trace_id", d.TraceID)
 	if len(d.Attachments) > 0 {

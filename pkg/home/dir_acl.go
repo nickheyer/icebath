@@ -13,8 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -66,7 +67,10 @@ var (
 	aclLstat          = lstatForACL
 	grantNative       = grantNativeACL
 	whoamiSID         = cachedWhoamiSID
-	runACLCommand     = func(argv []string) error { _, _, err := pysubprocess.Run(argv, 60, true); return err }
+	runACLCommand     = func(argv []string) error {
+		_, err := executil.Run(context.Background(), argv, executil.Options{Timeout: 60 * time.Second, RequireSuccess: true})
+		return err
+	}
 	iterTree          = IterTreeWithoutReparsePoints
 	grantUserAccessFn = GrantUserAccess
 	grantedMu         sync.Mutex
@@ -102,10 +106,11 @@ func cachedWhoamiSID() (string, error) {
 	if whoamiCached != "" {
 		return whoamiCached, nil
 	}
-	out, _, err := pysubprocess.Run([]string{"whoami", "/user", "/fo", "csv", "/nh"}, 30, true)
+	done, err := executil.Run(context.Background(), []string{"whoami", "/user", "/fo", "csv", "/nh"}, executil.Options{Timeout: 30 * time.Second, RequireSuccess: true})
 	if err != nil {
 		return "", err
 	}
+	out := done.Stdout
 	text := strings.ReplaceAll(strings.ReplaceAll(strings.ToValidUTF8(string(out), "\uFFFD"), "\r\n", "\n"), "\r", "\n")
 	stripped := strings.TrimSpace(text)
 	sid := strings.Trim(strings.TrimSpace(stripped[strings.LastIndex(stripped, ",")+1:]), `"`)

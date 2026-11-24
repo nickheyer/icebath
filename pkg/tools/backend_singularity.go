@@ -21,7 +21,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"

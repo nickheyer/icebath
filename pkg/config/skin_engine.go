@@ -198,7 +198,7 @@ func buildSkinConfig(data map[string]any, source string) *SkinConfig {
 			return m
 		}
 		if present && value != nil {
-			pkgLog().Warn("Skin has invalid section type; ignoring section", "skin", name, "section", key, "type", PyTypeName(value))
+			pkgLog().Warn("Skin has invalid section type; ignoring section", "skin", name, "section", key, "type", ErrorKind(value))
 		}
 		return map[string]any{}
 	}

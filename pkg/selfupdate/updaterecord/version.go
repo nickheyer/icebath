@@ -15,8 +15,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -105,11 +103,11 @@ var buildIdentity = func() (string, map[string]string) {
 
 // Nonnegative Python int of a string, nil when it does not parse or is negative
 func parseNonnegative(value string) *int64 {
-	parsed, ok := pyint.Parse(value)
-	if !ok || parsed.Sign() < 0 || !parsed.IsInt64() {
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || parsed < 0 {
 		return nil
 	}
-	n := parsed.Int64()
+	n := parsed
 	return &n
 }
 
@@ -177,7 +175,7 @@ func stampVersionInfo() (*VersionInfo, error) {
 	}
 	commit, ok := commitValue.(string)
 	if !ok {
-		return nil, &pyjson.TypeError{Msg: fmt.Sprintf("stamped version commit is %s where text was expected", errchain.Kind(commitValue))}
+		return nil, fmt.Errorf("stamped version commit is %s where text was expected", errchain.Kind(commitValue))
 	}
 	if strings.Trim(commit, "0") == "" {
 		return nil, nil

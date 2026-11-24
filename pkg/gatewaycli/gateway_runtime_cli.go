@@ -59,9 +59,9 @@ func ensurePayload(result gateway.ObservedEndpoint) *jsonutil.Object {
 
 // Whether err is the ValueError or TypeError a bad invocation raises
 func invalidInvocation(err error) bool {
-	var typed interface{ PyTypeName() string }
+	var typed interface{ ErrorKind() string }
 	if errors.As(err, &typed) {
-		name := typed.PyTypeName()
+		name := typed.ErrorKind()
 		return name == "ValueError" || name == "TypeError"
 	}
 	return false

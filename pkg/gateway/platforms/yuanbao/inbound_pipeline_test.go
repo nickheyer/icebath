@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestPipelineSkipsGuardedMiddlewareAndRunsAsOnion(t *testing.T) {

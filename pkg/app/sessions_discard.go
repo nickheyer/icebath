@@ -12,6 +12,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Resumes a session by exact id first and then by title, the way chat --resume resolves a name

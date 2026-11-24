@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
@@ -434,7 +433,7 @@ func recoveryInt(v any) int64 {
 	case float64:
 		return int64(x)
 	case string:
-		n, _ := pyjson.ParseInt(strings.TrimSpace(x)).(int64)
+		n, _ := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
 		return n
 	}
 	return 0

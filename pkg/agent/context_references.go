@@ -18,15 +18,15 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // One autocomplete row of a context reference provider, display defaulting to the text
@@ -280,33 +280,18 @@ var pluginReferencePattern = mustPyRegex(`(?<![\w/])@(?P<kind>[a-zA-Z][a-zA-Z0-9
 // A Python regex with its groupindex, named groups read by number the way the translator numbers them
 type pyRegex struct {
 	re    *regexp2.Regexp
-	names map[string]int
+	names []string
 }
 
 // Compiles a Python regex at init, a bad pattern stopping the program like a module import error
 func mustPyRegex(pattern string) *pyRegex {
-	re, err := pyre.Compile(pattern)
-	if err != nil {
-		panic(err)
-	}
-	names, err := pyre.GroupIndex(pattern)
-	if err != nil {
-		panic(err)
-	}
-	return &pyRegex{re: re, names: names}
+	re := regexutil.MustCompile(pattern)
+	return &pyRegex{re: re, names: re.GetGroupNames()}
 }
 
 // Named group of a match, empty when the group did not participate
 func (r *pyRegex) group(m *regexp2.Match, name string) string {
-	n, ok := r.names[name]
-	if !ok {
-		return ""
-	}
-	g := m.GroupByNumber(n)
-	if g == nil || g.RuneLength == 0 {
-		return ""
-	}
-	return g.String()
+	return regexutil.NamedGroup(m, name)
 }
 
 // One regex match with its code point span and named groups
@@ -325,7 +310,7 @@ func findAllReferenceMatches(re *pyRegex, s string) []referenceMatch {
 	m, err := re.re.FindStringMatch(s)
 	for err == nil && m != nil {
 		groups := map[string]string{}
-		for name := range re.names {
+		for _, name := range re.names {
 			if v := re.group(m, name); v != "" {
 				groups[name] = v
 			}
@@ -1155,7 +1140,7 @@ func parseFileReferenceValue(value string) (string, *int, *int) {
 
 // Mime type says binary unless the name has a text extension, else a NUL in the first 4096 bytes
 func isBinaryReferenceFile(path string) (bool, error) {
-	mime, _, _ := pymimetypes.GuessType(filepath.Base(path), true)
+	mime := mimeutil.TypeByName(filepath.Base(path))
 	if mime != "" && !strings.HasPrefix(mime, "text/") {
 		textual := false
 		for _, ext := range referenceTextExtensions {
@@ -1339,7 +1324,7 @@ func onDiskReferenceBlock(ctx context.Context, ref ContextReference, path, descr
 }
 
 func binaryReferenceBlock(ctx context.Context, ref ContextReference, path string) string {
-	mime, _, _ := pymimetypes.GuessType(filepath.Base(path), true)
+	mime := mimeutil.TypeByName(filepath.Base(path))
 	if mime == "" {
 		mime = "application/octet-stream"
 	}

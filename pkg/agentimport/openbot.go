@@ -13,14 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 	_ "modernc.org/sqlite"
 )
@@ -39,7 +37,7 @@ var openbotSkillDirs = []string{".agents/skills", ".claude/skills", ".opencode/s
 	".cline/skills", ".clinerules/skills"}
 
 // A cron field N/S with no range fires at N only in OpenBot
-var bareStepRe = pyre.MustCompile(`^\d+/\d+$`)
+var bareStepRe = regexutil.MustCompile(`^\d+/\d+$`)
 
 // FindOpenBotUserData is the folder holding openbot.db, from the source folder or file else the OS default
 func FindOpenBotUserData(source string) string {
@@ -86,11 +84,11 @@ func pyInt(v any) (int64, bool) {
 	case *big.Int:
 		return t.Int64(), t.IsInt64()
 	case string:
-		n, ok := pystr.IntText(t)
-		if !ok || !n.IsInt64() {
+		n, err := textutil.ParseInt(t)
+		if err != nil {
 			return 0, false
 		}
-		return n.Int64(), true
+		return n, true
 	}
 	return 0, false
 }
@@ -223,18 +221,11 @@ func intervalCron(schedule *jsonutil.Object) (string, bool) {
 		return "", false
 	}
 	unit := pyStr(u)
-	parsed, aware, err := timeutil.ParseISOZone(strings.ReplaceAll(pyStr(anchorRaw), "Z", "+00:00"), time.UTC)
+	parsed, err := timeutil.ParseISO(strings.ReplaceAll(pyStr(anchorRaw), "Z", "+00:00"), time.Local)
 	if err != nil {
 		return "", false
 	}
 	anchor := parsed.UTC()
-	if !aware {
-		secs, ok := pydatetime.LocalToSeconds(parsed, time.Local, 0, pydatetime.LocaltimeAccepts)
-		if !ok {
-			return "", false
-		}
-		anchor = time.Unix(secs, int64(parsed.Nanosecond())).UTC()
-	}
 	switch {
 	case unit == "minutes" && pyMod(60, amount) == 0:
 		if amount > 1 {
@@ -384,7 +375,7 @@ func sqliteCode(err error) (int, bool) {
 }
 
 // Trailing result code the driver appends to an sqlite message
-var sqliteCodeSuffix = pyre.MustCompile(`^(.*) \(\d+\)( \(SQLITE_BUSY\))?$`)
+var sqliteCodeSuffix = regexutil.MustCompile(`^(.*) \(\d+\)( \(SQLITE_BUSY\))?$`)
 
 // Python str of an error, an sqlite driver error reduced to the sqlite errmsg sqlite3 shows
 func sqliteErrText(err error) string {
@@ -405,13 +396,10 @@ func sqliteErrText(err error) string {
 	return msg
 }
 
-// Reports whether a driver error is the OperationalError of a table or column this OpenBot lacks
+// Reports whether a driver error is an operational failure of the database, as the missing table or column of an OpenBot that lacks it is
 func isOperationalError(err error) bool {
 	code, ok := sqliteCode(err)
-	if !ok {
-		return false
-	}
-	return (&pysqlite.Error{Code: code}).PyTypeName() == "OperationalError"
+	return ok && sqliteutil.IsOperational(code)
 }
 
 // Private in memory copy of the live database, a read only open first and a copy of its files second
@@ -446,7 +434,7 @@ func openSnapshot(ctx context.Context, database, scratch string) (*sql.DB, *sql.
 	}
 	escape := strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23")
 	if err := backupFrom("file:" + escape.Replace(filepath.ToSlash(database)) + "?mode=ro"); err != nil {
-		var pe *pysqlite.Error
+		var pe *sqliteutil.Error
 		if _, isSQLite := sqliteCode(err); !isSQLite && !errors.As(err, &pe) {
 			return fail(err)
 		}

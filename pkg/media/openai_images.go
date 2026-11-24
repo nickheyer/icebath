@@ -22,10 +22,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 )
 
 const (
@@ -84,9 +84,9 @@ type openAIError struct {
 	Err        error
 }
 
-func (e *openAIError) Error() string      { return e.Message }
-func (e *openAIError) Unwrap() error      { return e.Err }
-func (e *openAIError) PyTypeName() string { return e.Class }
+func (e *openAIError) Error() string     { return e.Message }
+func (e *openAIError) Unwrap() error     { return e.Err }
+func (e *openAIError) ErrorKind() string { return e.Class }
 
 // Client construction seam the image plugins call, tests swap it to observe the constructor arguments
 var newOpenAIClientHook = newOpenAIClient
@@ -257,7 +257,7 @@ func (c *openAIClient) ImagesEdit(ctx context.Context, req map[string]any) (*ope
 		}
 	}
 	for _, f := range files {
-		ctype, _ := pymimetypes.GuessFileType(f.file.Name, true)
+		ctype := mimeutil.TypeByName(f.file.Name)
 		if ctype == "" {
 			ctype = "application/octet-stream"
 		}

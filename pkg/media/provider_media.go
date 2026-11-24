@@ -13,9 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
@@ -58,7 +57,7 @@ func saveBytes(env *tools.Env, kind string, raw []byte, prefix, extension string
 
 // Decodes base64 data into the media cache and returns the absolute path
 func saveB64(env *tools.Env, kind, b64, prefix, extension string) (string, error) {
-	raw, err := pybase64.B64Decode(b64)
+	raw, err := base64util.Decode(b64)
 	if err != nil {
 		return "", err
 	}
@@ -151,11 +150,15 @@ func saveURL(ctx context.Context, env *tools.Env, kind, rawURL string, o saveURL
 			if location == "" {
 				return "", fmt.Errorf("%s download redirected without a Location: %s", o.Label, current)
 			}
-			next, err := pyurl.Join(current, location)
+			base, err := url.Parse(current)
 			if err != nil {
 				return "", err
 			}
-			current, hopHeaders = next, nil
+			next, err := base.Parse(location)
+			if err != nil {
+				return "", err
+			}
+			current, hopHeaders = next.String(), nil
 			continue
 		}
 		path, err := writeSavedURLBody(env, kind, rawURL, current, resp, o)

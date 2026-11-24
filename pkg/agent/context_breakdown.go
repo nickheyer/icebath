@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 var skillsBlockRe = regexp.MustCompile(`(?s)<available_skills>.*?</available_skills>`)
@@ -96,7 +97,7 @@ func charsToTokens(text string) int { return provider.EstimateTokens(text) }
 
 // Python str.format of one constant spec, a malformed spec raising as in Python
 func breakdownFormat(spec string, kw map[string]any) string {
-	out, err := i18n.PyFormat(spec, kw)
+	out, err := templateutil.Format(spec, kw)
 	if err != nil {
 		panic(err)
 	}
@@ -306,11 +307,7 @@ func ComputeContextDetails(ctx context.Context, a *AIAgent) (ContextDetails, err
 	}
 	out := ContextDetails{Skills: []ContextSkillCost{}, Toolsets: []ContextToolsetCost{}}
 	if block := skillsBlock(parts.Stable); block != "" {
-		entries, err := computeSkillsBreakdown(a.env, block)
-		if err != nil {
-			return ContextDetails{}, err
-		}
-		for _, e := range entries {
+		for _, e := range computeSkillsBreakdown(a.env, block) {
 			size := int64(e.IndexLineBytes)
 			index := 0
 			if n := bytesToTokens(&size); n != nil && *n != 0 {

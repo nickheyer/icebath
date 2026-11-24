@@ -56,7 +56,7 @@ func standaloneTruthy(value any) bool {
 func standaloneReadError(err error) (isYAML, caught bool) {
 	var ye *config.YAMLError
 	if errors.As(err, &ye) {
-		return ye.PyTypeName() != "UnicodeDecodeError", true
+		return ye.ErrorKind() != "UnicodeDecodeError", true
 	}
 	if config.IsOSError(err) || strings.Contains(err.Error(), "UTF-8") {
 		return false, true
@@ -156,7 +156,7 @@ func pyExceptionName(err error) string {
 	case config.IsYAMLError(err):
 		var ye *config.YAMLError
 		errors.As(err, &ye)
-		return ye.PyTypeName()
+		return ye.ErrorKind()
 	case strings.Contains(err.Error(), "UTF-8"):
 		return "UnicodeDecodeError"
 	}

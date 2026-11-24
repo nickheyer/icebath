@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -185,11 +185,11 @@ func recoverCompact(t *testing.T, ctx context.Context, db *state.SessionDB, phys
 
 func recoverRowID(t *testing.T, v any) int64 {
 	t.Helper()
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return n.Int64()
+	return n
 }
 
 // Stored ids of the active messages of a physical session

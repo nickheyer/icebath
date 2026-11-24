@@ -8,15 +8,14 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/textproto"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Request the transport failed or whose response could not be read or decoded

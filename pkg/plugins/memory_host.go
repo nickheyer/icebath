@@ -193,7 +193,7 @@ func (h *PluginHost) parentRef(obj any) map[string]any {
 	}
 	h.parents[id] = parentCallableSlot{obj: live, generation: generation}
 	h.stateMu.Unlock()
-	return map[string]any{"__parent_object__": id, "type": live.PyTypeName()}
+	return map[string]any{"__parent_object__": id, "type": live.ErrorKind()}
 }
 
 // Wire form of call arguments with parent callables registered for the child

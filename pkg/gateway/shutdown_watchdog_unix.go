@@ -13,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // AF_UNIX loop tick listener at the pid suffixed state path, not handled when the path overflows sun_path
@@ -56,12 +54,12 @@ func sweepStaleTickSockets(ownPath string) {
 	sort.Strings(names)
 	for _, name := range names {
 		parts := strings.Split(name, ".")
-		n, ok := pyint.Parse(parts[len(parts)-2])
-		if ok && (!n.IsInt64() || n.Int64() > math.MaxInt32 || n.Int64() < math.MinInt32) {
+		n, err := strconv.ParseInt(strings.TrimSpace(parts[len(parts)-2]), 10, 64)
+		if err == nil && (n > math.MaxInt32 || n < math.MinInt32) {
 			pkgLog().Debug(fmt.Sprintf("stale loop-tick socket sweep failed: signed integer is greater than maximum (%s)", name))
 			return
 		}
-		if ok && syscall.Kill(int(n.Int64()), 0) == nil {
+		if err == nil && syscall.Kill(int(n), 0) == nil {
 			continue
 		}
 		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {

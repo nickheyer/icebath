@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -262,7 +261,9 @@ func TestBarePingRequestProducesProperResponseAndNoStderrNoise(t *testing.T) {
 	clientToAgentR, clientToAgentW := io.Pipe()
 	agentToClientR, agentToClientW := io.Pipe()
 	served := make(chan error, 1)
-	go func() { served <- pyacp.RunAgent(probeAgent{}, agentToClientW, clientToAgentR, true, 1024*1024) }()
+	go func() {
+		served <- acputil.RunAgent(context.Background(), probeAgent{}, agentToClientW, clientToAgentR, acputil.UnstableMethods(true), acputil.LineLimit(1024*1024))
+	}()
 	if _, err := io.WriteString(clientToAgentW, `{"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}}`+"\n"); err != nil {
 		t.Fatal(err)
 	}

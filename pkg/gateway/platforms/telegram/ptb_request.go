@@ -12,8 +12,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -170,7 +168,7 @@ func (r *ptbRequest) Do(req *http.Request) (*http.Response, error) {
 	if client == nil || client.isClosed() {
 		inner := &runtimeError{msg: "Cannot send a request, as the client has been closed."}
 		return nil, &TelegramError{Class: "NetworkError", Message: "Unknown error in HTTP implementation: " +
-			pyrepr.ExceptionRepr(inner), Err: inner}
+			inner.Error(), Err: inner}
 	}
 	ctx := req.Context()
 	timeout := httputil.Timeout{Connect: seconds(r.settings.connectTimeout), Read: seconds(r.settings.readTimeout),
@@ -212,8 +210,8 @@ var timeoutPhaseClass = map[string]string{"connect": "ConnectTimeout", "read": "
 // httpx timeout carrying its phase class name
 type httpxTimeout struct{ class string }
 
-func (e *httpxTimeout) Error() string      { return "" }
-func (e *httpxTimeout) PyTypeName() string { return e.class }
+func (e *httpxTimeout) Error() string     { return "" }
+func (e *httpxTimeout) ErrorKind() string { return e.class }
 
 const poolTimeoutMessage = "Pool timeout: All connections in the connection pool are occupied. Request was *not* sent to Telegram. Consider adjusting the connection pool size or the pool timeout."
 
@@ -249,10 +247,9 @@ func ptbResponseError(code int, payload []byte) error {
 	}
 	if params, ok := parameters.(*jsonutil.Object); ok && params.Len() > 0 {
 		if migrate, _ := params.Get("migrate_to_chat_id"); pyTruthy(migrate) {
-			chatID, _ := pyint.Of(migrate)
 			te := newTelegramError("ChatMigrated", fmt.Sprintf("Group migrated to supergroup. New chat id: %s", anyutil.String(migrate)), nil)
-			if chatID != nil {
-				te.NewChatID = chatID.Int64()
+			if chatID, err := anyutil.ToInt(migrate); err == nil {
+				te.NewChatID = chatID
 			}
 			return te
 		}

@@ -7,19 +7,19 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Phone screen budget in monospace cells, wider tables render as vertical key value rows
 var tableWidth = 40
 
 var (
-	codeBlockRE  = pyre.MustCompile("(?s)```[a-zA-Z0-9_+-]*\\n?(.*?)```")
-	headingRE    = pyre.MustCompile(`(?m)^#{1,6}\s+`)
-	fenceSplitRE = pyre.MustCompile("(?s)(```.*?```)")
-	bulletRE     = pyre.MustCompile(`(?m)^([ \t]{0,3})[-*+]\s+`)
-	blankRunRE   = pyre.MustCompile(`\n{3,}`)
+	codeBlockRE  = regexutil.MustCompile("(?s)```[a-zA-Z0-9_+-]*\\n?(.*?)```")
+	headingRE    = regexutil.MustCompile(`(?m)^#{1,6}\s+`)
+	fenceSplitRE = regexutil.MustCompile("(?s)(```.*?```)")
+	bulletRE     = regexutil.MustCompile(`(?m)^([ \t]{0,3})[-*+]\s+`)
+	blankRunRE   = regexutil.MustCompile(`\n{3,}`)
 )
 
 // Inline marker patterns in claim order, the first to claim a span wins
@@ -27,12 +27,12 @@ var inlinePatterns = []struct {
 	re    *regexp2.Regexp
 	style string
 }{
-	{pyre.MustCompile(`(?s)\*\*(.+?)\*\*`), "BOLD"},
-	{pyre.MustCompile(`(?s)__(.+?)__`), "BOLD"},
-	{pyre.MustCompile(`(?s)~~(.+?)~~`), "STRIKETHROUGH"},
-	{pyre.MustCompile("`(.+?)`"), "MONOSPACE"},
-	{pyre.MustCompile(`(?<!\*)\*(?!\*| )(.+?)(?<!\*)\*(?!\*)`), "ITALIC"},
-	{pyre.MustCompile(`(?<!\w)_(?!_)(.+?)(?<!_)_(?!\w)`), "ITALIC"},
+	{regexutil.MustCompile(`(?s)\*\*(.+?)\*\*`), "BOLD"},
+	{regexutil.MustCompile(`(?s)__(.+?)__`), "BOLD"},
+	{regexutil.MustCompile(`(?s)~~(.+?)~~`), "STRIKETHROUGH"},
+	{regexutil.MustCompile("`(.+?)`"), "MONOSPACE"},
+	{regexutil.MustCompile(`(?<!\*)\*(?!\*| )(.+?)(?<!\*)\*(?!\*)`), "ITALIC"},
+	{regexutil.MustCompile(`(?<!\w)_(?!_)(.+?)(?<!_)_(?!\w)`), "ITALIC"},
 }
 
 // One styled range in code points

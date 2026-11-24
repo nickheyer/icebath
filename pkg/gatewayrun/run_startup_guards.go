@@ -13,13 +13,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Logs the enforced per turn iteration budget of the profile in ctx
@@ -242,7 +242,7 @@ func (r *GatewayRunner) startLogSystemdTimingAlignment(ctx context.Context) {
 		return
 	}
 	f0 := func(v any) string {
-		text, err := pyrepr.Format(v, ".0f")
+		text, err := templateutil.Format("{v:.0f}", map[string]any{"v": v})
 		if err != nil {
 			panic(err)
 		}

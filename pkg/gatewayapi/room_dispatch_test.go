@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestNonRoomRunBodyPassesThroughUnchanged(t *testing.T) {

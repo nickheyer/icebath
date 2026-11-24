@@ -27,8 +27,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // AuxClient is one resolved auxiliary chat client, the OpenAI SDK client or a wire adapter
@@ -66,20 +67,18 @@ var auxSDKSleep = func(ctx context.Context, d time.Duration) error {
 
 // Shared default HTTP client of SDK clients built without a keepalive client, an error for an environment proxy httpx refuses
 var auxSDKDefaultHTTPClient = sync.OnceValues(func() (*http.Client, error) {
-	proxies, err := pyhttpx.NewEnvProxies(httputil.Proxies())
-	if err != nil {
-		return nil, err
-	}
 	connect := time.Duration(auxSDKDefaultConnectTimeout * float64(time.Second))
 	t := &http.Transport{
-		DialContext:           netpref.DialContext((&net.Dialer{}).DialContext),
+		Proxy:                 httputil.Proxy,
+		DialContext:           netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext),
+		TLSClientConfig:       PlatformTLSConfig(),
+		TLSHandshakeTimeout:   connect,
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   100,
 		MaxConnsPerHost:       1000,
 		IdleConnTimeout:       5 * time.Second,
 		ExpectContinueTimeout: time.Second,
 	}
-	wireEnvDials(t, netpref.DialContext((&net.Dialer{Timeout: connect, KeepAlive: 30 * time.Second}).DialContext), PlatformTLSConfig(), connect, proxies)
 	return &http.Client{Transport: auxTrackPoolConns(t)}, nil
 })
 
@@ -162,7 +161,7 @@ func (c *auxOpenAIClient) requestHTTPClient() *http.Client {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	var rt http.RoundTripper = pyhttpx.WireTransport{Base: base, Decoders: httpxDecoders}
+	var rt http.RoundTripper = httputil.DecodingTransport(base)
 	if len(hooks) > 0 {
 		rt = auxResponseHookTransport{base: rt, hooks: hooks}
 	}
@@ -181,7 +180,7 @@ func AuxClientCustomHeaders(c AuxClient) map[string]string {
 	if len(oc.customHeaders) == 0 {
 		return nil
 	}
-	return pyhttpx.OrderedHeaderMap(oc.customHeaderLines()...)
+	return fieldMap(oc.customHeaderLines()...)
 }
 
 // AuxClientDefaultHeaders is the header set an SDK client sends on every request, nil for adapters
@@ -633,7 +632,7 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 		return nil, nil, false, err
 	}
 	httpReq.Host = httpxHost(target)
-	httpReq = pyhttpx.WithWire(httpReq, c.wireHeaders(key, r, retries))
+	httpReq = withHeader(httpReq, c.wireHeaders(key, r, retries))
 	resp, err := c.requestHTTPClient().Do(httpReq)
 	idle.retire()
 	if err != nil {
@@ -693,9 +692,8 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 
 // Body the SDK parses as response.json(), else the response.text a non JSON content type falls back to
 func auxSDKResponseData(header http.Header, data []byte) (any, error) {
-	parsed, err := jsonutil.Decode(data)
+	shaped, err := jsonutil.DecodePlain(data)
 	if err == nil {
-		shaped := pyjson.WTF8Shape(parsed)
 		if m, ok := shaped.(map[string]any); ok {
 			spliceOrderedReasoningDetails(data, m)
 			spliceNonStringToolArguments(data, m)
@@ -768,18 +766,18 @@ func (c *auxOpenAIClient) asyncLabel() string {
 }
 
 // Custom default headers in the order the client was given them
-func (c *auxOpenAIClient) customHeaderLines() []pyhttpx.HeaderLine {
-	out := make([]pyhttpx.HeaderLine, 0, len(c.customOrder))
+func (c *auxOpenAIClient) customHeaderLines() []headerField {
+	out := make([]headerField, 0, len(c.customOrder))
 	for _, k := range c.customOrder {
 		if v, ok := c.customHeaders[k]; ok {
-			out = append(out, pyhttpx.HeaderLine{Name: k, Value: v})
+			out = append(out, headerField{Name: k, Value: v})
 		}
 	}
 	return out
 }
 
 // Header lines of one attempt as the SDK merges them and its httpx client sends them
-func (c *auxOpenAIClient) wireHeaders(key string, r *auxSDKRequest, retries int) *pyhttpx.Headers {
+func (c *auxOpenAIClient) wireHeaders(key string, r *auxSDKRequest, retries int) http.Header {
 	c.mu.Lock()
 	d := &sdkHeaderDict{}
 	if key != "" {
@@ -798,7 +796,7 @@ func (c *auxOpenAIClient) wireHeaders(key string, r *auxSDKRequest, retries int)
 			d.set(k, anyutil.String(v))
 		}
 	}
-	sdk := pyhttpx.NewHeaders(d.lines...)
+	sdk := headerOf(d.lines...)
 	if !custom["x-stainless-retry-count"] {
 		sdk.Set("x-stainless-retry-count", strconv.Itoa(retries))
 	}
@@ -806,7 +804,7 @@ func (c *auxOpenAIClient) wireHeaders(key string, r *auxSDKRequest, retries int)
 		sdk.Set("x-stainless-read-timeout", r.readTimeoutText)
 	}
 	h := httpxClientHeaders()
-	h.Update(sdk.Lines())
+	setFields(h, fieldsOf(sdk))
 	return h
 }
 
@@ -1260,9 +1258,9 @@ type AuxTransportError struct {
 	Request *FailedStreamRequest
 }
 
-func (e *AuxTransportError) Error() string      { return e.Message }
-func (e *AuxTransportError) Unwrap() error      { return e.Err }
-func (e *AuxTransportError) PyTypeName() string { return e.Class }
+func (e *AuxTransportError) Error() string     { return e.Message }
+func (e *AuxTransportError) Unwrap() error     { return e.Err }
+func (e *AuxTransportError) ErrorKind() string { return e.Class }
 
 // Python module of the raised class, json.decoder for a JSONDecodeError and httpx for every transport class
 func (e *AuxTransportError) PyModule() string {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestRefusedTurnPublishesCompletionWithItsReason(t *testing.T) {

@@ -1,9 +1,10 @@
 package slack
 
 import (
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const reactionMarkerMax = 8
@@ -30,9 +31,9 @@ func slackReactionsMarker(msg map[string]any) string {
 		if name == "" {
 			continue
 		}
-		count, isInt := pyint.Instance(reaction["count"])
-		if isInt && count.Cmp(bigOne) > 0 {
-			parts = append(parts, ":"+name+":\u00d7"+count.String())
+		count, isInt := anyutil.Int(reaction["count"])
+		if isInt && count > 1 {
+			parts = append(parts, ":"+name+":\u00d7"+strconv.FormatInt(count, 10))
 		} else {
 			parts = append(parts, ":"+name+":")
 		}

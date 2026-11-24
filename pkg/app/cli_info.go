@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/i18n"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Python str.format of a constant spec, a malformed spec raising as in Python
 func pyFmt(spec string, kw map[string]any) string {
-	out, err := i18n.PyFormat(spec, kw)
+	out, err := templateutil.Format(spec, kw)
 	if err != nil {
 		panic(err)
 	}

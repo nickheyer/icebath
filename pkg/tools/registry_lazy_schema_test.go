@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // A builder schema loads config at the first registry read only, once across concurrent readers

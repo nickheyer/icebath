@@ -129,10 +129,10 @@ func abandonTimedOutGatewayTurn(ctx context.Context, tc *TurnContext, w *runAgen
 }
 
 // Watchdog goroutine that abandons the turn once its agent stays idle past the timeout
-func watchGatewayTurnInactivity(ctx context.Context, tc *TurnContext, w *runAgentWorker, timeout, pollInterval float64) {
+func watchGatewayTurnInactivity(ctx context.Context, tc *TurnContext, w *runAgentWorker, timeout float64, pollInterval time.Duration) {
 	activityOrigin := timeutil.Monotonic()
 	awakeIdle := state.NewAwakeIdleMeter()
-	for !w.workerDone.Wait(math.Max(0.01, pollInterval)) {
+	for !w.workerDone.WaitTimeout(max(10*time.Millisecond, pollInterval)) {
 		now := timeutil.Monotonic()
 		idleSeconds := now - activityOrigin
 		if a := tc.currentAgent(); a != nil {
@@ -197,7 +197,7 @@ func (r *GatewayRunner) runAgentStartTurnWorker(ctx context.Context, tc *TurnCon
 		return runSync(execCtx)
 	}
 	if w.agentTimeout != nil {
-		go watchGatewayTurnInactivity(context.WithoutCancel(ctx), tc, w, *w.agentTimeout, 5.0)
+		go watchGatewayTurnInactivity(context.WithoutCancel(ctx), tc, w, *w.agentTimeout, 5*time.Second)
 	}
 	authority, err := gateway.TrackTurnWorker(ctx, r, w, turnAgentHolder{tc})
 	if err != nil {

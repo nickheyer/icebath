@@ -19,8 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -41,7 +39,7 @@ var (
 	cronKillProcessTree        = provider.KillProcessTree
 	cronTerminateScriptProcess = func(s *Store, p *cronScriptProcess) error { return s.terminateCronScriptProcess(p) }
 	cronTerminateScriptTree    = func(s *Store, p *cronScriptProcess) error { return s.terminateCronScriptTree(p) }
-	cronWhich                  = pyshutil.Which
+	cronWhich                  = exec.LookPath
 	cronBashFallback           = "/bin/bash"
 	cronRunJobScript           = (*Store).runJobScript
 	cronHeartbeatRunClaim      = (*Store).heartbeatRunClaim
@@ -116,7 +114,7 @@ func resolveCronInterpreter(interpreter string) (string, string, error) {
 			"Bare names like 'python3' are not stable across PATH changes.", strconv.Quote(raw)), nil
 	}
 	if strings.IndexByte(resolved, 0) >= 0 {
-		return "", "", &pypath.ValueError{Msg: "stat: embedded null character in path"}
+		return "", "", errors.New("stat: embedded null character in path")
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
@@ -163,7 +161,8 @@ func cronHostPython() (string, error) {
 func (s *Store) scriptArgv(path string, interpreter *string) ([]string, string, error) {
 	suffix := strings.ToLower(pathutil.Suffix(path))
 	if suffix == ".sh" || suffix == ".bash" {
-		bash, found := cronWhich("bash", nil)
+		bash, lookErr := cronWhich("bash")
+		found := lookErr == nil
 		if !found {
 			if info, statErr := os.Stat(cronBashFallback); statErr == nil && info.Mode().IsRegular() {
 				bash, found = cronBashFallback, true

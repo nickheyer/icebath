@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
@@ -58,8 +57,8 @@ func (e *LiveTargetHeldError) Resend() string { return "after that session close
 // Python exception of a named class whose str is its message
 type pyError struct{ class, msg string }
 
-func (e *pyError) Error() string      { return e.msg }
-func (e *pyError) PyTypeName() string { return e.class }
+func (e *pyError) Error() string     { return e.msg }
+func (e *pyError) ErrorKind() string { return e.class }
 
 // Python str of an exception, an OS error spelled with its errno and quoted path
 func excText(err error) string {
@@ -110,7 +109,7 @@ func DMDeliveryID(dmFile string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := pystr.StrictUTF8EncodeError(string(resolved)); err != nil {
+	if err := textutil.ValidateUTF8(string(resolved)); err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256([]byte(resolved))

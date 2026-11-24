@@ -177,7 +177,7 @@ func unitCgroup(ctx context.Context, scopeCmd []string, unit string) (string, er
 		}
 		return "", err
 	}
-	if result.Returncode == 0 {
+	if result.ExitCode == 0 {
 		return pauseText(result.Stdout), nil
 	}
 	return "", nil
@@ -541,7 +541,7 @@ func stopUnit(ctx context.Context, unit map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if result.Returncode == unitJobStillRunning && !alive(entryPid(unit), unit["ct"]) {
+	if result.ExitCode == unitJobStillRunning && !alive(entryPid(unit), unit["ct"]) {
 		main, err := unitMainPid(ctx, scopeCmd(unit), name)
 		if err != nil {
 			return err
@@ -550,7 +550,7 @@ func stopUnit(ctx context.Context, unit map[string]any) error {
 			return nil
 		}
 	}
-	if result.Returncode != 0 {
+	if result.ExitCode != 0 {
 		return &PauseRefused{fmt.Sprintf("systemctl stop %s failed: %s", name, pauseText(result.Stderr))}
 	}
 	return nil
@@ -575,7 +575,7 @@ func startUnit(ctx context.Context, w io.Writer, unit map[string]any) (int, erro
 		return 0, err
 	}
 	active := false
-	if result.Returncode == 0 {
+	if result.ExitCode == 0 {
 		if active, err = waitForServiceActive(ctx, scoped, name, 15.0); err != nil {
 			return 0, err
 		}
@@ -604,7 +604,7 @@ func stopJob(ctx context.Context, job map[string]any, drained bool) error {
 		return err
 	}
 	waitGone([]int{pid}, 30.0, nil)
-	if result.Returncode != 0 {
+	if result.ExitCode != 0 {
 		_, running, _, err := gateway.LocateLaunchdGatewayService(ctx, label)
 		if err != nil {
 			return err

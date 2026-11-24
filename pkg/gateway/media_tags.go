@@ -9,16 +9,16 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Python re pattern compiled on regexp2 with its group numbers, matched over rune slices
 type pyRE struct {
-	re     *regexp2.Regexp
-	groups map[string]int
+	re *regexp2.Regexp
 }
 
 func newPyRE(pattern string) pyRE {
-	return pyRE{regexp2.MustCompile(mustTranslatePy(pattern), regexp2.None), mustGroupIndexPy(pattern)}
+	return pyRE{regexutil.MustCompile(pattern)}
 }
 
 // Every non overlapping match over the runes, the way re.finditer walks a str
@@ -40,7 +40,7 @@ func (p pyRE) search(text string) bool {
 
 // Rune span of a named group, ok false when it did not take part
 func (p pyRE) span(m *regexp2.Match, name string) (int, int, bool) {
-	g := m.GroupByNumber(p.groups[name])
+	g := m.GroupByName(name)
 	if g == nil || len(g.Captures) == 0 {
 		return 0, 0, false
 	}
@@ -49,7 +49,7 @@ func (p pyRE) span(m *regexp2.Match, name string) (int, int, bool) {
 
 // Matched text of a named group, empty when it did not take part
 func (p pyRE) group(m *regexp2.Match, name string) string {
-	g := m.GroupByNumber(p.groups[name])
+	g := m.GroupByName(name)
 	if g == nil || len(g.Captures) == 0 {
 		return ""
 	}

@@ -127,10 +127,10 @@ func TestProvidersDictApiModeAnthropicMessagesResolveProviderClientReturnsAnthro
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := sdkHeaders.Get("X-Gateway-Token"); v != "gw-1" {
-		t.Fatalf("headers %v", sdkHeaders.Lines())
+	if v := sdkHeaders.Get("X-Gateway-Token"); v != "gw-1" {
+		t.Fatalf("headers %v", sdkHeaders)
 	}
-	if _, has := sdkHeaders.Get("anthropic-beta"); !has {
+	if sdkHeaders.Get("anthropic-beta") == "" {
 		t.Fatalf("entry headers must merge onto, not replace, the builder's headers: %v", sdkHeaders)
 	}
 	asyncClient, asyncModel, err := ResolveProviderClient(ctx, "myrelay", "", ProviderClientOptions{AsyncMode: true})

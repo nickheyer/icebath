@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
 // Status error double with response headers, the SDK APIStatusError shape
@@ -23,10 +23,10 @@ type statusHeaderErr struct {
 func (e *statusHeaderErr) Error() string                { return e.msg }
 func (e *statusHeaderErr) StatusCode() int              { return e.status }
 func (e *statusHeaderErr) ResponseHeaders() http.Header { return e.headers }
-func (e *statusHeaderErr) PyTypeName() string           { return "APIStatusError" }
+func (e *statusHeaderErr) ErrorKind() string            { return "APIStatusError" }
 
 func asciiCodecErr() error {
-	return &pycodecs.UnicodeEncodeError{Codec: "ascii", Char: '\u2615', Start: 0, End: 1, Reason: "ordinal not in range(128)"}
+	return &charsetutil.EncodeError{Charset: "US-ASCII", Offset: 0, Char: '\u2615'}
 }
 
 func rowsOf(dicts ...map[string]any) (out []*state.Message) {

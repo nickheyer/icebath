@@ -3,7 +3,6 @@ package gateway
 import (
 	"math"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
@@ -27,7 +26,7 @@ func usageIsNumber(value any) bool {
 	case bool, float64, float32:
 		return true
 	}
-	_, ok := pyrepr.Int(value)
+	_, ok := anyutil.Int(value)
 	return ok
 }
 

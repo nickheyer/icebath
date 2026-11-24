@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 var (
@@ -56,11 +56,7 @@ var (
 
 // Group number of a named group in a Python pattern
 func mustPyGroup(pattern, name string) int {
-	idx, err := pyre.GroupIndex(pattern)
-	if err != nil {
-		panic(err)
-	}
-	return idx[name]
+	return regexutil.MustCompile(pattern).GroupNumberFromName(name)
 }
 
 // Whether the pattern finds a match anywhere in the text

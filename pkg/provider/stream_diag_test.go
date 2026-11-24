@@ -59,9 +59,9 @@ type causedError struct {
 	cause     error
 }
 
-func (e *causedError) Error() string      { return e.msg }
-func (e *causedError) Unwrap() error      { return e.cause }
-func (e *causedError) PyTypeName() string { return e.name }
+func (e *causedError) Error() string     { return e.msg }
+func (e *causedError) Unwrap() error     { return e.cause }
+func (e *causedError) ErrorKind() string { return e.name }
 
 func TestFlattenExceptionChainWalksCause(t *testing.T) {
 	inner := &causedError{name: "ConnectionError", msg: "upstream closed"}

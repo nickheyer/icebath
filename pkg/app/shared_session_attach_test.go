@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Live lease of a session in the registry of a profile home, released when the case ends

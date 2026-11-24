@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/big"
 	"strings"
 	"unicode/utf8"
 
@@ -647,11 +646,11 @@ func removeCustomProvider(r *ModelFlowRun) error {
 		choices = append(choices, fmt.Sprintf("%s (%s)", key, shortURL(pyStr(dictGet(m, "base_url", "")))))
 	}
 	choices = append(choices, "Cancel")
-	var idx *big.Int
+	idx := int64(-1)
 	if picked, ok := flowRadiolist("Select provider to remove:", plainPickerRows(choices), 0, PickerRadiolistOptions{}); ok {
 		fmt.Fprintln(r.Out)
 		if picked >= 0 {
-			idx = big.NewInt(int64(picked))
+			idx = int64(picked)
 		}
 	} else {
 		for i, c := range choices {
@@ -666,11 +665,11 @@ func removeCustomProvider(r *ModelFlowRun) error {
 			}
 		}
 	}
-	if idx == nil || idx.Sign() < 0 || idx.Cmp(big.NewInt(int64(len(keys)))) >= 0 {
+	if idx < 0 || idx >= int64(len(keys)) {
 		fmt.Fprintln(r.Out, flowNoChange)
 		return nil
 	}
-	removed := keys[idx.Int64()]
+	removed := keys[idx]
 	if _, err := settings.Reset(ctx, settings.Providers.EntryKey(removed), settings.Global); err != nil {
 		return err
 	}

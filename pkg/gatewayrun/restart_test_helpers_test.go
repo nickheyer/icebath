@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // One recorded adapter send

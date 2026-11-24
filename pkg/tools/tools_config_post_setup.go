@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -25,11 +25,17 @@ var (
 		_, err := pm.Ensure(ctx, name, opts)
 		return err
 	}
-	postSetupSyncVenv           = pm.SyncVenv
-	postSetupModuleImportable   = pm.AnchorImportable
-	postSetupIsTermux           = hostinfo.IsTermux
-	postSetupGOOS               = runtime.GOOS
-	postSetupWhich              = func(cmd string) string { p, _ := pyshutil.Which(cmd, nil); return p }
+	postSetupSyncVenv         = pm.SyncVenv
+	postSetupModuleImportable = pm.AnchorImportable
+	postSetupIsTermux         = hostinfo.IsTermux
+	postSetupGOOS             = runtime.GOOS
+	postSetupWhich            = func(cmd string) string {
+		p, err := exec.LookPath(cmd)
+		if err != nil {
+			return ""
+		}
+		return p
+	}
 	postSetupInterpreter        = selectedEnvironmentPython
 	postSetupFileExists         = func(path string) bool { _, err := os.Stat(path); return err == nil }
 	errCodexTokensMissing       = errors.New("'tokens'")

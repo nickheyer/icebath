@@ -25,7 +25,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -754,11 +753,11 @@ func debugIntArg(ns map[string]any, key string, def int) (int, error) {
 	if !ok || raw == nil {
 		return def, nil
 	}
-	n, err := pyint.Of(raw)
+	n, err := anyutil.ToInt(raw)
 	if err != nil {
 		return 0, err
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Collects the debug report and full logs, uploads each and prints their urls

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Quoted cause of a give up, a client error's own message else the exception name and a rejected handshake's HTTP status
@@ -15,7 +15,7 @@ func kanbanSilentDetail(err error) string {
 	if errors.As(err, &gce) {
 		return err.Error()
 	}
-	detail := pyrepr.ExceptionName(err)
+	detail := errorutil.Kind(err)
 	var status *InvalidStatusError
 	if errors.As(err, &status) && status.StatusCode != 0 {
 		detail += fmt.Sprintf(" (HTTP %d)", status.StatusCode)

@@ -7,10 +7,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -20,11 +20,17 @@ var runtimeErrorClasses = []string{"RuntimeError", "NotImplementedError", "Recur
 // True when err or any error it wraps stands for one of the named Python exception classes
 func errIsPyClass(err error, names ...string) bool {
 	for e := err; e != nil; e = errors.Unwrap(e) {
-		if n, ok := e.(pyTypeNamed); ok && slices.Contains(names, n.PyTypeName()) {
+		if n, ok := e.(pyTypeNamed); ok && slices.Contains(names, n.ErrorKind()) {
 			return true
 		}
 	}
 	return false
+}
+
+// Whether the failure is text a character set could not encode: a charset encode error in the chain or an error declaring that kind
+func isEncodeError(err error) bool {
+	var encodeErr *charsetutil.EncodeError
+	return errors.As(err, &encodeErr) || errIsPyClass(err, "UnicodeEncodeError")
 }
 
 // Body, message or text of an API error as Python str renders it
@@ -94,8 +100,8 @@ func repairTransportCredentials(a *AIAgent) bool {
 
 // Surrogate strip first, then the ASCII only request fallback under a non UTF-8 locale, true when a retry can help
 func recoverUnicodeEncodeError(a *AIAgent, apiError error, messages []*state.Message, apiMessages []any, apiKwargs map[string]any, activeSystemPrompt *string) bool {
-	var codecErr *pycodecs.UnicodeEncodeError
-	isASCIICodec := errors.As(apiError, &codecErr) && codecErr.Codec == "ascii"
+	var codecErr *charsetutil.EncodeError
+	isASCIICodec := errors.As(apiError, &codecErr) && codecErr.Charset == "US-ASCII"
 	isSurrogateError := !isASCIICodec
 	surrogatesFound := sanitizeMessageRowsSurrogates(messages)
 	if apiMessages != nil {
@@ -149,7 +155,7 @@ func recoverUnicodeEncodeError(a *AIAgent, apiError error, messages []*state.Mes
 
 // Unicode, fast mode, image rejection, reasoning key rejection and Bedrock stream recoveries run before classification
 func recoverBeforeClassification(ctx context.Context, a *AIAgent, s *LoopState, apiError error) (bool, error) {
-	if errIsPyClass(apiError, "UnicodeEncodeError") && a.unicodeSanitizationPasses < 2 {
+	if isEncodeError(apiError) && a.unicodeSanitizationPasses < 2 {
 		if recoverUnicodeEncodeError(a, apiError, s.Messages, s.APIMessages, s.APIKwargs, &s.ActiveSystemPrompt) {
 			return true, nil
 		}

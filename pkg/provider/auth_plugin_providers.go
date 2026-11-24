@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -144,7 +145,7 @@ var deviceLoginEndings = map[string]string{"denied": "Authorization was denied."
 // Whole number of a device login reply, text parsed and any other shape refused
 func deviceLoginInt(v any) (int, error) {
 	if s, ok := v.(string); ok {
-		return parsePyInt(s)
+		return strconv.Atoi(strings.TrimSpace(s))
 	}
 	if n, ok := anyInt(v); ok {
 		return n, nil

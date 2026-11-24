@@ -51,7 +51,7 @@ func cuFakeRun(t *testing.T, stdout func(argv []string) string, returncode int) 
 	calls := &[]cuRunCall{}
 	cuSwap(t, &runQuiet, func(argv []string, _ float64, o runOpts) (*completedProcess, error) {
 		*calls = append(*calls, cuRunCall{slices.Clone(argv), o})
-		return &completedProcess{Args: argv, Returncode: returncode, Stdout: stdout(argv)}, nil
+		return &completedProcess{Args: argv, ExitCode: returncode, Stdout: stdout(argv)}, nil
 	})
 	return calls
 }
@@ -283,7 +283,7 @@ func TestManifestContractReason(t *testing.T) {
 		t.Fatalf("status %s", b)
 	}
 	cuSwap(t, &runQuiet, func(argv []string, _ float64, _ runOpts) (*completedProcess, error) {
-		return &completedProcess{Args: argv, Returncode: 2, Stderr: "warn\nunknown verb manifest\n"}, nil
+		return &completedProcess{Args: argv, ExitCode: 2, Stderr: "warn\nunknown verb manifest\n"}, nil
 	})
 	status, _ = cuaDriverRuntimeContractStatus(context.Background(), nil, "/opt/cua-driver")
 	if b, _ := json.Marshal(status); string(b) != `{"ready":false,"binary":"/opt/cua-driver","version":null,"reason":"unknown verb manifest"}` {

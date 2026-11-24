@@ -8,7 +8,7 @@ func NewWorkerPersistenceError(reason string) error { return &WorkerPersistenceE
 
 func (e *WorkerPersistenceError) Error() string { return e.Reason }
 
-func (e *WorkerPersistenceError) PyTypeName() string { return "WorkerPersistenceError" }
+func (e *WorkerPersistenceError) ErrorKind() string { return "WorkerPersistenceError" }
 
 // Marks the env a non dispatcher owned execution and returns the restore of the previous flag
 func EnterNonDispatcherOwnedContext(env *Env) func() {

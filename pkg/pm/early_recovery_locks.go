@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -15,7 +16,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -73,7 +73,7 @@ var neverLocks = gitNameSet("credential-cache--daemon", "fsmonitor--daemon")
 
 // Executable lookup, subprocess runner and holder rule of the probes, swapped by tests
 var (
-	lockWhichFn      = func(name string) (string, bool) { return pyshutil.Which(name, nil) }
+	lockWhichFn      = func(name string) (string, bool) { p, err := exec.LookPath(name); return p, err == nil }
 	lockRunFn        = executil.Run
 	countsAsHolderFn = countsAsHolder
 )
@@ -505,7 +505,7 @@ func heldOpenLsof(path, root string, anyGit bool) LockHold {
 		}
 		return lockHolder(pids[0], name)
 	}
-	if found.Returncode != 0 && found.Returncode != 1 {
+	if found.ExitCode != 0 && found.ExitCode != 1 {
 		return lockUnknown
 	}
 	if root == "" {
@@ -520,7 +520,7 @@ func HeldOpenLsof(path, root string, anyGit bool) LockHold { return heldOpenLsof
 // Each pid's cwd from lsof, false when lsof cannot answer
 func lsofCwds(lsof string, pids []string) (map[string]string, bool) {
 	out, err := lockProbe([]string{lsof, "-a", "-d", "cwd", "-F", "pn", "-p", strings.Join(pids, ",")})
-	if err != nil || (out.Returncode != 0 && out.Returncode != 1) {
+	if err != nil || (out.ExitCode != 0 && out.ExitCode != 1) {
 		return nil, false
 	}
 	cwds := map[string]string{}
@@ -564,7 +564,7 @@ func psGitHolder(lsof, gitDir, root string, anyGit bool) LockHold {
 			argv = append(argv, "-o"+c+"=")
 		}
 		out, err := lockProbe(argv)
-		if err != nil || out.Returncode != 0 {
+		if err != nil || out.ExitCode != 0 {
 			return nil, false
 		}
 		rows := [][]string{}

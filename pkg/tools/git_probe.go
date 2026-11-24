@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // NoDriverDiffFlags disable attribute scoped diff drivers on rendered diffs

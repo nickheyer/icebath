@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -29,7 +28,7 @@ func resolveIcebathBin() []string {
 	if exe, err := os.Executable(); err == nil && exe != "" {
 		return []string{exe}
 	}
-	if bin, ok := pyshutil.Which("icebath", nil); ok && bin != "" {
+	if bin, err := exec.LookPath("icebath"); err == nil {
 		return []string{bin}
 	}
 	return nil
@@ -167,7 +166,7 @@ func (r *GatewayRunner) launchDetachedRestartCommand(ctx context.Context) error 
 		"while kill -0 %d 2>/dev/null && [ $(date +%%s) -lt $deadline ]; do sleep 0.2; done; "+
 		"%s gateway restart", int(restartAfterS), currentPID, strings.Join(quoted, " "))
 	argv := []string{"bash", "-lc", shellCmd}
-	if setsid, ok := pyshutil.Which("setsid", nil); ok && setsid != "" {
+	if setsid, err := exec.LookPath("setsid"); err == nil {
 		argv = append([]string{setsid}, argv...)
 	}
 	watcherEnv, err := restartWatcherEnv(ctx)

@@ -26,10 +26,10 @@ const cuaNativeWaylandEnvVar = "CUA_DRIVER_RS_ENABLE_WAYLAND"
 
 // Finished command of a text mode run: its exit code, the negated signal number when a signal ended it, and both streams decoded as text
 type completedProcess struct {
-	Args       []string
-	Returncode int
-	Stdout     string
-	Stderr     string
+	Args     []string
+	ExitCode int
+	Stdout   string
+	Stderr   string
 }
 
 // Failure to start a program at all, its text naming the program and the operating system's reason
@@ -84,7 +84,7 @@ var runQuiet = func(argv []string, timeout float64, o runOpts) (*completedProces
 	} else if err != nil {
 		return nil, &spawnError{err}
 	}
-	return &completedProcess{Args: argv, Returncode: code, Stdout: textModeDecode(stdout.Bytes()), Stderr: textModeDecode(stderr.Bytes())}, nil
+	return &completedProcess{Args: argv, ExitCode: code, Stdout: textModeDecode(stdout.Bytes()), Stderr: textModeDecode(stderr.Bytes())}, nil
 }
 
 // Runs a short cua-driver verb with the sanitized env and a hidden console window
@@ -250,7 +250,7 @@ func cuaDaemonListening(ctx context.Context, env *tools.Env, driverCmd, socketPa
 		return nil
 	}
 	t, f := true, false
-	if proc.Returncode == 0 {
+	if proc.ExitCode == 0 {
 		return &t
 	}
 	if strings.Contains(strings.ToLower(proc.Stdout+"\n"+proc.Stderr), "not running") {
@@ -275,7 +275,7 @@ func linuxSessionLocked() *bool {
 			seats = append(seats, fields[0])
 		}
 	}
-	if proc.Returncode != 0 || len(seats) == 0 {
+	if proc.ExitCode != 0 || len(seats) == 0 {
 		return nil
 	}
 	for _, s := range seats {

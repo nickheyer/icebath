@@ -14,14 +14,14 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -404,10 +404,10 @@ func kreaInlineLocalImages(env *tools.Env, refs []any, fail errorFn) ([]any, map
 		}
 		total += len(data)
 		if total > kreaMaxLocalReferenceBytes {
-			mb, _ := pyrepr.Format(float64(kreaMaxLocalReferenceBytes)/float64(1<<20), "g")
+			mb, _ := templateutil.Format("{v:g}", map[string]any{"v": float64(kreaMaxLocalReferenceBytes) / float64(1<<20)})
 			return []any{}, fail(fmt.Sprintf("Local reference images total over %s MB; resize them or pass public URLs", mb), "source_too_large")
 		}
-		mime, _, _ := pymimetypes.GuessType(filepath.Base(path), true)
+		mime := mimeutil.TypeByName(filepath.Base(path))
 		if mime == "" {
 			mime = "image/png"
 		}
@@ -456,7 +456,7 @@ func kreaBuildPayload(prompt, kreaAR, creativity string, styleRefs []any, kwargs
 		if _, isBool := v.(bool); isBool {
 			continue
 		}
-		if n, ok := pyrepr.Int(v); ok && n.IsInt64() && n.Int64() >= -100 && n.Int64() <= 100 {
+		if n, ok := anyutil.Int(v); ok && n >= -100 && n <= 100 {
 			payload.Set(slider, v)
 		}
 	}

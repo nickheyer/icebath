@@ -11,10 +11,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const maxACPResourceBytes = 512 * 1024
@@ -41,7 +41,7 @@ func resourceDisplayName(uri, name, title string) (string, error) {
 	if rawName != "" {
 		return rawName, nil
 	}
-	parsed, err := pyurl.Parse(uri)
+	parsed, err := urlutil.Split(uri)
 	if err != nil {
 		return "", err
 	}
@@ -49,7 +49,7 @@ func resourceDisplayName(uri, name, title string) (string, error) {
 	if parsed.Scheme != "" {
 		candidate = parsed.Path
 	}
-	if n := pathName(pyurl.Unquote(candidate)); n != "" {
+	if n := pathName(urlutil.Unescape(candidate)); n != "" {
 		return n, nil
 	}
 	if uri != "" {
@@ -89,19 +89,19 @@ func pathFromFileURI(uri string) (string, bool, error) {
 	if len(raw) >= 3 && isAlphaByte(raw[0]) && raw[1] == ':' && (raw[2] == '/' || raw[2] == '\\') {
 		raw = "file:///" + strings.ReplaceAll(raw, `\`, "/")
 	}
-	parsed, err := pyurl.Parse(raw)
+	parsed, err := urlutil.Split(raw)
 	if err != nil {
 		return "", false, err
 	}
 	if parsed.Scheme != "" && parsed.Scheme != "file" {
 		return "", false, nil
 	}
-	if parsed.Scheme == "file" && parsed.Netloc != "" && parsed.Netloc != "localhost" {
+	if parsed.Scheme == "file" && parsed.Authority != "" && parsed.Authority != "localhost" {
 		return "", false, nil
 	}
-	pathText := pyurl.Unquote(raw)
+	pathText := urlutil.Unescape(raw)
 	if parsed.Scheme == "file" {
-		pathText = pyurl.Unquote(parsed.Path)
+		pathText = urlutil.Unescape(parsed.Path)
 	}
 	var drive, rest string
 	switch {

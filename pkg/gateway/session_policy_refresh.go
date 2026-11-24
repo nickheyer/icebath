@@ -11,8 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -629,10 +627,10 @@ func noteSkippedRefresh(sessionID string, err error) {
 		reason = pyErrorKind(err)
 	}
 	if reason == "" && errorutil.IsSystem(err) {
-		reason = pypath.OSErrorClass(err)
+		reason = errorutil.Kind(err)
 	}
 	if reason == "" {
-		reason = pyrepr.ExceptionName(err)
+		reason = errorutil.Kind(err)
 	}
 	message := fmt.Sprintf("Session %s keeps its stored policy on resume: %s", sessionID, reason)
 	if reason == "session_busy" || reason == "unknown_execution" || reason == "revision_conflict" {

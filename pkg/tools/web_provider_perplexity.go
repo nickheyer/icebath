@@ -9,9 +9,9 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -148,7 +148,7 @@ func perplexityQueryForURLs(urls []string) (string, error) {
 	var words []string
 	seen := map[string]bool{}
 	for _, raw := range urls {
-		parsed, err := pyurl.Parse(raw)
+		parsed, err := urlutil.Split(raw)
 		if err != nil {
 			return "", verbatim(err.Error())
 		}
@@ -161,8 +161,8 @@ func perplexityQueryForURLs(urls []string) (string, error) {
 			}
 		}
 		if strings.Trim(parsed.Path, "/") == "" {
-			words = append(words, parsed.Netloc)
-			seen[parsed.Netloc] = true
+			words = append(words, parsed.Authority)
+			seen[parsed.Authority] = true
 		}
 	}
 	if q := runePrefix(strings.Join(words, " "), 500); q != "" {
@@ -246,4 +246,4 @@ func NewPerplexityWebProvider() WebProvider {
 }
 
 // Class name the registry log and type errors print, the plugin provider class
-func (*perplexityProvider) PyTypeName() string { return "PerplexityWebSearchProvider" }
+func (*perplexityProvider) ErrorKind() string { return "PerplexityWebSearchProvider" }

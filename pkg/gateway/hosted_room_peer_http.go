@@ -16,11 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -194,7 +194,7 @@ func peerResponseErrorCode(detail string) string {
 }
 
 func peerRunPath(record map[string]any, suffix ...string) string {
-	return strings.Join(append([]string{"/v1/runs", pyurl.Quote(anyutil.String(record["run_id"]), "")}, suffix...), "/")
+	return strings.Join(append([]string{"/v1/runs", urlutil.Escape(anyutil.String(record["run_id"]), "")}, suffix...), "/")
 }
 
 type peerRunKey struct {
@@ -459,7 +459,7 @@ func (c *PeerRunsHTTPClient) Prepare(_ context.Context, req PeerPrepare) (map[st
 
 func peerDispatchScope(checked *HostedMemberDispatch) PeerRoomScope {
 	return PeerRoomScope{RoomID: checked.RoomID, HomeInstallID: checked.HomeInstallID, AuthorityGatewayID: checked.AuthorityGatewayID,
-		AuthorityEpoch: checked.AuthorityEpoch.Int64(), MemberID: checked.MemberID, TargetInstallID: checked.TargetInstallID, TargetProfile: checked.TargetProfile}
+		AuthorityEpoch: checked.AuthorityEpoch, MemberID: checked.MemberID, TargetInstallID: checked.TargetInstallID, TargetProfile: checked.TargetProfile}
 }
 
 // Validated dispatch with its grant, scope and observation pinned to it
@@ -474,7 +474,7 @@ func (c *PeerRunsHTTPClient) checkedDispatch(dispatch any, grant string) (*Hoste
 	if err := c.BindRoomScope(peerDispatchScope(checked)); err != nil {
 		return nil, err
 	}
-	if err := c.BindObservation(checked.TaskID, checked.ExecutionGeneration.Int64()); err != nil {
+	if err := c.BindObservation(checked.TaskID, checked.ExecutionGeneration); err != nil {
 		return nil, err
 	}
 	return checked, nil
@@ -494,7 +494,7 @@ func (c *PeerRunsHTTPClient) RecoverDispatch(dispatch any, grant string) (map[st
 	if err != nil {
 		return nil, err
 	}
-	generation := checked.ExecutionGeneration.Int64()
+	generation := checked.ExecutionGeneration
 	existing, err := c.receipt(checked.TaskID, generation)
 	if err != nil {
 		return nil, err
@@ -534,17 +534,17 @@ func (c *PeerRunsHTTPClient) RecoverDispatch(dispatch any, grant string) (map[st
 
 func peerDispatchScopeFields(checked *HostedMemberDispatch) map[string]any {
 	return map[string]any{"room_id": checked.RoomID, "home_install_id": checked.HomeInstallID, "authority_gateway_id": checked.AuthorityGatewayID,
-		"authority_epoch": checked.AuthorityEpoch.Int64(), "member_id": checked.MemberID, "target_install_id": checked.TargetInstallID,
+		"authority_epoch": checked.AuthorityEpoch, "member_id": checked.MemberID, "target_install_id": checked.TargetInstallID,
 		"target_profile": checked.TargetProfile}
 }
 
 func peerAccepted(checked *HostedMemberDispatch, runID, sessionID string, replayed bool) map[string]any {
-	return map[string]any{"status": "accepted", "task_id": checked.TaskID, "execution_generation": checked.ExecutionGeneration.Int64(),
+	return map[string]any{"status": "accepted", "task_id": checked.TaskID, "execution_generation": checked.ExecutionGeneration,
 		"run_id": runID, "session_id": sessionID, "replayed": replayed}
 }
 
 func (c *PeerRunsHTTPClient) admitDispatch(checked *HostedMemberDispatch, grant string) (map[string]any, error) {
-	generation := checked.ExecutionGeneration.Int64()
+	generation := checked.ExecutionGeneration
 	sessionID, err := c.sessionID(checked, grant)
 	if err != nil {
 		return nil, err
@@ -592,7 +592,7 @@ func (c *PeerRunsHTTPClient) admitDispatch(checked *HostedMemberDispatch, grant 
 }
 
 func (c *PeerRunsHTTPClient) sessionID(dispatch *HostedMemberDispatch, grant string) (string, error) {
-	existing, err := c.receipt(dispatch.TaskID, dispatch.ExecutionGeneration.Int64())
+	existing, err := c.receipt(dispatch.TaskID, dispatch.ExecutionGeneration)
 	if err != nil {
 		return "", err
 	}
@@ -809,7 +809,7 @@ func (c *PeerRunsHTTPClient) Stop(ctx context.Context, dispatch *jsonutil.Object
 	if err := c.BindRoomScope(peerDispatchScope(checked)); err != nil {
 		return nil, err
 	}
-	return c.StopReceipt(ctx, checked.TaskID, checked.ExecutionGeneration.Int64(), grant)
+	return c.StopReceipt(ctx, checked.TaskID, checked.ExecutionGeneration, grant)
 }
 
 // Stops the exact durable remote run after a home restart, nil when no receipt exists

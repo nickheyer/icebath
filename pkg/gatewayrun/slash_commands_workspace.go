@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -62,9 +61,9 @@ func (r *GatewayRunner) handleRollbackCommand(ctx context.Context, event *gatewa
 		return i18n.T(ctx, "gateway.rollback.none_found", "", map[string]any{"cwd": cwd}), nil
 	}
 	targetHash := arg
-	if n, ok := pystr.IntText(arg); ok {
-		idx := n.Int64() - 1
-		if !n.IsInt64() || idx < 0 || idx >= int64(len(checkpoints)) {
+	if n, err := textutil.ParseInt(arg); err == nil {
+		idx := n - 1
+		if idx < 0 || idx >= int64(len(checkpoints)) {
 			return i18n.T(ctx, "gateway.rollback.invalid_number", "", map[string]any{"max": len(checkpoints)}), nil
 		}
 		targetHash = checkpoints[idx].Hash

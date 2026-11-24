@@ -17,13 +17,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -105,16 +104,7 @@ func channelKey(name any) (string, error) {
 
 // Channel object decoded with duplicate keys refused and a top level object required
 func decodeChannelJSON(body []byte) (*jsonutil.Object, error) {
-	value, err := pyjson.LoadsBytesPairsHook(body, func(keys []string, vals []any) (any, error) {
-		obj := jsonutil.NewObject()
-		for i, key := range keys {
-			if _, dup := obj.Get(key); dup {
-				return nil, channelErr("Duplicate JSON key")
-			}
-			obj.Set(key, vals[i])
-		}
-		return obj, nil
-	})
+	value, err := jsonutil.DecodeWith(body, jsonutil.UniqueKeys())
 	if err != nil {
 		return nil, channelErr("Invalid channel JSON")
 	}
@@ -127,12 +117,12 @@ func decodeChannelJSON(body []byte) (*jsonutil.Object, error) {
 
 // Archive base without trailing slashes when it is a plain https or loopback http authority
 func channelPublicBase(value string) (string, error) {
-	parsed, err := pyurl.Split(value)
+	parsed, err := urlutil.Split(value)
 	if err != nil {
 		return "", &ValueError{Msg: err.Error()}
 	}
 	host := parsed.Hostname()
-	bad := host == "" || strings.Contains(parsed.Netloc, "@") || parsed.Query != "" || parsed.Fragment != "" ||
+	bad := host == "" || strings.Contains(parsed.Authority, "@") || parsed.Query != "" || parsed.Fragment != "" ||
 		strings.ContainsAny(value, "%\\;")
 	for _, c := range value {
 		if c <= 32 {

@@ -9,6 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	diffutil "github.com/nickheyer/icebath/pkg/utils/diff"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Discord adapter surface that hands captured voice channel speech back to the runner

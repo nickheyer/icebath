@@ -2,7 +2,6 @@ package yuanbao
 
 import (
 	"context"
-	"math/big"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -50,7 +49,7 @@ func connectGroupAdapter(t *testing.T) (*YuanbaoAdapter, *fakeServer) {
 	group.s(1, "Team")
 	group.s(2, "owner-1")
 	group.s(3, "Olivia")
-	group.v(4, big.NewInt(3))
+	group.v(4, 3)
 	info.m(3, group.b)
 	for _, row := range [][2]string{{"u1", "Alice"}, {"u2", "Alina"}, {"u3", "Bob"}} {
 		member := &pbuf{}

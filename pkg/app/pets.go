@@ -15,12 +15,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	termutil "github.com/nickheyer/icebath/pkg/utils/term"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // One icebath pets invocation with its home, namespace, output and tool environment
@@ -167,13 +167,13 @@ func (r *petsRun) interactivePick(pets []*pet.InstalledPet) string {
 	if raw == "" {
 		raw = "1"
 	}
-	n, ok := pystr.IntText(raw)
-	if err != nil || !ok {
+	n, err := textutil.ParseInt(raw)
+	if err != nil || err != nil {
 		r.errf("✗ cancelled")
 		return ""
 	}
-	if n.IsInt64() && n.Int64()-1 >= 0 && n.Int64()-1 < int64(len(pets)) {
-		return pets[n.Int64()-1].Slug
+	if n-1 >= 0 && n-1 < int64(len(pets)) {
+		return pets[n-1].Slug
 	}
 	r.errf("✗ invalid selection")
 	return ""
@@ -226,7 +226,7 @@ func (r *petsRun) cmdScale() (int, error) {
 		r.errf("✗ %s", msg)
 		return 1, nil
 	}
-	shown, err := pyrepr.Format(scale, "g")
+	shown, err := templateutil.Format("{v:g}", map[string]any{"v": scale})
 	if err != nil {
 		return 1, err
 	}

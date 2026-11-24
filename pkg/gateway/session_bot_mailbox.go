@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Mailbox home and owning session of one unsettled bot receipt
@@ -270,7 +270,7 @@ func trackReceiptTask(a *SessionAuthority, task *adapterTask) {
 		delete(a.botReceiptTasks, task)
 		a.mu.Unlock()
 		if task.err != nil && !errors.Is(task.err, context.Canceled) {
-			pkgLog().Warn("Bot receipt projection failed: " + pyrepr.ExceptionName(task.err))
+			pkgLog().Warn("Bot receipt projection failed: " + errorutil.Kind(task.err))
 		}
 	}()
 }

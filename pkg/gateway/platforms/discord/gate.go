@@ -6,6 +6,7 @@ import (
 	"maps"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
@@ -166,11 +166,11 @@ func canonicalRoleIDs(entries strSet) (strSet, error) {
 		if !isDigitString(entry) {
 			continue
 		}
-		n, ok := pyint.Parse(entry)
-		if !ok {
+		n, err := strconv.ParseInt(strings.TrimSpace(entry), 10, 64)
+		if err != nil {
 			return nil, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(entry))
 		}
-		out[n.String()] = struct{}{}
+		out[strconv.FormatInt(n, 10)] = struct{}{}
 	}
 	return out, nil
 }

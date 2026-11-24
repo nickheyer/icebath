@@ -29,6 +29,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Launch arguments of the bridge, the --port, --session, --mode, --pair-only and --pair-json of bridge.js

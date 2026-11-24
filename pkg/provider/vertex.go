@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/settings"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
@@ -469,7 +468,7 @@ func (t *anthVertexTransport) Request(ctx context.Context, op anthOperation, bod
 	req.Host = httpxHost(req.URL)
 	prepared := httpxPreparedLines(req, lines, len(data))
 	prepared.Set("Authorization", "Bearer "+token)
-	return pyhttpx.WithWire(req, prepared), nil
+	return withHeader(req, prepared), nil
 }
 
 func (t *anthVertexTransport) Events(resp *http.Response) anthEventSource {

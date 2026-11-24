@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -17,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/skills"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -257,12 +257,12 @@ func (s *Store) GetSuggestion(ref string) (*jsonutil.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		n, ok := pyint.Parse(ref)
-		if !ok {
+		n, err := strconv.ParseInt(strings.TrimSpace(ref), 10, 64)
+		if err != nil {
 			return nil, fmt.Errorf("suggestion %s is not a number", ref)
 		}
-		if n.IsInt64() && n.Int64() >= 1 && n.Int64() <= int64(len(pending)) {
-			return pending[n.Int64()-1].(*jsonutil.Object), nil
+		if n >= 1 && n <= int64(len(pending)) {
+			return pending[n-1].(*jsonutil.Object), nil
 		}
 	}
 	for _, rec := range suggestions {

@@ -11,13 +11,13 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Serves a user home lookup that fails like Path.home without HOME or a passwd entry
 func noUserHome(t *testing.T) {
 	t.Helper()
-	lookup := func() (string, error) { return "", &pypath.RuntimeError{Msg: "Could not determine home directory."} }
+	lookup := func() (string, error) { return "", pathutil.ErrNoHome }
 	prev := userHomeLookup.Swap(&lookup)
 	t.Cleanup(func() { userHomeLookup.Store(prev) })
 }
@@ -26,8 +26,7 @@ func noUserHome(t *testing.T) {
 func panicsWithRuntimeError(t *testing.T, what string, fn func()) {
 	t.Helper()
 	defer func() {
-		var rt *pypath.RuntimeError
-		if err, ok := recover().(error); !ok || !errors.As(err, &rt) || rt.Msg != "Could not determine home directory." {
+		if err, ok := recover().(error); !ok || !errors.Is(err, pathutil.ErrNoHome) {
 			t.Fatalf("%s did not raise the RuntimeError", what)
 		}
 	}()

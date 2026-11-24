@@ -23,8 +23,8 @@ import (
 	"golang.org/x/image/tiff"
 	"golang.org/x/image/webp"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/tools"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 )
 
 // Pillow MAX_IMAGE_PIXELS doubled, the size past which open raises DecompressionBombError
@@ -40,7 +40,7 @@ type shrinkSource struct {
 // Re-encodes a data URL image as JPEG or PNG when it has alpha, shrinking the long edge until it fits
 func shrinkDataURL(env *tools.Env, u string, budget int) string {
 	_, payload, _ := strings.Cut(u, ",")
-	data, err := pybase64.B64Decode(payload)
+	data, err := base64util.Decode(payload)
 	if err != nil {
 		return u
 	}

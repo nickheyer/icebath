@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Points the module directory and the running venv prefix at a checkout and a venv
@@ -21,9 +21,9 @@ func projectVenvRunningFrom(t *testing.T, checkout, venv string) {
 // file URI of a resolved path like pathlib as_uri
 func projectVenvURI(path string) string {
 	if runtime.GOOS == "windows" {
-		return "file:///" + pyurl.Quote(filepath.ToSlash(path), "/:")
+		return "file:///" + urlutil.Escape(filepath.ToSlash(path), "/:")
 	}
-	return "file://" + pyurl.Quote(path, "/")
+	return "file://" + urlutil.Escape(path, "/")
 }
 
 // Writes a venv interpreter and an icebath-agent dist-info whose direct_url names the given text

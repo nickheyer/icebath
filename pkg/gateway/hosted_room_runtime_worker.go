@@ -76,7 +76,7 @@ func (r *HostedRoomRuntime) workerLoop() {
 		r.statusLock.Lock()
 		r.cycle++
 		r.statusLock.Unlock()
-		r.wake.Wait(r.PollIntervalSeconds)
+		r.wake.WaitTimeout(secondsDuration(r.PollIntervalSeconds))
 	}
 }
 
@@ -567,7 +567,7 @@ func (r *HostedRoomRuntime) waitForTerminal(binding HostedRoomBinding, profile, 
 			} else if finished {
 				return nil, nil
 			}
-			r.wake.Wait(r.ActivePollIntervalSeconds)
+			r.wake.WaitTimeout(secondsDuration(r.ActivePollIntervalSeconds))
 			r.wake.Clear()
 			continue
 		}
@@ -589,7 +589,7 @@ func (r *HostedRoomRuntime) waitForTerminal(binding HostedRoomBinding, profile, 
 			return nil, err
 		}
 		remaining := max(0.0, deadline-timeutil.Monotonic())
-		r.wake.Wait(min(r.ActivePollIntervalSeconds, remaining))
+		r.wake.WaitTimeout(secondsDuration(min(r.ActivePollIntervalSeconds, remaining)))
 		r.wake.Clear()
 	}
 	return nil, nil

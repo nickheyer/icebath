@@ -8,16 +8,16 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 var splitPortRE = regexp.MustCompile(`(?s)^(.*):([0-9]*)$`)
 
 // Operating system proxy sources, replaced in tests so the host configuration cannot leak in
 var (
-	systemProxies     = pyurl.SystemProxies
-	systemProxyBypass = proxyBypassSystem
+	systemProxies     = httputil.SystemProxies
+	systemProxyBypass = httputil.SystemProxyBypass
 )
 
 // pySplitPort splits host and a numeric port the way urllib _splitport does, empty port when absent

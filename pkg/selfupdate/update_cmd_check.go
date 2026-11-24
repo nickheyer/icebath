@@ -186,7 +186,7 @@ func custodyCompleted(done *executil.Completed) *CompletedProcess {
 	if done == nil {
 		return nil
 	}
-	return &CompletedProcess{Args: done.Args, ReturnCode: done.Returncode, Stdout: string(done.Stdout), Stderr: string(done.Stderr)}
+	return &CompletedProcess{Args: done.Args, ReturnCode: done.ExitCode, Stdout: string(done.Stdout), Stderr: string(done.Stderr)}
 }
 
 // Fetches only branch, main preferring an upstream remote, and returns the result with the ref to compare

@@ -2,11 +2,10 @@ package discord
 
 import (
 	"context"
-	"math/big"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -18,15 +17,15 @@ const DiscordPromptTimeoutMin = 30
 // Longest wait in seconds a button view may be given, the longest a timer takes safely
 var DiscordPromptTimeoutMax = int(tools.MaxSafeTimeoutSeconds)
 
-// Server whose roles also authorize direct messages for this adapter's profile, nil while roles apply only inside servers
-func (a *DiscordAdapter) dmRoleAuthGuild(ctx context.Context) *big.Int {
+// Server whose roles also authorize direct messages for this adapter's profile, 0 while roles apply only inside servers
+func (a *DiscordAdapter) dmRoleAuthGuild(ctx context.Context) int64 {
 	raw := strings.TrimSpace(settings.DiscordDmRoleAuthGuild.Get(a.sctx(ctx)))
 	if !isDigitString(raw) {
-		return nil
+		return 0
 	}
-	guildID, ok := pyint.Parse(raw)
-	if !ok || guildID.Sign() <= 0 {
-		return nil
+	guildID, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || guildID <= 0 {
+		return 0
 	}
 	return guildID
 }

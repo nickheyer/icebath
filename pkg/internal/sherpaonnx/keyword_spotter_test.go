@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
 func TestMain(m *testing.M) {

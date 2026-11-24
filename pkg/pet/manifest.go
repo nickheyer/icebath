@@ -47,8 +47,8 @@ func ManifestEntryFromDict(d *jsonutil.Object) ManifestEntry {
 // Raised when the manifest cannot be fetched or parsed
 type ManifestError struct{ Msg string }
 
-func (e *ManifestError) Error() string      { return e.Msg }
-func (e *ManifestError) PyTypeName() string { return "ManifestError" }
+func (e *ManifestError) Error() string     { return e.Msg }
+func (e *ManifestError) ErrorKind() string { return "ManifestError" }
 
 // Short lived manifest cache and the single prefetch in flight
 var manifestCache struct {
@@ -99,8 +99,8 @@ func httpGet(ctx context.Context, env *tools.Env, rawURL string, timeout time.Du
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errors.New(resp.StatusErrorText(rawURL))
+	if err := resp.CheckStatus(); err != nil {
+		return nil, err
 	}
 	return resp, nil
 }

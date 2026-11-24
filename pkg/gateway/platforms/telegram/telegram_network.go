@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -19,9 +20,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -42,13 +40,13 @@ var dohTimeout = 4 * time.Second
 
 type dohProvider struct {
 	URL     string
-	Params  pyhttpx.Params
+	Params  url.Values
 	Headers map[string]string
 }
 
 var dohProviders = []dohProvider{
-	{URL: "https://dns.google/resolve", Params: pyhttpx.Params{{"name", TelegramAPIHost}, {"type", "A"}}, Headers: map[string]string{}},
-	{URL: "https://cloudflare-dns.com/dns-query", Params: pyhttpx.Params{{"name", TelegramAPIHost}, {"type", "A"}}, Headers: map[string]string{"Accept": "application/dns-json"}},
+	{URL: "https://dns.google/resolve", Params: url.Values{"name": {TelegramAPIHost}, "type": {"A"}}, Headers: map[string]string{}},
+	{URL: "https://cloudflare-dns.com/dns-query", Params: url.Values{"name": {TelegramAPIHost}, "type": {"A"}}, Headers: map[string]string{"Accept": "application/dns-json"}},
 }
 
 // Last resort IPv4 Bot API endpoints, also the first connect targets ahead of the dual stack hostname
@@ -56,7 +54,7 @@ var SeedFallbackIPs = []string{"149.154.166.110", "149.154.167.220"}
 
 // Non empty secret safe exception repr for diagnostics
 func describeTransportError(err error) string {
-	return tools.RedactSensitiveTextWith(nil, pyrepr.ExceptionRepr(err), tools.RedactOptions{Force: true})
+	return tools.RedactSensitiveTextWith(nil, err.Error(), tools.RedactOptions{Force: true})
 }
 
 // SO_KEEPALIVE with the idle, interval and count knobs so a half open long poll errors out
@@ -103,7 +101,7 @@ type ConnectError struct {
 
 func (e *ConnectError) Error() string { return e.Err.Error() }
 func (e *ConnectError) Unwrap() error { return e.Err }
-func (e *ConnectError) PyTypeName() string {
+func (e *ConnectError) ErrorKind() string {
 	if e.Timeout {
 		return "ConnectTimeout"
 	}
@@ -462,9 +460,9 @@ func normalizeFallbackIPs(values []string) []string {
 		if raw == "" {
 			continue
 		}
-		addr, ok := pyipaddress.IPAddress(raw)
+		addr, err := netip.ParseAddr(raw)
 		switch {
-		case !ok:
+		case err != nil:
 			pkgLog().Warn(fmt.Sprintf("Ignoring invalid Telegram fallback IP: %s", anyutil.Quote(raw)))
 		case !addr.Is4():
 			pkgLog().Warn(fmt.Sprintf("Ignoring non-IPv4 Telegram fallback IP: %s", raw))
@@ -573,7 +571,7 @@ func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
 			return nil, fmt.Errorf("a DNS over HTTPS answer value is %s, expected text", errchain.Kind(rawValue))
 		}
 		raw := strings.TrimSpace(text)
-		if _, ok := pyipaddress.IPAddress(raw); !ok {
+		if _, err := netip.ParseAddr(raw); err != nil {
 			continue
 		}
 		ips = append(ips, raw)

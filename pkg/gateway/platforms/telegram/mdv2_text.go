@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 var (
@@ -22,7 +22,7 @@ var (
 )
 
 func mustTelegramRE(pattern string) *regexp2.Regexp {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}

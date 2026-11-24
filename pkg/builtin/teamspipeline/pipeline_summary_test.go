@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 func TestGenerateSummaryPayloadUsesHeuristicWhenNoModelAnswers(t *testing.T) {
@@ -55,7 +55,7 @@ func TestGenerateSummaryPayloadUsesHeuristicWhenNoModelAnswers(t *testing.T) {
 	}
 
 	pipeline.Config.Notion = "db"
-	if _, err := pipeline.SummarizeFn(context.Background(), resolved, transcript, artifacts); pyrepr.ExceptionName(err) != "AttributeError" {
+	if _, err := pipeline.SummarizeFn(context.Background(), resolved, transcript, artifacts); errorutil.Kind(err) != "AttributeError" {
 		t.Fatalf("string notion config %v", err)
 	}
 	pipeline.Config.Notion = nil

@@ -109,7 +109,7 @@ type ProfileUnavailableError struct{ Msg string }
 func (e *ProfileUnavailableError) Error() string { return e.Msg }
 
 // Python exception class name the error stands for
-func (e *ProfileUnavailableError) PyTypeName() string { return "ProfileUnavailableError" }
+func (e *ProfileUnavailableError) ErrorKind() string { return "ProfileUnavailableError" }
 
 // Older payload basenames of the default home mapped to default unless a real profile carries that name
 func canonicalProfileRequest(name string) string {

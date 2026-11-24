@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Starts the prompt as a background agent with its own session, answering in this chat when done

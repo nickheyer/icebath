@@ -12,14 +12,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -121,7 +120,7 @@ func mediaRefToXAIURL(env *tools.Env, value, kind, fallbackMime string) (string,
 	if blocked := tools.ReadBlockError(env, ref); blocked != "" {
 		return "", &imageValueError{blocked}
 	}
-	mime, _, _ := pymimetypes.GuessType(filepath.Base(path), true)
+	mime := mimeutil.TypeByName(filepath.Base(path))
 	if mime == "" {
 		mime = fallbackMime
 	}
@@ -582,11 +581,11 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 	}
 	durationOut := duration
 	if v := video["duration"]; pyTruthy(v) {
-		n, err := pyint.Of(v)
+		n, err := anyutil.ToInt(v)
 		if err != nil {
 			return nil, err
 		}
-		durationOut = int(n.Int64())
+		durationOut = int(n)
 	}
 	return videoSuccessResponse(publicVideoURL, modelOut, prompt, modality, aspect, durationOut, "xai", extra), nil
 }

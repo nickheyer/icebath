@@ -9,6 +9,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +21,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -285,23 +285,14 @@ func (a *NtfyAdapter) runStream(ctx context.Context) error {
 	return nil
 }
 
-// str of an exception the stream raised, the httpx text for a transport failure
+// Text of an error the stream ended with
 func streamErrorText(err error) string {
 	var pe *gateway.PyError
 	if errors.As(err, &pe) {
 		return pe.Msg
 	}
-	var se *statusError
-	if errors.As(err, &se) {
-		return se.text
-	}
 	return err.Error()
 }
-
-// HTTPStatusError of a stream response outside the 2xx range
-type statusError struct{ text string }
-
-func (e *statusError) Error() string { return e.text }
 
 // Logs a 401 or 404, records the fatal state and returns the stream ending error, nil for any other status
 func (a *NtfyAdapter) fatalStatus(ctx context.Context, statusCode int) error {
@@ -416,7 +407,7 @@ func (a *NtfyAdapter) consumeStream(ctx context.Context, streamURL string, heade
 	if client == nil {
 		return attributeError(nil, "stream")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, httputil.MergeQuery(streamURL, pyhttpx.Params{{"poll", "false"}}), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, httputil.MergeQuery(streamURL, url.Values{"poll": {"false"}}), nil)
 	if err != nil {
 		return err
 	}
@@ -432,8 +423,8 @@ func (a *NtfyAdapter) consumeStream(ctx context.Context, streamURL string, heade
 	if err := a.fatalStatus(ctx, response.StatusCode); err != nil {
 		return err
 	}
-	if response.StatusCode < 200 || response.StatusCode > 299 {
-		return &statusError{text: response.StatusErrorText(response.URL)}
+	if err := response.CheckStatus(); err != nil {
+		return err
 	}
 	body := utf8Body(response.Header, response.Body)
 	var text textDecoder

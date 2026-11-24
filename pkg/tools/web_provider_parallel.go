@@ -462,4 +462,4 @@ func NewParallelWebProvider() WebProvider {
 }
 
 // Class name the registry log and type errors print, the plugin provider class
-func (*parallelProvider) PyTypeName() string { return "ParallelWebSearchProvider" }
+func (*parallelProvider) ErrorKind() string { return "ParallelWebSearchProvider" }

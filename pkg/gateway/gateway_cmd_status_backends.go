@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -388,7 +387,7 @@ func windowsProbeLockFile(w io.Writer, lockPath string) {
 func windowsProbeRunningPid(w io.Writer) (int, bool) {
 	pid, ok, err := GetRunningPid("", false)
 	if err != nil {
-		windowsProbe(w, 3, false, fmt.Sprintf("get_running_pid() raised: %s", pyrepr.ExceptionRepr(err)))
+		windowsProbe(w, 3, false, fmt.Sprintf("get_running_pid() raised: %s", err.Error()))
 		return 0, false
 	}
 	shown := "None"

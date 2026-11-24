@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -14,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
@@ -110,11 +110,11 @@ func (a *DiscordAdapter) liveClient() *discordgo.Session {
 
 // Python int of a snowflake text, the ValueError text when it is not an integer
 func snowflakeInt(raw string) (string, error) {
-	n, ok := pyint.Parse(raw)
-	if !ok {
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
 		return "", fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(raw))
 	}
-	return n.String(), nil
+	return strconv.FormatInt(n, 10), nil
 }
 
 // Cached channel first then a REST fetch, accepting a pasted channel link

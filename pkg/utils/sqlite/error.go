@@ -17,6 +17,17 @@ func (e *Error) Error() string { return e.msg }
 // Extended result code, its low eight bits the primary code such as sqlite3.SQLITE_BUSY
 func (e *Error) Code() int { return e.code }
 
+// Whether a result code, extended or primary, reports an operational failure: one of the database's state or surroundings such as a missing table or column, a lock, a read-only or full disk, an interrupt or a changed schema, not of the statement's values or the caller's use of the API
+func IsOperational(code int) bool {
+	switch code & 0xff {
+	case sqlite3.SQLITE_ERROR, sqlite3.SQLITE_PERM, sqlite3.SQLITE_ABORT, sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED,
+		sqlite3.SQLITE_READONLY, sqlite3.SQLITE_INTERRUPT, sqlite3.SQLITE_IOERR, sqlite3.SQLITE_FULL,
+		sqlite3.SQLITE_CANTOPEN, sqlite3.SQLITE_PROTOCOL, sqlite3.SQLITE_EMPTY, sqlite3.SQLITE_SCHEMA:
+		return true
+	}
+	return false
+}
+
 // Error the database handle holds after a failed call
 func handleError(tls *libc.TLS, db uintptr) error {
 	return &Error{

@@ -39,8 +39,8 @@ var (
 // Raised when a trace cannot be safely redacted before upload
 type traceRedactionError struct{ msg string }
 
-func (e *traceRedactionError) Error() string      { return e.msg }
-func (e *traceRedactionError) PyTypeName() string { return "TraceRedactionError" }
+func (e *traceRedactionError) Error() string     { return e.msg }
+func (e *traceRedactionError) ErrorKind() string { return "TraceRedactionError" }
 
 // UTC timestamp with milliseconds and a Z suffix
 func traceNowISO() string { return time.Now().UTC().Format("2006-01-02T15:04:05.000") + "Z" }
@@ -235,7 +235,7 @@ func traceGitBranch(ctx context.Context, cwd string) string {
 	}
 	done, err := executil.Run(ctx, []string{"git", "rev-parse", "--abbrev-ref", "HEAD"},
 		executil.Options{Dir: cwd, Timeout: 3 * time.Second})
-	if err != nil || done.Returncode != 0 {
+	if err != nil || done.ExitCode != 0 {
 		return ""
 	}
 	return strings.TrimSpace(strings.ToValidUTF8(string(done.Stdout), "\uFFFD"))

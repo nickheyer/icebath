@@ -14,10 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Copy of metadata marked as a mid turn send that must not seal a turn final stream
@@ -388,14 +388,14 @@ const toolMediaPattern = `(?i)MEDIA:((?:[A-Za-z]:[/\\]|/|~\/)\S+\.(?:png|jpe?g|g
 	`flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|` +
 	`txt|csv|apk|ipa))`
 
-var toolMediaRe = pyre.MustCompile(toolMediaPattern)
+var toolMediaRe = regexutil.MustCompile(toolMediaPattern)
 
 // Same matcher anchored at both ends
 var toolMediaFullRe = mustFullmatch(toolMediaPattern)
 
 // Python fullmatch regexp of the pattern, panicking on a pattern Python rejects
 func mustFullmatch(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileFullmatch(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.Whole())
 	if err != nil {
 		panic(err)
 	}

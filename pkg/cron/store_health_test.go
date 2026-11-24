@@ -38,7 +38,7 @@ func freshStoreHealth(t *testing.T) (wall, mono *float64, probe *error, events *
 var enospc = &fs.PathError{Op: "write", Path: "jobs.json", Err: syscall.ENOSPC}
 
 func TestDescribeStoreError(t *testing.T) {
-	if got := DescribeStoreError(enospc); got != "ENOSPC: No space left on device" {
+	if got := DescribeStoreError(enospc); got != syscall.ENOSPC.Error() {
 		t.Fatalf("got %q", got)
 	}
 	if got := DescribeStoreError(errors.New("odd failure")); got != "odd failure" {

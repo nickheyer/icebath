@@ -23,7 +23,7 @@ type CronExecutionUnknown struct{ Msg string }
 func (e *CronExecutionUnknown) Error() string { return e.Msg }
 
 // Python class name of the unverified admission error
-func (e *CronExecutionUnknown) PyTypeName() string { return "CronExecutionUnknown" }
+func (e *CronExecutionUnknown) ErrorKind() string { return "CronExecutionUnknown" }
 
 // Admission journal of one fire keyed by the sha256 of the JSON pair of job and request ids
 func (s *Store) journalPath(jobID, requestID string) string {
@@ -97,8 +97,8 @@ func (s *Store) pauseForUnknown(ctx context.Context, jobID, executionID, reason 
 // Python TypeError raised by an operation on the wrong value type
 type pyTypeError struct{ msg string }
 
-func (e *pyTypeError) Error() string      { return e.msg }
-func (e *pyTypeError) PyTypeName() string { return "TypeError" }
+func (e *pyTypeError) Error() string     { return e.msg }
+func (e *pyTypeError) ErrorKind() string { return "TypeError" }
 
 // Resumes the job only while it is still held by exactly the recorded pause
 func (s *Store) liftPause(ctx context.Context, jobID string, pause any) error {

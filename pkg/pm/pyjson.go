@@ -230,4 +230,4 @@ func (s pyFloatSpecial) PyRepr() string {
 }
 
 // Python type name of a NaN or infinite float
-func (s pyFloatSpecial) PyTypeName() string { return "float" }
+func (s pyFloatSpecial) ErrorKind() string { return "float" }

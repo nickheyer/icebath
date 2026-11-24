@@ -14,9 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 const emfileBackoffMaxSeconds = 15 * 60
@@ -397,7 +397,7 @@ func runMisfireFire(ctx context.Context, p CronScheduler, claimed *Job, o FireOp
 
 // Python format of a float with zero decimals, round half to even like %.0f
 func pyFormatFixed0(v float64) string {
-	out, err := pyrepr.Format(v, ".0f")
+	out, err := templateutil.Format("{v:.0f}", map[string]any{"v": v})
 	if err != nil {
 		panic(err)
 	}

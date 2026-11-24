@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Registered display label of a platform, its title cased key when none is registered

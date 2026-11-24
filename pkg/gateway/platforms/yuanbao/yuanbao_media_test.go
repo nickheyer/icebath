@@ -2,7 +2,6 @@ package yuanbao
 
 import (
 	"context"
-	"math/big"
 	"strings"
 	"testing"
 
@@ -47,7 +46,7 @@ func TestImageHelpersAndMsgBodies(t *testing.T) {
 }
 
 func TestCosSignLayout(t *testing.T) {
-	auth := CosSign("PUT", "/a%20b", nil, [][2]string{{"Host", "b.cos"}, {"content-type", "image/png"}}, "sid", "skey", big.NewInt(100), big.NewInt(50))
+	auth := CosSign("PUT", "/a%20b", nil, [][2]string{{"Host", "b.cos"}, {"content-type", "image/png"}}, "sid", "skey", 100, 50)
 	if !strings.HasPrefix(auth, "q-sign-algorithm=sha1&q-ak=sid&q-sign-time=100;150&q-key-time=100;150&q-header-list=content-type;host&q-url-param-list=&q-signature=") {
 		t.Fatalf("auth %s", auth)
 	}

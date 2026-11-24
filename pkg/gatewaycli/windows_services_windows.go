@@ -2,12 +2,11 @@ package gatewaycli
 
 import (
 	"errors"
+	"io/fs"
 	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 func init() { scmEnumerate = enumerateSCMServices }
@@ -22,7 +21,7 @@ func scmQueryFailure(err error) error {
 		case windows.ERROR_INVALID_NAME, windows.ERROR_SERVICE_DOES_NOT_EXIST:
 			return &scmQueryError{Class: "NoSuchProcess", Err: err}
 		}
-		if pypath.OSErrorClass(err) == "PermissionError" {
+		if errors.Is(err, fs.ErrPermission) {
 			return &scmQueryError{Class: "AccessDenied", Err: err}
 		}
 	}

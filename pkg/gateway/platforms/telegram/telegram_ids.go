@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var telegramUsernameRE = regexp.MustCompile(`^@[A-Za-z0-9_]{4,32}$`)
@@ -16,15 +16,12 @@ const sendTargetPattern = `^\s*(-?\d+)(?::(\d+))?\s*$`
 
 var sendTargetParser = gateway.RegexGroupsParser(sendTargetPattern, true)
 
-// Bot API chat id, an int64 or big int for numeric text and the stripped string otherwise
+// Bot API chat id, an int64 for text that writes a whole number an int64 holds and the stripped string otherwise
 func NormalizeTelegramChatID(chatID any) any {
 	text := strings.TrimSpace(anyutil.String(chatID))
-	n, ok := pystr.IntText(text)
-	if !ok {
+	n, err := textutil.ParseInt(text)
+	if err != nil {
 		return text
-	}
-	if n.IsInt64() {
-		return n.Int64()
 	}
 	return n
 }

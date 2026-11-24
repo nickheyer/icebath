@@ -3,7 +3,6 @@ package i18n
 import (
 	"context"
 	"embed"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 //go:embed locales/*.yaml
@@ -345,14 +345,10 @@ func T(ctx context.Context, key, lang string, kwargs map[string]any) string {
 	if len(kwargs) == 0 {
 		return value
 	}
-	out, err := PyFormat(value, kwargs)
+	out, err := templateutil.Format(value, kwargs)
 	if err != nil {
-		var fe *FormatError
-		if errors.As(err, &fe) && (fe.Class == "KeyError" || fe.Class == "IndexError" || fe.Class == "ValueError") {
-			pkgLog().Warn(fmt.Sprintf("i18n format failed for key=%s lang=%s kwargs=%s: %s", strconv.Quote(key), strconv.Quote(target), anyutil.Quote(kwargs), fe.Msg))
-			return value
-		}
-		panic(err)
+		pkgLog().Warn(fmt.Sprintf("i18n format failed for key=%s lang=%s kwargs=%s: %s", strconv.Quote(key), strconv.Quote(target), anyutil.Quote(kwargs), err.Error()))
+		return value
 	}
 	return out
 }

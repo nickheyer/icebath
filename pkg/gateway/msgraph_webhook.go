@@ -15,10 +15,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	netutil "github.com/nickheyer/icebath/pkg/utils/net"
 )
 
 const (
@@ -122,8 +122,8 @@ func msgraphParseAllowedSourceCIDRs(raw any) []netip.Prefix {
 		if chunk == "" {
 			continue
 		}
-		network, ok := pyipaddress.IPNetwork(chunk, false)
-		if !ok {
+		network, err := netutil.ParseNetwork(chunk)
+		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("[msgraph_webhook] Ignoring invalid allowed_source_cidrs entry: %s", anyutil.Quote(chunk)))
 			continue
 		}
@@ -546,8 +546,8 @@ func (a *MSGraphWebhookAdapter) sourceIPAllowed(ctx context.Context, request *We
 	if len(networks) == 0 {
 		return true
 	}
-	peer, ok := pyipaddress.IPAddress(request.Remote)
-	if !ok {
+	peer, err := netip.ParseAddr(request.Remote)
+	if err != nil {
 		return false
 	}
 	for _, network := range networks {

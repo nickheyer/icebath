@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python repr of a float with the short repr exponent thresholds

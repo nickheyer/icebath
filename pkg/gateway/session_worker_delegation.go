@@ -231,7 +231,7 @@ func delegationChild(ctx context.Context, conn state.SQLiteConn, sessionID strin
 		return nil, runtimeRefusal("invalid_params")
 	}
 	index, isInt := strictInt(entry.ValueOr("task_index", nil))
-	if !isInt || index.Sign() < 0 {
+	if !isInt || index < 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	if row["state"] != "running" {
@@ -381,7 +381,7 @@ func workerDelegationHandlers(executionID any, workerPID any, workerBirth any) (
 		return nil, err
 	}
 	pid, isInt := strictInt(workerPID)
-	if !isInt || pid.Sign() <= 0 || !pid.IsInt64() {
+	if !isInt || pid <= 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	if err := delegationNumber(workerBirth); err != nil {
@@ -398,7 +398,7 @@ func workerDelegationHandlers(executionID any, workerPID any, workerBirth any) (
 		"delegation.complete": bind(delegationComplete), "delegation.child": bind(delegationChild), "delegation.read": bind(delegationRead),
 		"delegation.claim": bind(delegationClaim), "delegation.unscheduled": bind(delegationUnscheduled),
 		"delegation.dispatch": func(_ *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
-			return delegationDispatch(ctx, conn, sessionID, payload, execution, int(pid.Int64()), birth)
+			return delegationDispatch(ctx, conn, sessionID, payload, execution, int(pid), birth)
 		},
 	}
 	for action := range delegationDeliveryUpdates {

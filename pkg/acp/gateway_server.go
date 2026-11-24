@@ -19,7 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
@@ -265,9 +264,12 @@ func (a *GatewayACPAgent) OnConnect(conn *acputil.AgentSideConnection) {
 }
 
 // Reads the raw initialize capabilities the typed model drops
-func (a *GatewayACPAgent) observeClientMessage(event pyacp.StreamEvent) {
-	message, ok := event.Message.(*jsonutil.Object)
-	if event.Direction != acputil.StreamIncoming || !ok || dget(message, "method") != "initialize" {
+func (a *GatewayACPAgent) observeClientMessage(event acputil.StreamEvent) {
+	if event.Direction != acputil.StreamIncoming || event.Method != "initialize" {
+		return
+	}
+	message, ok := event.Message().(*jsonutil.Object)
+	if !ok {
 		return
 	}
 	supported := ClientSupportsFormElicitation(dget(message, "params"))
@@ -499,11 +501,17 @@ func (a *GatewayACPAgent) teardown() {
 	a.loop.notifyAll()
 }
 
-// Editor MCP servers as the owner reads them, each server dumped by alias
+// Editor MCP servers as the owner reads them, each server as its JSON object
 func mcpServersPayload(servers []acputil.MCPServer) []any {
 	out := make([]any, 0, len(servers))
 	for _, server := range servers {
-		out = append(out, pyacp.Dump(server, pyacp.DumpOptions{ByAlias: true}))
+		text, err := jsonutil.Encode(server)
+		if err != nil {
+			continue
+		}
+		if decoded, err := jsonutil.Decode(text); err == nil {
+			out = append(out, decoded)
+		}
 	}
 	return out
 }

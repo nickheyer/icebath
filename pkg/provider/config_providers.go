@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -543,7 +542,7 @@ func ApplyCustomProviderTLSToClientKwargs(clientKwargs map[string]any, baseURL s
 
 // NormalizeExtraHeaders renders a raw extra_headers mapping as string pairs in declaration order, dropping nil values
 func NormalizeExtraHeaders(extraHeaders any) map[string]string {
-	return pyhttpx.OrderedHeaderMap(orderedExtraHeaders(extraHeaders)...)
+	return fieldMap(orderedExtraHeaders(extraHeaders)...)
 }
 
 // CustomProviderExtraHeaders returns the headers of the first route matching entry declaring any
@@ -567,13 +566,13 @@ func ApplyCustomProviderExtraHeadersToClientKwargs(clientKwargs map[string]any, 
 	case map[string]string:
 		existing = typed
 	case map[string]any:
-		var lines []pyhttpx.HeaderLine
+		var lines []headerField
 		for _, k := range config.MappingKeys(typed) {
-			lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: fmt.Sprint(typed[k])})
+			lines = append(lines, headerField{Name: k, Value: fmt.Sprint(typed[k])})
 		}
-		existing = pyhttpx.OrderedHeaderMap(lines...)
+		existing = fieldMap(lines...)
 	}
-	clientKwargs["default_headers"] = pyhttpx.MergeHeaderMaps(existing, extra)
+	clientKwargs["default_headers"] = MergeHeaderMaps(existing, extra)
 }
 
 // CustomProviderSessionAffinityHeader is the header name a route matching entry opted into or empty

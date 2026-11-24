@@ -20,10 +20,10 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -323,7 +323,7 @@ func isIcebathSeededSoul(text string) bool {
 	return normalized == seededDefaultSoul || config.IsLegacyTemplateSoul(text)
 }
 
-var whitespaceRun = pyre.MustCompile(`\s+`)
+var whitespaceRun = regexutil.MustCompile(`\s+`)
 
 // Text stripped with every whitespace run collapsed to one space
 func normalizeText(text string) string {
@@ -348,7 +348,7 @@ func mkdirAll(path string) {
 	}
 }
 
-var envTemplate = pyre.MustCompile(`^\$\{(\w+)\}$`)
+var envTemplate = regexutil.MustCompile(`^\$\{(\w+)\}$`)
 
 // Plain string of an OpenClaw SecretInput, an env template or env SecretRef resolved through env
 func ResolveSecretInput(value any, env map[string]string) (string, bool) {
@@ -388,7 +388,7 @@ type ConfigReadError struct{ Msg string }
 func (e *ConfigReadError) Error() string { return e.Msg }
 
 // Python exception class name of the error
-func (e *ConfigReadError) PyTypeName() string { return "ConfigReadError" }
+func (e *ConfigReadError) ErrorKind() string { return "ConfigReadError" }
 
 // YAML mapping of a config file, empty when absent or empty, ConfigReadError when unreadable or not a mapping
 func LoadYAMLFile(path string) (map[string]any, error) {
@@ -584,9 +584,9 @@ func backupExisting(path, backupRoot string) string {
 }
 
 var rebrandPatterns = []rebrandPattern{
-	{pyre.MustCompile(`(?i)\bOpen[\s-]?Claw\b`), "Icebath"},
-	{pyre.MustCompile(`(?i)\bClawdBot\b`), "Icebath"},
-	{pyre.MustCompile(`(?i)\bMoltBot\b`), "Icebath"},
+	{regexutil.MustCompile(`(?i)\bOpen[\s-]?Claw\b`), "Icebath"},
+	{regexutil.MustCompile(`(?i)\bClawdBot\b`), "Icebath"},
+	{regexutil.MustCompile(`(?i)\bMoltBot\b`), "Icebath"},
 }
 
 // One brand pattern and the name replacing it
@@ -631,9 +631,9 @@ func parseExistingMemoryEntries(path string) []string {
 }
 
 var (
-	contextHeadingFilter = pyre.MustCompile(`(?i)\b(MEMORY|USER|SOUL|AGENTS|TOOLS|IDENTITY)\.md\b`)
-	headingLine          = pyre.MustCompile(`^(#{1,6})\s+(.*\S)\s*$`)
-	bulletLine           = pyre.MustCompile(`^\s*(?:[-*]|\d+\.)\s+(.*\S)\s*$`)
+	contextHeadingFilter = regexutil.MustCompile(`(?i)\b(MEMORY|USER|SOUL|AGENTS|TOOLS|IDENTITY)\.md\b`)
+	headingLine          = regexutil.MustCompile(`^(#{1,6})\s+(.*\S)\s*$`)
+	bulletLine           = regexutil.MustCompile(`^\s*(?:[-*]|\d+\.)\s+(.*\S)\s*$`)
 )
 
 // First match of re in s or nil

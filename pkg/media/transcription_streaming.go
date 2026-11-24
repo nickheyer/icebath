@@ -17,7 +17,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
@@ -154,7 +153,7 @@ func (s *StreamingSession) EndAudio() { s.audio.put(nil, true) }
 // Finalize waits for the transcript envelope, cancelling with an error envelope when the timeout passes
 func (s *StreamingSession) Finalize(timeout float64) map[string]any {
 	s.EndAudio()
-	if !s.done.Wait(timeout) {
+	if !s.done.WaitTimeout(time.Duration(timeout * float64(time.Second))) {
 		s.Cancel()
 		return s.errorEnvelope("live transcription timed out")
 	}
@@ -298,7 +297,7 @@ func (d *wsDriver) flushBacklog(ws *wsConn) error {
 
 // Websocket URL of a base URL with the path suffix and query, wss for https bases
 func streamingURL(baseURL, suffix, query string) (string, error) {
-	parts, err := pyurl.Split(strings.TrimRight(baseURL, "/"))
+	parts, err := urlutil.Split(strings.TrimRight(baseURL, "/"))
 	if err != nil {
 		return "", err
 	}
@@ -306,7 +305,7 @@ func streamingURL(baseURL, suffix, query string) (string, error) {
 	if parts.Scheme == "https" {
 		scheme = "wss"
 	}
-	return pyurl.Unsplit(pyurl.URL{Scheme: scheme, Netloc: parts.Netloc, Path: parts.Path + suffix, Query: query}), nil
+	return urlutil.Parts{Scheme: scheme, Authority: parts.Authority, Path: parts.Path + suffix, Query: query}.String(), nil
 }
 
 type openAIRealtimeWire struct {

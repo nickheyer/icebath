@@ -13,11 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Window between two BotFather Threads Settings screenshots for one profile and chat
@@ -126,11 +125,11 @@ func (r *GatewayRunner) ensureTelegramSystemTopic(ctx context.Context, source *g
 		return
 	}
 	threadID, err := func() (*int64, error) {
-		chatID, ok := pystr.IntText(source.ChatID)
-		if !ok || !chatID.IsInt64() {
+		chatID, err := textutil.ParseInt(source.ChatID)
+		if err != nil {
 			return nil, fmt.Errorf("Telegram chat id %s is not a whole number", source.ChatID)
 		}
-		return creator.CreateDMTopic(ctx, chatID.Int64(), i18n.T(ctx, "gateway.topic.system_topic_name", "", nil), nil, nil)
+		return creator.CreateDMTopic(ctx, chatID, i18n.T(ctx, "gateway.topic.system_topic_name", "", nil), nil, nil)
 	}()
 	if err != nil {
 		pkgLog().Debug("Failed to create Telegram System topic", "exc_info", err)
@@ -157,15 +156,15 @@ func (r *GatewayRunner) ensureTelegramSystemTopic(ctx context.Context, source *g
 		return
 	}
 	err = func() error {
-		chatID, err := pyint.Of(source.ChatID)
+		chatID, err := anyutil.ToInt(source.ChatID)
 		if err != nil {
 			return err
 		}
-		messageID, err := pyint.Of(sent.MessageID)
+		messageID, err := anyutil.ToInt(sent.MessageID)
 		if err != nil {
 			return err
 		}
-		return pinner.PinChatMessage(ctx, chatID.Int64(), messageID.Int64(), true)
+		return pinner.PinChatMessage(ctx, chatID, messageID, true)
 	}()
 	if err != nil {
 		pkgLog().Debug("Failed to pin Telegram System topic intro", "exc_info", err)

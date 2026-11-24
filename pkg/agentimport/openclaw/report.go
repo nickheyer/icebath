@@ -6,9 +6,9 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // One reported migration item, None source or destination held as nil
@@ -201,11 +201,11 @@ var secretKeyMarkers = []string{
 }
 
 var secretValuePatterns = []*regexp2.Regexp{
-	pyre.MustCompile(`\bBearer\s+[A-Za-z0-9._~+/=\-]+`),
-	pyre.MustCompile(`\bsk-[A-Za-z0-9_\-]{8,}\b`),
-	pyre.MustCompile(`\bgh[pousr]_[A-Za-z0-9_]{16,}\b`),
-	pyre.MustCompile(`\bxox[abprs]-[A-Za-z0-9\-]{8,}\b`),
-	pyre.MustCompile(`\bAIza[0-9A-Za-z_\-]{12,}\b`),
+	regexutil.MustCompile(`\bBearer\s+[A-Za-z0-9._~+/=\-]+`),
+	regexutil.MustCompile(`\bsk-[A-Za-z0-9_\-]{8,}\b`),
+	regexutil.MustCompile(`\bgh[pousr]_[A-Za-z0-9_]{16,}\b`),
+	regexutil.MustCompile(`\bxox[abprs]-[A-Za-z0-9\-]{8,}\b`),
+	regexutil.MustCompile(`\bAIza[0-9A-Za-z_\-]{12,}\b`),
 }
 
 // Key lowercased with everything outside a to z and 0 to 9 dropped

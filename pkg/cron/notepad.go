@@ -13,9 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Notepad size caps, package vars so tests can shrink them
@@ -86,7 +86,7 @@ func (n *Notepad) transaction(ctx context.Context, body func(conn state.SQLiteCo
 // Strict utf-8 encode error of the first bound text holding a lone surrogate, as sqlite3 binding raises
 func bindableText(values ...string) error {
 	for _, v := range values {
-		if err := pystr.StrictUTF8EncodeError(v); err != nil {
+		if err := textutil.ValidateUTF8(v); err != nil {
 			return err
 		}
 	}
@@ -104,7 +104,7 @@ func validateNote(jobID, key, value string) error {
 	if utf8.RuneCountInString(key) > NotepadMaxKeyChars {
 		return &NoteRejectedError{fmt.Sprintf("key too long (max %d characters)", NotepadMaxKeyChars)}
 	}
-	if err := pystr.StrictUTF8EncodeError(value); err != nil {
+	if err := textutil.ValidateUTF8(value); err != nil {
 		return err
 	}
 	if len(value) > NotepadMaxValueBytes {

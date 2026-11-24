@@ -242,14 +242,8 @@ func (s *sessionSearch) searchUnindexedGap(ctx context.Context, ftsQuery string,
 	if len(terms) == 0 {
 		return []*jsonutil.Object{}, nil
 	}
-	indexed, err := sqliteInt(st.indexed)
-	if err != nil {
-		return nil, err
-	}
-	total, err := sqliteInt(st.total)
-	if err != nil {
-		return nil, err
-	}
+	indexed := st.indexed
+	total := st.total
 	where := []string{"m.id > ? AND m.id <= ?"}
 	params := []any{indexed, total}
 	for _, term := range terms {

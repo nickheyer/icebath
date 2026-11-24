@@ -34,7 +34,7 @@ func (e *TurnBusyError) Error() string {
 }
 
 // Python class name of the refusal
-func (e *TurnBusyError) PyTypeName() string { return "TurnBusyError" }
+func (e *TurnBusyError) ErrorKind() string { return "TurnBusyError" }
 
 // Structured refusal reason of the busy turn
 func (e *TurnBusyError) Reason() string { return botRelayTurnBusyReason }

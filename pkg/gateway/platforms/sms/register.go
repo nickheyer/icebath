@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Standalone send markdown rules, looser than the shared stripper and kept in order
@@ -21,11 +21,11 @@ var smsMarkdownSubs = []struct {
 	re   *regexp2.Regexp
 	repl string
 }{
-	{pyre.MustCompile(`(?s)\*\*(.+?)\*\*`), "$1"}, {pyre.MustCompile(`(?s)\*(.+?)\*`), "$1"},
-	{pyre.MustCompile(`(?s)__(.+?)__`), "$1"}, {pyre.MustCompile(`(?s)_(.+?)_`), "$1"},
-	{pyre.MustCompile("```[a-z]*\\n?"), ""}, {pyre.MustCompile("`(.+?)`"), "$1"},
-	{pyre.MustCompile(`(?m)^#{1,6}\s+`), ""}, {pyre.MustCompile(`\[([^\]]+)\]\([^\)]+\)`), "$1"},
-	{pyre.MustCompile(`\n{3,}`), "\n\n"},
+	{regexutil.MustCompile(`(?s)\*\*(.+?)\*\*`), "$1"}, {regexutil.MustCompile(`(?s)\*(.+?)\*`), "$1"},
+	{regexutil.MustCompile(`(?s)__(.+?)__`), "$1"}, {regexutil.MustCompile(`(?s)_(.+?)_`), "$1"},
+	{regexutil.MustCompile("```[a-z]*\\n?"), ""}, {regexutil.MustCompile("`(.+?)`"), "$1"},
+	{regexutil.MustCompile(`(?m)^#{1,6}\s+`), ""}, {regexutil.MustCompile(`\[([^\]]+)\]\([^\)]+\)`), "$1"},
+	{regexutil.MustCompile(`\n{3,}`), "\n\n"},
 }
 
 // Markdown stripped for SMS and the result stripped of outer whitespace

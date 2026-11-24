@@ -17,11 +17,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const (
@@ -75,7 +75,7 @@ var messageTypeByKind = map[string]gateway.MessageType{
 var optinTruthy = map[string]bool{"true": true, "1": true, "yes": true}
 
 var (
-	nonDigitRE = pyre.MustCompile(`\D`)
+	nonDigitRE = regexutil.MustCompile(`\D`)
 	mediaIDRE  = mustFullmatch(`[A-Za-z0-9._-]+`)
 )
 
@@ -90,7 +90,7 @@ var ffmpegPath = func() string {
 
 // Fullmatch Python pattern, panicking on a pattern that does not compile
 func mustFullmatch(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileFullmatch(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.Whole())
 	if err != nil {
 		panic(err)
 	}

@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // One pet operation with its profile home, output writer and tool environment
@@ -71,7 +71,7 @@ func (r *Run) UpdatePetConfig(whenSlug *string, values ...any) (bool, error) {
 		cfg["display"] = display
 	}
 	if !ok {
-		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + anyutil.Kind(cfg["display"]) + "' object has no attribute 'setdefault'"}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: "'" + anyutil.Kind(cfg["display"]) + "' object has no attribute 'setdefault'"}
 	}
 	petVal, present := display["pet"]
 	if !present {
@@ -83,7 +83,7 @@ func (r *Run) UpdatePetConfig(whenSlug *string, values ...any) (bool, error) {
 		return false, nil
 	}
 	if !isDict {
-		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + anyutil.Kind(petVal) + "' object has no attribute 'update'"}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: "'" + anyutil.Kind(petVal) + "' object has no attribute 'update'"}
 	}
 	for i := 0; i+1 < len(values); i += 2 {
 		petCfg[values[i].(string)] = values[i+1]

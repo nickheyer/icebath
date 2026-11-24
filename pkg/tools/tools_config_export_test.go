@@ -2,6 +2,7 @@ package tools
 
 import (
 	"github.com/nickheyer/icebath/pkg/config"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Swaps one configurator seam for an external test, the returned func restoring it

@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -136,7 +135,7 @@ func CheckBotToken(ctx context.Context, token string) (*DiscordBotCheck, error) 
 	}
 	var flags int64
 	if raw := app.Value("flags"); anyutil.IsTrue(raw) {
-		n, err := pyint.Of(raw)
+		n, err := anyutil.ToInt(raw)
 		var intErr *errorutil.Error
 		if errors.As(err, &intErr) && intErr.Kind == "ValueError" {
 			return nil, &tools.DiscordValueError{Msg: intErr.Error()}
@@ -144,7 +143,7 @@ func CheckBotToken(ctx context.Context, token string) (*DiscordBotCheck, error) 
 		if err != nil {
 			return nil, err
 		}
-		flags = n.Int64()
+		flags = n
 	}
 	id, err := mustKey(app, "id")
 	if err != nil {

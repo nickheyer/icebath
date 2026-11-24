@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const maxScanBytes = 256 * 1024
@@ -60,7 +60,7 @@ func compileRules(rules []Rule) []compiledRule {
 	for _, r := range rules {
 		c := compiledRule{Rule: r}
 		if r.Regex != "" {
-			re, err := pyre.Compile(r.Regex)
+			re, err := regexutil.Compile(r.Regex)
 			if err != nil {
 				pkgLog().Warn(fmt.Sprintf("security-guidance: skipping rule %s — invalid regex %s: %v", r.RuleName, anyutil.Quote(r.Regex), err))
 				continue

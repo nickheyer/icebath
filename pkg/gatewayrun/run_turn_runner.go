@@ -58,7 +58,7 @@ type execApprovalDeclinedError struct{ msg string }
 func (e *execApprovalDeclinedError) Error() string { return e.msg }
 
 // Exception class the error reports
-func (e *execApprovalDeclinedError) PyTypeName() string { return "_ExecApprovalDeclined" }
+func (e *execApprovalDeclinedError) ErrorKind() string { return "_ExecApprovalDeclined" }
 
 // Session authority, owning session id and generation of a turn that has an owning session
 type turnApprovalOwner struct {

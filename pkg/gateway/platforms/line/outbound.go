@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 

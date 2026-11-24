@@ -15,7 +15,7 @@ func TestDispatchInlineRPCDoesNotBlockUnderGilPressure(t *testing.T) {
 	released := &syncutil.Event{}
 	t.Cleanup(released.Set)
 	slowManage := func(_ context.Context, rid any, _ map[string]any) map[string]any {
-		released.Wait(5)
+		released.WaitTimeout(5 * time.Second)
 		return ok(rid, map[string]any{})
 	}
 	swapMethod(t, "browser.manage", slowManage)

@@ -20,10 +20,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // In turn secret read with no env fallback, empty on a miss
@@ -112,7 +112,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	return result, nil
 }
 
-var standaloneHeadingRE = pyre.MustCompile(`<h[1-6]>(.*?)</h[1-6]>`)
+var standaloneHeadingRE = regexutil.MustCompile(`<h[1-6]>(.*?)</h[1-6]>`)
 
 // One m.room.message content per UTF-8 bounded chunk, HTML attached while it fits the content budget
 func standalonePayloads(message string) []map[string]any {

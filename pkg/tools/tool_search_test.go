@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func decodeMap(raw string) map[string]any {

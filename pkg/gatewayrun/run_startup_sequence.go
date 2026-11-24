@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -22,6 +21,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tuihost"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Whether a chat restart completion marker is waiting to be delivered
@@ -347,7 +347,7 @@ func (r *GatewayRunner) startSpawnBackgroundWatchers(ctx context.Context) {
 			}
 		}()
 		if r.scaleToZeroShouldArm(ctx) {
-			idle, _ := pyrepr.Format(r.scaleToZeroIdleTimeoutSeconds(ctx), ".0f")
+			idle, _ := templateutil.Format("{v:.0f}", map[string]any{"v": r.scaleToZeroIdleTimeoutSeconds(ctx)})
 			pkgLog().Info(fmt.Sprintf("scale-to-zero: armed (idle timeout %ss) — watching for idle", idle))
 			r.spawnSupervised(func(c context.Context) error { return r.scaleToZeroWatcher(c, 30.0) }, "scale_to_zero_watcher", true, 0, supervisedHooks{})
 		} else {

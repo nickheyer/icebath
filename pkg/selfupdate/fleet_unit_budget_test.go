@@ -197,7 +197,7 @@ func TestBudgetFallbackKeepsRealErrors(t *testing.T) {
 				if outcome == "timeout" {
 					clock := installFleetClock(t)
 					result, err := systemctlResetAndRestart(context.Background(), io.Discard, []string{"systemctl"}, "icebath-gateway-test", nil)
-					if err != nil || result.Returncode != unitJobStillRunning {
+					if err != nil || result.ExitCode != unitJobStillRunning {
 						t.Fatalf("result = %v, %v", result, err)
 					}
 					if clock.now.Seconds() > unitJobHardCapS {
@@ -206,7 +206,7 @@ func TestBudgetFallbackKeepsRealErrors(t *testing.T) {
 					return
 				}
 				result, err := systemctlResetAndRestart(context.Background(), io.Discard, []string{"systemctl"}, "icebath-gateway-test", nil)
-				if err != nil || result.Returncode != outcome.(int) || string(result.Stderr) != "manager diagnostic" {
+				if err != nil || result.ExitCode != outcome.(int) || string(result.Stderr) != "manager diagnostic" {
 					t.Fatalf("result = %v, %v", result, err)
 				}
 			})

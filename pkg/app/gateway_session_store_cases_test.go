@@ -11,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 type storeCaseClient struct {

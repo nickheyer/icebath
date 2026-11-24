@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math/big"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -20,8 +19,9 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Write contention budgets and retry jitter in seconds, vars a test may tune like the class attributes
@@ -225,7 +225,7 @@ func (d *SessionDB) initialize(ctx context.Context) error {
 
 // Python exception class name of an error for the init failure diagnostic
 func pyExceptionClassName(err error) string {
-	var typed interface{ PyTypeName() string }
+	var typed interface{ ErrorKind() string }
 	var intErr *errorutil.Error
 	var conv *pyConvError
 	var corrupt *StateDBCorruptError
@@ -237,7 +237,7 @@ func pyExceptionClassName(err error) string {
 	var syscallErr *os.SyscallError
 	switch {
 	case errors.As(err, &typed):
-		return typed.PyTypeName()
+		return typed.ErrorKind()
 	case errors.As(err, &intErr):
 		return intErr.Kind
 	case errors.As(err, &conv):
@@ -255,7 +255,7 @@ func pyExceptionClassName(err error) string {
 		return sqliteClassNames[class]
 	}
 	if errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &syscallErr) {
-		return pypath.OSErrorClass(err)
+		return errorutil.Kind(err)
 	}
 	return "RuntimeError"
 }
@@ -1011,11 +1011,11 @@ func (c *sessionCore) ensureDBFileGeneration() error {
 			if len(head) > 8 {
 				head = head[:8]
 			}
-			prefix, ok := pyint.ParseBase(string(head), 16)
-			if !ok {
+			prefix, err := strconv.ParseInt(string(head), 16, 64)
+			if err != nil {
 				return &pyConvError{"ValueError", fmt.Sprintf("the database file generation %q is not a hexadecimal number", string(head))}
 			}
-			current = uint32(new(big.Int).And(prefix, big.NewInt(0x7FFFFFFF)).Int64())
+			current = uint32(prefix & 0x7FFFFFFF)
 			if current == 0 {
 				current = 1
 			}

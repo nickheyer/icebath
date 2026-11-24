@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Python re patterns of the FTS5 sanitizer compiled with Python semantics
@@ -24,7 +24,7 @@ var (
 
 // Compiles a Python re pattern, panicking on a pattern re.compile rejects
 func mustPyRe(pattern string) *regexp2.Regexp {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}

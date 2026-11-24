@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/logging"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -83,8 +82,8 @@ func deriveGatewayBusy(gatewayRunning bool, gatewayState string, activeAgents an
 	if err != nil {
 		return false, err
 	}
-	count, _ := pyint.Of(n)
-	return count != nil && count.Sign() > 0, nil
+	count, _ := anyutil.ToInt(n)
+	return count > 0, nil
 }
 
 // Gateway drainable flag through the status contract, else whether it is running

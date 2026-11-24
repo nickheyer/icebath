@@ -507,8 +507,8 @@ func GenerateLaunchdPlist(ctx context.Context) (string, error) {
 	}
 	progArgsXML := strings.Join(parts, "\n        ")
 	nofileBlock := ""
-	if target := ConfiguredNofileSoftLimit(nil); target != nil && target.Sign() != 0 {
-		nofileBlock = "\n    <key>SoftResourceLimits</key>\n    <dict>\n        <key>NumberOfFiles</key>\n        <integer>" + target.String() + "</integer>\n    </dict>\n"
+	if target, ok := ConfiguredNofileSoftLimit(nil); ok && target > 0 {
+		nofileBlock = "\n    <key>SoftResourceLimits</key>\n    <dict>\n        <key>NumberOfFiles</key>\n        <integer>" + strconv.FormatInt(target, 10) + "</integer>\n    </dict>\n"
 	}
 	return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

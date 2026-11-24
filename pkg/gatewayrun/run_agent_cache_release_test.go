@@ -2,7 +2,6 @@ package gatewayrun
 
 import (
 	"context"
-	"math/big"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -39,11 +38,11 @@ type drainMarker struct{ done chan struct{} }
 func (m drainMarker) Release() error { close(m.done); return nil }
 
 // Runner with an active session cap and empty running state
-func leaseRunner(cap int64) *GatewayRunner {
+func leaseRunner(cap int) *GatewayRunner {
 	r := allocGatewayRunner()
 	r.config = &gateway.GatewayConfig{}
 	if cap > 0 {
-		r.config.MaxConcurrentSessions = big.NewInt(cap)
+		r.config.MaxConcurrentSessions = cap
 	}
 	return r
 }

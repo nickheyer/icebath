@@ -31,7 +31,7 @@ type hygieneTurnHoldExceeded struct{ msg string }
 func (e *hygieneTurnHoldExceeded) Error() string { return e.msg }
 
 // Python class name the turn hold boundary carries
-func (e *hygieneTurnHoldExceeded) PyTypeName() string { return "HygieneTurnHoldExceeded" }
+func (e *hygieneTurnHoldExceeded) ErrorKind() string { return "HygieneTurnHoldExceeded" }
 
 // Gateway whose session state and state database carry the hygiene failure streak and cooldown
 type hygieneGateway interface {

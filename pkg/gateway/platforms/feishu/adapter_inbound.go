@@ -19,8 +19,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -29,10 +27,11 @@ import (
 	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
-var displayNameSanitizeRe = pyre.MustCompile(`[^\w.\- ]`)
+var displayNameSanitizeRe = regexutil.MustCompile(`[^\w.\- ]`)
 
 // Resolves approval waits, the tools approval queue in production
 var resolveGatewayApprovalFn = tools.ResolveGatewayApproval

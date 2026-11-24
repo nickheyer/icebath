@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
@@ -311,7 +310,7 @@ func sessionStartLike(a *AIAgent, now time.Time) time.Time {
 		if m == nil {
 			continue
 		}
-		if t, _, err := pydatetime.Strptime(m[1]+"_"+m[2], "%Y%m%d_%H%M%S"); err == nil {
+		if t, err := time.Parse("20060102_150405", m[1]+"_"+m[2]); err == nil {
 			return stampDisplayTime(t, now)
 		}
 	}
@@ -321,13 +320,9 @@ func sessionStartLike(a *AIAgent, now time.Time) time.Time {
 	return now
 }
 
-// Attaches the local offset in force at a naive stamp then converts to now's zone, naive when localtime refuses
+// Reads the wall time of a stamp in the local zone and converts it to now's zone
 func stampDisplayTime(naive, now time.Time) time.Time {
-	secs, ok := pydatetime.LocalToSeconds(naive, time.Local, 0, pydatetime.LocaltimeAccepts)
-	if !ok {
-		return naive
-	}
-	return time.Unix(secs, 0).In(now.Location())
+	return time.Date(naive.Year(), naive.Month(), naive.Day(), naive.Hour(), naive.Minute(), naive.Second(), 0, time.Local).In(now.Location())
 }
 
 // The agent's own profile home from a bound home override or its session database, empty for ambient

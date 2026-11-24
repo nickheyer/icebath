@@ -225,7 +225,7 @@ var installCuaDriver = func(ctx context.Context, env *tools.Env, con *cliui.Cons
 		if err != nil {
 			return cuaFail(con, "    cua-driver macOS app registration failed: "+err.Error()), nil
 		}
-		if result.Returncode != 0 {
+		if result.ExitCode != 0 {
 			cuaPrintOutputTail(con, result, nil)
 			return cuaFail(con, "    cua-driver macOS app registration failed."), nil
 		}
@@ -418,7 +418,7 @@ var repairCuaDriverAutostartWindows = func(ctx context.Context, env *tools.Env, 
 		}
 		return cuaFail(con, "    cua-driver autostart registration failed: "+err.Error())
 	}
-	if result.Returncode == 0 {
+	if result.ExitCode == 0 {
 		return cuaDriverAutostartRegisteredWindows(env, binary)
 	}
 	con.PrintWarning("    cua-driver autostart registration failed.")

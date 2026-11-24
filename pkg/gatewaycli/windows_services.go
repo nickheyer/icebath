@@ -14,7 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Pid and creation time of one process incarnation
@@ -107,7 +107,7 @@ func scmErrorClass(err error) string {
 	var errno syscall.Errno
 	var pathErr *fs.PathError
 	if errors.As(err, &errno) || errors.As(err, &pathErr) || errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrPermission) {
-		return pypath.OSErrorClass(err)
+		return errorutil.Kind(err)
 	}
 	return "Exception"
 }

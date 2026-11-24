@@ -17,7 +17,7 @@ func init() { tools.GitlockRunGit = GitlockRunGit }
 
 // Runs an updater git for the tools git lock in the update's custody, the run_git the process wiring assigns
 func GitlockRunGit(ctx context.Context, gitCmd, args []string, o executil.Options) (*executil.Completed, error) {
-	opts := ChildOptions{Dir: o.Dir, Env: o.Env, Capture: true, Timeout: o.Timeout, Check: o.Check, Attr: o.Attr}
+	opts := ChildOptions{Dir: o.Dir, Env: o.Env, Capture: true, Timeout: o.Timeout, Check: o.RequireSuccess, Attr: o.Attr}
 	if o.Input != nil {
 		in := string(o.Input)
 		opts.Input = &in

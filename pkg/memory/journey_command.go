@@ -15,11 +15,11 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/colorprofile"
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
@@ -307,7 +307,7 @@ func journeyLabelEntries(v any) []map[string]any {
 type journeyConsole struct {
 	out    io.Writer
 	ansi   bool
-	system string
+	system colorprofile.Profile
 	width  int
 }
 
@@ -320,9 +320,9 @@ func newJourneyConsole(w io.Writer, color bool, width int, force bool) *journeyC
 	switch {
 	case !color:
 	case force:
-		c.ansi, c.system = true, "truecolor"
+		c.ansi, c.system = true, colorprofile.TrueColor
 	case tty:
-		c.ansi, c.system = true, pyrich.TermColorSystem()
+		c.ansi, c.system = true, consoleutil.TerminalProfile()
 	}
 	if c.width == 0 {
 		c.width = consoleutil.DetectWidth()

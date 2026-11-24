@@ -18,7 +18,6 @@ import (
 	sdkerrors "github.com/daytona/clients/sdk-go/pkg/errors"
 	"github.com/daytona/clients/sdk-go/pkg/options"
 	"github.com/daytona/clients/sdk-go/pkg/types"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // daytonaEnv runs commands in a Daytona cloud sandbox, persistent mode stopping it on cleanup and resuming it next time

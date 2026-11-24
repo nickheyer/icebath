@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strconv"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -11,11 +12,10 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -28,7 +28,7 @@ var (
 )
 
 func mustPyRe(pattern string) *regexp2.Regexp {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}
@@ -36,7 +36,7 @@ func mustPyRe(pattern string) *regexp2.Regexp {
 }
 
 func mustPyFullmatch(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileFullmatch(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.Whole())
 	if err != nil {
 		panic(err)
 	}
@@ -273,7 +273,7 @@ func sumSkillsList(name string, args *jsonutil.Object, content string, contentLe
 	listed := ""
 	count, _ := jsonDict(content).Get("count")
 	_, isBool := count.(bool)
-	if _, ok := pyrepr.Int(count); ok || isBool {
+	if _, ok := anyutil.Int(count); ok || isBool {
 		listed = " " + anyutil.String(count) + " skills"
 	}
 	return "[skills_list]" + scope + listed + resultFailureSuffix(content) + " (" + groupedInt(contentLen) + " chars)", nil
@@ -312,8 +312,8 @@ func sumProcessManage(name string, args *jsonutil.Object, content string, conten
 		exitCode, _ := payload.Get("exit_code")
 		reason, _ := payload.Get("completion_reason")
 		if _, isBool := exitCode.(bool); !isBool {
-			if n, ok := pyrepr.Int(exitCode); ok && n.Sign() != 0 && reason != "killed" {
-				suffix = failureSuffix("exit code "+n.String(), "FAILED")
+			if n, ok := anyutil.Int(exitCode); ok && n != 0 && reason != "killed" {
+				suffix = failureSuffix("exit code "+strconv.FormatInt(n, 10), "FAILED")
 			}
 		}
 	}

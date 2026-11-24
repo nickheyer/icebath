@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
@@ -248,8 +248,8 @@ func (s *Store) recordExternalCronWorker(jobID string, pid any, scopeIsolated bo
 	k := s.inflightKey(jobID, "")
 	inflight.Lock()
 	defer inflight.Unlock()
-	if n, err := pyint.Of(pid); err == nil && n.IsInt64() {
-		inflight.workerPIDs[k] = int(n.Int64())
+	if n, err := anyutil.ToInt(pid); err == nil {
+		inflight.workerPIDs[k] = int(n)
 	}
 	if scopeIsolated {
 		inflight.scopeIsolated[k] = true

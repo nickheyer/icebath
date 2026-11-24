@@ -12,8 +12,8 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Path of the native session socket on the gateway listener
@@ -155,7 +155,7 @@ func (l *sessionListener) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			how = "after its handler had refused it"
 		}
 		pkgLog().Error(fmt.Sprintf("Gateway refused a session WebSocket upgrade from %s %s: %s: %s",
-			sock.peerText(), how, pyrepr.ExceptionName(err), err.Error()), "exc_info", err)
+			sock.peerText(), how, errorutil.Kind(err), err.Error()), "exc_info", err)
 	}
 	sock.finish(err)
 }

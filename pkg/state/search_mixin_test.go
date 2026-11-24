@@ -13,7 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type fakeSearchHost struct {
@@ -179,8 +181,8 @@ func objJSON(t *testing.T, o *jsonutil.Object) string {
 
 func objInt(o *jsonutil.Object, key string) int64 {
 	v, _ := o.Get(key)
-	n, _ := pyint.Of(v)
-	return n.Int64()
+	n, _ := anyutil.ToInt(v)
+	return n
 }
 
 func objStr(o *jsonutil.Object, key string) string {

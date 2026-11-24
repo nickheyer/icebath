@@ -360,7 +360,7 @@ func TestPreparedHeldCandidateOrBusySlotsStartNoPass(t *testing.T) {
 		t.Fatal("a held candidate starts no further pass")
 	}
 	cc.state.entry = nil
-	for preparedSlots.Acquire(false) {
+	for preparedSlots.TryAcquire() {
 		t.Cleanup(func() { _ = preparedSlots.Release() })
 	}
 	for i := 0; i < 3; i++ {

@@ -8,11 +8,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -32,7 +32,7 @@ var approvalLabelKeys = map[string]string{"once": "platform.teams.approval.resol
 	"deny": "platform.teams.approval.resolved_deny"}
 
 // Rendered at tags Teams prepends for mentions
-var atTagRe = pyre.MustCompile(`<at>[^<]*</at>\s*`)
+var atTagRe = regexutil.MustCompile(`<at>[^<]*</at>\s*`)
 
 // Object field of a decoded activity, nil when absent or not an object
 func obj(m map[string]any, key string) map[string]any {
@@ -101,7 +101,7 @@ func (a *TeamsAdapter) handleActivity(ctx context.Context, decoded any, authoriz
 		return 401, jsonutil.ObjectOf("error", "Unauthorized")
 	}
 	serviceURL, _ := activity["serviceUrl"].(string)
-	tokenServiceURL, err := app.validator.validate(strings.TrimPrefix(authorization, "Bearer "), serviceURL)
+	tokenServiceURL, err := app.validator.validate(ctx, strings.TrimPrefix(authorization, "Bearer "), serviceURL)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("JWT token validation failed: %v", err))
 		return 401, jsonutil.ObjectOf("error", "Unauthorized")

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Stops profile local services and turns before ownership is released, false when work outlives timeout

@@ -25,9 +25,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 

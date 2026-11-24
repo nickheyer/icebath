@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const configLoadersConfig = "platform_toolsets: {cli: []}\n" +

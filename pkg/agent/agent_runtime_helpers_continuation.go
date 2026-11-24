@@ -5,9 +5,9 @@ import (
 	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const (
@@ -33,7 +33,7 @@ var promotedReasoningPlanTailRe = mustPyIgnoreCase(`(?:^|[.!?:\u3002\uff01\uff1f
 
 // Python re.IGNORECASE pattern with Python matching semantics, panicking on a bad pattern
 func mustPyIgnoreCase(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileIgnoreCase(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.IgnoreCase())
 	if err != nil {
 		panic(err)
 	}

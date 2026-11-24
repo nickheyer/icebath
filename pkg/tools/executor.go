@@ -14,7 +14,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -2283,7 +2282,7 @@ func orderedArgsObject(raw string, args map[string]any) *jsonutil.Object {
 				if !present {
 					continue
 				}
-				if rv, _ := obj.Get(k); reflect.DeepEqual(pyjson.WTF8Shape(rv), v) {
+				if rv, _ := obj.Get(k); anyutil.Equal(rv, v) {
 					v = rv
 				}
 				o.Set(k, v)

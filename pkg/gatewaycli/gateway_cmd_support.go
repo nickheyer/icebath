@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -69,8 +68,8 @@ func pyIntValue(v any) (int64, error) {
 	case *big.Int:
 		return n.Int64(), nil
 	case string:
-		if parsed, ok := pyint.Parse(strings.TrimSpace(n)); ok {
-			return parsed.Int64(), nil
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(n), 10, 64); err == nil {
+			return parsed, nil
 		}
 		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(n))
 	}

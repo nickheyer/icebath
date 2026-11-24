@@ -4,14 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -34,7 +32,7 @@ type threadRenameAdapter interface {
 
 // Adapter renaming a Telegram private chat forum topic
 type dmTopicRenameAdapter interface {
-	RenameDMTopic(ctx context.Context, chatID string, threadID *big.Int, title string) error
+	RenameDMTopic(ctx context.Context, chatID string, threadID int64, title string) error
 }
 
 // Adapter exposing its Telegram bot client
@@ -161,8 +159,8 @@ func (r *GatewayRunner) awaitRelayAutoThreadInfo(ctx context.Context, source *ga
 
 // Whether err is the TypeError of a call with keywords the callee does not take
 func isPyTypeError(err error) bool {
-	var named interface{ PyTypeName() string }
-	return errors.As(err, &named) && named.PyTypeName() == "TypeError"
+	var named interface{ ErrorKind() string }
+	return errors.As(err, &named) && named.ErrorKind() == "TypeError"
 }
 
 // Semantic rename of a newly auto created Discord thread, the relay connector guarding its own name
@@ -352,7 +350,7 @@ func orEmpty(v any) any {
 // Renames the topic through the adapter, else through its bot client with integer ids then raw ids
 func renameTelegramTopic(ctx context.Context, adapter gateway.PlatformAdapter, chatID, threadID, name string) error {
 	if renamer, ok := adapter.(dmTopicRenameAdapter); ok {
-		tid, err := pyint.Of(threadID)
+		tid, err := anyutil.ToInt(threadID)
 		if err != nil {
 			return err
 		}
@@ -366,8 +364,8 @@ func renameTelegramTopic(ctx context.Context, adapter gateway.PlatformAdapter, c
 	if !ok {
 		return nil
 	}
-	chatInt, chatErr := pyint.Of(chatID)
-	threadInt, threadErr := pyint.Of(threadID)
+	chatInt, chatErr := anyutil.ToInt(chatID)
+	threadInt, threadErr := anyutil.ToInt(threadID)
 	if chatErr == nil && threadErr == nil {
 		err := editor.EditForumTopic(ctx, chatInt, threadInt, name)
 		if err == nil || !isPyTypeOrValueError(err) {
@@ -379,9 +377,9 @@ func renameTelegramTopic(ctx context.Context, adapter gateway.PlatformAdapter, c
 
 // Whether err is a TypeError or ValueError
 func isPyTypeOrValueError(err error) bool {
-	var named interface{ PyTypeName() string }
+	var named interface{ ErrorKind() string }
 	if !errors.As(err, &named) {
 		return false
 	}
-	return named.PyTypeName() == "TypeError" || named.PyTypeName() == "ValueError"
+	return named.ErrorKind() == "TypeError" || named.ErrorKind() == "ValueError"
 }

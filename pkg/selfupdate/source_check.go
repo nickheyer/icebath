@@ -10,14 +10,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -63,11 +62,11 @@ func checkGitCount(ctx context.Context, args []string, cwd, git string) (int64, 
 	if result == nil || result.ReturnCode != 0 {
 		return 0, false
 	}
-	value, ok := pystr.IntText(strings.TrimSpace(result.Stdout))
-	if !ok || !value.IsInt64() {
+	value, err := textutil.ParseInt(strings.TrimSpace(result.Stdout))
+	if err != nil {
 		return 0, false
 	}
-	return value.Int64(), true
+	return value, true
 }
 
 // Stripped stdout of a read only git query in root within five seconds, empty when git failed
@@ -94,7 +93,7 @@ func GitCount(ctx context.Context, args []string, root string) (int64, bool) {
 func branchTip(ctx context.Context, repository, branch, root, git, remote string) (string, bool, string) {
 	failure := ""
 	if repository != "" {
-		sha, err := sourceRequest(ctx, sourceGitHubAPI+"/repos/"+repository+"/commits/"+pyurl.Quote(branch, ""), "application/vnd.github.sha")
+		sha, err := sourceRequest(ctx, sourceGitHubAPI+"/repos/"+repository+"/commits/"+urlutil.Escape(branch, ""), "application/vnd.github.sha")
 		if err != nil {
 			sha = ""
 			_, tokened := githubTokenSource()

@@ -9,7 +9,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/tools"
 	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -1346,12 +1345,18 @@ func ExtractLocations(arguments *jsonutil.Object) ([]acputil.ToolCallLocation, e
 	if !anyutil.IsTrue(path) {
 		return []acputil.ToolCallLocation{}, nil
 	}
-	in := jsonutil.NewObject()
-	in.Set("path", path)
-	in.Set("line", anyutil.Or(dget(arguments, "offset"), dget(arguments, "line")))
-	loc, err := pyacp.Validate[acputil.ToolCallLocation](in)
-	if err != nil {
-		return nil, err
+	text, ok := path.(string)
+	if !ok {
+		return nil, fmt.Errorf("tool path is %s, expected text", anyutil.Kind(path))
 	}
-	return []acputil.ToolCallLocation{*loc}, nil
+	loc := acputil.ToolCallLocation{Path: text}
+	if raw := anyutil.Or(dget(arguments, "offset"), dget(arguments, "line")); raw != nil {
+		n, ok := anyutil.Int(raw)
+		if !ok {
+			return nil, fmt.Errorf("tool line is %s, expected a whole number", anyutil.Kind(raw))
+		}
+		line := int(n)
+		loc.Line = &line
+	}
+	return []acputil.ToolCallLocation{loc}, nil
 }

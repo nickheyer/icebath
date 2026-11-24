@@ -1,6 +1,7 @@
 package gatewayrun
 
 import (
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -11,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -99,15 +99,15 @@ func (r *GatewayRunner) handleUndoCommand(ctx context.Context, event *gateway.Me
 	rawArgs := strings.TrimSpace(event.GetCommandArgs())
 	if rawArgs != "" {
 		first := strings.Fields(rawArgs)[0]
-		parsed, ok := pystr.IntText(first)
-		if !ok {
+		parsed, err := textutil.ParseInt(first)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return i18n.T(ctx, "gateway.undo.invalid_count", "", map[string]any{"arg": first}), nil
 		}
 		switch {
-		case parsed.Sign() <= 0:
+		case parsed <= 0:
 			n = 1
-		case parsed.IsInt64() && parsed.Int64() <= math.MaxInt:
-			n = max(1, int(parsed.Int64()))
+		case parsed <= math.MaxInt:
+			n = max(1, int(parsed))
 		default:
 			n = math.MaxInt
 		}

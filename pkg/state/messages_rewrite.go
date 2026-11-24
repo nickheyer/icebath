@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
@@ -95,7 +94,7 @@ func (d *SessionDB) ReplaceMessagesInTransaction(ctx context.Context, conn SQLit
 }
 
 // Role, loaded view content, tool call id and encoded tool calls a kept prefix match compares
-func rowIdentity(role, content, toolCallID, toolCalls any) (pyrepr.Tuple, error) {
+func rowIdentity(role, content, toolCallID, toolCalls any) ([]any, error) {
 	roleStr, _ := role.(string)
 	var encodedCalls any
 	if pyTruthy(toolCalls) {
@@ -105,7 +104,7 @@ func rowIdentity(role, content, toolCallID, toolCalls any) (pyrepr.Tuple, error)
 		}
 		encodedCalls = text
 	}
-	return pyrepr.Tuple{role, encodeMessageContent(loadedViewContent(roleStr, content)), toolCallID, encodedCalls}, nil
+	return []any{role, encodeMessageContent(loadedViewContent(roleStr, content)), toolCallID, encodedCalls}, nil
 }
 
 // Length of the in order prefix of messages already present as the leading live rows, stamping their row ids

@@ -19,6 +19,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func shellPidAlive(pid int) bool { return syscall.Kill(pid, 0) == nil }

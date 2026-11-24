@@ -240,7 +240,7 @@ func retentionHash(wt string, env map[string]string, data []byte, rel string, ra
 		args = append(args, "--path="+rel)
 	}
 	r, err := executil.Run(context.Background(), args, executil.Options{Dir: wt, Env: mapToEnviron(env), Input: data, Timeout: 60 * time.Second})
-	if err != nil || r.Returncode != 0 {
+	if err != nil || r.ExitCode != 0 {
 		return ""
 	}
 	return strings.TrimSpace(strings.ToValidUTF8(string(r.Stdout), "�"))

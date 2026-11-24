@@ -455,7 +455,7 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	taskExceptionLoop.Store(loop)
 	stopSignals = startGatewayInstallSignalHandlers(loop, shutdownHandler, restartHandler)
 	plannedStop = &syncutil.Event{}
-	plannedStopThread := startBootThread(func() { runPlannedStopWatcher(plannedStop, r, loop, shutdownHandler, 1.0) })
+	plannedStopThread := startBootThread(func() { runPlannedStopWatcher(plannedStop, r, loop, shutdownHandler, time.Second) })
 	control = startGatewayStartControlSocket(ctx, r, loop)
 	if control == nil {
 		return false, errors.New("gateway session bootstrap control listener unavailable")

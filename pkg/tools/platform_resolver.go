@@ -22,11 +22,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyplist"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // ResolverEffort is what a probe may do, network never implying a subprocess
@@ -145,8 +144,8 @@ func (r PlatformAppResolver) version(path string) observation[string] {
 
 // Python exception class name of a vendor read failure
 func pyExceptionClass(err error) string {
-	if pe, ok := err.(*pyplist.Error); ok {
-		return pe.Class
+	if _, ok := err.(*plistutil.Error); ok {
+		return "InvalidFileException"
 	}
 	if os.IsNotExist(err) {
 		return "FileNotFoundError"
@@ -157,8 +156,8 @@ func pyExceptionClass(err error) string {
 	if pe, ok := err.(*os.PathError); ok && errors.Is(pe.Err, syscall.EISDIR) {
 		return "IsADirectoryError"
 	}
-	if cls, ok := err.(interface{ PyTypeName() string }); ok {
-		return cls.PyTypeName()
+	if cls, ok := err.(interface{ ErrorKind() string }); ok {
+		return cls.ErrorKind()
 	}
 	return "OSError"
 }
@@ -495,13 +494,13 @@ func platformPlistVersion(bundle string) (observation[string], error) {
 	if err != nil {
 		return observation[string]{}, err
 	}
-	d, ok := info.(*pyplist.Dict)
+	d, ok := info.(map[string]any)
 	if !ok {
-		return observation[string]{}, &pyplist.Error{Class: "AttributeError", Msg: "the property list is not a dictionary"}
+		return observation[string]{}, &plistutil.Error{Msg: "the property list is not a dictionary"}
 	}
-	value, _ := d.Get("CFBundleShortVersionString")
+	value := d["CFBundleShortVersionString"]
 	if !anyutil.IsTrue(platformPlistTruthValue(value)) {
-		value, _ = d.Get("CFBundleVersion")
+		value = d["CFBundleVersion"]
 	}
 	if !anyutil.IsTrue(platformPlistTruthValue(value)) {
 		return observation[string]{State: checkUnavailable, Detail: "no version key in Info.plist"}, nil
@@ -513,8 +512,8 @@ func platformPlistVersion(bundle string) (observation[string], error) {
 // Truthiness view of plist values, a dict by its length and a date always true
 func platformPlistTruthValue(v any) any {
 	switch x := v.(type) {
-	case *pyplist.Dict:
-		return x.Len() > 0
+	case map[string]any:
+		return len(x) > 0
 	case time.Time, plistutil.UID:
 		return true
 	case *big.Int:
@@ -612,7 +611,7 @@ func platformEndpointObservation(rawURL, fixedPath string) observation[string] {
 	if rawURL == "" {
 		return observation[string]{State: checkUnavailable, Detail: "no url in runtime file"}
 	}
-	parts, err := pyurl.Split(rawURL)
+	parts, err := urlutil.Split(rawURL)
 	if err != nil {
 		return observation[string]{State: checkUnavailable, Detail: "malformed endpoint"}
 	}
@@ -622,8 +621,8 @@ func platformEndpointObservation(rawURL, fixedPath string) observation[string] {
 	}
 	hostname := parts.Hostname()
 	username, password := "", ""
-	if at := strings.LastIndex(parts.Netloc, "@"); at >= 0 {
-		username, password, _ = strings.Cut(parts.Netloc[:at], ":")
+	if at := strings.LastIndex(parts.Authority, "@"); at >= 0 {
+		username, password, _ = strings.Cut(parts.Authority[:at], ":")
 	}
 	if parts.Scheme != "http" || username != "" || password != "" {
 		return observation[string]{State: checkUnavailable, Detail: "endpoint must be plain http without userinfo"}
@@ -640,7 +639,7 @@ func platformEndpointObservation(rawURL, fixedPath string) observation[string] {
 
 // One MCP initialize POST under one absolute deadline covering connect and response headers
 func platformMCPInitialize(session *platformSession, endpoint string, deadline float64) observation[bool] {
-	parts, _ := pyurl.Split(endpoint)
+	parts, _ := urlutil.Split(endpoint)
 	body := `{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "icebath", "version": "probe"}}}`
 	limit := time.Duration(max(0.1, deadline) * float64(time.Second))
 	host := parts.Hostname()

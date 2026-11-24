@@ -150,19 +150,20 @@ func (a *DiscordAdapter) isAllowedUser(ctx context.Context, userID string, autho
 	}
 	if isDM || guildID == "" {
 		dmGuildID := a.dmRoleAuthGuild(ctx)
-		if dmGuildID == nil {
+		if dmGuildID == 0 {
 			return false
 		}
+		dmGuild := strconv.FormatInt(dmGuildID, 10)
 		a.mu.Lock()
 		client := a.client
 		a.mu.Unlock()
 		if client == nil || client.State == nil {
 			return false
 		}
-		if _, err := client.State.Guild(dmGuildID.String()); err != nil {
+		if _, err := client.State.Guild(dmGuild); err != nil {
 			return false
 		}
-		return a.guildMemberHasRole(dmGuildID.String(), userID, allowedRoles)
+		return a.guildMemberHasRole(dmGuild, userID, allowedRoles)
 	}
 	if author != nil && len(author.roles) > 0 && (author.guildID == "" || author.guildID == guildID) {
 		for _, r := range author.roles {

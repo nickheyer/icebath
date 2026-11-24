@@ -10,9 +10,9 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Steps of packages above this one that the module entry runs, assigned by cmd/icebath, the update steps nil without the updater
@@ -47,7 +47,7 @@ func runMainFailureCode(err error, stderr io.Writer) int {
 	}
 	message := err.Error()
 	if message == "" {
-		message = pyrepr.ExceptionName(err)
+		message = errorutil.Kind(err)
 	}
 	pkgLog().Error("gateway run failed", "error", err)
 	fmt.Fprintf(stderr, "icebath gateway: %s\n", message)

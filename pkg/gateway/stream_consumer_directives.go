@@ -4,15 +4,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 var (
-	pendingMediaRe = pyre.MustCompile(`(?i)MEDIA:\s*(?:$|[` + "`" + `"'~/\\]|[A-Za-z](?::|$))` +
+	pendingMediaRe = regexutil.MustCompile(`(?i)MEDIA:\s*(?:$|[` + "`" + `"'~/\\]|[A-Za-z](?::|$))` +
 		`|(?<![A-Za-z0-9])[` + "`" + `"'*_]{0,3}M(?:E(?:D(?:I(?:A)?)?)?)?$`)
 	pendingFlagRe  = regexp.MustCompile(`\[\[?[A-Za-z_]*\]?$`)
 	streamFlags    = []string{"[[audio_as_voice]]", "[[as_document]]"}
-	pendingImageRe = pyre.MustCompile(`!\[[^\]]*(?:\](?:\([^)\s]*)?)?\Z|(?<![\w)\]"'”’!?.*_~` + "`" + `])!\Z` +
+	pendingImageRe = regexutil.MustCompile(`!\[[^\]]*(?:\](?:\([^)\s]*)?)?\Z|(?<![\w)\]"'”’!?.*_~` + "`" + `])!\Z` +
 		`|<(?:i(?:m(?:g(?:\s+(?:s(?:r(?:c(?:=["']?[^\s"'<>]*["']?\s*/?)?)?)?)?)?)?)?)?\Z` +
 		`|</(?:i(?:m(?:g)?)?)?\Z`)
 	mdImageTagLineRe   = regexp.MustCompile(`(?:` + MDImageTagPattern.String() + `)(?:\r?\n){0,2}`)

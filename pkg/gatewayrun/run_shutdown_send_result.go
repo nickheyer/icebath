@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // True when an adapter send result explicitly reports failure

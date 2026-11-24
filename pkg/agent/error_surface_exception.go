@@ -17,7 +17,7 @@ var surfaceAPIExcModulePrefixes = map[string]bool{"openai": true, "httpx": true,
 	"botocore": true, "boto3": true, "google": true, "grpc": true, "requests": true, "aiohttp": true, "ssl": true, "socket": true, "urllib": true}
 
 // Error declaring the Python exception class it stands for
-type pyTypeNamed interface{ PyTypeName() string }
+type pyTypeNamed interface{ ErrorKind() string }
 
 // Error declaring the Python module its exception class lives in
 type pyModuled interface{ PyModule() string }
@@ -27,8 +27,8 @@ type statusCoded interface{ StatusCode() int }
 
 // Python class name of err, untyped Go errors standing for a bare Exception
 func surfaceExceptionName(err error) string {
-	if n, ok := err.(pyTypeNamed); ok && n.PyTypeName() != "" {
-		return n.PyTypeName()
+	if n, ok := err.(pyTypeNamed); ok && n.ErrorKind() != "" {
+		return n.ErrorKind()
 	}
 	name := fmt.Sprintf("%T", err)
 	switch name {

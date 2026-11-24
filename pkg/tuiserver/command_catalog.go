@@ -207,7 +207,7 @@ func catalogSkills(ctx context.Context, cat *commandCatalogAcc, skillsOut map[st
 		if raw := info["name"]; anyutil.IsTrue(raw) {
 			name = anyutil.String(raw)
 		}
-		skillsOut[k] = tuigateway.SkillCatalogEntry{Usage: usage(name).Int64(), Origin: originOf(name)}
+		skillsOut[k] = tuigateway.SkillCatalogEntry{Usage: usage(name), Origin: originOf(name)}
 	}
 	var names []string
 	for _, s := range scope.FindAllSkills(false) {

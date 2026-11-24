@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Runtime dir byte budgets, sun_path minus the bu-NAME.sock stem of a 64 character session

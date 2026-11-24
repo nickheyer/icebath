@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -13,9 +12,9 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 type prefixMatcher struct {
@@ -99,7 +98,7 @@ func rebuildPrefixMatcher() error {
 		return nil
 	}
 	combined := append(append([]string{}, prefixPatterns...), plugin...)
-	re, err := pyre.Compile(`(?<![A-Za-z0-9_-])(` + strings.Join(combined, "|") + `)(?![A-Za-z0-9_-])`)
+	re, err := regexutil.Compile(`(?<![A-Za-z0-9_-])(` + strings.Join(combined, "|") + `)(?![A-Za-z0-9_-])`)
 	if err != nil {
 		return err
 	}
@@ -250,9 +249,9 @@ func iterPatterns(patterns any) ([]any, error) {
 		return out, nil
 	case []any:
 		return v, nil
-	case pyrepr.Mapping:
+	case *jsonutil.Object:
 		var out []any
-		for k := range v.PyItems() {
+		for _, k := range v.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
@@ -294,11 +293,7 @@ func RegisterRedactionPatterns(patterns any, source string) (int, error) {
 			continue
 		}
 		pattern = strings.TrimSpace(pattern)
-		if _, cerr := pyre.Compile(pattern); cerr != nil {
-			var overflow *pyre.OverflowError
-			if errors.As(cerr, &overflow) {
-				return 0, cerr
-			}
+		if _, cerr := regexutil.Compile(pattern); cerr != nil {
 			pkgLog().Warn(fmt.Sprintf("%s: skipping invalid redaction pattern %s (%s)", source, strconv.Quote(pattern), cerr))
 			continue
 		}

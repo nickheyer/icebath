@@ -20,13 +20,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	tarutil "github.com/nickheyer/icebath/pkg/utils/tar"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -41,7 +40,7 @@ const (
 var curatorExcludeTopLevel = map[string]bool{".curator_backups": true, ".hub": true, ".locks": true, ".git": true, ".archive": true, ".curator_ledger.jsonl": true}
 
 var curatorIDRE = sync.OnceValue(func() *regexp2.Regexp {
-	re, err := pyre.Compile(`^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z(-\d{2})?$`)
+	re, err := regexutil.Compile(`^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z(-\d{2})?$`)
 	if err != nil {
 		panic(err)
 	}
@@ -834,12 +833,12 @@ func SummarizeCuratorBackups(ctx context.Context) (string, error) {
 		if !anyutil.IsTrue(reason) {
 			reason = "?"
 		}
-		size, err := pyint.Of(curatorGetOr(r, "archive_bytes", 0))
+		size, err := anyutil.ToInt(curatorGetOr(r, "archive_bytes", 0))
 		if err != nil {
 			return "", err
 		}
 		lines = append(lines, fmt.Sprintf("%s  %s  %s  %s", curatorPad(pyStr(curatorGetOr(r, "id", "?")), 24, false), curatorPad(curatorRunes(pyStr(reason), 40), 40, false),
-			curatorPad(pyStr(curatorGetOr(r, "skill_files", 0)), 6, true), curatorPad(formatBytes(pyint.Native(size)), 8, true)))
+			curatorPad(pyStr(curatorGetOr(r, "skill_files", 0)), 6, true), curatorPad(formatBytes(int(size)), 8, true)))
 	}
 	return strings.Join(lines, "\n"), nil
 }

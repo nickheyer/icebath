@@ -2,7 +2,6 @@ package browser
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -10,13 +9,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -32,8 +31,8 @@ type cloudError struct {
 	Class, Msg string
 }
 
-func (e *cloudError) Error() string      { return e.Msg }
-func (e *cloudError) PyTypeName() string { return e.Class }
+func (e *cloudError) Error() string     { return e.Msg }
+func (e *cloudError) ErrorKind() string { return e.Class }
 
 func valueError(msg string) error   { return &cloudError{Class: "ValueError", Msg: msg} }
 func runtimeError(msg string) error { return &cloudError{Class: "RuntimeError", Msg: msg} }
@@ -103,7 +102,7 @@ var cloudTransport = sync.OnceValue(func() *http.Transport {
 })
 
 // Sends one requests call with an optional json body serialised as requests does
-func cloudRequest(method, url string, headers map[string]string, body any, timeout int) (*pyrequests.Response, error) {
+func cloudRequest(method, url string, headers map[string]string, body any, timeout int) (*httputil.Response, error) {
 	var payload []byte
 	if body != nil {
 		text, err := jsonutil.Encode(body)
@@ -114,7 +113,7 @@ func cloudRequest(method, url string, headers map[string]string, body any, timeo
 	}
 	req, err := http.NewRequest(method, url, bytes.NewReader(payload))
 	if err != nil {
-		return nil, &pyrequests.Error{Class: "InvalidURL", Text: err.Error(), Err: err}
+		return nil, err
 	}
 	if body == nil {
 		req.Body, req.ContentLength = http.NoBody, 0
@@ -125,11 +124,12 @@ func cloudRequest(method, url string, headers map[string]string, body any, timeo
 	if body != nil && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return pyrequests.Send(context.Background(), cloudTransport(), httputil.EachPhase(time.Duration(float64(timeout)*float64(time.Second))), req)
+	client := &http.Client{Transport: httputil.TrustEnvCA(cloudTransport()), CheckRedirect: httputil.RedirectPolicy(true)}
+	return httputil.Do(client, req, httputil.EachPhase(time.Duration(timeout)*time.Second))
 }
 
 // Release request of a session by the vendor's method and path
-func (p *CloudBrowserProvider) release(env *tools.Env, c *cloudConfig, sessionID string, timeout int) (*pyrequests.Response, error) {
+func (p *CloudBrowserProvider) release(env *tools.Env, c *cloudConfig, sessionID string, timeout int) (*httputil.Response, error) {
 	headers, err := p.hooks.releaseHeaders(env, c)
 	if err != nil {
 		return nil, err
@@ -146,20 +146,25 @@ func cloudSessionName(taskID string) string {
 }
 
 // Create request, a network failure a RuntimeError unless the caller retries on the raw exception
-func (p *CloudBrowserProvider) postCreate(url string, headers map[string]string, payload any, wrapErrors bool) (*pyrequests.Response, error) {
+func (p *CloudBrowserProvider) postCreate(url string, headers map[string]string, payload any, wrapErrors bool) (*httputil.Response, error) {
 	resp, err := cloudRequest(http.MethodPost, url, headers, payload, 30)
-	var reqErr *pyrequests.Error
-	if err != nil && errors.As(err, &reqErr) && wrapErrors {
+	if err != nil && transportFailed(err) && wrapErrors {
 		return nil, runtimeError(fmt.Sprintf("%s API connection failed: %s", p.label, err.Error()))
 	}
 	return resp, err
 }
 
-func responseOK(r *pyrequests.Response) bool { return r.Status < 400 }
+// Whether err is a failure to reach the server or read its answer, not an answer
+func transportFailed(err error) bool {
+	var failed *url.Error
+	return errors.As(err, &failed)
+}
 
-func (p *CloudBrowserProvider) checkCreated(r *pyrequests.Response) error {
+func responseOK(r *httputil.Response) bool { return r.StatusCode < 400 }
+
+func (p *CloudBrowserProvider) checkCreated(r *httputil.Response) error {
 	if !responseOK(r) {
-		return runtimeError(fmt.Sprintf("Failed to create %s%s session: %d %s", p.label, p.createLabelSuffix, r.Status, string(r.Body)))
+		return runtimeError(fmt.Sprintf("Failed to create %s%s session: %d %s", p.label, p.createLabelSuffix, r.StatusCode, string(r.Content)))
 	}
 	return nil
 }
@@ -180,7 +185,7 @@ func (p *CloudBrowserProvider) CloseSession(env *tools.Env, sessionID string) bo
 		log.Error(fmt.Sprintf("Exception closing %s session %s: %s", p.label, sessionID, err.Error()))
 		return false
 	}
-	if cloudCloseOK[resp.Status] {
+	if cloudCloseOK[resp.StatusCode] {
 		log.Debug(fmt.Sprintf("Successfully closed %s session %s", p.label, sessionID))
 		return true
 	}
@@ -188,7 +193,7 @@ func (p *CloudBrowserProvider) CloseSession(env *tools.Env, sessionID string) bo
 	if format == "" {
 		format = "Failed to close " + p.label + " session %s: HTTP %s - %s"
 	}
-	log.Warn(fmt.Sprintf(format, sessionID, strconv.Itoa(resp.Status), firstRunes(string(resp.Body), 200)))
+	log.Warn(fmt.Sprintf(format, sessionID, strconv.Itoa(resp.StatusCode), firstRunes(string(resp.Content), 200)))
 	return false
 }
 
@@ -233,12 +238,8 @@ func firstRunes(s string, n int) string {
 }
 
 // Response body parsed as requests' json() parses it
-func responseJSON(r *pyrequests.Response) (any, error) {
-	v, err := jsonutil.Decode(string(r.Body))
-	if err != nil {
-		return nil, &pyrequests.Error{Class: "JSONDecodeError", Text: err.Error(), Err: err}
-	}
-	return v, nil
+func responseJSON(r *httputil.Response) (any, error) {
+	return jsonutil.Decode(r.Content)
 }
 
 // dict.get of a decoded json value, ok false when the value is not an object

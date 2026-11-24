@@ -10,13 +10,13 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -314,7 +314,7 @@ func (a *SmsAdapter) checkSignature(rawURL string, postParams map[string]string,
 
 // URL with the scheme default port added or stripped, empty for a non default port or unknown scheme
 func portVariantURL(rawURL string) (string, error) {
-	parsed, err := pyurl.Parse(rawURL)
+	parsed, err := urlutil.Split(rawURL)
 	if err != nil {
 		return "", err
 	}
@@ -328,13 +328,13 @@ func portVariantURL(rawURL string) (string, error) {
 	}
 	switch {
 	case hasPort && port == defaultPort:
-		parsed.Netloc = parsed.Hostname()
+		parsed.Authority = parsed.Hostname()
 	case !hasPort:
-		parsed.Netloc = fmt.Sprintf("%s:%d", parsed.Hostname(), defaultPort)
+		parsed.Authority = fmt.Sprintf("%s:%d", parsed.Hostname(), defaultPort)
 	default:
 		return "", nil
 	}
-	return pyurl.Unparse(parsed), nil
+	return parsed.String(), nil
 }
 
 // Validates and parses a Twilio form webhook and hands the text to the gateway without blocking the answer
@@ -415,5 +415,10 @@ func (a *SmsAdapter) readForm(request *gateway.WebRequest) (map[string][]string,
 		pkgLog().Error(fmt.Sprintf("[sms] webhook parse error: %v", err))
 		return nil, 400
 	}
-	return pyurl.ParseQS(text, true), 0
+	form, err := url.ParseQuery(text)
+	if err != nil {
+		pkgLog().Error(fmt.Sprintf("[sms] webhook parse error: %v", err))
+		return nil, 400
+	}
+	return form, 0
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -19,6 +18,7 @@ import (
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Keyword options of a policy build, the zero value is a profile terminal launch without posture
@@ -372,12 +372,12 @@ func applyLaunchOverrides(ctx context.Context, params, cfg map[string]any) error
 			return refuseText(key, "must be a non-empty string")
 		}
 		if key == "base_url" {
-			url, err := pyurl.Split(text)
+			url, err := urlutil.Split(text)
 			if err != nil {
 				return err
 			}
 			if (url.Scheme != "http" && url.Scheme != "https") || url.Hostname() == "" ||
-				urlHasCredentials(url.Netloc) || url.Query != "" || url.Fragment != "" {
+				urlHasCredentials(url.Authority) || url.Query != "" || url.Fragment != "" {
 				return refuseText("base_url", "must be an http(s) URL without credentials, query or fragment")
 			}
 		}

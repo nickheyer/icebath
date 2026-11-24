@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -617,7 +616,8 @@ func pyIntOf(v any) (*big.Int, bool) {
 		if x == "" {
 			return big.NewInt(0), true
 		}
-		return pyint.Parse(x)
+		n, ok := new(big.Int).SetString(strings.TrimSpace(x), 10)
+		return n, ok
 	}
 	return nil, false
 }
@@ -755,7 +755,7 @@ func systemdRestartWaitTimeout(ctx context.Context, system bool) (float64, error
 		raw := props[name]
 		var us *big.Int
 		if textutil.IsDigits(raw) {
-			us, _ = pyint.Parse(raw)
+			us, _ = new(big.Int).SetString(raw, 10)
 		} else {
 			us = ParseSystemdDurationToUS(raw)
 		}

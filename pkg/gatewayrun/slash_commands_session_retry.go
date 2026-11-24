@@ -10,8 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Re-send event of a retry carrying the retry event's source, raw message, channel prompt and callback
@@ -129,7 +129,7 @@ func (r *GatewayRunner) retryInAdmission(ctx context.Context, event *gateway.Mes
 				return failedUnchanged(), nil
 			case isValueError(err):
 				return i18n.T(ctx, "gateway.retry.unsafe", "", map[string]any{"error": err.Error()}), nil
-			case pyrepr.ExceptionName(err) == "RuntimeError":
+			case errorutil.Kind(err) == "RuntimeError":
 				pkgLog().Debug(fmt.Sprintf("/retry carrier plan refused for %s", sessionID), "exc_info", err)
 				return failedUnchanged(), nil
 			}

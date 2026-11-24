@@ -107,12 +107,22 @@ func redactProcessResult(env *Env, result map[string]any) map[string]any {
 	return result
 }
 
+// Redacts the output, preview and command of a process result object in place
+func redactProcessObject(env *Env, result *jsonutil.Object) {
+	redacted := redactProcessResult(env, result.Map())
+	for _, key := range []string{"output", "output_preview", "command"} {
+		if v, ok := redacted[key]; ok {
+			result.Set(key, v)
+		}
+	}
+}
+
 // Lists the task's processes plus the session scoped ones sharing the gateway session key
 func listProcesses(ctx context.Context, env *Env, taskID string) *jsonutil.Object {
 	sessionKey := getCurrentSessionKey(env, "")
 	processes := []*jsonutil.Object{}
 	for _, p := range processRegistry.listSessionDicts(WithEnvHome(ctx, env), env, taskID, sessionKey, true) {
-		redactProcessResult(env, p.Vals)
+		redactProcessObject(env, p)
 		processes = append(processes, p)
 	}
 	return Dict("processes", processes)
@@ -227,7 +237,7 @@ func handleProcess(ctx context.Context, call *Call) string {
 		}
 		result := applyWaitPollPolicy(ctx, env, action, sessionID, entry.run(ctx, env, sessionID, args))
 		if entry.redact {
-			redactProcessResult(env, result.Vals)
+			redactProcessObject(env, result)
 		}
 		return processJSON(result)
 	}

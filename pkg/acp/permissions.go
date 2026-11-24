@@ -6,7 +6,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var optionIDToIcebath = map[string]string{
@@ -17,20 +18,6 @@ var permissionRequestIDs atomic.Int64
 
 // Client permission request the ACP connection sends
 type RequestPermissionFunc func(ctx context.Context, sessionID string, toolCall *acputil.ToolCallProgress, options []acputil.PermissionOption) (*acputil.RequestPermissionResponse, error)
-
-// Reports whether the schema accepts a permission option kind
-func permissionOptionSupportsKind(kind string) bool {
-	_, err := pyacp.Validate[acputil.PermissionOption](permissionProbe(kind))
-	return err == nil
-}
-
-func permissionProbe(kind string) *jsonutil.Object {
-	o := jsonutil.NewObject()
-	o.Set("optionId", "__probe__")
-	o.Set("kind", kind)
-	o.Set("name", "probe")
-	return o
-}
 
 // Permission options matching icebath approval semantics, once and deny only when the gate re-asks
 func buildPermissionOptions(allowPermanent, allowSession, smartDenied bool) []acputil.PermissionOption {
@@ -43,7 +30,7 @@ func buildPermissionOptions(allowPermanent, allowSession, smartDenied bool) []ac
 		}
 	}
 	options = append(options, acputil.PermissionOption{OptionID: "deny", Kind: "reject_once", Name: "Deny"})
-	if !onceOnly && permissionOptionSupportsKind("reject_always") {
+	if !onceOnly {
 		options = append(options, acputil.PermissionOption{OptionID: "deny_always", Kind: "reject_always", Name: "Deny always"})
 	}
 	return options

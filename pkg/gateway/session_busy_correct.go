@@ -54,10 +54,7 @@ func correct(ctx context.Context, c *AuthorityConnection, ref SessionRef, params
 	if paramsOutside(params, "session_id", "profile", "text", "execution_generation") || !isStr || strings.TrimSpace(text) == "" || !isInt {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	generation := int64(absentGeneration)
-	if exact.IsInt64() {
-		generation = exact.Int64()
-	}
+	generation := exact
 	a := c.authority
 	if err := authorizeBusy(ctx, a, c.actor, ref, params, "session:control"); err != nil {
 		return nil, err

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -16,7 +16,7 @@ func CoerceMaxConcurrentSessions(value any, key string) *big.Int {
 	if value == nil {
 		return nil
 	}
-	var parsed *big.Int
+	var parsed int64
 	var err error
 	_, isBool := value.(bool)
 	f, isFloat := value.(float64)
@@ -25,23 +25,21 @@ func CoerceMaxConcurrentSessions(value any, key string) *big.Int {
 		err = fmt.Errorf("%v is not a whole number", value)
 	default:
 		if s, ok := value.(string); ok {
-			if n, good := pyint.Parse(strings.TrimSpace(s)); good {
-				parsed = n
-			} else {
+			if parsed, err = strconv.ParseInt(strings.TrimSpace(s), 10, 64); err != nil {
 				err = fmt.Errorf("%s is not a whole number", s)
 			}
 		} else {
-			parsed, err = pyint.Of(value)
+			parsed, err = anyutil.ToInt(value)
 		}
 	}
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, anyutil.Quote(value)))
 		return nil
 	}
-	if parsed.Sign() <= 0 {
+	if parsed <= 0 {
 		return nil
 	}
-	return parsed
+	return big.NewInt(parsed)
 }
 
 // Top level max_concurrent_sessions of a config with the gateway section as the fallback

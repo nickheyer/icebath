@@ -41,7 +41,7 @@ const anyLivePathsSQL = "SELECT workspace_path FROM tasks WHERE workspace_path I
 
 // gitResult is one finished git call with its exit status and decoded streams
 type gitResult struct {
-	Returncode     int
+	ExitCode       int
 	Stdout, Stderr string
 }
 
@@ -63,14 +63,14 @@ func environOf(m map[string]string) []string {
 func wsGit(repoRoot string, timeout time.Duration, args ...string) (*gitResult, error) {
 	env := tools.NoninteractiveRepoGitEnv(repoRoot, nil)
 	if env == nil {
-		return &gitResult{Returncode: 1, Stderr: tools.GitFilterDiscoveryFailed}, nil
+		return &gitResult{ExitCode: 1, Stderr: tools.GitFilterDiscoveryFailed}, nil
 	}
 	argv := append([]string{"git", "-C", repoRoot}, args...)
 	r, err := executil.Run(context.Background(), argv, executil.Options{Env: environOf(env), Timeout: timeout})
 	if err != nil {
 		return nil, err
 	}
-	return &gitResult{r.Returncode, textutil.NormalizeNewlines(strings.ToValidUTF8(string(r.Stdout), "\uFFFD")),
+	return &gitResult{r.ExitCode, textutil.NormalizeNewlines(strings.ToValidUTF8(string(r.Stdout), "\uFFFD")),
 		textutil.NormalizeNewlines(strings.ToValidUTF8(string(r.Stderr), "\uFFFD"))}, nil
 }
 
@@ -529,13 +529,13 @@ func cleanupWorktreeWorkspaceChecked(taskID, path string, branchName *string) er
 	if err != nil {
 		return err
 	}
-	if result.Returncode != 0 {
+	if result.ExitCode != 0 {
 		time.Sleep(100 * time.Millisecond)
 		if result, err = wsGit(repoRoot, 60*time.Second, "worktree", "remove", wp); err != nil {
 			return err
 		}
 	}
-	if result.Returncode != 0 {
+	if result.ExitCode != 0 {
 		pkgLog().Warn(fmt.Sprintf("git worktree remove failed for task %s at %s: %s", taskID, wp, result.failureText()))
 		return nil
 	}
@@ -706,7 +706,7 @@ func gitToplevel(path string) *string {
 // Reports whether refs/heads/branchName exists in the repo
 func gitBranchExists(repoRoot, branchName string) bool {
 	r, err := wsGit(repoRoot, 30*time.Second, "show-ref", "--verify", "refs/heads/"+branchName)
-	return err == nil && r.Returncode == 0
+	return err == nil && r.ExitCode == 0
 }
 
 // Resolved absolute path git rev-parse reports for flag, nil when git fails
@@ -814,7 +814,7 @@ func ensureGitWorktree(repoRoot, target, branchName string) error {
 	if err != nil {
 		return err
 	}
-	if result.Returncode != 0 {
+	if result.ExitCode != 0 {
 		return &RuntimeError{fmt.Sprintf("git worktree add failed for %s on branch %s: %s", target, branchName, result.failureText())}
 	}
 	return nil

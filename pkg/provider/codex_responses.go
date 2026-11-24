@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -87,7 +87,7 @@ func (c *codexResponsesClient) httpClient(connect time.Duration) (*http.Client, 
 		c.transportsMu.Unlock()
 		base = tr
 	}
-	return &http.Client{Transport: pyhttpx.WireTransport{Base: base, Decoders: httpxDecoders}}, nil
+	return &http.Client{Transport: httputil.DecodingTransport(base)}, nil
 }
 
 // Overall request timeout and whether configuration supplied it
@@ -397,15 +397,15 @@ func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared,
 		return nil, err
 	}
 	key := ""
-	var custom []pyhttpx.HeaderLine
+	var custom []headerField
 	for _, k := range slices.Sorted(maps.Keys(p.headers)) {
 		if v := p.headers[k]; key == "" && strings.EqualFold(k, "Authorization") && strings.HasPrefix(v, "Bearer ") {
 			key = strings.TrimPrefix(v, "Bearer ")
 			continue
 		}
-		custom = append(custom, pyhttpx.HeaderLine{Name: k, Value: p.headers[k]})
+		custom = append(custom, headerField{Name: k, Value: p.headers[k]})
 	}
-	sdk := newAuxOpenAIClient(key, p.url, auxOpenAIOptions{DefaultHeaders: pyhttpx.OrderedHeaderMap(custom...), Timeout: p.timeout.Seconds()})
+	sdk := newAuxOpenAIClient(key, p.url, auxOpenAIOptions{DefaultHeaders: fieldMap(custom...), Timeout: p.timeout.Seconds()})
 	r := &auxSDKRequest{headers: map[string]any{}, timeout: auxUniformTimeouts(sdk.timeout, sdk.hasTimeout), readTimeoutText: sdk.timeoutText}
 	extra := providerRequestHeaders(ctx)
 	for _, k := range slices.Sorted(maps.Keys(extra)) {
@@ -413,7 +413,7 @@ func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared,
 		r.headerOrder = append(r.headerOrder, k)
 	}
 	httpReq.Host = httpxHost(httpReq.URL)
-	httpReq = pyhttpx.WithWire(httpReq, sdk.wireHeaders(key, r, 0))
+	httpReq = withHeader(httpReq, sdk.wireHeaders(key, r, 0))
 	codexCompressRequest(httpReq, c.route.BaseURL, body)
 	return httpReq, nil
 }

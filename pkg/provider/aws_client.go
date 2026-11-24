@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // Botocore connect and read defaults
@@ -118,7 +118,7 @@ func newAWSServiceClient(cfg awsClientConfig) *awsServiceClient {
 	if read <= 0 {
 		read = awsDefaultReadTimeout
 	}
-	tr := pyStackWireTransport(pyhttpx.RequestsProxy, awsDefaultConnectTimeout, 10)
+	tr := pyStackWireTransport(awsDefaultConnectTimeout, 10)
 	tr.ResponseHeaderTimeout = read
 	signing := cfg.signingName
 	if signing == "" {
@@ -127,16 +127,14 @@ func newAWSServiceClient(cfg awsClientConfig) *awsServiceClient {
 	return &awsServiceClient{
 		service: cfg.service, signingName: signing, region: cfg.region, endpoint: s.serviceEndpoint(cfg.service, cfg.region),
 		creds: &awsChainCredentials{session: s}, bearer: cfg.bearer, bearerFromEnv: cfg.bearer != "" && cfg.bearer == os.Getenv("AWS_BEARER_TOKEN_BEDROCK"),
-		session: s, http: &http.Client{Transport: pyhttpx.WireTransport{Base: tr}}, readTimeout: read,
+		session: s, http: &http.Client{Transport: httputil.DecodingTransport(tr)}, readTimeout: read,
 		retry: newAWSRetryPolicy(s, cfg.totalMaxAttempts), routed: cfg.routed,
 	}
 }
 
 // Closes pooled idle connections of the client
 func (c *awsServiceClient) closeIdle() {
-	if tr, ok := c.http.Transport.(pyhttpx.WireTransport); ok {
-		tr.CloseIdleConnections()
-	}
+	c.http.CloseIdleConnections()
 }
 
 // AWSReadTimeoutError is a socket read that waited longer than the client read timeout
@@ -230,7 +228,7 @@ func (c *awsServiceClient) do(ctx context.Context, operation, method, path strin
 			return nil, err
 		}
 		req.Host = httpxHost(req.URL)
-		resp, err := c.http.Do(pyhttpx.WithWire(req, lines))
+		resp, err := c.http.Do(withHeader(req, lines))
 		if c.retry.mode == "legacy" {
 			retries.max = c.retry.maxAttempts
 		}

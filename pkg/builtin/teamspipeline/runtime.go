@@ -9,8 +9,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/teams"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
@@ -178,7 +178,7 @@ func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsM
 			switch {
 			case err == nil:
 				teamsSender = newWriter(teamsConfig)
-			case pyrepr.ExceptionName(err) == "ImportError":
+			case errorutil.Kind(err) == "ImportError":
 				pkgLog().Debug("TeamsSummaryWriter unavailable; Teams outbound delivery remains disabled until the adapter layer is present.")
 			default:
 				return nil, err

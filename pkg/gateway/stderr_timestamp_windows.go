@@ -8,7 +8,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	"golang.org/x/sys/windows"
 )
 
@@ -20,7 +20,7 @@ func forwardSignal(p *os.Process, sig os.Signal) error {
 		return nil
 	}
 	if sig != syscall.SIGTERM {
-		return &pyrepr.FormatError{Class: "ValueError", Msg: fmt.Sprintf("Unsupported signal: %d", sig)}
+		return &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("Unsupported signal: %d", sig)}
 	}
 	err := p.Kill()
 	if err == nil || errors.Is(err, os.ErrProcessDone) {

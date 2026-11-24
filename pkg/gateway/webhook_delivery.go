@@ -11,7 +11,6 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -157,11 +156,11 @@ func webhookPositiveNumber(number any) (bool, error) {
 			return false, nil
 		}
 	}
-	parsed, err := pyint.Of(number)
+	parsed, err := anyutil.ToInt(number)
 	if err != nil {
 		return false, err
 	}
-	return parsed.Sign() > 0, nil
+	return parsed > 0, nil
 }
 
 // Delivery destination reduced to the fields its sender consumes, invalid params for any malformed one

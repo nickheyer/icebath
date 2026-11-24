@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )

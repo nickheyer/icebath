@@ -1,7 +1,7 @@
 package logging
 
 // Gateway stderr record format, timestamp, level, logger name and message
-const gatewayStderrFormat = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+const gatewayStderrFormat = "{asctime} {levelname} {name}: {message}"
 
 // Redacting formatter of the gateway stderr stream
 func GatewayStderrFormatter() (*Formatter, error) {

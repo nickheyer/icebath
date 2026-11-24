@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Force redacts text before serializing a terminal error envelope
@@ -510,9 +510,11 @@ func degradedResult(env *Env, e *EnvironmentConnectionError, taskID string) stri
 
 // Runs the pre exec guard chain on a worker bounded by the command deadline, true when it timed out
 func runBoundedGuard(timeout time.Duration, guard func() error) (error, bool) {
-	bounded, err := pydeadline.RunBounded(context.Background(), func(context.Context) (any, error) { return nil, guard() },
-		timeout, true, "terminal.pre-exec-guard", pydeadline.Hooks{})
-	return err, bounded.TimedOut
+	_, timedOut, err := syncutil.RunBounded(context.Background(), timeout, func(context.Context) (struct{}, error) { return struct{}{}, guard() })
+	if timedOut {
+		pkgLog().Warn(fmt.Sprintf("[deadline] %q timed out after %.1fs; worker abandoned", "terminal.pre-exec-guard", timeout.Seconds()))
+	}
+	return err, timedOut
 }
 
 // Runs the terminal tool with the plan already made, errors carry the finished result

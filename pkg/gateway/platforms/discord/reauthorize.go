@@ -3,8 +3,8 @@ package discord
 import (
 	"context"
 	"maps"
-	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,20 +12,17 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Role allowlist and guild a recovered grant is checked against
 type rolePolicy struct {
-	roles   []string
-	guildID *big.Int
+	roles []string
+	// Guild the grant is checked in, 0 when there is none and negative when the source names one that is no id
+	guildID int64
 }
 
 func (p rolePolicy) equal(o rolePolicy) bool {
-	if !slices.Equal(p.roles, o.roles) || (p.guildID == nil) != (o.guildID == nil) {
-		return false
-	}
-	return p.guildID == nil || p.guildID.Cmp(o.guildID) == 0
+	return slices.Equal(p.roles, o.roles) && p.guildID == o.guildID
 }
 
 // Current role policy of the profile the request serves, read like ingress reads it
@@ -41,10 +38,10 @@ func (a *DiscordAdapter) nativeRolePolicy(ctx context.Context, source *gateway.S
 		return p, nil
 	}
 	if source.ScopeID != nil {
-		if n, ok := pyint.Parse(strings.TrimSpace(*source.ScopeID)); ok {
+		if n, err := strconv.ParseInt(strings.TrimSpace(*source.ScopeID), 10, 64); err == nil {
 			p.guildID = n
 		} else {
-			p.guildID = big.NewInt(-1)
+			p.guildID = -1
 		}
 	}
 	return p, nil
@@ -57,22 +54,20 @@ func (a *DiscordAdapter) ReauthorizeNativeRoles(ctx context.Context, source *gat
 		return nil, err
 	}
 	client := a.liveClient()
-	if len(policy.roles) == 0 || policy.guildID == nil || client == nil {
+	if len(policy.roles) == 0 || policy.guildID <= 0 || client == nil || source.UserID == nil {
 		return false, nil
 	}
-	if policy.guildID.Sign() < 0 || source.UserID == nil {
+	guildID := strconv.FormatInt(policy.guildID, 10)
+	uid, err := strconv.ParseInt(strings.TrimSpace(*source.UserID), 10, 64)
+	if err != nil {
 		return false, nil
 	}
-	uid, ok := pyint.Parse(strings.TrimSpace(*source.UserID))
-	if !ok {
-		return false, nil
-	}
-	guild := a.stateGuild(policy.guildID.String())
+	guild := a.stateGuild(guildID)
 	if guild == nil {
 		return false, nil
 	}
 	fctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	member, err := client.GuildMember(guild.ID, uid.String(), discordgo.WithContext(fctx))
+	member, err := client.GuildMember(guild.ID, strconv.FormatInt(uid, 10), discordgo.WithContext(fctx))
 	cancel()
 	if err != nil {
 		return false, nil
@@ -84,11 +79,11 @@ func (a *DiscordAdapter) ReauthorizeNativeRoles(ctx context.Context, source *gat
 	if a.liveClient() != client || !recheck.equal(policy) {
 		return false, nil
 	}
-	if member.User == nil || member.User.ID != uid.String() || member.GuildID != policy.guildID.String() {
+	if member.User == nil || member.User.ID != strconv.FormatInt(uid, 10) || member.GuildID != guildID {
 		return false, nil
 	}
 	for _, role := range member.Roles {
-		if n, ok := pyint.Parse(role); ok && slices.Contains(policy.roles, n.String()) {
+		if n, err := strconv.ParseInt(strings.TrimSpace(role), 10, 64); err == nil && slices.Contains(policy.roles, strconv.FormatInt(n, 10)) {
 			return true, nil
 		}
 	}

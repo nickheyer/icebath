@@ -56,7 +56,7 @@ func isOSLevelError(err error) bool {
 func isTransientProviderResolveError(err error) bool {
 	for cur, depth := err, 0; cur != nil && depth < maxErrorChain; cur, depth = errors.Unwrap(cur), depth+1 {
 		msg := strings.ToLower(cur.Error())
-		if named, ok := cur.(interface{ PyTypeName() string }); ok && transientNetExcNames[named.PyTypeName()] {
+		if named, ok := cur.(interface{ ErrorKind() string }); ok && transientNetExcNames[named.ErrorKind()] {
 			return true
 		}
 		if moduled, ok := cur.(interface{ PyModule() string }); ok && containsAny(moduled.PyModule(), []string{"httpx", "httpcore", "aiohttp"}) && containsAny(msg, transientHTTPNeedles) {

@@ -14,10 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 const drainReportIntervalS = 30.0
@@ -185,7 +185,7 @@ func formatDrainReport(ctx context.Context, work []any, remainingS float64, h st
 	if 0 > left {
 		left = 0
 	}
-	leftText, err := pyrepr.Format(left, ".0f")
+	leftText, err := templateutil.Format("{v:.0f}", map[string]any{"v": left})
 	if err != nil {
 		return "", err
 	}

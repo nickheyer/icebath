@@ -3,15 +3,12 @@ package selfupdate
 import (
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -53,16 +50,11 @@ func statusFormatISOTimestamp(value any) any {
 
 // UTC isoformat of a millisecond epoch
 func statusQwenExpiry(expiresAtMs any) (any, error) {
-	n, err := pyint.Of(expiresAtMs)
+	n, err := anyutil.ToInt(expiresAtMs)
 	if err != nil {
 		return nil, err
 	}
-	seconds, _ := new(big.Rat).SetFrac(n, big.NewInt(1000)).Float64()
-	t, err := pydatetime.FromTimestampIn(seconds, time.UTC, nil)
-	if err != nil {
-		return nil, err
-	}
-	return t.UTC().Format(timeutil.RFC3339Micro), nil
+	return time.UnixMilli(n).UTC().Format(timeutil.RFC3339Micro), nil
 }
 
 // Detail row of an OAuth block, printed when its raw value is truthy and the gate is nil or equals the login state

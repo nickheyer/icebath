@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Flood redelivery workers keyed by platform and bot identity, one per identity
@@ -133,7 +135,7 @@ func (r *GatewayRunner) scheduleFloodRedelivery(ctx context.Context, platform ga
 				return nil, nil
 			}
 			delay := gateway.FloodRetryDelay(*earliest - float64(time.Now().UnixNano())/1e9)
-			if wake.Wait(delay) {
+			if wake.WaitTimeout(time.Duration(delay * float64(time.Second))) {
 				continue
 			}
 			if r.running.Load() {

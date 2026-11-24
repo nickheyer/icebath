@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var (
@@ -259,7 +259,7 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 	if len(imagePaths) > 0 {
 		batch := make([]gateway.ImageRef, 0, len(imagePaths))
 		for _, p := range imagePaths {
-			batch = append(batch, gateway.ImageRef{URL: "file://" + pyurl.Quote(p, "/"), Alt: ""})
+			batch = append(batch, gateway.ImageRef{URL: "file://" + urlutil.Escape(p, "/"), Alt: ""})
 		}
 		if err := catchPanic(func() error {
 			_, err := adapter.SendMultipleImages(ctx, chatID, batch, metadata, 0.0)

@@ -8,6 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One Python parameter of a manager method, keyword only or positional with its default
@@ -163,9 +166,9 @@ func automationErrorClass(err error) string {
 			return pyErr.Kind
 		}
 	}
-	var named interface{ PyTypeName() string }
+	var named interface{ ErrorKind() string }
 	if errors.As(err, &named) {
-		switch kind := named.PyTypeName(); kind {
+		switch kind := named.ErrorKind(); kind {
 		case "RuntimeError", "ValueError", "IndexError":
 			return kind
 		}

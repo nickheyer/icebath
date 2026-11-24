@@ -9,10 +9,10 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -26,21 +26,21 @@ const (
 )
 
 var (
-	markdownHintRe = pyre.MustCompile(`(?m)(^\|.*\|\s*\n\|[-:|\s]+\|)|(^#{1,6}\s)|(^\s*[-*]\s)|(^\s*\d+\.\s)|(^\s*---+\s*$)|(` +
+	markdownHintRe = regexutil.MustCompile(`(?m)(^\|.*\|\s*\n\|[-:|\s]+\|)|(^#{1,6}\s)|(^\s*[-*]\s)|(^\s*\d+\.\s)|(^\s*---+\s*$)|(` +
 		"```" + `)|(` + "`[^`\\n]+`" + `)|(\*\*[^*\n].+?\*\*)|(~~[^~\n].+?~~)|(<u>.+?</u>)|(\*[^*\n]+\*)|(\[[^\]]+\]\([^)]+\))|(^>\s)`)
-	markdownLinkRe         = pyre.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
-	markdownFenceOpenRe    = pyre.MustCompile("^```([^\\n`]*)\\s*$")
-	markdownFenceCloseRe   = pyre.MustCompile("^```\\s*$")
-	multispaceRe           = pyre.MustCompile(`[ \t]{2,}`)
-	postContentInvalidRe   = pyre.MustCompile(`(?i)content format of the post type is incorrect`)
-	markdownSpecialCharsRe = pyre.MustCompile(`([\\` + "`" + `*_{}\[\]()#+\-!|>~])`)
-	mentionTokenRe         = pyre.MustCompile(`@_user_\d+`)
-	whitespaceRe           = pyre.MustCompile(`\s+`)
-	backtickRunRe          = pyre.MustCompile("`+")
-	blockquoteRe           = pyre.MustCompile(`(?m)^>\s?`)
-	hrLineRe               = pyre.MustCompile(`(?m)^\s*---+\s*$`)
-	strikeRe               = pyre.MustCompile(`~~([^~\n]+)~~`)
-	underlineRe            = pyre.MustCompile(`<u>([\s\S]*?)</u>`)
+	markdownLinkRe         = regexutil.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	markdownFenceOpenRe    = regexutil.MustCompile("^```([^\\n`]*)\\s*$")
+	markdownFenceCloseRe   = regexutil.MustCompile("^```\\s*$")
+	multispaceRe           = regexutil.MustCompile(`[ \t]{2,}`)
+	postContentInvalidRe   = regexutil.MustCompile(`(?i)content format of the post type is incorrect`)
+	markdownSpecialCharsRe = regexutil.MustCompile(`([\\` + "`" + `*_{}\[\]()#+\-!|>~])`)
+	mentionTokenRe         = regexutil.MustCompile(`@_user_\d+`)
+	whitespaceRe           = regexutil.MustCompile(`\s+`)
+	backtickRunRe          = regexutil.MustCompile("`+")
+	blockquoteRe           = regexutil.MustCompile(`(?m)^>\s?`)
+	hrLineRe               = regexutil.MustCompile(`(?m)^\s*---+\s*$`)
+	strikeRe               = regexutil.MustCompile(`~~([^~\n]+)~~`)
+	underlineRe            = regexutil.MustCompile(`<u>([\s\S]*?)</u>`)
 )
 
 const mentionBoundaryChars = " \t\n\r.,;:!?、，。；：！？()[]{}<>\"'`"

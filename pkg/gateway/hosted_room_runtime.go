@@ -146,16 +146,12 @@ func (t *hostedThread) join(timeout float64) {
 	if timeout <= 0 {
 		return
 	}
-	waiter := &syncutil.Event{}
-	go func() {
-		select {
-		case <-t.done:
-			waiter.Set()
-		case <-waiter.Waiter():
-		}
-	}()
-	waiter.Wait(timeout)
-	waiter.Set()
+	timer := time.NewTimer(secondsDuration(timeout))
+	defer timer.Stop()
+	select {
+	case <-t.done:
+	case <-timer.C:
+	}
 }
 
 func (t *hostedThread) isCurrent() bool {

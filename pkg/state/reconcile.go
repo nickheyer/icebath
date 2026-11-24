@@ -13,8 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 )
 
 // Gateway runtime ownership seams the host wires, the lock a browse reconcile and the explicit repair hold
@@ -226,7 +227,7 @@ type DeclarativeDriftError struct {
 
 func (e *DeclarativeDriftError) Error() string { return e.Detail }
 
-func (e *DeclarativeDriftError) PyTypeName() string { return "DeclarativeDriftError" }
+func (e *DeclarativeDriftError) ErrorKind() string { return "DeclarativeDriftError" }
 
 // Whether an error is a no such table or column read probe failure, drift and never corruption
 func IsDeclarativeDriftError(err error) bool { return isOperationalError(err) && schemaNotBuilt(err) }
@@ -308,7 +309,7 @@ type BrowseBudgetExceeded struct{ Msg string }
 
 func (e *BrowseBudgetExceeded) Error() string { return e.Msg }
 
-func (e *BrowseBudgetExceeded) PyTypeName() string { return "BrowseBudgetExceeded" }
+func (e *BrowseBudgetExceeded) ErrorKind() string { return "BrowseBudgetExceeded" }
 
 // One monotonic deadline for everything a browse does while holding gateway.lock
 type browseBudget struct {
@@ -333,12 +334,12 @@ func (b *browseBudget) arm(conn SQLiteConn) error {
 	if !ok {
 		return fmt.Errorf("connection %T exposes no driver connection for a progress handler", conn)
 	}
-	return pysqlite.SetProgressHandler(raw, func() int {
+	return sqliteutil.SetProgressHandler(raw, func() bool {
 		if !time.Now().Before(b.deadline) {
 			b.expired = true
-			return 1
+			return true
 		}
-		return 0
+		return false
 	}, budgetProgressOps)
 }
 
@@ -410,7 +411,7 @@ func (e *CorruptStoreError) Error() string {
 	return "database disk image is malformed (integrity_check: " + e.Detail + ")"
 }
 
-func (e *CorruptStoreError) PyTypeName() string { return "DatabaseError" }
+func (e *CorruptStoreError) ErrorKind() string { return "DatabaseError" }
 
 // First integrity_check problems of a store under the budget, found false when the scan answers ok
 func integrityProblem(ctx context.Context, path string, budget *browseBudget) (string, bool, error) {
@@ -520,7 +521,7 @@ func reserving(ctx context.Context, home string) (func(), error) {
 		if IsOwnershipConflict(err) {
 			return nil, err
 		}
-		if isOSError(err) {
+		if errorutil.IsSystem(err) {
 			return nil, &DeclarativeDriftError{Detail: fmt.Sprintf("Session store is behind this Icebath version, but its "+
 				"gateway.lock cannot be used (%s); nothing was changed.", pyOSErrorStr(err))}
 		}

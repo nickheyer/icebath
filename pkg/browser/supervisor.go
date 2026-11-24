@@ -451,7 +451,7 @@ func (s *cdpSupervisor) start(timeout float64) error {
 	s.threadDone = done
 	s.ctlMu.Unlock()
 	go s.threadMain(done)
-	if !s.ready.Wait(timeout) {
+	if !s.ready.WaitTimeout(seconds(timeout)) {
 		s.stop(5.0)
 		redacted := []rune(redactCDPErrorText(s.cdpURL))
 		if len(redacted) > 80 {

@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -197,7 +196,7 @@ func readSessionRowsSig(dbPath string, ns int64, known bool) (signature any, err
 		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
-		digest.Write([]byte(anyutil.Quote(pyrepr.Tuple(values))))
+		digest.Write([]byte(anyutil.Quote([]any(values))))
 		digest.Write([]byte{0})
 	}
 	if err := rows.Err(); err != nil {

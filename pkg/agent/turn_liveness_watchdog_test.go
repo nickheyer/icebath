@@ -129,7 +129,7 @@ func TestWatchdogForceAbortsSilentlyStalledTurn(t *testing.T) {
 	records := captureLogger(t, "agent", slog.LevelError)
 	seen := ""
 	result := runWatchdogTurn(t, a, func(a *AIAgent, history []map[string]any) map[string]any {
-		if !a.hardInterruptRequested.Wait(30.0) {
+		if !a.hardInterruptRequested.WaitTimeout(30 * time.Second) {
 			t.Error("watchdog did not publish a hard interrupt")
 		}
 		seen = a.interruptMessage
@@ -229,7 +229,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesDuringWarning(t *testing.T) {
 	a.statusCallback = func(kind string, _ any) {
 		if kind == "warn" {
 			resume.Set()
-			if !touched.Wait(10.0) {
+			if !touched.WaitTimeout(10 * time.Second) {
 				t.Error("the turn never resumed")
 			}
 		}
@@ -238,7 +238,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesDuringWarning(t *testing.T) {
 	start := time.Now()
 	var requested bool
 	runWatchdogTurn(t, a, func(a *AIAgent, history []map[string]any) map[string]any {
-		if !resume.Wait(10.0) {
+		if !resume.WaitTimeout(10 * time.Second) {
 			t.Error("the warning never started")
 		}
 		a.TouchActivity("turn resumed")
@@ -310,7 +310,7 @@ func (f *blockingCommitFence) CancelBeforeCommit(any) bool {
 	f.calls++
 	f.mu.Unlock()
 	f.entered.Set()
-	if !f.release.Wait(10.0) {
+	if !f.release.WaitTimeout(10 * time.Second) {
 		panic("fence was never released")
 	}
 	return true
@@ -329,7 +329,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesInsideInterruptPublication(t *t
 	var requested, hardEvent, toolSignal bool
 	var message string
 	result := runWatchdogTurn(t, a, func(a *AIAgent, history []map[string]any) map[string]any {
-		if !fence.entered.Wait(10.0) {
+		if !fence.entered.WaitTimeout(10 * time.Second) {
 			t.Error("interrupt never reached the fence")
 		}
 		a.TouchActivity("resumed inside interrupt publication window")
@@ -402,7 +402,7 @@ func (l *parkingReleaseLock) Unlock() {
 	l.inner.Unlock()
 	if n := l.releaseCount.Add(1); l.parkOnRelease != 0 && n == l.parkOnRelease {
 		l.parked.Set()
-		if !l.releasePark.Wait(10.0) {
+		if !l.releasePark.WaitTimeout(10 * time.Second) {
 			panic("parked activity-lock release was never released")
 		}
 	}
@@ -422,7 +422,7 @@ func TestDeclinedAbortDoesNotCancelPendingCompressionCommit(t *testing.T) {
 		generation := int64(5)
 		ret = a.InterruptWith("watchdog: no progress", InterruptOptions{HardCancel: true, RequireGeneration: &generation})
 	}()
-	if !lock.parked.Wait(10.0) {
+	if !lock.parked.WaitTimeout(10 * time.Second) {
 		t.Fatal("interrupt never reached the claim-reservation boundary")
 	}
 	touched := make(chan struct{})

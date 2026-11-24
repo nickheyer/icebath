@@ -214,8 +214,8 @@ func (u *sdkUpdater) getUpdates(ctx context.Context, offset int64, timeout int) 
 // Python KeyError of a missing mapping key
 type keyError struct{ key string }
 
-func (e *keyError) Error() string      { return "'" + e.key + "'" }
-func (e *keyError) PyTypeName() string { return "KeyError" }
+func (e *keyError) Error() string     { return "'" + e.key + "'" }
+func (e *keyError) ErrorKind() string { return "KeyError" }
 
 // Stops polling, waits for the loop and confirms fetched updates with a zero timeout getUpdates
 func (u *sdkUpdater) Stop(ctx context.Context) error {

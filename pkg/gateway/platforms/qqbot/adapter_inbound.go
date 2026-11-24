@@ -11,15 +11,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
-var atMentionRE = pyre.MustCompile(`^@\S+\s*`)
+var atMentionRE = regexutil.MustCompile(`^@\S+\s*`)
 
 // Button decision mapped to the approval choice, the three button layout folding session into always
 var approvalButtonToChoice = map[string]string{"allow-once": "once", "allow-always": "always", "deny": "deny"}

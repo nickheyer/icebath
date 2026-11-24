@@ -4,7 +4,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
@@ -25,13 +24,6 @@ func partField(value any, key string) any {
 	case interface{ Get(string) (any, bool) }:
 		v, _ := m.Get(key)
 		return v
-	case pyrepr.Mapping:
-		for k, v := range m.PyItems() {
-			if k == any(key) {
-				return v
-			}
-		}
-		return nil
 	}
 	if rv := reflect.ValueOf(value); rv.Kind() == reflect.Map {
 		kt := rv.Type().Key()

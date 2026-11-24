@@ -20,9 +20,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -291,7 +291,7 @@ func (a *DiscordAdapter) sendImageChunk(ctx context.Context, ch *discordgo.Chann
 			captions = append(captions, img.Alt)
 		}
 		if strings.HasPrefix(img.URL, "file://") {
-			localPath := pyurl.Unquote(img.URL[7:])
+			localPath := urlutil.Unescape(img.URL[7:])
 			if _, err := os.Stat(localPath); err != nil {
 				pkgLog().Warn(fmt.Sprintf("[%s] Skipping missing image: %s", a.Name(), localPath))
 				continue

@@ -179,7 +179,7 @@ func TestComposeGuard(t *testing.T) {
 	}{
 		"containers-running": {res: &composeProbeResult{Stdout: "myproject-db-1\nmyproject-web-1\n"}},
 		"probe-timed-out":    {err: errComposeProbeTimeout},
-		"probe-failed":       {res: &composeProbeResult{Returncode: 1, Stderr: "permission denied on docker.sock"}},
+		"probe-failed":       {res: &composeProbeResult{ExitCode: 1, Stderr: "permission denied on docker.sock"}},
 	}
 	wantReason := map[string]string{
 		"containers-running": "this compose project already has running container(s): myproject-db-1, myproject-web-1",

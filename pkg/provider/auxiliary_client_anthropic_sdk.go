@@ -12,6 +12,9 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Anthropic SDK style client over the Messages wire, taking raw api kwargs and returning raw Message maps
@@ -129,7 +132,7 @@ func BuildAnthropicClient(ctx context.Context, apiKey any, baseURL string, timeo
 }
 
 // Client whose default headers merge the given headers over its own, the SDK with_options call
-func (c *anthropicSDKClient) withDefaultHeaders(headers []pyhttpx.HeaderLine) *anthropicSDKClient {
+func (c *anthropicSDKClient) withDefaultHeaders(headers []headerField) *anthropicSDKClient {
 	c.inner.defaultHeaders = stainlessMergeHeaders(c.inner.defaultHeaders, pyHeaderDictOf(headers...))
 	return c
 }

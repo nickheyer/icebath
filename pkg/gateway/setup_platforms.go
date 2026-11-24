@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -231,12 +231,12 @@ func savePort(ctx context.Context, envVar, value, def string) error {
 	if value == "" {
 		return nil
 	}
-	n, ok := pyint.Parse(value)
-	if !ok {
+	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
 		WizardSetup.PrintWarning("Invalid port number, using default " + def)
 		return nil
 	}
-	if err := WizardSetup.SaveEnvValue(ctx, envVar, n.String()); err != nil {
+	if err := WizardSetup.SaveEnvValue(ctx, envVar, strconv.FormatInt(n, 10)); err != nil {
 		return err
 	}
 	WizardSetup.PrintSuccess("Webhook port set to " + value)

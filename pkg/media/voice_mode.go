@@ -226,7 +226,7 @@ func termuxAPIAppInstalled() bool {
 	inconclusive := false
 	for _, cmd := range termuxAPIPackageProbes {
 		result, err := runQuiet(append([]string(nil), cmd...), 5, false)
-		if err != nil || result == nil || result.Returncode != 0 {
+		if err != nil || result == nil || result.ExitCode != 0 {
 			inconclusive = true
 			continue
 		}

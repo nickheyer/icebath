@@ -8,11 +8,11 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -30,7 +30,7 @@ var (
 
 // Bracketed marker line every executor ends a killed run's output with
 var interruptMarkerLine = func() interface{ MatchString(string) (bool, error) } {
-	re, err := pyre.CompileIgnoreCase(`^\[(?:command|execution) interrupted\b[^\n]*\]\s*$`)
+	re, err := regexutil.Compile(`^\[(?:command|execution) interrupted\b[^\n]*\]\s*$`, regexutil.IgnoreCase())
 	if err != nil {
 		panic(err)
 	}

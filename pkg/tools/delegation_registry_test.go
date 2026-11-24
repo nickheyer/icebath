@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registry double standing in for the provider lane ProviderRegistry and the bundled delegation plugins

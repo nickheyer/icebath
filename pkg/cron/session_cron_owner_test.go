@@ -87,8 +87,8 @@ func TestCronCancelBetweenClaimAndExecutionRegistrationStopsTheJob(t *testing.T)
 	}
 	_, err = gateway.CronExecute(ctx, authority, gateway.SessionRef{ProfileID: "p", SessionID: "s"}, row,
 		cronFirePolicy(t, "cron:job:fire", jsonutil.ObjectOf("id", "job")))
-	var named interface{ PyTypeName() string }
-	if err == nil || !errors.As(err, &named) || named.PyTypeName() != "RuntimeError" {
+	var named interface{ ErrorKind() string }
+	if err == nil || !errors.As(err, &named) || named.ErrorKind() != "RuntimeError" {
 		t.Fatalf("execute error = %v, want RuntimeError", err)
 	}
 	if len(seen) != 1 || !seen["cancelled_at_start"] {

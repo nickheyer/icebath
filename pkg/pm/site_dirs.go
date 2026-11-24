@@ -9,7 +9,6 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -45,18 +44,17 @@ func fsEncodeLine(text string) (string, bool) {
 	if isASCII(text) {
 		return text, true
 	}
-	encoded, err := pycodecs.Encode(text, charsetutil.Locale())
-	return encoded, err == nil
+	encoded, err := charsetutil.Encode(text, charsetutil.Locale())
+	return string(encoded), err == nil
 }
 
 // Python exception a pth file whose bytes no fallback codec decodes raises out of site processing
 func pthDecodeError(err error) error {
-	var decode *pycodecs.UnicodeDecodeError
+	var decode *charsetutil.DecodeError
 	if errors.As(err, &decode) {
 		return &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
-	var lookup *pycodecs.LookupError
-	if errors.As(err, &lookup) {
+	if errors.Is(err, charsetutil.ErrUnknown) {
 		return &PyError{Class: "LookupError", Message: err.Error()}
 	}
 	return err

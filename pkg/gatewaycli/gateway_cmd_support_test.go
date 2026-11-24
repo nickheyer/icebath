@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Fresh profile home with the managed dir pointed away from the host

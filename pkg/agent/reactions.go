@@ -6,7 +6,8 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Affection or gratitude aimed at the agent, the only reaction kind
@@ -16,7 +17,7 @@ const Vibe = "vibe"
 var vibeRe = mustCompileVibe()
 
 func mustCompileVibe() *regexp2.Regexp {
-	re, err := pyre.CompileIgnoreCase(strings.Join([]string{
+	re, err := regexutil.Compile(strings.Join([]string{
 		`\bgood\s*bot\b`,
 		`\bi\s*(?:love|luv)\s*(?:you|u|ya)\b`,
 		`\b(?:love|luv)\s*(?:you|u|ya)\b`,
@@ -25,7 +26,7 @@ func mustCompileVibe() *regexp2.Regexp {
 		`\b(?:thanks|thx|tysm|ty)\b`,
 		`<3+`,
 		"[❤♥\U0001F970\U0001F60D\U0001F618\U0001F495\U0001F496\U0001F497\U0001F49E\U0001F49B\U0001F49C\U0001F49A\U0001F499\U0001F493\U0001F498\U0001F49D\U0001FA77]",
-	}, "|"))
+	}, "|"), regexutil.IgnoreCase())
 	if err != nil {
 		panic(err)
 	}

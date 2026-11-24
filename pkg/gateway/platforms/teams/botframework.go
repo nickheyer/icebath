@@ -17,7 +17,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjwt"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	jwtutil "github.com/nickheyer/icebath/pkg/utils/jwt"
@@ -64,24 +63,23 @@ func (v *inboundTokenValidator) audiences() []string {
 }
 
 // Verifies a bearer token and returns its serviceurl claim, Entra tokens taking the tenant key set and caller check
-func (v *inboundTokenValidator) validate(raw, serviceURL string) (string, error) {
+func (v *inboundTokenValidator) validate(ctx context.Context, raw, serviceURL string) (string, error) {
 	if raw == "" {
 		return "", errors.New("No token provided")
 	}
-	unverified, err := pyjwt.UnverifiedClaims(raw)
-	if err != nil {
+	unverified := jwt.MapClaims{}
+	if _, _, err := jwt.NewParser().ParseUnverified(raw, unverified); err != nil {
 		return "", err
 	}
-	issValue, _ := unverified.Get("iss")
-	iss, _ := issValue.(string)
+	var err error
+	iss, _ := unverified["iss"].(string)
 	var claims jwt.MapClaims
 	if strings.HasPrefix(iss, entraLoginEndpoint) || strings.HasPrefix(iss, entraV1IssuerPrefix) {
-		tidValue, _ := unverified.Get("tid")
-		tid, _ := tidValue.(string)
+		tid, _ := unverified["tid"].(string)
 		if tid == "" {
 			return "", errors.New("Entra inbound token is missing tid")
 		}
-		if claims, err = v.verify(raw, v.entraKeys(tid), []string{entraLoginEndpoint + "/" + tid + "/v2.0", entraV1IssuerPrefix + tid + "/"}, ""); err != nil {
+		if claims, err = v.verify(ctx, raw, v.entraKeys(tid), []string{entraLoginEndpoint + "/" + tid + "/v2.0", entraV1IssuerPrefix + tid + "/"}, ""); err != nil {
 			return "", err
 		}
 		caller, hasAzp := claims["azp"]
@@ -92,7 +90,7 @@ func (v *inboundTokenValidator) validate(raw, serviceURL string) (string, error)
 			pkgLog().Warn(fmt.Sprintf("Entra inbound token caller app is not allowed: %v", caller))
 			return "", errors.New("Entra inbound token caller app is not allowed")
 		}
-	} else if claims, err = v.verify(raw, v.service, []string{botFrameworkIssuer}, serviceURL); err != nil {
+	} else if claims, err = v.verify(ctx, raw, v.service, []string{botFrameworkIssuer}, serviceURL); err != nil {
 		return "", err
 	}
 	tokenServiceURL, _ := claims["serviceurl"].(string)
@@ -117,15 +115,11 @@ func (v *inboundTokenValidator) entraKeys(tenantID string) *jwtutil.JWKClient {
 }
 
 // RS256 signature, audience, issuer, expiry and issued at checks with the service URL claim when given
-func (v *inboundTokenValidator) verify(raw string, keys *jwtutil.JWKClient, issuers []string, serviceURL string) (jwt.MapClaims, error) {
-	key, err := keys.SigningKeyFromJWT(raw)
-	if err != nil {
-		return nil, err
-	}
+func (v *inboundTokenValidator) verify(ctx context.Context, raw string, keys *jwtutil.JWKClient, issuers []string, serviceURL string) (jwt.MapClaims, error) {
 	parser := jwt.NewParser(jwt.WithValidMethods([]string{"RS256"}), jwt.WithLeeway(jwtLeeway), jwt.WithIssuedAt(),
 		jwt.WithAudience(v.audiences()...))
 	claims := jwt.MapClaims{}
-	if _, err := parser.ParseWithClaims(raw, claims, func(*jwt.Token) (any, error) { return key.Key, nil }); err != nil {
+	if _, err := parser.ParseWithClaims(raw, claims, keys.Keyfunc(ctx)); err != nil {
 		return nil, err
 	}
 	if len(issuers) > 0 {

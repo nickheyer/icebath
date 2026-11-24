@@ -9,11 +9,10 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	netutil "github.com/nickheyer/icebath/pkg/utils/net"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var privateHostSuffixes = []string{".localhost", ".local", ".lan", ".internal"}
@@ -60,8 +59,8 @@ func policyErr(msg string, extra ...any) *jsonutil.Object {
 
 // Private classification of an IP literal host, ok false when the host is not an IP literal
 func privateIP(env *tools.Env, host string) (private, ok bool) {
-	ip, ok := pyipaddress.IPAddress(host)
-	if !ok {
+	ip, err := netip.ParseAddr(host)
+	if err != nil {
 		return false, false
 	}
 	if tools.IsDeclaredFakeIP(env, ip) {
@@ -72,7 +71,7 @@ func privateIP(env *tools.Env, host string) (private, ok bool) {
 
 // True when the host is or resolves to a private, LAN, loopback or CGNAT address, DNS failure is not private
 func urlIsPrivate(env *tools.Env, rawURL string) bool {
-	parsed, err := pyurl.Parse(rawURL)
+	parsed, err := urlutil.Split(rawURL)
 	if err != nil {
 		cfgOf(env).logger().Debug("URL-privacy check failed", "url", rawURL, "error", err)
 		return false
@@ -119,7 +118,7 @@ func hybridRoutesLocally(env *tools.Env, rawURL string) (bool, error) {
 
 // Refuses urls embedding an API key or token in raw or percent decoded form
 func secretURLError(rawURL string) *jsonutil.Object {
-	if tools.RedactPrefixSearch(rawURL) || tools.RedactPrefixSearch(pyurl.Unquote(rawURL)) {
+	if tools.RedactPrefixSearch(rawURL) || tools.RedactPrefixSearch(urlutil.Unescape(rawURL)) {
 		return policyErr("Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs.")
 	}
 	return nil
@@ -213,11 +212,11 @@ func literalTargetsMetadata(env *tools.Env, literal string) bool {
 	if err != nil {
 		return false
 	}
-	ip, ok := pyipaddress.IPAddress(host)
-	if !ok && numericHostRE.MatchString(host) {
-		ip, ok = pyipaddress.InetAton(host)
+	ip, err := netip.ParseAddr(host)
+	if err != nil && numericHostRE.MatchString(host) {
+		ip, err = netutil.ParseLenientIPv4(host)
 	}
-	return tools.IsBlockedHostname(host) || (ok && tools.IsAlwaysBlockedIP(ip))
+	return tools.IsBlockedHostname(host) || (err == nil && tools.IsAlwaysBlockedIP(ip))
 }
 
 // The first http or https literal in a JS expression that blocked refuses, empty when none

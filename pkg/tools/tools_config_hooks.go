@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // ToolsCommandHooks are the provider, setup wizard and MCP entry points the tools command reaches, each installed by its package

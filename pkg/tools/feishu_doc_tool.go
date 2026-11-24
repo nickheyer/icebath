@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const feishuRawContentURI = "/open-apis/docx/v1/documents/:document_id/raw_content"

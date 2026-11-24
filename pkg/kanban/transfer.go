@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -140,11 +138,11 @@ func countTableRows(ctx context.Context, conn state.SQLiteConn) (*jsonutil.Objec
 		if err != nil {
 			return nil, err
 		}
-		n, err := pyint.Of(row.Get("n"))
+		n, err := anyutil.ToInt(row.Get("n"))
 		if err != nil {
 			return nil, err
 		}
-		out.Set(t, n.Int64())
+		out.Set(t, n)
 	}
 	return out, nil
 }
@@ -316,8 +314,8 @@ func readManifest(root string) (*jsonutil.Object, error) {
 		return nil, &ValueError{"archive is not an Icebath kanban board export (format=" + errchain.Show(shown) + ")"}
 	}
 	version, _ := manifest.Get("format_version")
-	n, isInt := pyint.Instance(version)
-	if !isInt || n.Cmp(big.NewInt(ArchiveFormatVersion)) > 0 {
+	n, isInt := anyutil.Int(version)
+	if !isInt || n > ArchiveFormatVersion {
 		return nil, &ValueError{fmt.Sprintf("archive format version %s is newer than this Icebath understands (max %d) — update Icebath and retry",
 			errchain.Show(version), ArchiveFormatVersion)}
 	}

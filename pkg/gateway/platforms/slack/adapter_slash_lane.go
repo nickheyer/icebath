@@ -1,11 +1,6 @@
 package slack
 
-import (
-	"math/big"
-	"sync"
-)
-
-var bigOne = big.NewInt(1)
+import "sync"
 
 // One session slot a slash command hands over once it returned from the gateway
 type HandoffSlot struct {

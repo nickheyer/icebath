@@ -84,7 +84,7 @@ func TestTTSCommandEnv(t *testing.T) {
 		t.Setenv("MY_SAFE_TTS_VAR", "keep")
 		got := captureCommandSpawn(t)
 		res, err := runCommandProvider(context.Background(), nil, "echo hi", 5, nil)
-		if err != nil || res.Returncode != 0 {
+		if err != nil || res.ExitCode != 0 {
 			t.Fatalf("run = %v, %v", res, err)
 		}
 		env := envList(got.cmd)
@@ -264,7 +264,7 @@ func TestTTSCommandEnvPassthrough(t *testing.T) {
 		t.Setenv("OPENAI_API_KEY", "sk-openai")
 		got := captureCommandSpawn(t)
 		res, err := runCommandProvider(context.Background(), nil, "echo hi", 5, []string{"MY_TTS_API_KEY"})
-		if err != nil || res.Returncode != 0 {
+		if err != nil || res.ExitCode != 0 {
 			t.Fatalf("run = %v, %v", res, err)
 		}
 		env := envList(got.cmd)

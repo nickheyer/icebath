@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
@@ -588,7 +587,7 @@ func auxNamedCustomOpenAIWireClient(ctx context.Context, customBase string, cust
 	}
 	headers := auxApplyUserDefaultHeaders(ctx, nil)
 	if len(extraHeaders) > 0 {
-		headers = pyhttpx.MergeHeaderMaps(headers, extraHeaders)
+		headers = MergeHeaderMaps(headers, extraHeaders)
 	}
 	if len(headers) > 0 {
 		opts.DefaultHeaders = headers

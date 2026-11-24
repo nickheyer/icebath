@@ -13,7 +13,6 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
@@ -21,8 +20,8 @@ import (
 // TypeError raised where a value is unpacked or called with the wrong shape
 type typeError struct{ msg string }
 
-func (e *typeError) Error() string      { return e.msg }
-func (e *typeError) PyTypeName() string { return "TypeError" }
+func (e *typeError) Error() string     { return e.msg }
+func (e *typeError) ErrorKind() string { return "TypeError" }
 
 // Lowercased str() of an error, empty for nil
 func errLower(err error) string {
@@ -410,13 +409,13 @@ func withPartialSend(result gateway.SendResult, undelivered, delivered []string,
 	raw["delivered_chunks"] = len(delivered)
 	raw["total_chunks"] = len(delivered) + len(undelivered)
 	raw["last_message_id"] = delivered[len(delivered)-1]
-	raw["continuation_message_ids"] = pyrepr.Tuple(continuation)
+	raw["continuation_message_ids"] = []any(continuation)
 	if tailCertain && len(undelivered) > 0 {
-		tail := make(pyrepr.Tuple, 0, len(undelivered))
+		tail := make([]any, 0, len(undelivered))
 		for _, c := range undelivered {
 			tail = append(tail, c)
 		}
-		ids := make(pyrepr.Tuple, 0, len(delivered))
+		ids := make([]any, 0, len(delivered))
 		for _, id := range delivered {
 			ids = append(ids, id)
 		}
@@ -431,8 +430,6 @@ func withPartialSend(result gateway.SendResult, undelivered, delivered []string,
 func tupleStrings(v any) []string {
 	var items []any
 	switch t := v.(type) {
-	case pyrepr.Tuple:
-		items = t
 	case []any:
 		items = t
 	case []string:
@@ -798,7 +795,7 @@ func (a *TelegramAdapter) editOverflowSplit(ctx context.Context, chatID, message
 			for _, d := range deliveredChunks {
 				prefix.WriteString(chunkSuffixStripRE.ReplaceAllString(d, ""))
 			}
-			ids := make(pyrepr.Tuple, 0, len(continuationIDs))
+			ids := make([]any, 0, len(continuationIDs))
 			anyIDs := make([]any, 0, len(continuationIDs))
 			for _, id := range continuationIDs {
 				ids = append(ids, id)

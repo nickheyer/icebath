@@ -10,17 +10,17 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 var (
 	// One tagged tool call block with its JSON body as group one
-	ToolCallBlockRe = pyre.MustCompile(`(?s)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
+	ToolCallBlockRe = regexutil.MustCompile(`(?s)<tool_call>\s*(\{.*?\})\s*</tool_call>`)
 	// One bare OpenAI shaped tool call JSON object
-	ToolCallJSONRe = pyre.MustCompile(`(?s)\{\s*\"id\"\s*:\s*\"[^\"]+\"\s*,\s*\"type\"\s*:\s*\"function\"\s*,\s*\"function\"\s*:\s*\{.*?\}\s*\}`)
+	ToolCallJSONRe = regexutil.MustCompile(`(?s)\{\s*\"id\"\s*:\s*\"[^\"]+\"\s*,\s*\"type\"\s*:\s*\"function\"\s*,\s*\"function\"\s*:\s*\{.*?\}\s*\}`)
 )
 
 // Prompt rule telling an ACP agent how to emit the tool calls parsed back out of its text

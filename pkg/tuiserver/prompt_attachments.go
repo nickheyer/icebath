@@ -25,8 +25,8 @@ var imageMagic = []struct {
 // Refusal of a payload over its cap in whole megabytes
 type payloadTooLarge struct{ msg string }
 
-func (e *payloadTooLarge) Error() string      { return e.msg }
-func (e *payloadTooLarge) PyTypeName() string { return "OverflowError" }
+func (e *payloadTooLarge) Error() string     { return e.msg }
+func (e *payloadTooLarge) ErrorKind() string { return "OverflowError" }
 
 // Refusal text of a payload over its cap
 func tooLarge(label string, size, maxBytes int) string {

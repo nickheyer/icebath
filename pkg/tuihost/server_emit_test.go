@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Stdout stand in that counts writes in flight and keeps every line written
@@ -97,7 +97,7 @@ func TestWriteJsonUnserializablePayloadBecomesErrorFrame(t *testing.T) {
 	saved := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError})))
 	t.Cleanup(func() { slog.SetDefault(saved) })
-	created := pydatetime.DateTime{Year: 2026, Month: 8, Day: 22}
+	created := make(chan int)
 	if !WriteJSON(context.Background(), jsonutil.ObjectOf("jsonrpc", "2.0", "id", "profiles", "result", jsonutil.ObjectOf("created", created))) {
 		t.Fatal("the error frame was not written")
 	}
@@ -109,7 +109,7 @@ func TestWriteJsonUnserializablePayloadBecomesErrorFrame(t *testing.T) {
 	if frame.ValueOr("id", nil) != "profiles" || errObj == nil || !jsonIsInt(errObj.ValueOr("code", nil), -32603) {
 		t.Fatalf("frame = %q", out.String())
 	}
-	if message, _ := errObj.ValueOr("message", nil).(string); !strings.HasPrefix(message, "response serialization error") || !strings.Contains(message, "datetime") {
+	if message, _ := errObj.ValueOr("message", nil).(string); !strings.HasPrefix(message, "response serialization error") || !strings.Contains(message, "chan int") {
 		t.Fatalf("message = %q", message)
 	}
 	if !strings.Contains(logs.String(), "level=ERROR") {

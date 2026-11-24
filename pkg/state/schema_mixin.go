@@ -5,19 +5,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -68,15 +65,8 @@ func sqlQuoteIdent(ident string) string {
 	return `"` + strings.ReplaceAll(ident, `"`, `""`) + `"`
 }
 
-// Hex SHA-256 of the UTF-8 text, the UnicodeEncodeError Python raises for a lone surrogate
+// Hex SHA-256 of the text
 func sha256HexUTF8(text string) (string, error) {
-	for i, pos := 0, 0; i < len(text); pos++ {
-		r, n := utf8.DecodeRuneInString(text[i:])
-		if pystr.IsSurrogate(r) {
-			return "", &errorutil.Error{Kind: "UnicodeEncodeError", Msg: fmt.Sprintf("the text holds a lone surrogate U+%04X at character %d, which UTF-8 cannot encode", r, pos)}
-		}
-		i += n
-	}
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:]), nil
 }
@@ -359,11 +349,11 @@ func ftsTriggersMissing(ctx context.Context, conn SQLiteConn, names []string) (b
 	if err != nil {
 		return false, err
 	}
-	n, err := pyint.Of(row[0])
+	n, err := anyutil.ToInt(row[0])
 	if err != nil {
 		return false, err
 	}
-	return n.Cmp(big.NewInt(int64(len(names)))) < 0, nil
+	return n < int64(len(names)), nil
 }
 
 // Reports whether trigger SQL is a broad AFTER UPDATE lacking an OF column list

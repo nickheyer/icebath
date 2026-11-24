@@ -27,7 +27,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/media/edgetts"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -35,6 +34,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -313,7 +313,7 @@ func writeTTSBytes(outputPath string, audio []byte) (string, error) {
 	return outputPath, nil
 }
 
-var auxFenceRe = mustPyre(pyre.CompileFullmatch("```(?:[A-Za-z0-9_-]+)?\\s*(.*?)\\s*```"))
+var auxFenceRe = mustPyre(regexutil.Compile("```(?:[A-Za-z0-9_-]+)?\\s*(.*?)\\s*```", regexutil.Whole()))
 
 // Compiled translated pattern, panicking on a pattern bug at init
 func mustPyre[T any](re T, err error) T {
@@ -481,11 +481,11 @@ var xaiInlineSpeechTags = []string{"pause", "long-pause", "hum-tune", "laugh", "
 var xaiWrappingSpeechTags = []string{"soft", "whisper", "loud", "build-intensity", "decrease-intensity", "higher-pitch", "lower-pitch", "slow", "fast", "sing-song", "singing", "laugh-speak", "emphasis"}
 
 var (
-	xaiSpeechTagRe     = mustPyre(pyre.CompileIgnoreCase(`(\[(?:` + strings.Join(xaiInlineSpeechTags, "|") + `)\]|</?(?:` + strings.Join(xaiWrappingSpeechTags, "|") + `)>)`))
-	xaiFirstSentenceRe = mustPyre(pyre.Compile(`(?s)^(.{12,120}?[.!?…])\s+(?=\S)`))
-	paragraphBreakRe   = mustPyre(pyre.Compile(`\n\s*\n+`))
-	lineBreakRe        = mustPyre(pyre.Compile(`\s*\n\s*`))
-	multiSpaceRe       = mustPyre(pyre.Compile(`\s{2,}`))
+	xaiSpeechTagRe     = mustPyre(regexutil.Compile(`(\[(?:`+strings.Join(xaiInlineSpeechTags, "|")+`)\]|</?(?:`+strings.Join(xaiWrappingSpeechTags, "|")+`)>)`, regexutil.IgnoreCase()))
+	xaiFirstSentenceRe = mustPyre(regexutil.Compile(`(?s)^(.{12,120}?[.!?…])\s+(?=\S)`))
+	paragraphBreakRe   = mustPyre(regexutil.Compile(`\n\s*\n+`))
+	lineBreakRe        = mustPyre(regexutil.Compile(`\s*\n\s*`))
+	multiSpaceRe       = mustPyre(regexutil.Compile(`\s{2,}`))
 )
 
 // Local xAI pause tags then an auxiliary rewrite when the text carried no explicit tags
@@ -914,7 +914,7 @@ func composeGeminiTTSPrompt(text, personaPrompt string) string {
 	}
 	preamble := "Synthesize speech from the TRANSCRIPT only. Treat AUDIO PROFILE, SCENE, DIRECTOR'S NOTES, and SAMPLE CONTEXT as performance direction; do not speak those sections aloud."
 	for _, pattern := range geminiTranscriptSlotPatterns {
-		re := mustPyre(pyre.CompileIgnoreCase(pattern))
+		re := mustPyre(regexutil.Compile(pattern, regexutil.IgnoreCase()))
 		if m, _ := re.MatchString(personaPrompt); m {
 			replaced, _ := re.ReplaceFunc(personaPrompt, func(regexp2.Match) string { return transcript }, -1, -1)
 			return strings.TrimSpace(preamble + "\n\n" + replaced)

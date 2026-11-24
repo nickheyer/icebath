@@ -11,9 +11,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // A builtin Python exception the package raises, named by its class
@@ -33,7 +37,7 @@ func catCPUInfo() ([]byte, error) {
 		return out, &executil.StatusError{Args: argv, ExitCode: executil.ExitCode(exitErr.ProcessState), Stdout: out}
 	}
 	if err != nil {
-		return out, &PyError{Class: pypath.OSErrorClass(err), Msg: err.Error()}
+		return out, &PyError{Class: errorutil.Kind(err), Msg: err.Error()}
 	}
 	return out, nil
 }
@@ -116,7 +120,7 @@ type Module struct {
 
 // Imports the package unpacked at dir for this host
 func Import(dir string) (*Module, error) {
-	return importFor(dir, pyplatform.System(), hostutil.Machine(), is64bit(), catCPUInfo)
+	return importFor(dir, hostutil.OSName(), hostutil.Machine(), is64bit(), catCPUInfo)
 }
 
 // Imports the package unpacked at dir for a given host description
@@ -190,7 +194,7 @@ func (m *Module) PvKeywordPaths(relative string) (map[string]string, error) {
 	keywordFilesDir := pathutil.Join(m.Dir, relative, "resources/keyword_files", subdir)
 	entries, err := os.ReadDir(keywordFilesDir)
 	if err != nil {
-		return nil, &PyError{Class: pypath.OSErrorClass(err), Msg: err.Error()}
+		return nil, &PyError{Class: errorutil.Kind(err), Msg: err.Error()}
 	}
 	res := map[string]string{}
 	for _, entry := range entries {
@@ -280,12 +284,13 @@ func (m *Module) PvTrainModel(ctx context.Context, accessKey, outputPath, langua
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 	req.Header.Set("x-api-key", accessKey)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := pyrequests.Send(ctx, m.Transport, pyrequests.Timeout{}, req)
+	client := &http.Client{Transport: httputil.TrustEnvCA(m.Transport), CheckRedirect: httputil.RedirectPolicy(true)}
+	resp, err := httputil.Do(client, req.WithContext(ctx), httputil.Timeout{})
 	if err != nil {
 		return &PyError{Class: "RuntimeError", Msg: fmt.Sprintf("Request failed: %s", err)}
 	}
-	if resp.RaiseForStatus(rawURL) != nil {
-		return &PyError{Class: "RuntimeError", Msg: fmt.Sprintf("HTTP %d: %s", resp.Status, resp.Body)}
+	if resp.StatusCode >= 400 {
+		return &PyError{Class: "RuntimeError", Msg: fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Content)}
 	}
-	return os.WriteFile(outputPath, resp.Body, 0o666)
+	return os.WriteFile(outputPath, resp.Content, 0o666)
 }

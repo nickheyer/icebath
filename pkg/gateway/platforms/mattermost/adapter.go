@@ -15,16 +15,16 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
@@ -48,8 +48,8 @@ var (
 	// Default extension of cached inbound media by mime prefix, in lookup order
 	inboundCacheExt = [][2]string{{"image/", ".png"}, {"audio/", ".ogg"}}
 
-	imageMarkdownRE = pyre.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
-	httpSchemeRE    = pyre.MustCompile(`^http`)
+	imageMarkdownRE = regexutil.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
+	httpSchemeRE    = regexutil.MustCompile(`^http`)
 )
 
 // AttributeError an attribute read raises on a value of another type
@@ -504,7 +504,7 @@ func (a *MattermostAdapter) Disconnect(ctx context.Context) error {
 	session, closed := a.session, a.sessionClosed
 	a.mu.Unlock()
 	if ws != nil {
-		ws.Close(ctx)
+		_ = ws.CloseWith(ctx, websocketutil.CloseNormal, "")
 	}
 	if session != nil && !closed {
 		a.closeSession()
@@ -687,7 +687,7 @@ func (a *MattermostAdapter) sendURLAsFile(ctx context.Context, chatID, rawURL, c
 
 // Mime type guessed from a file name, the fallback when none is known
 func guessType(name, fallback string) string {
-	if typ, _, err := pymimetypes.GuessType(name, true); err == nil && typ != "" {
+	if typ := mimeutil.TypeByName(name); typ != "" {
 		return typ
 	}
 	return fallback
@@ -727,7 +727,7 @@ type batchImage struct {
 // Reads a file URL or a safe remote image for a batch post, nil when it is missing, unsafe or fails to download
 func (a *MattermostAdapter) loadBatchImage(ctx context.Context, imageURL string, index int) (*batchImage, error) {
 	if strings.HasPrefix(imageURL, "file://") {
-		localPath := pyurl.Unquote(imageURL[7:])
+		localPath := urlutil.Unescape(imageURL[7:])
 		if _, err := os.Stat(localPath); err != nil {
 			pkgLog().Warn(fmt.Sprintf("Mattermost: skipping missing image %s", localPath))
 			return nil, nil
@@ -867,12 +867,12 @@ func (a *MattermostAdapter) wsLoop(ctx context.Context) error {
 			if a.isClosing() {
 				return nil
 			}
-			var handshake *pyaiohttpws.HandshakeError
-			if errors.As(err, &handshake) && (handshake.Status == 401 || handshake.Status == 403) {
-				pkgLog().Error(fmt.Sprintf("Mattermost WS auth failed (HTTP %d) — stopping reconnect", handshake.Status))
+			var handshake *websocketutil.HandshakeError
+			if errors.As(err, &handshake) && (handshake.StatusCode == 401 || handshake.StatusCode == 403) {
+				pkgLog().Error(fmt.Sprintf("Mattermost WS auth failed (HTTP %d) — stopping reconnect", handshake.StatusCode))
 				a.SetFatalError(ctx, "mattermost_auth_error", fmt.Sprintf("Mattermost WebSocket authentication rejected (HTTP %d). "+
 					"The bot token is invalid, revoked, or lacks permission — check MATTERMOST_TOKEN and the bot account in "+
-					"the System Console.", handshake.Status), false)
+					"the System Console.", handshake.StatusCode), false)
 				return a.NotifyFatalError(ctx)
 			}
 			pkgLog().Warn(fmt.Sprintf("Mattermost WS error: %s — reconnecting in %.0fs", err.Error(), delay))
@@ -907,7 +907,11 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 		return &gateway.PyError{Kind: "RuntimeError", Msg: "Session is closed"}
 	}
 	dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	ws, err := websocketutil.Connect(dctx, wsURL, pyaiohttpws.Options{Heartbeat: 30 * time.Second, TrustEnv: gateway.GatewayTrustEnv(ctx)})
+	opts := websocketutil.Options{PingInterval: 30 * time.Second, PingTimeout: 15 * time.Second}
+	if gateway.GatewayTrustEnv(ctx) {
+		opts.Proxy = httputil.Proxy
+	}
+	ws, err := websocketutil.Connect(dctx, wsURL, opts)
 	timedOut := dctx.Err() != nil && ctx.Err() == nil
 	cancel()
 	if err != nil {
@@ -924,44 +928,35 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := ws.SendStr(challenge); err != nil {
+	if err := ws.SendText(challenge); err != nil {
 		return err
 	}
 	pkgLog().Info("Mattermost: WebSocket connected and authenticated")
 	for {
 		msg, err := ws.Receive(ctx)
 		if err != nil {
-			return err
-		}
-		switch msg.Type {
-		case pyaiohttpws.Close, pyaiohttpws.Closing, pyaiohttpws.Closed:
+			var closed *websocketutil.CloseError
+			if !errors.As(err, &closed) {
+				return err
+			}
+			if !closed.Clean() {
+				pkgLog().Info(fmt.Sprintf("Mattermost: WebSocket closed (%s)", closed.Error()))
+			}
 			return nil
 		}
 		if a.isClosing() {
 			return nil
 		}
-		switch msg.Type {
-		case websocketutil.Text, websocketutil.Binary:
-			var event any
-			var perr error
-			if text, ok := msg.Data.(string); ok {
-				event, perr = jsonutil.Decode(text)
-			} else if raw, ok := msg.Data.([]byte); ok {
-				event, perr = jsonutil.Decode(raw)
+		event, perr := jsonutil.Decode(msg.Data)
+		if perr != nil {
+			var decodeErr *jsonutil.SyntaxError
+			if errors.As(perr, &decodeErr) {
+				continue
 			}
-			if perr != nil {
-				var decodeErr *jsonutil.SyntaxError
-				if errors.As(perr, &decodeErr) {
-					continue
-				}
-				return perr
-			}
-			if err := a.handleWSEvent(ctx, jsonutil.Plain(event)); err != nil {
-				return err
-			}
-		case pyaiohttpws.Error:
-			pkgLog().Info(fmt.Sprintf("Mattermost: WebSocket closed (%s)", msg.Type))
-			return nil
+			return perr
+		}
+		if err := a.handleWSEvent(ctx, jsonutil.Plain(event)); err != nil {
+			return err
 		}
 	}
 }
@@ -991,7 +986,7 @@ func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, m
 	}
 	if hasMention {
 		for _, pattern := range mentionPatterns {
-			re, err := pyre.CompileIgnoreCase(regexp2.Escape(pattern))
+			re, err := regexutil.Compile(regexp2.Escape(pattern), regexutil.IgnoreCase())
 			if err != nil {
 				return "", false, err
 			}

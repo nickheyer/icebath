@@ -226,8 +226,8 @@ func remuxAACToM4A(ctx context.Context, aacData []byte) ([]byte, bool) {
 		pkgLog().Error("Signal: AAC→M4A remux error", "error", err)
 		return nil, false
 	}
-	if proc.Returncode != 0 {
-		pkgLog().Warn(fmt.Sprintf("Signal: AAC→M4A remux failed (ffmpeg exit %d): %s", proc.Returncode, textutil.First(strings.ToValidUTF8(string(proc.Stderr), "\uFFFD"), 300)))
+	if proc.ExitCode != 0 {
+		pkgLog().Warn(fmt.Sprintf("Signal: AAC→M4A remux failed (ffmpeg exit %d): %s", proc.ExitCode, textutil.First(strings.ToValidUTF8(string(proc.Stderr), "\uFFFD"), 300)))
 		return nil, false
 	}
 	out, err := os.ReadFile(dstPath)

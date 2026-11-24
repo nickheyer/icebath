@@ -8,13 +8,13 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Transient auxiliary and compression statuses that stay in logs instead of gateway chats
-var telegramNoisyStatusRe = pyre.MustCompile(`(?is)(` +
+var telegramNoisyStatusRe = regexutil.MustCompile(`(?is)(` +
 	`auxiliary\s+.+\s+failed` +
 	`|compression\s+summary\s+failed` +
 	`|fallback\s+context\s+marker` +
@@ -72,7 +72,7 @@ var compressionProgressStatusRe = func() *regexp2.Regexp {
 	for i, template := range compressionProgressTemplates {
 		sources[i] = statusTemplateToRegex(template)
 	}
-	return pyre.MustCompile(`(?i)` + strings.Join(sources, "|"))
+	return regexutil.MustCompile(`(?i)` + strings.Join(sources, "|"))
 }()
 
 // Whether compression progress notices are on for the profile in ctx

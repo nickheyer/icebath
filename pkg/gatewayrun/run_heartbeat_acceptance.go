@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keeps normal reset and topic resolution, then admits only the heartbeat's original lineage

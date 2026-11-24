@@ -372,7 +372,7 @@ func runStartPhase(ctx context.Context, recipe *Recipe, root string, readyTimeou
 
 // docker compose ps probe result, its exit code and decoded streams
 type composeProbeResult struct {
-	Returncode     int
+	ExitCode       int
 	Stdout, Stderr string
 }
 
@@ -450,7 +450,7 @@ var composeProbe = func(root string) (*composeProbeResult, error) {
 	res := &composeProbeResult{}
 	var ee *exec.ExitError
 	if errors.As(waitErr, &ee) {
-		res.Returncode = executil.ExitCode(ee.ProcessState)
+		res.ExitCode = executil.ExitCode(ee.ProcessState)
 	} else if waitErr != nil {
 		return nil, &OSError{Err: waitErr}
 	}
@@ -489,7 +489,7 @@ func composeLiveStateReasonReal(root string) (string, error) {
 	case err != nil:
 		return "", err
 	}
-	if res.Returncode != 0 {
+	if res.ExitCode != 0 {
 		text := res.Stderr
 		if text == "" {
 			text = res.Stdout
@@ -499,7 +499,7 @@ func composeLiveStateReasonReal(root string) (string, error) {
 		if len(detail) > 0 {
 			last = detail[len(detail)-1]
 		}
-		return fmt.Sprintf("docker compose ps failed (exit %d): %s", res.Returncode, last), nil
+		return fmt.Sprintf("docker compose ps failed (exit %d): %s", res.ExitCode, last), nil
 	}
 	var names []string
 	for _, line := range textutil.Lines(res.Stdout) {

@@ -276,7 +276,7 @@ func (d *RoundtripDoc) Root() (*yaml.Node, error) {
 	if root.Kind != yaml.MappingNode {
 		var v any
 		_ = root.Decode(&v)
-		return nil, fmt.Errorf("top-level YAML must be a mapping, got %s", PyTypeName(v))
+		return nil, fmt.Errorf("top-level YAML must be a mapping, got %s", ErrorKind(v))
 	}
 	return root, nil
 }

@@ -58,7 +58,7 @@ func (e *SessionLedgeredError) Error() string {
 	return e.SessionID + " has gateway admission/worker history; not moved"
 }
 
-func (e *SessionLedgeredError) PyTypeName() string { return "SessionLedgeredError" }
+func (e *SessionLedgeredError) ErrorKind() string { return "SessionLedgeredError" }
 
 // Crossed profile identity findings of one store, a row possibly in more than one list
 type CrossedProfileSessions struct {

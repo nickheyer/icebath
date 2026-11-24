@@ -310,7 +310,7 @@ func TestLiveTurnWaitsForReviewExitBeforeRelayAndTurnContext(t *testing.T) {
 	rec := recordForks(t, brForkInit)
 	brForkConversation(t, func(context.Context, *AIAgent, string, []map[string]any) error {
 		reviewEntered.Set()
-		if !allowReviewReturn.Wait(2.0) {
+		if !allowReviewReturn.WaitTimeout(2 * time.Second) {
 			t.Error("review never allowed to return")
 		}
 		reviewReturned.Set()
@@ -324,14 +324,14 @@ func TestLiveTurnWaitsForReviewExitBeforeRelayAndTurnContext(t *testing.T) {
 		t.Fatal("no review run")
 	}
 	prevAck := awaitReviewAck
-	awaitReviewAck = func(r *backgroundReviewRun, timeout float64) bool {
+	awaitReviewAck = func(r *backgroundReviewRun, timeout time.Duration) bool {
 		waitStarted.Set()
-		return r.requestDone.Wait(timeout)
+		return r.requestDone.WaitTimeout(timeout)
 	}
 	t.Cleanup(func() { awaitReviewAck = prevAck })
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); (*targets)[0]() }()
-	if !reviewEntered.Wait(2.0) {
+	if !reviewEntered.WaitTimeout(2 * time.Second) {
 		t.Fatal("review never entered")
 	}
 	var boundaryReached syncutil.Event
@@ -348,7 +348,7 @@ func TestLiveTurnWaitsForReviewExitBeforeRelayAndTurnContext(t *testing.T) {
 	if !brWaitFor(2.0, func() bool { return fork.interruptRequested.Load() }) {
 		t.Fatal("fork not interrupted")
 	}
-	started := waitStarted.Wait(2.0)
+	started := waitStarted.WaitTimeout(2 * time.Second)
 	before := relay.snapshot()
 	allowReviewReturn.Set()
 	select {
@@ -394,7 +394,7 @@ func TestLiveTurnCancelsReviewDuringStartupBeforeProvider(t *testing.T) {
 	relay := brInstallRelayRecorder(t, run)
 	liveDone := make(chan brLiveResult, 1)
 	go func() { liveDone <- brRunLiveTurn(agent) }()
-	if !run.cancelRequested.Wait(2.0) {
+	if !run.cancelRequested.WaitTimeout(2 * time.Second) {
 		t.Fatal("cancel never requested")
 	}
 	workerDone := make(chan struct{})
@@ -423,13 +423,13 @@ func TestLiveTurnProceedsWhenReviewAcknowledgementTimesOut(t *testing.T) {
 	rec := recordForks(t, brForkInit)
 	brForkConversation(t, func(context.Context, *AIAgent, string, []map[string]any) error {
 		reviewEntered.Set()
-		allowReviewReturn.Wait(5.0)
+		allowReviewReturn.WaitTimeout(5 * time.Second)
 		return nil
 	})
 	targets := brCaptureWorkers(t)
-	prevTimeout := backgroundReviewCancelTimeoutSeconds
-	backgroundReviewCancelTimeoutSeconds = 0.01
-	t.Cleanup(func() { backgroundReviewCancelTimeoutSeconds = prevTimeout })
+	prevTimeout := backgroundReviewCancelTimeout
+	backgroundReviewCancelTimeout = 10 * time.Millisecond
+	t.Cleanup(func() { backgroundReviewCancelTimeout = prevTimeout })
 	agent := brLiveAgent(t)
 	agent.spawnBackgroundReview(context.Background(), brSnapshot(), true, false, nil, false)
 	run := currentBackgroundReviewRun(agent)
@@ -438,7 +438,7 @@ func TestLiveTurnProceedsWhenReviewAcknowledgementTimesOut(t *testing.T) {
 	}
 	workerDone := make(chan struct{})
 	go func() { defer close(workerDone); (*targets)[0]() }()
-	if !reviewEntered.Wait(2.0) {
+	if !reviewEntered.WaitTimeout(2 * time.Second) {
 		t.Fatal("review never entered")
 	}
 	fork := rec.forks[0]
@@ -508,7 +508,7 @@ func TestStaleReviewCleanupCannotClearOrSignalNewerReview(t *testing.T) {
 	brRecordReleases(t, func(fork *AIAgent) {
 		if len(rec.forks) > 0 && fork == rec.forks[0] {
 			firstCleanupEntered.Set()
-			if !allowFirstCleanup.Wait(2.0) {
+			if !allowFirstCleanup.WaitTimeout(2 * time.Second) {
 				t.Error("first cleanup never released")
 			}
 		}
@@ -519,7 +519,7 @@ func TestStaleReviewCleanupCannotClearOrSignalNewerReview(t *testing.T) {
 	firstRun := currentBackgroundReviewRun(agent)
 	firstDone := make(chan struct{})
 	go func() { defer close(firstDone); (*targets)[0]() }()
-	if !firstCleanupEntered.Wait(2.0) || !firstRun.requestDone.IsSet() {
+	if !firstCleanupEntered.WaitTimeout(2*time.Second) || !firstRun.requestDone.IsSet() {
 		t.Fatal("first review did not publish its request exit before cleanup")
 	}
 	agent.spawnBackgroundReview(context.Background(), []map[string]any{{"role": "user", "content": "second"}}, true, false, nil, false)

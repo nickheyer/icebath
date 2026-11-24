@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/i18n"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 const (
@@ -110,8 +111,8 @@ type SiteCopyError struct{ Code string }
 
 func (e *SiteCopyError) Error() string { return anyutil.Quote(e.Code) }
 
-// PyTypeName names the Python exception class an unknown code raises
-func (e *SiteCopyError) PyTypeName() string { return "KeyError" }
+// ErrorKind names the Python exception class an unknown code raises
+func (e *SiteCopyError) ErrorKind() string { return "KeyError" }
 
 // Chat copy for a failure code or one off outcome with every field the caller omits rendered empty
 func SiteCopy(ctx context.Context, code string, fields map[string]any) (string, error) {
@@ -131,5 +132,5 @@ func SiteCopy(ctx context.Context, code string, fields map[string]any) (string, 
 			kwargs[m[1]] = ""
 		}
 	}
-	return i18n.PyFormat(template, kwargs)
+	return templateutil.Format(template, kwargs)
 }

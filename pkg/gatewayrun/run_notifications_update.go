@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -256,22 +254,22 @@ func (r *GatewayRunner) watchUpdateCompletionOnly(ctx context.Context, paths upd
 }
 
 // Exit code the update process wrote, one for an empty file
-func updateExitCode(paths updatePaths) (*big.Int, error) {
+func updateExitCode(paths updatePaths) (int64, error) {
 	raw, err := os.ReadFile(paths.exitCode)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
 		text = "1"
 	}
-	code, ok := pyint.Parse(text)
-	if !ok {
-		return nil, fmt.Errorf("recorded update exit code %s is not a whole number", text)
+	code, err := textutil.ParseInt(text)
+	if err != nil {
+		return 0, fmt.Errorf("recorded update exit code %s is not a whole number", text)
 	}
 	return code, nil
 }
@@ -406,13 +404,13 @@ func (r *GatewayRunner) sendUpdateFinished(ctx context.Context, paths updatePath
 		return err
 	}
 	notice := updateFailedNotice(ctx)
-	if code.Sign() == 0 {
+	if code == 0 {
 		notice = i18n.T(ctx, "gateway.update.finished", "", nil)
 	}
 	if _, err := target.send(ctx, notice); err != nil {
 		return err
 	}
-	pkgLog().Info(fmt.Sprintf("Update finished (exit=%s), notified %s", code.String(), target.sessionKey))
+	pkgLog().Info(fmt.Sprintf("Update finished (exit=%d), notified %s", code, target.sessionKey))
 	return nil
 }
 
@@ -531,7 +529,7 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 		metadata := r.pendingMarkerMetadata(platform, chat, pending, adapter)
 		output = strings.TrimSpace(tools.StripANSI(output))
 		var msg string
-		if code.Sign() == 0 {
+		if code == 0 {
 			msg = i18n.T(ctx, "gateway.update.finished_success", "", nil)
 			if output != "" {
 				msg = msg + "\n\n```\n" + updateOutputTail(output, 3500) + "\n```"
@@ -545,7 +543,7 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 		if _, err := adapter.Send(ctx, chat, msg, "", nonConversationalMetadata(metadata, platform)); err != nil {
 			return true, err
 		}
-		pkgLog().Info(fmt.Sprintf("Sent post-update notification to %s:%s (exit=%s)", anyutil.String(platformStr), chat, code.String()))
+		pkgLog().Info(fmt.Sprintf("Sent post-update notification to %s:%s (exit=%d)", anyutil.String(platformStr), chat, code))
 	}
 	return true, nil
 }

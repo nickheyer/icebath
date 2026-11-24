@@ -12,8 +12,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
@@ -159,9 +159,9 @@ func pyExceptionRepr(err error) string {
 		return "KeyError(" + anyutil.Quote(keyErr.key) + ")"
 	}
 	if err.Error() == "" {
-		return pyrepr.ExceptionName(err) + "()"
+		return errorutil.Kind(err) + "()"
 	}
-	return pyrepr.ExceptionName(err) + "(" + anyutil.Quote(err.Error()) + ")"
+	return errorutil.Kind(err) + "(" + anyutil.Quote(err.Error()) + ")"
 }
 
 // Seconds a cross goroutine local chat delivery waits for the owner to confirm it

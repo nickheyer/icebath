@@ -21,7 +21,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -326,7 +325,7 @@ func readLedger(path string) ([]*jsonutil.Object, bool) {
 }
 
 // Moves the home of a row an older icebath wrote to the current key in place, so the next write carries it
-func renameRetiredHomeKey(row *jsonutil.Object) { home.AdoptRecordKey(row.Keys, row.Vals) }
+func renameRetiredHomeKey(row *jsonutil.Object) { home.AdoptRecordKey(row) }
 
 // Ledger entries, false after parking a corrupt file, caller holds the ledger lock
 func readLedgerOrQuarantine(path string) ([]*jsonutil.Object, bool) {
@@ -466,7 +465,11 @@ func appendLedgerEntry(ctx context.Context, entry LedgerEntry) bool {
 
 // Writes data as indented JSON through a private temp file and an atomic rename
 func procAtomicJSONWrite(path string, data any, mode os.FileMode, ensureASCII bool) error {
-	text, err := jsonutil.Encode(data, jsonutil.Indent(2), pyjson.EnsureASCII(ensureASCII))
+	opts := []jsonutil.Option{jsonutil.Indent(2)}
+	if ensureASCII {
+		opts = append(opts, jsonutil.ASCII())
+	}
+	text, err := jsonutil.Encode(data, opts...)
 	if err == nil && !ensureASCII && !utf8.ValidString(text) {
 		text, err = jsonutil.Encode(data, jsonutil.Indent(2), jsonutil.ASCII())
 	}

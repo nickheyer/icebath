@@ -24,7 +24,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -908,7 +907,7 @@ func (t *anthDirectTransport) Request(ctx context.Context, op anthOperation, bod
 		return nil, err
 	}
 	req.Host = httpxHost(target)
-	return pyhttpx.WithWire(req, httpxPreparedLines(req, lines, len(data))), nil
+	return withHeader(req, httpxPreparedLines(req, lines, len(data))), nil
 }
 
 func (t *anthDirectTransport) Events(resp *http.Response) anthEventSource {
@@ -1025,7 +1024,7 @@ func (c *anthropicClient) httpClient(connect time.Duration) (*http.Client, error
 		c.transportsMu.Unlock()
 		base = tr
 	}
-	var rt http.RoundTripper = pyhttpx.WireTransport{Base: base, Decoders: httpxDecoders}
+	var rt http.RoundTripper = httputil.DecodingTransport(base)
 	if c.bearerHook == nil {
 		return &http.Client{Transport: rt}, nil
 	}
@@ -1141,7 +1140,7 @@ type anthHead struct {
 }
 
 // Wire lines of a messages.stream call when stream is set, else of a messages.create call, with the call timeout
-func (h anthHead) lines(stream bool, call anthSDKCall) (*pyhttpx.Headers, error) {
+func (h anthHead) lines(stream bool, call anthSDKCall) (http.Header, error) {
 	call.headers = h.extra
 	if stream {
 		call.headers = anthStreamCallHeaders(h.extra)
@@ -1277,7 +1276,7 @@ func (c *anthropicClient) requestHeaders(ctx context.Context, betas []string, ex
 }
 
 // Extra headers of the custom provider entry routed at the base URL in declaration order, none when no entry matches
-func anthCustomProviderExtraHeaders(ctx context.Context, baseURL string) []pyhttpx.HeaderLine {
+func anthCustomProviderExtraHeaders(ctx context.Context, baseURL string) []headerField {
 	if strings.TrimSpace(baseURL) == "" {
 		return nil
 	}

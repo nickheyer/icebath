@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
@@ -48,8 +48,8 @@ func (e *CallStopped) As(target any) bool {
 // Call on the connection loop goroutine, which would wait on itself
 type LoopThreadError struct{ Msg string }
 
-func (e *LoopThreadError) Error() string      { return e.Msg }
-func (e *LoopThreadError) PyTypeName() string { return "RuntimeError" }
+func (e *LoopThreadError) Error() string     { return e.Msg }
+func (e *LoopThreadError) ErrorKind() string { return "RuntimeError" }
 
 // Transport error tagged with the connection epoch it ended
 type ConnectionLoss struct {
@@ -459,7 +459,7 @@ func (c *GatewayConnection) Start(ctx context.Context, timeout time.Duration) er
 			thread.Start()
 		}
 		c.startLock.Unlock()
-		if !c.ready.Wait(remaining().Seconds()) {
+		if !c.ready.WaitTimeout(remaining()) {
 			return timedOut
 		}
 		if err := c.loadErr(); err != nil {
@@ -516,7 +516,7 @@ func (c *GatewayConnection) loop(ctx context.Context) {
 	failed := func(err error) {
 		if !c.ready.IsSet() {
 			if !isClientError(err) {
-				err = &gateway.GatewayClientError{Msg: fmt.Sprintf("Gateway connection failed; no local fallback (%s)", pyrepr.ExceptionName(err))}
+				err = &gateway.GatewayClientError{Msg: fmt.Sprintf("Gateway connection failed; no local fallback (%s)", errorutil.Kind(err))}
 			}
 			c.mu.Lock()
 			c.err = err

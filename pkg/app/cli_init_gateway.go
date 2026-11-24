@@ -12,6 +12,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 

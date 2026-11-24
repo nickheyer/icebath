@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/settings"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	userutil "github.com/nickheyer/icebath/pkg/utils/user"
@@ -34,8 +33,7 @@ func systemUnitUID(unitPath string) (*int, error) {
 		return &root, nil
 	}
 	info, err := userutil.Lookup(user)
-	var keyErr *pypwd.KeyError
-	if errors.As(err, &keyErr) {
+	if errors.Is(err, userutil.ErrNotFound) {
 		return nil, nil
 	}
 	if err != nil {

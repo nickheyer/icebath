@@ -313,12 +313,7 @@ func cmdPruneOrArchive(r *sessionsRun, db *state.SessionDB, action string) (int,
 
 // Whether an error rejects a value the user gave (a title, a filter, an import file, a session too large to export or resume), shown as an error message instead of failing the command
 func isValueError(err error) bool {
-	var ge *errorutil.Error
-	var ce *appClassedError
-	return errors.As(err, &ge) && ge.Kind == "ValueError" || errors.As(err, new(*appValueError)) ||
-		errors.As(err, &ce) && ce.class == "ValueError" || errors.Is(err, state.ErrInvalid) ||
-		errors.As(err, new(*state.SessionExportTooLargeError)) || errors.As(err, new(*state.SessionResumeTooLargeError)) ||
-		errors.As(err, new(*state.TopicAlreadyLinkedError))
+	return errorutil.Kind(err) == "ValueError" || errors.As(err, new(*appValueError))
 }
 
 // Sets the title of one session, refusing an empty or multi line title

@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 )
 
 // Approval choices to the card action ids their buttons carry
@@ -167,13 +167,13 @@ func (a *TeamsAdapter) sendMediaAttachment(ctx context.Context, chatID, source, 
 		var contentURL, mimeType string
 		if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
 			contentURL = source
-			mimeType, _, _ = pymimetypes.GuessType(strings.SplitN(source, "?", 2)[0], true)
+			mimeType = mimeutil.TypeByName(strings.SplitN(source, "?", 2)[0])
 			if mimeType == "" {
 				mimeType = defaultMime
 			}
 		} else {
 			path := strings.TrimPrefix(source, "file://")
-			mimeType, _, _ = pymimetypes.GuessType(path, true)
+			mimeType = mimeutil.TypeByName(path)
 			if mimeType == "" {
 				mimeType = defaultMime
 			}

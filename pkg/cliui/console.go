@@ -11,6 +11,7 @@ import (
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // ErrInterrupt is the KeyboardInterrupt of a prompt or menu

@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -87,21 +86,13 @@ var monoStart = time.Now()
 
 func monoNow() float64 { return time.Since(monoStart).Seconds() }
 
-// DescribeStoreError renders an OSError as errno name and strerror, its plain text without an errno
+// DescribeStoreError renders a store failure as its errno text, its plain text without an errno
 func DescribeStoreError(err error) string {
-	code, _ := pypath.ErrnoName(err)
-	text := ""
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		text = errno.Error()
+		return errno.Error()
 	}
-	if text == "" {
-		text = errchain.OSText(err)
-	}
-	if code != "" {
-		return code + ": " + text
-	}
-	return text
+	return errchain.OSText(err)
 }
 
 func storeReportFields(store, errText string, since *float64) map[string]any {

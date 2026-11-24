@@ -13,13 +13,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Environment variable naming a gateway to attach to instead of this home's own
@@ -86,7 +86,7 @@ func where(remote string) (string, error) {
 	if remote == "" {
 		return "the running gateway", nil
 	}
-	parts, err := pyurl.Split(remote)
+	parts, err := urlutil.Split(remote)
 	dialable := err == nil && (parts.Scheme == "ws" || parts.Scheme == "wss") && parts.Hostname() != ""
 	if dialable {
 		port, named, portErr := parts.Port()

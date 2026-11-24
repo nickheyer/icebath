@@ -46,7 +46,7 @@ func NewConsole(w io.Writer) *Console {
 
 // Prints one markup message with repr highlighting on unwrapped lines so every command in it stays copyable
 func (c *Console) Print(markup string) {
-	(&consoleutil.Console{Out: c.Out, Color: c.Color, Width: c.width(), NoColor: os.Getenv("NO_COLOR") != ""}).PrintSoft(markup)
+	(&consoleutil.Console{Out: c.Out, Color: c.Color, Width: c.width()}).PrintSoft(markup)
 }
 
 // Process exit a plugin command asks for after printing its message

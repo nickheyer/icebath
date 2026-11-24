@@ -7,10 +7,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 	inboundAttachmentChars = `[^\w.\- ]`
 )
 
-var inboundAttachmentUnsafe = pyre.MustCompile(inboundAttachmentChars)
+var inboundAttachmentUnsafe = regexutil.MustCompile(inboundAttachmentChars)
 
 // Model facing routing note for a Discord turn naming the triggering message id
 func discordTriggeringNote(messageID any) string {
@@ -141,7 +141,7 @@ func prependInboundDocumentNotes(ctx context.Context, event *gateway.MessageEven
 			_, ext := pathutil.SplitExt(path)
 			if inboundTextExtensions[strings.ToLower(ext)] {
 				mtype = "text/plain"
-			} else if guessed, _, _ := pymimetypes.GuessType(path, true); guessed != "" {
+			} else if guessed := mimeutil.TypeByName(path); guessed != "" {
 				mtype = guessed
 			} else {
 				mtype = "application/octet-stream"

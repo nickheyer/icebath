@@ -6,7 +6,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -23,23 +22,12 @@ func isASCII(text string) bool {
 	return true
 }
 
-// Replaces each lone surrogate code point with U+FFFD, returning ASCII text untouched
+// Replaces each run of invalid UTF-8 bytes with U+FFFD, returning ASCII text untouched
 func SanitizeSurrogates(text string) string {
 	if isASCII(text) {
 		return text
 	}
-	var b strings.Builder
-	b.Grow(len(text))
-	for i := 0; i < len(text); {
-		r, n := utf8.DecodeRuneInString(text[i:])
-		if pystr.IsSurrogate(r) {
-			b.WriteRune(0xfffd)
-		} else {
-			b.WriteString(text[i : i+n])
-		}
-		i += n
-	}
-	return b.String()
+	return strings.ToValidUTF8(text, string(utf8.RuneError))
 }
 
 // Drops every non ASCII character as the ascii codec with errors ignore does

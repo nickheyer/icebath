@@ -2,8 +2,7 @@ package ruamelyaml
 
 import (
 	"math/big"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	"strconv"
 )
 
 type eventKind int8
@@ -53,14 +52,14 @@ func uriDecodedSuffix(suffix string) string {
 			continue
 		}
 		part := string(pySlice(rs, idx, idx+2))
-		n, ok := pyint.ParseBase(part, 16)
-		if !ok {
+		n, err := strconv.ParseInt(part, 16, 64)
+		if err != nil {
 			panic(Raise("ValueError", "invalid literal for int() with base 16: "+pyStrRepr(part)))
 		}
-		if n.Sign() < 0 || n.Cmp(big.NewInt(0x10FFFF)) > 0 {
+		if n < 0 || n > 0x10FFFF {
 			panic(Raise("ValueError", "chr() arg not in range(0x110000)"))
 		}
-		out = append(out, rune(n.Int64()))
+		out = append(out, rune(n))
 		idx += 2
 	}
 	return string(out)

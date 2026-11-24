@@ -17,11 +17,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
@@ -61,19 +61,19 @@ func (e *commandTimeoutError) Unwrap() error {
 
 // Command provider exited nonzero
 type commandExitError struct {
-	Returncode     int
+	ExitCode       int
 	Command        string
 	Stdout, Stderr string
 }
 
 func (e *commandExitError) Error() string {
-	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", e.Command, e.Returncode)
+	return fmt.Sprintf("Command '%s' returned non-zero exit status %d.", e.Command, e.ExitCode)
 }
 
 // Finished command provider run
 type commandCompleted struct {
 	Command        string
-	Returncode     int
+	ExitCode       int
 	Stdout, Stderr string
 }
 
@@ -135,7 +135,7 @@ func renderCommandTemplate(commandTemplate string, placeholders map[string]strin
 	}
 	sort.Strings(names)
 	alt := strings.Join(names, "|")
-	pattern, err := pyre.Compile(`(?<!\$)(?:\{\{(?P<double>` + alt + `)\}\}|\{(?P<single>` + alt + `)\})`)
+	pattern, err := regexutil.Compile(`(?<!\$)(?:\{\{(?P<double>` + alt + `)\}\}|\{(?P<single>` + alt + `)\})`)
 	if err != nil {
 		panic(err)
 	}
@@ -462,7 +462,7 @@ func runCommandProvider(ctx context.Context, env *tools.Env, command string, tim
 			cause: &commandTimeoutError{Command: command, Timeout: timeout}}
 	}
 	if rc := p.returncode(); rc != 0 {
-		return nil, &commandExitError{Returncode: rc, Command: command, Stdout: stdout, Stderr: stderr}
+		return nil, &commandExitError{ExitCode: rc, Command: command, Stdout: stdout, Stderr: stderr}
 	}
 	return &commandCompleted{Command: command, Stdout: stdout, Stderr: stderr}, nil
 }
@@ -553,7 +553,7 @@ func generateCommandTTS(ctx context.Context, env *tools.Env, text, outputPath st
 		case errors.As(err, &te):
 			return "", &ttsRuntimeError{fmt.Sprintf("TTS provider '%s' timed out after %ss", p.Name, strconv.FormatFloat(timeout, 'g', 6, 64)), err}
 		case errors.As(err, &ee):
-			return "", &ttsRuntimeError{fmt.Sprintf("TTS provider '%s' exited with code %d: %s", p.Name, ee.Returncode, commandFailureDetail(ee)), err}
+			return "", &ttsRuntimeError{fmt.Sprintf("TTS provider '%s' exited with code %d: %s", p.Name, ee.ExitCode, commandFailureDetail(ee)), err}
 		}
 		return "", err
 	}

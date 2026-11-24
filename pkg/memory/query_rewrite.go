@@ -7,10 +7,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Auxiliary task the rewrite runs under, its model and timeout set in auxiliary.memory_query_rewrite
@@ -39,9 +39,9 @@ var (
 // Pattern of the rewrite checks compiled with Python matching semantics, under re.IGNORECASE when ignoreCase is set
 func queryRewritePattern(pattern string, ignoreCase bool) *regexp2.Regexp {
 	if !ignoreCase {
-		return pyre.MustCompile(pattern)
+		return regexutil.MustCompile(pattern)
 	}
-	re, err := pyre.CompileIgnoreCase(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.IgnoreCase())
 	if err != nil {
 		panic(err)
 	}

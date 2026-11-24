@@ -3,10 +3,9 @@ package home
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Home subdirectory, a populated legacy directory winning over the new subpath
@@ -25,7 +24,7 @@ func legacyPathHasContent(p string) bool {
 		st, err = os.Stat(p)
 	}
 	if err != nil {
-		return pypath.OSErrorClass(err) != "FileNotFoundError"
+		return !errors.Is(err, fs.ErrNotExist)
 	}
 	if !st.IsDir() {
 		return true

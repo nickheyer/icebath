@@ -244,7 +244,7 @@ func waitForOptIn(ctx context.Context, dashboardID, secret, phone, agentNumber s
 }
 
 // Error class of an error carrying a Python type name
-type pyTyped interface{ PyTypeName() string }
+type pyTyped interface{ ErrorKind() string }
 
 // First time setup, device login, project, credentials, phone, sidecar deps and platform enablement
 func cmdSetup(ctx context.Context, opts setupOptions, out, errOut io.Writer) int {
@@ -275,7 +275,7 @@ func cmdSetup(ctx context.Context, opts setupOptions, out, errOut io.Writer) int
 	} else {
 		user, created, err := RegisterUserIfAbsent(ctx, dashboardID, secret, phone, UserFields{FirstName: opts.firstName, LastName: opts.lastName, Email: opts.email})
 		if err != nil {
-			if typed, ok := err.(pyTyped); ok && typed.PyTypeName() == "ValueError" {
+			if typed, ok := err.(pyTyped); ok && typed.ErrorKind() == "ValueError" {
 				fmt.Fprintf(errOut, "      invalid phone number: %v\n", err)
 			} else {
 				fmt.Fprintf(errOut, "      user registration failed: %v\n", err)

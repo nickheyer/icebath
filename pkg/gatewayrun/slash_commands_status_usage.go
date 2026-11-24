@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -350,19 +349,19 @@ func (r *GatewayRunner) handleInsightsCommand(ctx context.Context, event *gatewa
 		hasValue := i+1 < len(parts)
 		switch {
 		case flag == "--days" && hasValue:
-			n, ok := pystr.IntText(parts[i+1])
-			if !ok || !n.IsInt64() {
+			n, err := textutil.ParseInt(parts[i+1])
+			if err != nil {
 				return i18n.T(ctx, "gateway.insights.invalid_days", "", map[string]any{"value": parts[i+1]}), nil
 			}
-			days = int(n.Int64())
+			days = int(n)
 			i += 2
 		case flag == "--source" && hasValue:
 			source = parts[i+1]
 			i += 2
 		default:
 			if textutil.IsDigits(flag) {
-				if n, ok := pystr.IntText(flag); ok && n.IsInt64() {
-					days = int(n.Int64())
+				if n, err := textutil.ParseInt(flag); err == nil {
+					days = int(n)
 				}
 			}
 			i++

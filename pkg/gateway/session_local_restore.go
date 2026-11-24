@@ -11,9 +11,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
@@ -149,7 +149,7 @@ func checkErrorClass(err error) string {
 	if errors.As(err, &undecodable) {
 		return "JSONDecodeError"
 	}
-	return pyrepr.ExceptionName(err)
+	return errorutil.Kind(err)
 }
 
 // True for the KeyError, TypeError, ValueError and AttributeError family a refused receipt raises

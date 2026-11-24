@@ -83,22 +83,25 @@ func TestDiscordPromptTimeoutConfiguredThroughTheProfilesConfigYAML(t *testing.T
 }
 
 func TestDMRoleAuthGuildIsOptIn(t *testing.T) {
-	cases := []struct{ yaml, want string }{
-		{"discord:\n  dm_role_auth_guild: 123456789012345678\n", "123456789012345678"},
-		{"discord:\n  dm_role_auth_guild: ' 42 '\n", "42"},
-		{"discord:\n  dm_role_auth_guild: ''\n", ""},
-		{"discord:\n  dm_role_auth_guild: 0\n", ""},
-		{"discord:\n  dm_role_auth_guild: -5\n", ""},
-		{"discord:\n  dm_role_auth_guild: guild\n", ""},
-		{"discord: {}\n", ""},
-		{"discord:\n", ""},
-		{"discord: flat\n", ""},
-		{"", ""},
+	cases := []struct {
+		yaml string
+		want int64
+	}{
+		{"discord:\n  dm_role_auth_guild: 123456789012345678\n", 123456789012345678},
+		{"discord:\n  dm_role_auth_guild: ' 42 '\n", 42},
+		{"discord:\n  dm_role_auth_guild: ''\n", 0},
+		{"discord:\n  dm_role_auth_guild: 0\n", 0},
+		{"discord:\n  dm_role_auth_guild: -5\n", 0},
+		{"discord:\n  dm_role_auth_guild: guild\n", 0},
+		{"discord:\n  dm_role_auth_guild: 99999999999999999999\n", 0},
+		{"discord: {}\n", 0},
+		{"discord:\n", 0},
+		{"discord: flat\n", 0},
+		{"", 0},
 	}
 	for _, c := range cases {
-		got := configAdapter(t, c.yaml).dmRoleAuthGuild(context.Background())
-		if (c.want == "" && got != nil) || (c.want != "" && (got == nil || got.String() != c.want)) {
-			t.Fatalf("config %q = %v", c.yaml, got)
+		if got := configAdapter(t, c.yaml).dmRoleAuthGuild(context.Background()); got != c.want {
+			t.Fatalf("config %q = %d, want %d", c.yaml, got, c.want)
 		}
 	}
 }

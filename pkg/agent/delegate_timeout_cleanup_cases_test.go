@@ -46,7 +46,7 @@ func TestTimeoutDoesNotCloseChildWhileWorkerIsUnwinding(t *testing.T) {
 	var allowOnce sync.Once
 	t.Cleanup(func() { allowOnce.Do(func() { close(allowFinish) }) })
 	scriptChildConversation(t, child, func(context.Context) (map[string]any, error) {
-		if !child.hardInterruptRequested.Wait(30) {
+		if !child.hardInterruptRequested.WaitTimeout(30 * time.Second) {
 			t.Error("the timeout never interrupted the child")
 		}
 		close(unwinding)

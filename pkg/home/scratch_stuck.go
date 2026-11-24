@@ -76,7 +76,6 @@ func writeStuck(root string, state *stuckState) {
 	}
 	obj := jsonutil.NewObject()
 	for _, k := range state.keys {
-		obj.Keys = append(obj.Keys, k)
 		obj.Set(k, state.recs[k])
 	}
 	text, err := jsonutil.Encode(obj, jsonutil.Indent(1), jsonutil.SortKeys())
@@ -243,8 +242,6 @@ func recordStuck(root, entry string, blockers []string, audit *pruneAudit) {
 	}
 	uid := os.Geteuid()
 	kept := blockers[:min(len(blockers), maxStuckBlockers)]
-	rec := jsonutil.NewObject()
-	rec.Keys = []string{"fp", "since", "uid", "blockers"}
 	fpList := make([]any, len(fp))
 	for i, n := range fp {
 		fpList[i] = n
@@ -253,7 +250,7 @@ func recordStuck(root, entry string, blockers []string, audit *pruneAudit) {
 	for i, b := range kept {
 		blockerList[i] = b
 	}
-	rec.Vals["fp"], rec.Vals["since"], rec.Vals["uid"], rec.Vals["blockers"] = fpList, scratchNow(), int64(uid), blockerList
+	rec := jsonutil.ObjectOf("fp", fpList, "since", scratchNow(), "uid", int64(uid), "blockers", blockerList)
 	_ = lockStuck(root, func() {
 		state := readStuck(root)
 		state.set(filepath.Base(entry), rec)

@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"gopkg.in/yaml.v3"
 )
 
@@ -588,7 +589,7 @@ func validateManifestAndProbe(ctx context.Context, path string, probe *capabilit
 	}
 	raw, err := os.ReadFile(manifestFile)
 	if err == nil {
-		err = strictUTF8(raw)
+		err = textutil.ValidateUTF8(raw)
 	}
 	var doc any
 	if err == nil {

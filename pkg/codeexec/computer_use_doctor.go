@@ -92,9 +92,9 @@ func cliDriverVersion(ctx context.Context, env *tools.Env, binary string) (strin
 	if err != nil {
 		return "fail", "--version failed: " + err.Error()
 	}
-	text, failed := combinedOutput(cp), cp.Returncode != 0
+	text, failed := combinedOutput(cp), cp.ExitCode != 0
 	if failed && text == "" {
-		return "fail", fmt.Sprintf("--version exited %d", cp.Returncode)
+		return "fail", fmt.Sprintf("--version exited %d", cp.ExitCode)
 	}
 	status := "pass"
 	if failed {

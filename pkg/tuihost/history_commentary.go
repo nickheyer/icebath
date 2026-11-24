@@ -42,7 +42,7 @@ func (e *DisplayMetadataError) Error() string {
 }
 
 // Python exception class the error stands for
-func (e *DisplayMetadataError) PyTypeName() string { return "AttributeError" }
+func (e *DisplayMetadataError) ErrorKind() string { return "AttributeError" }
 
 // Output text of the assistant message items whose phase is in phases, the nil key standing for no phase
 func phaseMessageItems(message map[string]any, phases map[string]bool, unphased bool) []string {

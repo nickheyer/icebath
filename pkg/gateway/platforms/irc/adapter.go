@@ -20,9 +20,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Lowercased env values that read as true
@@ -32,18 +32,18 @@ var markdownRules = []struct {
 	re   *regexp2.Regexp
 	repl string
 }{
-	{pyre.MustCompile(`\*\*(.+?)\*\*`), "$1"},
-	{pyre.MustCompile(`__(.+?)__`), "$1"},
-	{pyre.MustCompile(`\*(.+?)\*`), "$1"},
-	{pyre.MustCompile(`(?<!\w)_(.+?)_(?!\w)`), "$1"},
-	{pyre.MustCompile("`(.+?)`"), "$1"},
-	{pyre.MustCompile("```\\w*\\n?"), ""},
-	{pyre.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`), "$2"},
-	{pyre.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`), "$1 ($2)"},
+	{regexutil.MustCompile(`\*\*(.+?)\*\*`), "$1"},
+	{regexutil.MustCompile(`__(.+?)__`), "$1"},
+	{regexutil.MustCompile(`\*(.+?)\*`), "$1"},
+	{regexutil.MustCompile(`(?<!\w)_(.+?)_(?!\w)`), "$1"},
+	{regexutil.MustCompile("`(.+?)`"), "$1"},
+	{regexutil.MustCompile("```\\w*\\n?"), ""},
+	{regexutil.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`), "$2"},
+	{regexutil.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`), "$1 ($2)"},
 }
 
 // Trailing numeric suffix of a collision retried nick
-var nickSuffixRE = pyre.MustCompile(`_(\d+)$`)
+var nickSuffixRE = regexutil.MustCompile(`_(\d+)$`)
 
 // One parsed IRC protocol line
 type ircMessage struct {

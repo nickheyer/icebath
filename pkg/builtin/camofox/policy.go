@@ -16,10 +16,10 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -161,18 +161,18 @@ type riskyPattern struct {
 }
 
 var riskyEvalPatterns = []riskyPattern{
-	{pyre.MustCompile(`(?i)\bdocument\s*\.\s*cookie\b`), "document.cookie"},
-	{pyre.MustCompile(`(?i)\b(?:localStorage|sessionStorage)\b`), "web storage"},
-	{pyre.MustCompile(`(?i)\bindexedDB\b`), "IndexedDB"},
-	{pyre.MustCompile(`(?i)\bcaches\s*\.\s*(?:open|match|keys)\b`), "Cache Storage"},
-	{pyre.MustCompile(`(?i)\bnavigator\s*\.\s*(?:clipboard|credentials|serviceWorker)\b`), "navigator sensitive API"},
-	{pyre.MustCompile(`(?i)\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(`), "network request"},
-	{pyre.MustCompile(`(?i)\bnavigator\s*\.\s*sendBeacon\s*\(`), "network beacon"},
-	{pyre.MustCompile(`(?is)\bdocument\s*\.\s*forms\b.*\bvalue\b`), "form value extraction"},
-	{pyre.MustCompile(`(?is)\bquerySelector(?:All)?\s*\([^)]*(?:input|textarea|password)[^)]*\).*\bvalue\b`), "form value extraction"},
+	{regexutil.MustCompile(`(?i)\bdocument\s*\.\s*cookie\b`), "document.cookie"},
+	{regexutil.MustCompile(`(?i)\b(?:localStorage|sessionStorage)\b`), "web storage"},
+	{regexutil.MustCompile(`(?i)\bindexedDB\b`), "IndexedDB"},
+	{regexutil.MustCompile(`(?i)\bcaches\s*\.\s*(?:open|match|keys)\b`), "Cache Storage"},
+	{regexutil.MustCompile(`(?i)\bnavigator\s*\.\s*(?:clipboard|credentials|serviceWorker)\b`), "navigator sensitive API"},
+	{regexutil.MustCompile(`(?i)\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\s*\(`), "network request"},
+	{regexutil.MustCompile(`(?i)\bnavigator\s*\.\s*sendBeacon\s*\(`), "network beacon"},
+	{regexutil.MustCompile(`(?is)\bdocument\s*\.\s*forms\b.*\bvalue\b`), "form value extraction"},
+	{regexutil.MustCompile(`(?is)\bquerySelector(?:All)?\s*\([^)]*(?:input|textarea|password)[^)]*\).*\bvalue\b`), "form value extraction"},
 }
 
-var jsStringLiteralRE = pyre.MustCompile("(?s)'(?:\\\\.|[^'\\\\])*'|\"(?:\\\\.|[^\"\\\\])*\"|`(?:\\\\.|[^`\\\\])*`")
+var jsStringLiteralRE = regexutil.MustCompile("(?s)'(?:\\\\.|[^'\\\\])*'|\"(?:\\\\.|[^\"\\\\])*\"|`(?:\\\\.|[^`\\\\])*`")
 
 // Token a decoded string literal or a bare word may spell, with its pattern and reason
 type sensitiveToken struct {
@@ -183,7 +183,7 @@ type sensitiveToken struct {
 
 // Sensitive token with its case insensitive whole word pattern
 func newSensitiveToken(token, reason string) sensitiveToken {
-	return sensitiveToken{token: token, word: pyre.MustCompile(`(?i)\b` + token + `\b`), reason: reason}
+	return sensitiveToken{token: token, word: regexutil.MustCompile(`(?i)\b` + token + `\b`), reason: reason}
 }
 
 var sensitiveEvalTokens = []sensitiveToken{

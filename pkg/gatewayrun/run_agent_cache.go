@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -102,14 +101,14 @@ func ephemeralChangeKey(ctx context.Context, sc *gateway.SessionContext, redactP
 		}
 		return *v
 	}
-	discordIDs := pyrepr.Tuple{}
+	discordIDs := []any{}
 	discordTools, slackTools := "", ""
 	if src.Platform == gateway.PlatformDiscord {
 		discordTools = "0"
 		if gateway.DiscordToolsLoaded(ctx) {
 			discordTools = "1"
 		}
-		discordIDs = pyrepr.Tuple{s(src.GuildID), s(src.ParentChatID), s(src.ThreadID), src.ChatID}
+		discordIDs = []any{s(src.GuildID), s(src.ParentChatID), s(src.ThreadID), src.ChatID}
 	}
 	if src.Platform == gateway.PlatformSlack {
 		slackTools = "0"
@@ -117,11 +116,11 @@ func ephemeralChangeKey(ctx context.Context, sc *gateway.SessionContext, redactP
 			slackTools = "1"
 		}
 	}
-	connected := pyrepr.Tuple{}
+	connected := []any{}
 	for _, p := range sc.ConnectedPlatforms {
 		connected = append(connected, string(p))
 	}
-	homes := pyrepr.Tuple{}
+	homes := []any{}
 	if sc.HomeChannels != nil {
 		for p, hc := range sc.HomeChannels.All() {
 			name, chatID := "", ""
@@ -131,10 +130,10 @@ func ephemeralChangeKey(ctx context.Context, sc *gateway.SessionContext, redactP
 				}
 				chatID = hc.ChatID
 			}
-			homes = append(homes, pyrepr.Tuple{string(p), name, chatID})
+			homes = append(homes, []any{string(p), name, chatID})
 		}
 	}
-	key := pyrepr.Tuple{
+	key := []any{
 		string(src.Platform),
 		src.ChatID, s(src.ThreadID), src.ChatType, s(src.ChatName), s(src.ChatTopic),
 		s(src.UserName), s(src.UserID), s(src.Profile),

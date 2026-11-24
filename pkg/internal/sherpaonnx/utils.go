@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/tokenizers/sentencepiece"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // What text2token reaches outside the package, the stream print writes to
@@ -80,15 +80,11 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 		if _, dup := tokensTable[toks[0]]; dup {
 			return nil, &PyError{Class: "AssertionError", Msg: "Duplicate token: " + strList(toks) + " "}
 		}
-		id, ok := pyint.Parse(toks[1])
-		if !ok {
+		id, err := textutil.ParseInt(toks[1])
+		if err != nil {
 			return nil, &PyError{Class: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(toks[1])}
 		}
-		if id.IsInt64() {
-			tokensTable[toks[0]] = int(id.Int64())
-		} else {
-			tokensTable[toks[0]] = id
-		}
+		tokensTable[toks[0]] = int(id)
 	}
 	var sp *sentencepiece.Processor
 	if strings.Contains(tokensType, "bpe") {

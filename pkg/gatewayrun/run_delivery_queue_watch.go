@@ -4,12 +4,14 @@ import (
 	"context"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
-// Seconds between looks at the queue file inside one housekeeping interval
-const deliveryQueueWatchSeconds = 1.0
+// Time between looks at the queue file inside one housekeeping interval
+const deliveryQueueWatchInterval = time.Second
 
 // Chore label of the drain the watch triggers
 const deliveryQueueDrainLabel = "Cron durable delivery queue drain"
@@ -75,22 +77,21 @@ func (w *DeliveryQueueWatch) Changed(ctx context.Context) bool {
 }
 
 // Sleeps one housekeeping interval, draining the worker queue the moment it changes
-func waitForNextTick(ctx context.Context, stopEvent *syncutil.Event, interval float64, watch *DeliveryQueueWatch, chore func(label string, fn func())) {
+func waitForNextTick(ctx context.Context, stopEvent *syncutil.Event, interval time.Duration, watch *DeliveryQueueWatch, chore func(label string, fn func())) {
 	if watch == nil {
-		stopEvent.Wait(interval)
+		stopEvent.WaitTimeout(interval)
 		return
 	}
 	watch.refreshHomes()
-	deadline := timeutil.Monotonic() + interval
+	deadline := time.Now().Add(interval)
 	for {
-		remaining := max(0.0, deadline-timeutil.Monotonic())
-		if stopEvent.Wait(min(remaining, deliveryQueueWatchSeconds)) {
+		if stopEvent.WaitTimeout(min(time.Until(deadline), deliveryQueueWatchInterval)) {
 			return
 		}
 		if watch.Changed(ctx) {
 			chore(deliveryQueueDrainLabel, watch.Drain)
 		}
-		if timeutil.Monotonic() >= deadline {
+		if !time.Now().Before(deadline) {
 			return
 		}
 	}

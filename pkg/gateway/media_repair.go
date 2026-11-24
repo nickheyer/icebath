@@ -8,9 +8,9 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const (
@@ -25,7 +25,7 @@ var (
 )
 
 func mustFullmatchPy(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileFullmatch(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.Whole())
 	if err != nil {
 		panic(err)
 	}

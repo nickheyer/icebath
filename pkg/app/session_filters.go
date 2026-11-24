@@ -5,13 +5,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
-	bareDaysRE, _ = pyre.CompileFullmatch(`\d+(?:\.\d+)?`)
-	durationRE    = pyre.MustCompile(`^(\d+(?:\.\d+)?)\s*` +
+	bareDaysRE, _ = regexutil.Compile(`\d+(?:\.\d+)?`, regexutil.Whole())
+	durationRE    = regexutil.MustCompile(`^(\d+(?:\.\d+)?)\s*` +
 		`(s|sec|secs|second|seconds|` +
 		`m|min|mins|minute|minutes|` +
 		`h|hr|hrs|hour|hours|` +
@@ -44,20 +46,13 @@ func parsePointInTime(value any, flag string) (float64, error) {
 	if dur, ok := parseDurationSeconds(s); ok {
 		return float64(time.Now().UnixNano())/1e9 - dur, nil
 	}
-	dt, aware, err := timeutil.ParseISOZone(s, time.UTC)
+	dt, err := timeutil.ParseISO(s, time.Local)
 	if err != nil {
 		return 0, &errorutil.Error{Kind: "ValueError", Msg: "Invalid value for " + flag + ": '" + anyutil.String(value) + "'. Use a duration like '5h', " +
 			"'30m', '2d', '1w', a bare number of days, or an ISO timestamp " +
 			"like '2026-07-05' or '2026-07-05 14:30'."}
 	}
-	if aware {
-		return timeutil.Epoch(dt.UTC()), nil
-	}
-	seconds, ok := pydatetime.LocalToSeconds(dt, time.Local, 0, pydatetime.LocaltimeAccepts)
-	if !ok {
-		return 0, &errorutil.Error{Kind: "OverflowError", Msg: "timestamp out of range for platform time_t"}
-	}
-	return float64(seconds) + float64(dt.Nanosecond()/1000)/1e6, nil
+	return timeutil.Epoch(dt), nil
 }
 
 // Short local time of an epoch timestamp, a dash when unset or corrupt

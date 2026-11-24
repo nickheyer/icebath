@@ -6,9 +6,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 )
 
 const (
@@ -51,7 +51,7 @@ func decodePixels(dataURL string) (w, h int, ok bool) {
 	if data == "" || !strings.HasPrefix(dataURL, "data:") {
 		return 0, 0, false
 	}
-	raw, err := pybase64.B64Decode(data)
+	raw, err := base64util.Decode(data)
 	if err != nil {
 		return 0, 0, false
 	}
@@ -110,7 +110,7 @@ func shrinkDataURL(value any, maxDimension int) (resized string, unshrinkable bo
 func reencodeDataURL(url string, maxDimension int) (string, error) {
 	header, data, _ := strings.Cut(url, ",")
 	mime := dataURLMIME(header, "image/jpeg")
-	raw, err := pybase64.B64Decode(data)
+	raw, err := base64util.Decode(data)
 	if err != nil {
 		return "", err
 	}

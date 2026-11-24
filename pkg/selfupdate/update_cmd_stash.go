@@ -17,8 +17,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -84,11 +82,7 @@ func dropRunes(s string, n int) string {
 
 // File system bytes of a path decoded with surrogateescape
 func fsEncode(path string) string {
-	raw, err := pystr.SurrogateEscapeEncode(path)
-	if err != nil {
-		return path
-	}
-	return string(raw)
+	return path
 }
 
 // NUL separated path listing as a set of surrogateescape decoded names, false when git failed
@@ -482,7 +476,7 @@ func warnOrphanedUpdateAutostashes(ctx context.Context, w io.Writer, gitCmd []st
 			continue
 		}
 		stamp := clipRunes(subject[pos+len(autostashNamePrefix):], 15)
-		stashTime, _, err := pydatetime.Strptime(stamp, "%Y%m%d-%H%M%S")
+		stashTime, err := time.Parse("20060102-150405", stamp)
 		if err != nil {
 			continue
 		}

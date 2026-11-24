@@ -4,12 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"math/big"
 	"os"
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -27,27 +25,27 @@ func verifyWorkerIdentity(process *workerProcess, hello *jsonutil.Object) (int, 
 	rawPID, _ := hello.Get("pid")
 	rawBirth, _ := hello.Get("birth")
 	rawAncestors, _ := hello.Get("ancestors")
-	pidValue, pidIsInt := pyrepr.Int(rawPID)
+	pidValue, pidIsInt := anyutil.Int(rawPID)
 	_, birthIsFloat := rawBirth.(float64)
-	_, birthIsInt := pyrepr.Int(rawBirth)
+	_, birthIsInt := anyutil.Int(rawBirth)
 	ancestors, ancestorsList := rawAncestors.([]any)
 	valid := hello != nil && kind == "hello" && pidIsInt && (birthIsFloat || birthIsInt) && ancestorsList
 	for _, ancestor := range ancestors {
-		if _, isInt := pyrepr.Int(ancestor); !isInt {
+		if _, isInt := anyutil.Int(ancestor); !isInt {
 			valid = false
 		}
 	}
 	if !valid {
 		return 0, 0, runtimeRefusal("invalid_worker_frame")
 	}
-	if pidValue.Sign() <= 0 || !pidValue.IsInt64() || pidValue.Int64() == int64(os.Getpid()) {
+	if pidValue <= 0 || pidValue == int64(os.Getpid()) {
 		return 0, 0, runtimeRefusal("permission_denied")
 	}
-	pid := int(pidValue.Int64())
+	pid := int(pidValue)
 	claimed, _ := rawBirth.(float64)
 	if birthIsInt {
-		n, _ := pyrepr.Int(rawBirth)
-		claimed, _ = new(big.Float).SetInt(n).Float64()
+		n, _ := anyutil.Int(rawBirth)
+		claimed = float64(n)
 	}
 	ppid, ok := proc.PPID(process.Pid)
 	if !ok {
@@ -177,11 +175,11 @@ func loseAdmissionWorker(ctx context.Context, a *SessionAuthority, row, scope *j
 		epoch, _ := scope.Get("epoch")
 		generation, _ := scope.Get("generation")
 		executionID := pyStrOf(scope.ValueOr("execution_id", nil))
-		epochValue, _ := pyrepr.Int(epoch)
-		if epochValue == nil {
+		epochValue, isInt := anyutil.Int(epoch)
+		if !isInt {
 			return &PyError{Kind: "TypeError", Msg: "epoch must be an int"}
 		}
-		if err := state.RuntimeEpoch(ctx, conn, epochValue.Int64()); err != nil {
+		if err := state.RuntimeEpoch(ctx, conn, epochValue); err != nil {
 			return err
 		}
 		current, err := state.RuntimeAdmission(ctx, conn, rowString(row, "admission_id"))

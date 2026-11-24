@@ -7,19 +7,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"math"
 	"math/big"
+	"net/http"
 	"os"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // ---- usage_pricing: cost computation ----
@@ -1047,11 +1045,11 @@ func rawPriceString(v any) string {
 func pricingGetJSONHTTP(url string, headers map[string]string, timeout time.Duration, credentialed bool) map[string]any {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	var lines []pyhttpx.HeaderLine
-	for _, k := range slices.Sorted(maps.Keys(headers)) {
-		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
+	header := http.Header{}
+	for k, v := range headers {
+		header.Set(k, v)
 	}
-	resp, err := urllibOpen(ctx, urllibCall{url: url, headers: lines, credentialed: credentialed, timeout: timeout})
+	resp, err := urllibOpen(ctx, urllibCall{url: url, headers: header, credentialed: credentialed, timeout: timeout})
 	if err != nil {
 		return nil
 	}
@@ -1145,11 +1143,11 @@ func FetchModelsWithPricing(ctx context.Context, opts PricingFetchOptions) Prici
 		}
 	}
 	url := root + "/v1/models"
-	lines := []pyhttpx.HeaderLine{{Name: "Accept", Value: "application/json"}, {Name: "User-Agent", Value: userAgent("icebath-cli")}}
+	lines := []headerField{{Name: "Accept", Value: "application/json"}, {Name: "User-Agent", Value: userAgent("icebath-cli")}}
 	if opts.APIKey != "" {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + opts.APIKey})
+		lines = append(lines, headerField{Name: "Authorization", Value: "Bearer " + opts.APIKey})
 	}
-	payload := pricingGetJSON(url, pyhttpx.OrderedHeaderMap(lines...), opts.Timeout, true)
+	payload := pricingGetJSON(url, fieldMap(lines...), opts.Timeout, true)
 	if payload == nil {
 		return cacheCatalog(cacheKey, PricingTable{}, 0)
 	}
@@ -1252,11 +1250,11 @@ func fetchKilocodePricing(timeout time.Duration, forceRefresh bool) PricingTable
 			return cached
 		}
 	}
-	lines := []pyhttpx.HeaderLine{{Name: "Accept", Value: "application/json"}, {Name: "User-Agent", Value: userAgent("icebath-cli")}}
+	lines := []headerField{{Name: "Accept", Value: "application/json"}, {Name: "User-Agent", Value: userAgent("icebath-cli")}}
 	if apiKey := strings.TrimSpace(os.Getenv("KILOCODE_API_KEY")); apiKey != "" {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey})
+		lines = append(lines, headerField{Name: "Authorization", Value: "Bearer " + apiKey})
 	}
-	payload := pricingGetJSON(cacheKey+"/models", pyhttpx.OrderedHeaderMap(lines...), timeout, true)
+	payload := pricingGetJSON(cacheKey+"/models", fieldMap(lines...), timeout, true)
 	if payload == nil {
 		return cacheCatalog(cacheKey, PricingTable{}, 0)
 	}
@@ -1453,8 +1451,8 @@ func fetchNovitaPricing(timeout time.Duration, forceRefresh bool) PricingTable {
 			return cached
 		}
 	}
-	headers := pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey}, pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"},
-		pyhttpx.HeaderLine{Name: "User-Agent", Value: userAgent("icebath-cli")})
+	headers := fieldMap(headerField{Name: "Authorization", Value: "Bearer " + apiKey}, headerField{Name: "Accept", Value: "application/json"},
+		headerField{Name: "User-Agent", Value: userAgent("icebath-cli")})
 	payload := pricingGetJSON(cacheKey+"/models", headers, timeout, true)
 	if payload == nil {
 		return cacheCatalog(cacheKey, PricingTable{}, 0)

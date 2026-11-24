@@ -6,19 +6,19 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
+	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -80,7 +80,7 @@ var versionOpRe = regexp.MustCompile(`^\s*(>=|<=|==|!=|>|<)\s*(.+?)\s*\n?$`)
 var semverSplitRe = regexp.MustCompile(`[-+]`)
 
 // Major, minor and patch of a version with any pre-release or build suffix dropped
-func parseSemver(v string) ([3]*big.Int, error) {
+func parseSemver(v string) ([3]int64, error) {
 	head := strings.TrimLeft(strings.TrimSpace(v), "v")
 	if loc := semverSplitRe.FindStringIndex(head); loc != nil {
 		head = head[:loc[0]]
@@ -89,10 +89,11 @@ func parseSemver(v string) ([3]*big.Int, error) {
 	for len(parts) < 3 {
 		parts = append(parts, "0")
 	}
-	var out [3]*big.Int
+	var out [3]int64
 	for i := range out {
-		n, ok := pyint.Parse(parts[i])
-		if !ok {
+		// A part past what an int64 holds is held at the bound on its side
+		n, err := strconv.ParseInt(strings.TrimSpace(parts[i]), 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return out, distErr("Unparseable version: %s", anyutil.Quote(v))
 		}
 		out[i] = n
@@ -117,11 +118,8 @@ func CheckIcebathRequires(spec, current string) error {
 	if err != nil {
 		return err
 	}
-	cmp := 0
-	for i := 0; i < 3 && cmp == 0; i++ {
-		cmp = cur[i].Cmp(want[i])
-	}
-	ok := map[string]bool{">=": cmp >= 0, "<=": cmp <= 0, "==": cmp == 0, "!=": cmp != 0, ">": cmp > 0, "<": cmp < 0}[op]
+	order := slices.Compare(cur[:], want[:])
+	ok := map[string]bool{">=": order >= 0, "<=": order <= 0, "==": order == 0, "!=": order != 0, ">": order > 0, "<": order < 0}[op]
 	if !ok {
 		return distErr("This distribution requires Icebath %s%s, but you have %s.", op, target, current)
 	}

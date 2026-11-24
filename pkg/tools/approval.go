@@ -14,9 +14,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Process wide yolo flag frozen at start so a skill cannot flip it through the environment later
@@ -1256,7 +1256,7 @@ var runtimeCommandPrefixes = map[string]bool{"sudo": true, "command": true, "noh
 
 var runtimeDeletingCommands = map[string]bool{"rm": true, "rmdir": true, "rd": true, "del": true, "erase": true, "remove-item": true, "ri": true}
 
-var runtimeFindDeleteRe = pyre.MustCompile(`(?i)(?:^|\s)-(?:delete|exec\s+rm\b)`)
+var runtimeFindDeleteRe = regexutil.MustCompile(`(?i)(?:^|\s)-(?:delete|exec\s+rm\b)`)
 
 var runtimeEnvAssignRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*=`)
 

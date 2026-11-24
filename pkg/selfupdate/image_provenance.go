@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -59,17 +59,17 @@ func ReadImageProvenance(markerPath string) *ImageProvenance {
 	}
 	info, err := os.Lstat(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) && pypath.OSErrorClass(err) == "FileNotFoundError" {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		return invalidProvenance(path, "marker_presence_unreadable:"+pypath.OSErrorClass(err))
+		return invalidProvenance(path, "marker_presence_unreadable:"+errorutil.Kind(err))
 	}
 	if !info.Mode().IsRegular() {
 		return invalidProvenance(path, "marker_not_regular_file")
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return invalidProvenance(path, "marker_unreadable:"+pypath.OSErrorClass(err))
+		return invalidProvenance(path, "marker_unreadable:"+errorutil.Kind(err))
 	}
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(raw) {

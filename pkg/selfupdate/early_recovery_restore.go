@@ -174,7 +174,7 @@ func isGit(path string) bool {
 	if err != nil {
 		return false
 	}
-	return out.Returncode == 0 && strings.HasPrefix(strings.ToValidUTF8(string(out.Stdout), "\uFFFD"), "git version")
+	return out.ExitCode == 0 && strings.HasPrefix(strings.ToValidUTF8(string(out.Stdout), "\uFFFD"), "git version")
 }
 
 // Package with a staged binary under a store entry

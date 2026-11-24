@@ -172,8 +172,8 @@ func pinLoopJudge(t *testing.T, verdict, reason string) {
 // RuntimeError the faked judge raises
 type runtimeErrorPanic struct{ msg string }
 
-func (e *runtimeErrorPanic) Error() string      { return e.msg }
-func (e *runtimeErrorPanic) PyTypeName() string { return "RuntimeError" }
+func (e *runtimeErrorPanic) Error() string     { return e.msg }
+func (e *runtimeErrorPanic) ErrorKind() string { return "RuntimeError" }
 
 func TestDueImmediatelyOnCreate(t *testing.T) {
 	goalsTestHome(t)

@@ -23,7 +23,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools/anydoc"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -627,21 +626,7 @@ func joinedLines(lines []string, emptyError string) (string, error) {
 
 // Decodes UTF-8 replacing each maximal invalid subpart with U+FFFD like errors=replace
 func decodeUTF8Replace(b []byte) string {
-	if utf8.Valid(b) {
-		return string(b)
-	}
-	var sb strings.Builder
-	for i := 0; i < len(b); {
-		r, size := utf8.DecodeRune(b[i:])
-		if r != utf8.RuneError || size > 1 {
-			sb.Write(b[i : i+size])
-			i += size
-			continue
-		}
-		sb.WriteRune(utf8.RuneError)
-		i += pystr.UTF8MaximalSubpart(b[i:])
-	}
-	return sb.String()
+	return strings.ToValidUTF8(string(b), string(utf8.RuneError))
 }
 
 // Notebook source or text field as a string, joining list fragments

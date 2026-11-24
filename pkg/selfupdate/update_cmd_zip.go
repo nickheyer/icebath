@@ -507,19 +507,19 @@ func extractZipSafely(zipPath, tmpDir string) error {
 	if err != nil {
 		return err
 	}
-	for _, member := range archive.Filelist {
-		memberPath, err := pathutil.Resolve(pathutil.Join(tmpDir, member.Filename))
+	for _, member := range archive.File {
+		memberPath, err := pathutil.Resolve(pathutil.Join(tmpDir, member.Name))
 		if err != nil {
 			return err
 		}
 		if !strings.HasPrefix(memberPath, tmpDirReal+string(os.PathSeparator)) && memberPath != tmpDirReal {
-			return &pm.PyError{Class: "ValueError", Message: "Zip-slip detected: " + member.Filename + " escapes extraction directory"}
+			return &pm.PyError{Class: "ValueError", Message: "Zip-slip detected: " + member.Name + " escapes extraction directory"}
 		}
-		if (member.ExternalAttr>>16)&0o170000 == 0o120000 {
-			return &pm.PyError{Class: "ValueError", Message: "ZIP contains unsupported symlink member: " + member.Filename}
+		if (member.ExternalAttrs>>16)&0o170000 == 0o120000 {
+			return &pm.PyError{Class: "ValueError", Message: "ZIP contains unsupported symlink member: " + member.Name}
 		}
 	}
-	return archive.ExtractAll(&tmpDir, nil)
+	return archive.Extract(tmpDir)
 }
 
 // Commit a GitHub archive was made from, read from the ZIP comment, false when it names none
@@ -528,11 +528,8 @@ func archiveCommit(zipPath string) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	raw, err := archive.Comment()
+	raw := []byte(archive.Comment)
 	archive.Close()
-	if err != nil {
-		return "", false, err
-	}
 	var decoded strings.Builder
 	for _, b := range raw {
 		if b < 0x80 {

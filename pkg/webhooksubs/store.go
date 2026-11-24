@@ -38,7 +38,7 @@ type SubscriptionMutationConflict struct{ Msg string }
 func (e *SubscriptionMutationConflict) Error() string { return e.Msg }
 
 // Python exception class name the error stands for
-func (e *SubscriptionMutationConflict) PyTypeName() string { return "SubscriptionMutationConflict" }
+func (e *SubscriptionMutationConflict) ErrorKind() string { return "SubscriptionMutationConflict" }
 
 // Lock file that could not be opened or locked, the RuntimeError of the file lock
 type LockUnavailableError struct {

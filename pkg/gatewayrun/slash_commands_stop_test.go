@@ -17,6 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Slack source of a chat type and chat with an optional thread, user and workspace

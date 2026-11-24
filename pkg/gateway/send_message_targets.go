@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -16,7 +16,7 @@ var phonePlatforms = map[string]bool{"photon": true, "signal": true, "sms": true
 var e164TargetRe = func() interface {
 	MatchString(string) (bool, error)
 } {
-	re, err := pyre.CompileFullmatch(`^\s*\+(\d{7,15})\s*$`)
+	re, err := regexutil.Compile(`^\s*\+(\d{7,15})\s*$`, regexutil.Whole())
 	if err != nil {
 		panic(err)
 	}

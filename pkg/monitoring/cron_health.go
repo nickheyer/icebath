@@ -8,7 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
@@ -67,7 +69,7 @@ var authRE = mustPyRe(`\b(?:authentication|authenticated|authenticate|authorizat
 
 // Python re pattern compiled with CPython matching semantics
 func mustPyRe(pattern string) interface{ MatchString(string) (bool, error) } {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}

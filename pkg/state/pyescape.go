@@ -8,7 +8,6 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
@@ -53,9 +52,9 @@ func latin1Ignore(s string) []byte {
 func pyUnicodeEscapeDecode(data []byte) (string, error) {
 	text, err := charsetutil.Decode(data, "unicode_escape")
 	if err != nil {
-		var bad *pycodecs.UnicodeDecodeError
+		var bad *charsetutil.DecodeError
 		if errors.As(err, &bad) {
-			return "", &pyConvError{"UnicodeDecodeError", fmt.Sprintf("invalid escape at byte %d of a mount path: %s", bad.Pos, bad.Reason)}
+			return "", &pyConvError{"UnicodeDecodeError", fmt.Sprintf("invalid escape at byte %d of a mount path: %s", bad.Offset, bad.Reason)}
 		}
 		return "", &pyConvError{"UnicodeDecodeError", "invalid escape in a mount path: " + err.Error()}
 	}

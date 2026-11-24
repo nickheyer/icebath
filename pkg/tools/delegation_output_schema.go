@@ -2,14 +2,15 @@ package tools
 
 import (
 	"cmp"
-	"errors"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	jsonschemautil "github.com/nickheyer/icebath/pkg/utils/jsonschema"
 )
 
 // Python frames under coerce_output_schema and validate_output when delegate_task runs in the reference tool worker thread
@@ -36,12 +37,8 @@ func CoerceOutputSchema(raw any) (any, string) {
 	if !isJSONObject(raw) {
 		return nil, fmt.Sprintf("output_schema must be a JSON Schema object, got %s.", anyutil.Kind(raw))
 	}
-	if err := pyjsonschema.CheckSchema(raw, coerceOutputSchemaFrameDepth); err != nil {
-		text, failed := pyjsonschema.Str(err, coerceOutputSchemaFrameDepth)
-		if failed != nil {
-			panic(failed)
-		}
-		return nil, "output_schema is not a valid JSON Schema: " + text
+	if _, err := jsonschemautil.Compile(raw); err != nil {
+		return nil, "output_schema is not a valid JSON Schema: " + err.Error()
 	}
 	return raw, ""
 }
@@ -157,30 +154,22 @@ func ValidateOutputAt(text string, schema any, validateDepth int) (bool, []strin
 	if err != nil {
 		return false, []string{"Response is not valid JSON: " + err.Error()}, nil
 	}
-	errs, err := pyjsonschema.IterErrors(parsed, schema, validateDepth)
+	sch, err := jsonschemautil.Compile(schema)
 	if err != nil {
 		return false, nil, err
 	}
-	var typeErr error
-	slices.SortStableFunc(errs, func(a, b *jsonschemautil.ValidationError) int {
-		c, err := comparePaths(a.AbsolutePath, b.AbsolutePath)
-		if err != nil && typeErr == nil {
-			typeErr = err
-		}
-		return c
-	})
-	if typeErr != nil {
-		return false, nil, typeErr
-	}
+	errs := sch.Errors(parsed)
+	slices.SortStableFunc(errs, func(a, b *jsonschemautil.ValidationError) int { return comparePaths(a.InstancePath, b.InstancePath) })
 	rendered := []string{}
 	for _, e := range errs[:min(len(errs), 10)] {
 		var b strings.Builder
 		b.WriteString("$")
-		for _, p := range e.AbsolutePath {
-			if n, ok := p.(int); ok {
-				b.WriteString("[" + strconv.Itoa(n) + "]")
-			} else {
-				b.WriteString("." + anyutil.String(p))
+		for _, p := range e.InstancePath {
+			switch x := p.(type) {
+			case int:
+				b.WriteString("[" + strconv.Itoa(x) + "]")
+			case string:
+				b.WriteString("." + x)
 			}
 		}
 		rendered = append(rendered, b.String()+": "+e.Message)
@@ -188,25 +177,29 @@ func ValidateOutputAt(text string, schema any, validateDepth int) (bool, []strin
 	return len(rendered) == 0, rendered, nil
 }
 
-// Python list ordering of two absolute paths, a TypeError when an index meets a key
-func comparePaths(a, b []any) (int, error) {
+// Order of two paths into a value: positions by number, names by text, a position before a name, a prefix first
+func comparePaths(a, b []any) int {
 	for i := 0; i < min(len(a), len(b)); i++ {
 		an, aInt := a[i].(int)
 		bn, bInt := b[i].(int)
 		switch {
 		case aInt && bInt:
 			if c := cmp.Compare(an, bn); c != 0 {
-				return c, nil
+				return c
 			}
-		case !aInt && !bInt:
-			if c := strings.Compare(anyutil.String(a[i]), anyutil.String(b[i])); c != 0 {
-				return c, nil
-			}
+		case aInt:
+			return -1
+		case bInt:
+			return 1
 		default:
-			return 0, errors.New("cannot order a list position against a field name")
+			as, _ := a[i].(string)
+			bs, _ := b[i].(string)
+			if c := strings.Compare(as, bs); c != 0 {
+				return c
+			}
 		}
 	}
-	return cmp.Compare(len(a), len(b)), nil
+	return cmp.Compare(len(a), len(b))
 }
 
 // Single bounded retry turn carrying the errors verbatim without re-pasting the schema

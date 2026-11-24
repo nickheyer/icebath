@@ -25,10 +25,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -39,9 +38,9 @@ type PhotonDashboardAuthError struct {
 	Cause error
 }
 
-func (e *PhotonDashboardAuthError) Error() string      { return e.Msg }
-func (e *PhotonDashboardAuthError) PyTypeName() string { return "PhotonDashboardAuthError" }
-func (e *PhotonDashboardAuthError) Unwrap() error      { return e.Cause }
+func (e *PhotonDashboardAuthError) Error() string     { return e.Msg }
+func (e *PhotonDashboardAuthError) ErrorKind() string { return "PhotonDashboardAuthError" }
+func (e *PhotonDashboardAuthError) Unwrap() error     { return e.Cause }
 
 // Photon endpoints, the published CLI device client and the RFC 8628 polling defaults
 const (
@@ -67,9 +66,9 @@ type pyError struct {
 	cause error
 }
 
-func (e *pyError) Error() string      { return e.msg }
-func (e *pyError) PyTypeName() string { return e.class }
-func (e *pyError) Unwrap() error      { return e.cause }
+func (e *pyError) Error() string     { return e.msg }
+func (e *pyError) ErrorKind() string { return e.class }
+func (e *pyError) Unwrap() error     { return e.cause }
 
 // httpx.RequestError family raised when a request never produced a response
 type requestError struct {
@@ -78,9 +77,9 @@ type requestError struct {
 	cause error
 }
 
-func (e *requestError) Error() string      { return e.msg }
-func (e *requestError) PyTypeName() string { return e.class }
-func (e *requestError) Unwrap() error      { return e.cause }
+func (e *requestError) Error() string     { return e.msg }
+func (e *requestError) ErrorKind() string { return e.class }
+func (e *requestError) Unwrap() error     { return e.cause }
 
 func runtimeError(format string, args ...any) error {
 	return &pyError{class: "RuntimeError", msg: fmt.Sprintf(format, args...)}
@@ -584,7 +583,7 @@ func (l liveResponse) JSON() (any, error) {
 		return v, nil
 	}
 	class := "JSONDecodeError"
-	if pyrepr.ExceptionName(err) == "UnicodeDecodeError" {
+	if errorutil.Kind(err) == "UnicodeDecodeError" {
 		class = "UnicodeDecodeError"
 	}
 	return nil, &pyError{class: class, msg: err.Error(), cause: err}
@@ -739,14 +738,11 @@ type deviceTokenCandidate struct {
 // int of a device response field with its default, the OverflowError for a value past int64
 func deviceInt(data *jsonutil.Object, key string, def int) (int, error) {
 	v, _ := data.Get(key)
-	n, err := pyint.Of(pyOr(v, def))
+	n, err := anyutil.ToInt(pyOr(v, def))
 	if err != nil {
 		return 0, err
 	}
-	if !n.IsInt64() {
-		return 0, &pyError{class: "OverflowError", msg: "int too large to convert to float"}
-	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Posts the device code request and returns the device and user codes
@@ -852,7 +848,7 @@ func PollForToken(ctx context.Context, code DeviceCode, clientID string, timeout
 			var body any = jsonutil.NewObject()
 			if v, err := resp.JSON(); err == nil {
 				body = pyOr(v, jsonutil.NewObject())
-			} else if pyrepr.ExceptionName(err) != "JSONDecodeError" {
+			} else if errorutil.Kind(err) != "JSONDecodeError" {
 				return "", err
 			}
 			e, err := pyGet(body, "error")
@@ -1651,7 +1647,7 @@ func PrintRoutingStatus(ctx context.Context, emit func(string)) error {
 		if !isProbeFailure(err) {
 			return err
 		}
-		emit("  routing             : ? could not verify (" + pyOr(err.Error(), pyrepr.ExceptionName(err)).(string) + ")")
+		emit("  routing             : ? could not verify (" + pyOr(err.Error(), errorutil.Kind(err)).(string) + ")")
 		return nil
 	}
 	if UserOptedIn(user) {

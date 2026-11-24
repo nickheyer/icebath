@@ -11,23 +11,23 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Python ValueError of a delivery the config cannot route
 type summaryValueError struct{ msg string }
 
-func (e *summaryValueError) Error() string      { return e.msg }
-func (e *summaryValueError) PyTypeName() string { return "ValueError" }
+func (e *summaryValueError) Error() string     { return e.msg }
+func (e *summaryValueError) ErrorKind() string { return "ValueError" }
 
-// HTTPStatusError of an incoming webhook that answered outside the 2xx range
-type summaryHTTPStatusError struct{ msg string }
+// Status error of an incoming webhook that answered outside the 2xx range, kept with its status and URL
+type summaryHTTPStatusError struct{ *httputil.StatusError }
 
-func (e *summaryHTTPStatusError) Error() string      { return e.msg }
-func (e *summaryHTTPStatusError) PyTypeName() string { return "HTTPStatusError" }
+func (e *summaryHTTPStatusError) ErrorKind() string { return "HTTPStatusError" }
+func (e *summaryHTTPStatusError) Unwrap() error     { return e.StatusError }
 
 // Boolean of a config value, the usual on and off words read as such, else the default
 func parseBool(value any, def bool) bool {
@@ -204,7 +204,7 @@ func (w *TeamsSummaryWriter) writeSummaryViaIncomingWebhook(ctx context.Context,
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &summaryHTTPStatusError{resp.StatusErrorText(webhookURL)}
+		return nil, &summaryHTTPStatusError{&httputil.StatusError{StatusCode: resp.StatusCode, Status: resp.Status, URL: webhookURL, Location: resp.Header.Get("Location")}}
 	}
 	return jsonutil.ObjectOf("delivery_mode", "incoming_webhook", "webhook_url", webhookURL, "status_code", resp.StatusCode, "delivered", true), nil
 }
@@ -218,7 +218,7 @@ func (w *TeamsSummaryWriter) writeSummaryViaGraph(ctx context.Context, payload S
 	record := jsonutil.ObjectOf("delivery_mode", "graph")
 	path := ""
 	if chatID := configText(config["chat_id"]); chatID != "" {
-		path = "/chats/" + pyurl.Quote(chatID, "") + "/messages"
+		path = "/chats/" + urlutil.Escape(chatID, "") + "/messages"
 		record.Set("target_type", "chat")
 		record.Set("chat_id", chatID)
 	} else {
@@ -226,7 +226,7 @@ func (w *TeamsSummaryWriter) writeSummaryViaGraph(ctx context.Context, payload S
 		if teamID == "" || channelID == "" {
 			return nil, &summaryValueError{"Graph delivery mode requires chat_id, or both team_id and channel_id."}
 		}
-		path = "/teams/" + pyurl.Quote(teamID, "") + "/channels/" + pyurl.Quote(channelID, "") + "/messages"
+		path = "/teams/" + urlutil.Escape(teamID, "") + "/channels/" + urlutil.Escape(channelID, "") + "/messages"
 		record.Set("target_type", "channel")
 		record.Set("team_id", teamID)
 		record.Set("channel_id", channelID)

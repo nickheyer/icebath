@@ -16,8 +16,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Tool store fixture pinning a stand-in ripgrep, with a hostile rg as the only PATH entry
@@ -111,8 +111,8 @@ func newToolStore(t *testing.T) toolStore {
 func runStoreRg(t *testing.T, env map[string]string) string {
 	t.Helper()
 	path := env["PATH"]
-	rg, ok := pyshutil.Which("rg", &path)
-	if !ok {
+	rg, err := fsutil.LookPathIn("rg", path)
+	if err != nil {
 		t.Fatalf("rg is not on %q", path)
 	}
 	cmd := exec.Command(rg, "--version")
@@ -182,7 +182,7 @@ func TestSealedStoreExtensionMatchesLaunchedTool(t *testing.T) {
 			}
 			env := pm.EnvFor([]string{"ripgrep"}, map[string]string{"PATH": filepath.Dir(store.hostile)})
 			path := env["PATH"]
-			if found, _ := pyshutil.Which("rg", &path); found != binary {
+			if found, _ := fsutil.LookPathIn("rg", path); found != binary {
 				t.Fatalf("rg on the composed PATH = %q", found)
 			}
 			if got := runStoreRg(t, env); got != store.versionOutput {

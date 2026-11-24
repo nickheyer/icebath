@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
-	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -18,13 +18,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -220,7 +219,7 @@ func webhookOpRegex(value, pattern any) (bool, error) {
 	if value == webhookMissing {
 		return false, nil
 	}
-	re, err := pyre.Compile(anyutil.String(pattern))
+	re, err := regexutil.Compile(anyutil.String(pattern))
 	if err != nil {
 		pkgLog().Warn("[webhook] Invalid webhook filter regex: " + err.Error())
 		return false, nil
@@ -323,15 +322,11 @@ func (p *WebhookRouteProcessor) ResolveFilterField(field, payload, eventType any
 			if !webhookIsDigits(part) {
 				return webhookMissing, nil
 			}
-			idx, err := pyint.Of(part)
-			if err != nil {
-				return nil, err
+			idx, err := strconv.Atoi(part)
+			if err != nil || idx >= len(v) {
+				return webhookMissing, nil
 			}
-			if idx.Sign() >= 0 && idx.Cmp(big.NewInt(int64(len(v)))) < 0 {
-				value = v[idx.Int64()]
-			} else {
-				value = webhookMissing
-			}
+			value = v[idx]
 		default:
 			return webhookMissing, nil
 		}
@@ -491,15 +486,15 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 	stdout := strings.TrimSpace(strings.ToValidUTF8(string(result.Stdout), "�"))
 	stderr := strings.TrimSpace(strings.ToValidUTF8(string(result.Stderr), "�"))
 	stdout, stderr = tools.RedactSensitiveText(stdout), tools.RedactSensitiveText(stderr)
-	if result.Returncode != 0 {
+	if result.ExitCode != 0 {
 		level := slog.LevelInfo
 		if stdout == "" && stderr == "" {
 			level = slog.LevelWarn
 		}
 		log.Log(ctx, level, fmt.Sprintf("[webhook] script ignored webhook path=%s code=%d stderr=%s",
-			pathutil.Name(path), result.Returncode, pySliceRunes(stderr, 200)))
+			pathutil.Name(path), result.ExitCode, pySliceRunes(stderr, 200)))
 	}
-	if result.Returncode != 0 || stdout == "" || stdout == "[SILENT]" {
+	if result.ExitCode != 0 || stdout == "" || stdout == "[SILENT]" {
 		return false, nil, nil
 	}
 	var transformed any

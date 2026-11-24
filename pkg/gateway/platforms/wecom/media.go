@@ -23,7 +23,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -32,6 +31,7 @@ import (
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -77,13 +77,13 @@ var typeLimits = map[string]struct {
 }
 
 var (
-	dispositionFilenameRE = pyre.MustCompile(`filename="?([^";]+)"?`)
+	dispositionFilenameRE = regexutil.MustCompile(`filename="?([^";]+)"?`)
 	mediaPlaceholderRE    = mustFullmatch(`<[^>\n]+>`)
 )
 
 // Python pattern that must span the whole subject, panicking on a pattern that does not compile
 func mustFullmatch(pattern string) interface{ MatchString(string) (bool, error) } {
-	re, err := pyre.CompileFullmatch(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.Whole())
 	if err != nil {
 		panic(err)
 	}

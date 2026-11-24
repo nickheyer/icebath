@@ -10,10 +10,10 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 	"golang.org/x/text/cases"
 )
@@ -297,7 +297,7 @@ var (
 
 // Python pattern compiled with Python matching semantics, panicking on an invalid pattern
 func pyMust(p string) *regexp2.Regexp {
-	re, err := pyre.Compile(p)
+	re, err := regexutil.Compile(p)
 	if err != nil {
 		panic(err)
 	}
@@ -307,27 +307,15 @@ func pyMust(p string) *regexp2.Regexp {
 // Pattern compiled through pyre with its Python group names kept for group lookups
 type pyNamedRe struct {
 	*regexp2.Regexp
-	index map[string]int
 }
 
 func pyMustNamed(p string) pyNamedRe {
-	index, err := pyre.GroupIndex(p)
-	if err != nil {
-		panic(err)
-	}
-	return pyNamedRe{pyMust(p), index}
+	return pyNamedRe{pyMust(p)}
 }
 
 // Text of the named group in the match, empty when the group took no part
 func (r pyNamedRe) group(m *regexp2.Match, name string) string {
-	n, ok := r.index[name]
-	if !ok {
-		panic("no such group " + name)
-	}
-	if g := m.GroupByNumber(n); g != nil {
-		return g.String()
-	}
-	return ""
+	return regexutil.NamedGroup(m, name)
 }
 
 // Whether the regexp2 pattern matches anywhere in s

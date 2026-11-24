@@ -2,13 +2,10 @@ package goals
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"math"
-	"math/big"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -522,22 +519,13 @@ func (m *GoalManager) WaitOnSession(sessionID, reason string) (*GoalState, error
 
 // Parks the loop for seconds, lifting early once fewer than onDelegations batches are live
 func (m *GoalManager) WaitForSeconds(seconds int64, reason string, onDelegations int64) (*GoalState, error) {
-	return m.waitForSeconds(big.NewInt(seconds), reason, onDelegations)
-}
-
-// Seconds wait of any Python int size, the OverflowError float addition raises past the float range
-func (m *GoalManager) waitForSeconds(seconds *big.Int, reason string, onDelegations int64) (*GoalState, error) {
 	if _, err := m.requireActive(); err != nil {
 		return nil, err
 	}
-	if seconds.Sign() <= 0 {
+	if seconds <= 0 {
 		return nil, &errorutil.Error{Kind: "ValueError", Msg: "seconds must be a positive integer"}
 	}
-	span, _ := new(big.Float).SetInt(seconds).Float64()
-	if math.IsInf(span, 0) {
-		return nil, &errorutil.Error{Kind: "OverflowError", Msg: "int too large to convert to float"}
-	}
-	until := goalTime() + span
+	until := goalTime() + float64(seconds)
 	return m.park(reason, func(state *GoalState) {
 		state.WaitingUntil = until
 		state.WaitingOnDelegations = max(0, onDelegations)
@@ -617,19 +605,15 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 		}
 		target = "session " + *state.WaitingOnSession
 	case anyutil.IsTrue(wait["pid"]):
-		pid, err := pyint.Of(wait["pid"])
-		if err != nil {
+		// A pid past what an int64 holds reads as the bound on its side, which no process has
+		pid, err := anyutil.ToInt(wait["pid"])
+		if err != nil && !errors.Is(err, anyutil.ErrRange) {
 			return nil, err
 		}
-		var state *GoalState
-		if pid.IsInt64() {
-			state, err = goalManagerWaitOn(m, pid.Int64(), reason)
-		} else {
-			err = &errorutil.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
-		}
+		state, err := goalManagerWaitOn(m, pid, reason)
 		if err != nil {
 			if pyErr, isPy := err.(*errorutil.Error); isPy && pyErr.Kind == "ValueError" {
-				pkgLog().Info(fmt.Sprintf("goal judge: wait_on_pid %s is not alive on this host; continuing", pid))
+				pkgLog().Info(fmt.Sprintf("goal judge: wait_on_pid %s is not alive on this host; continuing", anyutil.String(wait["pid"])))
 				return nil, nil
 			}
 			return nil, err
@@ -640,11 +624,11 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 		if !present {
 			return nil, &errorutil.Error{Kind: "KeyError", Msg: "'seconds'"}
 		}
-		n, err := pyint.Of(seconds)
+		n, err := anyutil.ToInt(seconds)
 		if err != nil {
 			return nil, err
 		}
-		if _, err := m.waitForSeconds(n, reason, int64(activeDelegations)); err != nil {
+		if _, err := m.WaitForSeconds(n, reason, int64(activeDelegations)); err != nil {
 			return nil, err
 		}
 		target = anyutil.String(seconds) + "s"
@@ -918,7 +902,7 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 		var turn any
 		if err := callRaising(func() (err error) { turn, err = o.RunTurn(prompt); return err }); err != nil {
 			logLine(fmt.Sprintf("kanban goal loop: run_turn failed (%s); stopping", err.Error()))
-			return result("stopped", "run_turn error: "+pyrepr.ExceptionName(err))
+			return result("stopped", "run_turn error: "+errorutil.Kind(err))
 		}
 		failed, failureReason := false, ""
 		if dict, isDict := turn.(map[string]any); isDict {

@@ -398,7 +398,7 @@ func TestXaiStreamPreservesProfileAndDeliversBeforeCompletion(t *testing.T) {
 					mu.Unlock()
 				}
 				_ = ws.WriteMessage(websocket.TextMessage, audioDelta(audio))
-				if !firstDelivered.Wait(10) {
+				if !firstDelivered.WaitTimeout(10 * time.Second) {
 					return
 				}
 				_ = ws.WriteMessage(websocket.TextMessage, audioDelta(audio))
@@ -501,7 +501,7 @@ func TestXaiStreamReportsErrorsAndBoundsReceivedAudio(t *testing.T) {
 			if err != nil || len(chunks) != 1 || !bytes.Equal(chunks[0], bytes.Repeat([]byte("x"), 64)) {
 				t.Fatalf("chunks = %q, %v", chunks, err)
 			}
-			if !closed.Wait(10) {
+			if !closed.WaitTimeout(10 * time.Second) {
 				t.Fatal("upstream was not closed after the byte ceiling")
 			}
 		})

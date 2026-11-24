@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 	"modernc.org/libc"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -130,13 +131,12 @@ func bindParams(params []any) ([]any, error) {
 
 // Class CPython's sqlite3 module raises for a result code
 func classForCode(code int) SQLiteClass {
+	if sqliteutil.IsOperational(code) {
+		return SQLiteOperationalError
+	}
 	switch code & 0xff {
 	case sqlite3.SQLITE_INTERNAL, sqlite3.SQLITE_NOTFOUND:
 		return SQLiteInternalError
-	case sqlite3.SQLITE_ERROR, sqlite3.SQLITE_PERM, sqlite3.SQLITE_ABORT, sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED,
-		sqlite3.SQLITE_READONLY, sqlite3.SQLITE_INTERRUPT, sqlite3.SQLITE_IOERR, sqlite3.SQLITE_FULL,
-		sqlite3.SQLITE_CANTOPEN, sqlite3.SQLITE_PROTOCOL, sqlite3.SQLITE_EMPTY, sqlite3.SQLITE_SCHEMA:
-		return SQLiteOperationalError
 	case sqlite3.SQLITE_TOOBIG:
 		return SQLiteDataError
 	case sqlite3.SQLITE_CONSTRAINT, sqlite3.SQLITE_MISMATCH:

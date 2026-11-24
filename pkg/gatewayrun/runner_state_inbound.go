@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Attributes only the inbound, busy session, notification, goal and API modules set

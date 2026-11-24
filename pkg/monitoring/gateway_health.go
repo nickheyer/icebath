@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -151,15 +150,15 @@ func intConversionRejected(err error) bool {
 
 // Positive Python int of a pid value, nil when absent, unparseable or not positive
 func coercePID(raw any) (any, error) {
-	n, err := pyint.Of(raw)
+	n, err := anyutil.ToInt(raw)
 	if err != nil {
 		if intConversionRejected(err) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	if n.Sign() > 0 {
-		return pyint.Native(n), nil
+	if n > 0 {
+		return int(n), nil
 	}
 	return nil, nil
 }
@@ -172,17 +171,17 @@ func parseActiveAgents(raw any) (any, error) {
 	if n, ok := gatewayParseActiveAgents(raw); ok {
 		return n, nil
 	}
-	n, err := pyint.Of(raw)
+	n, err := anyutil.ToInt(raw)
 	if err != nil {
 		if intConversionRejected(err) {
 			return 0, nil
 		}
 		return nil, err
 	}
-	if n.Sign() < 0 {
+	if n < 0 {
 		return 0, nil
 	}
-	return pyint.Native(n), nil
+	return int(n), nil
 }
 
 // Gateway contract result, false when the contract is absent, fails or panics

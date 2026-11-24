@@ -8,16 +8,16 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
-	loopIntervalTokenRe = pyre.MustCompile(`(?i)^(?=\d)(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$`)
-	loopTimesFlagRe     = pyre.MustCompile(`\s--times\s+(\S+)`)
-	loopUntilFlagRe     = pyre.MustCompile(`(?s)\s--until\s+(.+)$`)
+	loopIntervalTokenRe = regexutil.MustCompile(`(?i)^(?=\d)(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$`)
+	loopTimesFlagRe     = regexutil.MustCompile(`\s--times\s+(\S+)`)
+	loopUntilFlagRe     = regexutil.MustCompile(`(?s)\s--until\s+(.+)$`)
 )
 
 // LoopHelp is the usage text of the loop command

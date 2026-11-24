@@ -814,7 +814,7 @@ func doctorGhAuthenticated(ctx context.Context) bool {
 		return false
 	}
 	done, err := doctorSubprocessRun(ctx, []string{"gh", "auth", "status"}, executil.Options{Timeout: 10 * time.Second})
-	return err == nil && done.Returncode == 0
+	return err == nil && done.ExitCode == 0
 }
 
 // Python len of a decoded JSON value, false for a value without a length

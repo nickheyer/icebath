@@ -19,7 +19,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // Stagger between dual stack connection attempts
@@ -263,22 +262,6 @@ func (d *keepaliveDialer) DialContext(ctx context.Context, network, address stri
 	return kc, nil
 }
 
-// TCP connect, any proxy tunnel and the TLS handshake under one connect deadline with HTTP/1.1 negotiated
-func (d *keepaliveDialer) dialTLS(cfg *tls.Config, proxy *url.URL) func(ctx context.Context, network, address string) (net.Conn, error) {
-	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		connectCtx, cancel := context.WithTimeout(ctx, keepaliveConnectTimeout)
-		defer cancel()
-		return pyhttpx.DialWireTLS(connectCtx, d.DialContext, proxy, network, address, cfg)
-	}
-}
-
-// Plaintext pooled connection under the wire layer, through the SOCKS or HTTPS proxy when one is given
-func (d *keepaliveDialer) dialWire(proxy *url.URL) func(ctx context.Context, network, address string) (net.Conn, error) {
-	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		return pyhttpx.DialWire(ctx, d.DialContext, proxy, network, address)
-	}
-}
-
 // Pooled connection that bounds every write and frees its pool slot exactly once on close
 type keepaliveConn struct {
 	net.Conn
@@ -325,9 +308,8 @@ func newKeepaliveTransport(tlsConfig *tls.Config, limits keepaliveLimits, proxy 
 	d := &keepaliveDialer{proxied: proxy != nil, slots: make(chan struct{}, limits.maxConns)}
 	d.racing.Store(racing)
 	t := &http.Transport{
-		Proxy:                 pyhttpx.PlainProxy(proxy),
-		DialContext:           d.dialWire(proxy),
-		DialTLSContext:        d.dialTLS(tlsConfig, proxy),
+		Proxy:                 http.ProxyURL(proxy),
+		DialContext:           d.DialContext,
 		TLSClientConfig:       tlsConfig,
 		TLSHandshakeTimeout:   keepaliveConnectTimeout,
 		MaxIdleConns:          limits.maxKeepalive,

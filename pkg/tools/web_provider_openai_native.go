@@ -98,4 +98,4 @@ func NewOpenAINativeWebProvider() WebProvider {
 }
 
 // Class name the registry log and type errors print, the plugin provider class
-func (*openAINativeProvider) PyTypeName() string { return "OpenAINativeWebSearchProvider" }
+func (*openAINativeProvider) ErrorKind() string { return "OpenAINativeWebSearchProvider" }

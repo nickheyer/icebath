@@ -1,15 +1,17 @@
 package state
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"context"
-	"math/big"
 	"regexp"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Longest sanitized title a session may carry, counted in code points
@@ -52,21 +54,21 @@ func newSessionTitles(host titlesHost) *sessionTitles {
 }
 
 // Matches the numbered title pattern, raising the TypeError re.match gives a non string title
-func matchNumberedTitle(title any) (*big.Int, string, bool, error) {
+func matchNumberedTitle(title any) (int64, string, bool, error) {
 	var text string
 	switch v := title.(type) {
 	case string:
 		text = v
 	case []byte:
-		return nil, "", false, &errorutil.Error{Kind: "TypeError", Msg: "cannot use a string pattern on a bytes-like object"}
+		return 0, "", false, &errorutil.Error{Kind: "TypeError", Msg: "cannot use a string pattern on a bytes-like object"}
 	default:
-		return nil, "", false, &errorutil.Error{Kind: "TypeError", Msg: "the session title is " + errchain.Kind(title) + ", expected text"}
+		return 0, "", false, &errorutil.Error{Kind: "TypeError", Msg: "the session title is " + errchain.Kind(title) + ", expected text"}
 	}
 	m, err := numberedTitleRe.FindStringMatch(text)
 	if err != nil || m == nil {
-		return nil, "", false, err
+		return 0, "", false, err
 	}
-	n, _ := pyint.Parse(m.GroupByNumber(2).String())
+	n, _ := strconv.ParseInt(strings.TrimSpace(m.GroupByNumber(2).String()), 10, 64)
 	return n, m.GroupByNumber(1).String(), true, nil
 }
 
@@ -82,18 +84,18 @@ func nextTitleInLineage(ctx context.Context, conn SQLiteConn, baseTitle string) 
 	if err != nil || len(rows) == 0 {
 		return base, err
 	}
-	highest := big.NewInt(1)
+	highest := int64(1)
 	for _, row := range rows {
 		title, _ := row.Get("title")
 		n, _, ok, err := matchNumberedTitle(title)
 		if err != nil {
 			return "", err
 		}
-		if ok && n.Cmp(highest) > 0 {
-			highest = n
+		if ok {
+			highest = max(highest, n)
 		}
 	}
-	return base + " #" + new(big.Int).Add(highest, big.NewInt(1)).String(), nil
+	return base + " #" + strconv.FormatInt(highest+1, 10), nil
 }
 
 // Next lineage title on an authority owned transaction connection, counting siblings committed inside it
@@ -120,7 +122,7 @@ func SanitizeTitle(title string) (string, error) {
 		return "", nil
 	}
 	if n := utf8.RuneCountInString(cleaned); n > MaxTitleLength {
-		return "", &errorutil.Error{Kind: "ValueError", Msg: "Title too long (" + big.NewInt(int64(n)).String() + " chars, max " + big.NewInt(MaxTitleLength).String() + ")"}
+		return "", &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("Title too long (%d chars, max %d)", n, MaxTitleLength)}
 	}
 	return cleaned, nil
 }

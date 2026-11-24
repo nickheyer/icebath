@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Status outside every workflow, a filter toggle and never a board column
@@ -76,7 +75,7 @@ func (w Workflow) Validate() error {
 		known[k] = true
 	}
 	if len(known) != len(keys) {
-		parts := make(pyrepr.Tuple, len(keys))
+		parts := make([]any, len(keys))
 		for i, k := range keys {
 			parts[i] = k
 		}

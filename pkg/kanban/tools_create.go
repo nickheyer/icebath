@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -185,21 +184,14 @@ func handleCreate(k *kanbanCall) (string, error) {
 				insertBinding = err
 			}
 		}
-		bindInt := func(value *big.Int, position int) *int64 {
-			if value == nil {
-				return nil
+		bindInt := func(value OptInt) *int64 {
+			if value.tooLarge && insertBinding == nil {
+				insertBinding = errSQLiteIntegerTooLarge
 			}
-			if !value.IsInt64() {
-				if insertBinding == nil {
-					_, insertBinding = sqliteBind(value, position)
-				}
-				return nil
-			}
-			n := value.Int64()
-			return &n
+			return value.n
 		}
 		bind(&o.Body, k.get("body"), 3, false)
-		if n := bindInt(priority, 6); n != nil {
+		if n := bindInt(priority); n != nil {
 			o.Priority = *n
 		}
 		bind(&o.WorkspacePath, workspacePath, 10, false)
@@ -220,8 +212,8 @@ func handleCreate(k *kanbanCall) (string, error) {
 		idempotencyKey := k.get("idempotency_key")
 		bind(&o.IdempotencyKey, idempotencyKey, map[bool]int{true: 1, false: 14}[anyutil.IsTrue(idempotencyKey)], anyutil.IsTrue(idempotencyKey))
 		o.idempotencyKeyFalsy = idempotencyKey != nil && !anyutil.IsTrue(idempotencyKey)
-		o.MaxRuntimeSeconds = bindInt(maxRuntime, 15)
-		o.GoalMaxTurns = bindInt(goalMaxTurns, 22)
+		o.MaxRuntimeSeconds = bindInt(maxRuntime)
+		o.GoalMaxTurns = bindInt(goalMaxTurns)
 		if workspaceKind != nil {
 			kind := anyutil.String(workspaceKind)
 			o.WorkspaceKind = &kind

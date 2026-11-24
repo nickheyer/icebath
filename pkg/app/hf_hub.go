@@ -24,12 +24,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
@@ -50,8 +50,8 @@ type hfHubHTTPError struct {
 	status int
 }
 
-func (e *hfHubHTTPError) Error() string      { return e.msg }
-func (e *hfHubHTTPError) PyTypeName() string { return e.class }
+func (e *hfHubHTTPError) Error() string     { return e.msg }
+func (e *hfHubHTTPError) ErrorKind() string { return e.class }
 
 const (
 	hfDefaultEndpoint        = "https://huggingface.co"
@@ -303,7 +303,8 @@ func hfRaiseForStatus(resp *httputil.Response, r hfRequest, endpointName string)
 		}
 		return hfFormat("HfHubHTTPError", msg, resp)
 	}
-	return hfFormat("HfHubHTTPError", resp.StatusErrorText(u), resp)
+	status := &httputil.StatusError{StatusCode: resp.StatusCode, Status: resp.Status, URL: u, Location: resp.Header.Get("Location")}
+	return hfFormat("HfHubHTTPError", status.Error(), resp)
 }
 
 // Error of the given class with the server errors and the first request id header folded into the message
@@ -793,11 +794,11 @@ func pyintOfChunk(v any) (int, error) {
 	bad := &appValueError{fmt.Sprintf("Malformed response from LFS batch endpoint: `chunk_size` should be an integer. Got '%s'.", anyutil.String(v))}
 	switch t := v.(type) {
 	case string:
-		n, ok := pystr.IntText(t)
-		if !ok || !n.IsInt64() {
+		n, err := textutil.ParseInt(t)
+		if err != nil {
 			return 0, bad
 		}
-		return int(n.Int64()), nil
+		return int(n), nil
 	case int:
 		return t, nil
 	case int64:

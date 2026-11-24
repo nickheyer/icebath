@@ -25,7 +25,7 @@ type pyTypeError struct{ msg string }
 func (e *pyTypeError) Error() string { return e.msg }
 
 // Exception class the error reports, TypeError
-func (e *pyTypeError) PyTypeName() string { return "TypeError" }
+func (e *pyTypeError) ErrorKind() string { return "TypeError" }
 
 // Hooks dir of the active profile home
 func resolveHooksDir(ctx context.Context) string {

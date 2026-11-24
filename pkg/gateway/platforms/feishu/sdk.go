@@ -14,6 +14,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Open Platform calls the adapter makes, the lark SDK client in production

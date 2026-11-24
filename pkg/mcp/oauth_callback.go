@@ -15,8 +15,7 @@ import (
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
-
-	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
+	browserutil "github.com/nickheyer/icebath/pkg/utils/browser"
 )
 
 // OAuthNonInteractiveError reports an OAuth step that needs a person no session can reach
@@ -105,8 +104,7 @@ var openBrowser = webbrowserOpen
 
 // Launches the first browser the BROWSER variable or the platform registry names, any failure answering false
 func webbrowserOpen(url string) bool {
-	opened, err := pywebbrowser.Open(url, 0)
-	return err == nil && opened
+	return browserutil.Open(context.Background(), url) == nil
 }
 
 // Callback port reservations held from selection until the waiter adopts them

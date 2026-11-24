@@ -14,7 +14,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Discord REST base URL, a seam tests point at a local stand in
@@ -138,7 +143,7 @@ func DiscordRequest(ctx context.Context, method, path, token string, params [][2
 
 // Reason text of a transport failure the way urllib's URLError shows its socket error
 func discordTransportReason(err error) string {
-	if class := pypath.OSErrorClass(err); class != "OSError" {
+	if class := errorutil.Kind(err); class != "OSError" {
 		return errchain.OSText(err)
 	}
 	return err.Error()

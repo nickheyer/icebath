@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 )
 
 // Bounded recent browse knobs, nil values taking the defaults of 20 rows and a 3 second deadline
@@ -154,16 +154,16 @@ func (d *SessionDB) ListRecentSessionsBounded(ctx context.Context, o RecentSessi
 		if !ok {
 			return fmt.Errorf("connection %T exposes no driver connection for a progress handler", conn)
 		}
-		if err := pysqlite.SetProgressHandler(raw, func() int {
+		if err := sqliteutil.SetProgressHandler(raw, func() bool {
 			if !time.Now().Before(deadline) {
 				interrupted = true
-				return 1
+				return true
 			}
-			return 0
+			return false
 		}, 1000); err != nil {
 			return err
 		}
-		defer pysqlite.SetProgressHandler(raw, nil, 0)
+		defer sqliteutil.SetProgressHandler(raw, nil, 0)
 		var err error
 		rows, err = queryObjects(ctx, conn, query, params...)
 		return err

@@ -7,18 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Read open retry window and read busy timeout
@@ -62,7 +62,7 @@ func (e *SessionResumeTooLargeError) Error() string {
 		"with `icebath config set sessions.max_resume_messages 0`.", e.MessageCount, e.Limit)
 }
 
-func (e *SessionResumeTooLargeError) PyTypeName() string { return "ValueError" }
+func (e *SessionResumeTooLargeError) ErrorKind() string { return "ValueError" }
 
 // A ValueError refusing an in memory JSON export past the export cap
 type SessionExportTooLargeError struct {
@@ -71,13 +71,13 @@ type SessionExportTooLargeError struct {
 }
 
 func (e *SessionExportTooLargeError) Error() string {
-	limit, _ := pyrepr.Format(int64(e.Limit), ",")
+	limit, _ := templateutil.Format("{v:,}", map[string]any{"v": int64(e.Limit)})
 	return fmt.Sprintf("Session '%s' has more than %s exportable messages; the JSON/JSONL "+
 		"backup is built in memory and capped per session. Use the uncapped "+
 		"`icebath sessions export --format md --session-id <id>`, or set sessions.max_export_messages: 0 in config.yaml to disable the guard.", e.SessionID, limit)
 }
 
-func (e *SessionExportTooLargeError) PyTypeName() string { return "ValueError" }
+func (e *SessionExportTooLargeError) ErrorKind() string { return "ValueError" }
 
 // Pid existence probe of lease holders, an error being probe doubt, swapped by tests
 var holderPIDExists = func(pid int) (bool, error) { return psutilPIDExists(pid), nil }
@@ -91,14 +91,14 @@ func compressionLockHolderProcessIsDead(holder string) bool {
 	if err != nil || m == nil {
 		return false
 	}
-	n, ok := pyint.Parse(m.GroupByNumber(1).String())
-	if !ok || n.Sign() <= 0 || (n.IsInt64() && n.Int64() == int64(os.Getpid())) || !HolderPidCheckable(holder) {
+	n, err := strconv.ParseInt(strings.TrimSpace(m.GroupByNumber(1).String()), 10, 64)
+	if err != nil || n <= 0 || (n == int64(os.Getpid())) || !HolderPidCheckable(holder) {
 		return false
 	}
-	if !n.IsInt64() || n.Int64() > math.MaxInt32 {
+	if n > math.MaxInt32 {
 		return false
 	}
-	alive, err := holderPIDExists(int(n.Int64()))
+	alive, err := holderPIDExists(int(n))
 	return err == nil && !alive
 }
 
@@ -141,7 +141,7 @@ func (e *LiveSystemGuardError) Error() string {
 }
 
 // Exception class the init error record names for the refusal
-func (e *LiveSystemGuardError) PyTypeName() string { return "RuntimeError" }
+func (e *LiveSystemGuardError) ErrorKind() string { return "RuntimeError" }
 
 // Refuses a test context process opening a production state database before any connection or probe
 func ensureTestIsolation(dbPath string) error {

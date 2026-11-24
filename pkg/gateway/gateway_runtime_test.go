@@ -403,7 +403,7 @@ func TestHomeModeRefusesOnlyWritesAnotherUserCanMake(t *testing.T) {
 	patch(t, &discoveryGetpwuid, func(int) (userutil.Account, error) { return user, nil })
 	patch(t, &discoveryGetpwall, func() ([]userutil.Account, error) { return []userutil.Account{user}, nil })
 	private := userutil.Group{Name: user.Name, GID: user.GID}
-	shared := userutil.Group{Name: "staff", GID: user.GID, Mem: []string{user.Name, "someone-else"}}
+	shared := userutil.Group{Name: "staff", GID: user.GID, Members: []string{user.Name, "someone-else"}}
 	for _, c := range []struct {
 		mode   os.FileMode
 		group  userutil.Group

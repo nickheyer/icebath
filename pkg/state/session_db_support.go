@@ -8,6 +8,7 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (

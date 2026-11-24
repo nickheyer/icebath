@@ -10,9 +10,9 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Words a text switch in the platform config counts as on
@@ -25,15 +25,15 @@ const whatsappMaxMessageLength = 4096
 const whatsappDefaultReplyPrefix = "❆ *Icebath Agent*\n────────────\n"
 
 var (
-	whatsappDeviceSuffix   = pyre.MustCompile(`:\d+(?=@)`)
-	whatsappFence          = pyre.MustCompile("```[\\s\\S]*?```")
-	whatsappInlineCode     = pyre.MustCompile("`[^`\\n]+`")
-	whatsappItalic         = pyre.MustCompile(`(?<!\*)\*(?!\s|\*)([^*\n]*?\S[^*\n]*?)\*(?!\*)`)
-	whatsappBold           = pyre.MustCompile(`\*\*(.+?)\*\*`)
-	whatsappUnderlineBold  = pyre.MustCompile(`__(.+?)__`)
-	whatsappStrike         = pyre.MustCompile(`~~(.+?)~~`)
-	whatsappHeader         = pyre.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
-	whatsappLink           = pyre.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	whatsappDeviceSuffix   = regexutil.MustCompile(`:\d+(?=@)`)
+	whatsappFence          = regexutil.MustCompile("```[\\s\\S]*?```")
+	whatsappInlineCode     = regexutil.MustCompile("`[^`\\n]+`")
+	whatsappItalic         = regexutil.MustCompile(`(?<!\*)\*(?!\s|\*)([^*\n]*?\S[^*\n]*?)\*(?!\*)`)
+	whatsappBold           = regexutil.MustCompile(`\*\*(.+?)\*\*`)
+	whatsappUnderlineBold  = regexutil.MustCompile(`__(.+?)__`)
+	whatsappStrike         = regexutil.MustCompile(`~~(.+?)~~`)
+	whatsappHeader         = regexutil.MustCompile(`(?m)^#{1,6}\s+(.+)$`)
+	whatsappLink           = regexutil.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 	whatsappMissingDefault = "\x00unset"
 )
 
@@ -323,7 +323,7 @@ func (b *WhatsAppBehaviorMixin) compileMentionPatterns(patterns any) []*regexp2.
 		if !ok || strings.TrimSpace(text) == "" {
 			continue
 		}
-		re, err := pyre.CompileIgnoreCase(text)
+		re, err := regexutil.Compile(text, regexutil.IgnoreCase())
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("[%s] Invalid WhatsApp mention pattern %s: %s", b.Name, anyutil.Quote(text), err))
 			continue
@@ -405,7 +405,7 @@ func CleanBotMentionText(text string, data map[string]any) string {
 		if bare == "" {
 			continue
 		}
-		re := pyre.MustCompile(`@` + regexp2.Escape(bare) + `\b[,:\-]*\s*`)
+		re := regexutil.MustCompile(`@` + regexp2.Escape(bare) + `\b[,:\-]*\s*`)
 		out, err := re.Replace(cleaned, "", -1, -1)
 		if err != nil {
 			panic(err)

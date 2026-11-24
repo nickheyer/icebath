@@ -9,11 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
-	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -149,8 +147,8 @@ func videoMissingProviderError(configured string) string {
 // Python exception raised inside the handler before dispatch
 type videoHandlerError struct{ typeName, msg string }
 
-func (e *videoHandlerError) Error() string      { return e.msg }
-func (e *videoHandlerError) PyTypeName() string { return e.typeName }
+func (e *videoHandlerError) Error() string     { return e.msg }
+func (e *videoHandlerError) ErrorKind() string { return e.typeName }
 
 // Stripped string argument with the fallback for falsy values, the AttributeError strip raises on other types
 func stripArg(args map[string]any, key, fallback string) (string, error) {
@@ -172,18 +170,14 @@ func videoCoerceInt(value any) (*int, error) {
 	if value == nil || value == "" {
 		return nil, nil
 	}
-	n, err := pyint.Of(value)
+	n, err := anyutil.ToInt(value)
+	if errors.Is(err, anyutil.ErrRange) {
+		return nil, &videoHandlerError{"OverflowError", fmt.Sprintf("%s is too large for a 64-bit integer", errchain.Show(value))}
+	}
 	if err != nil {
-		var pe *errorutil.Error
-		if errors.As(err, &pe) && pe.Kind == "OverflowError" {
-			return nil, &videoHandlerError{"OverflowError", fmt.Sprintf("%s is too large for a 64-bit integer", errchain.Show(value))}
-		}
 		return nil, nil
 	}
-	if !n.IsInt64() {
-		return nil, &videoHandlerError{"OverflowError", fmt.Sprintf("%s is too large for a 64-bit integer", n)}
-	}
-	i := int(n.Int64())
+	i := int(n)
 	return &i, nil
 }
 
@@ -437,8 +431,8 @@ func buildDynamicVideoSchema(env *tools.Env) *jsonutil.Object {
 			"description", "Public HTTPS URL of a still image to animate (image-to-video). Omit for text-to-video."))
 		maxRefs := 0
 		if pyTruthy(caps["max_reference_images"]) {
-			if n, err := pyint.Of(caps["max_reference_images"]); err == nil {
-				maxRefs = int(n.Int64())
+			if n, err := anyutil.ToInt(caps["max_reference_images"]); err == nil {
+				maxRefs = int(n)
 			}
 		}
 		if maxRefs > 0 {
@@ -455,11 +449,11 @@ func buildDynamicVideoSchema(env *tools.Env) *jsonutil.Object {
 	minDuration, maxDuration := metaOr("min_duration"), metaOr("max_duration")
 	durationParam := static.Value("duration").(*jsonutil.Object).Clone()
 	if pyTruthy(minDuration) && pyTruthy(maxDuration) {
-		lo, err1 := pyint.Of(minDuration)
-		hi, err2 := pyint.Of(maxDuration)
+		lo, err1 := anyutil.ToInt(minDuration)
+		hi, err2 := anyutil.ToInt(maxDuration)
 		if err1 == nil && err2 == nil {
-			durationParam.Set("minimum", pyint.Native(lo))
-			durationParam.Set("maximum", pyint.Native(hi))
+			durationParam.Set("minimum", int(lo))
+			durationParam.Set("maximum", int(hi))
 			durationParam.Set("description", fmt.Sprintf("Video duration in seconds (%s-%s). Omit for the provider default.",
 				anyutil.String(minDuration), anyutil.String(maxDuration)))
 		}
@@ -512,11 +506,11 @@ func xaiCoerceInt(value any) *int {
 	if _, ok := value.(bool); ok {
 		return nil
 	}
-	n, err := pyint.Of(value)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(value)
+	if err != nil {
 		return nil
 	}
-	i := int(n.Int64())
+	i := int(n)
 	return &i
 }
 

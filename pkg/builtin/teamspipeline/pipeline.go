@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,13 +19,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -94,8 +93,8 @@ func (f SinkFn) WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPa
 // Failure carrying the class name the job error record keeps, its text the message alone
 type pipelineError struct{ class, msg string }
 
-func (e *pipelineError) Error() string      { return e.msg }
-func (e *pipelineError) PyTypeName() string { return e.class }
+func (e *pipelineError) Error() string     { return e.msg }
+func (e *pipelineError) ErrorKind() string { return e.class }
 
 // Error of a class with its message
 func pyError(class, msg string) error { return &pipelineError{class, msg} }
@@ -252,14 +251,14 @@ func TeamsPipelineConfigFromDict(payload any) (*TeamsPipelineConfig, error) {
 	if !ok {
 		minChars = int64(80)
 	}
-	n, err := pyint.Of(minChars)
+	n, err := anyutil.ToInt(minChars)
 	if err != nil {
 		return nil, err
 	}
 	switch {
-	case n.IsInt64():
-		cfg.TranscriptMinChars = n.Int64()
-	case n.Sign() > 0:
+	case true:
+		cfg.TranscriptMinChars = n
+	case n > 0:
 		cfg.TranscriptMinChars = math.MaxInt64
 	default:
 		cfg.TranscriptMinChars = math.MinInt64
@@ -350,11 +349,11 @@ func payloadMeetingID(payload *TeamsMeetingSummaryPayload) (string, error) {
 	return payload.MeetingRef.MeetingID, nil
 }
 
-// Raised for a non 2xx sink response like httpx raise_for_status
-type sinkHTTPStatusError struct{ msg string }
+// Status error of a sink that answered outside the 2xx range, kept with its status and URL
+type sinkHTTPStatusError struct{ *httputil.StatusError }
 
-func (e *sinkHTTPStatusError) Error() string      { return e.msg }
-func (e *sinkHTTPStatusError) PyTypeName() string { return "HTTPStatusError" }
+func (e *sinkHTTPStatusError) ErrorKind() string { return "HTTPStatusError" }
+func (e *sinkHTTPStatusError) Unwrap() error     { return e.StatusError }
 
 // API key and HTTP transport shared by the Notion and Linear sinks
 type httpSinkWriter struct {
@@ -407,7 +406,7 @@ func (w *httpSinkWriter) request(ctx context.Context, method, rawURL string, hea
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &sinkHTTPStatusError{resp.StatusErrorText(rawURL)}
+		return nil, &sinkHTTPStatusError{&httputil.StatusError{StatusCode: resp.StatusCode, Status: resp.Status, URL: rawURL, Location: resp.Header.Get("Location")}}
 	}
 	return resp.JSON()
 }
@@ -789,7 +788,7 @@ func (p *TeamsMeetingPipeline) RunJob(ctx context.Context, jobOrID any) (*TeamsM
 	if errors.As(err, &retryable) {
 		return p.persistJob(job, "status", "retry_scheduled", "error_info", obj("message", err.Error(), "retryable", true))
 	}
-	return p.persistJob(job, "status", "failed", "error_info", obj("message", err.Error(), "type", pyrepr.ExceptionName(err)))
+	return p.persistJob(job, "status", "failed", "error_info", obj("message", err.Error(), "type", errorutil.Kind(err)))
 }
 
 // Summary payload of a summarizer result, a dict result built through the payload constructor
@@ -998,8 +997,8 @@ func (p *TeamsMeetingPipeline) prepareAudioPath(ctx context.Context, recordingPa
 	if audioSuffixes[strings.ToLower(pathutil.Suffix(recordingPath))] || !p.Config.FFmpegExtractAudio {
 		return recordingPath, nil
 	}
-	ffmpeg, ok := pyshutil.Which("ffmpeg", nil)
-	if !ok || ffmpeg == "" {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil || ffmpeg == "" {
 		return "", &TeamsPipelineRetryableError{TeamsPipelineError{"Recording fallback requires ffmpeg for audio extraction, but ffmpeg was not found."}}
 	}
 	audioPath, err := pathutil.WithSuffix(recordingPath, ".wav")
@@ -1010,7 +1009,7 @@ func (p *TeamsMeetingPipeline) prepareAudioPath(ctx context.Context, recordingPa
 	if err != nil {
 		return "", err
 	}
-	if proc.Returncode != 0 {
+	if proc.ExitCode != 0 {
 		stderr, err := charsetutil.DecodeReplace(proc.Stderr, "utf-8")
 		if err != nil {
 			return "", err

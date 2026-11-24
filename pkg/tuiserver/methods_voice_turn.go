@@ -54,10 +54,10 @@ func (q *ttsTurnQueue) Get(timeout time.Duration) (any, bool) {
 	}
 }
 
-// Threading event over pythread for the speaker pipeline
+// Event of the speaker pipeline, its wait bounded by a timeout
 type ttsEvent struct{ *syncutil.Event }
 
-func (e ttsEvent) Wait(timeout time.Duration) bool { return e.Event.Wait(timeout.Seconds()) }
+func (e ttsEvent) Wait(timeout time.Duration) bool { return e.Event.WaitTimeout(timeout) }
 
 // Resumes the wake detector for the transport that yielded it to a voice capture
 func resumeVoiceWake() {

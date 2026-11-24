@@ -23,8 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // GitHub App client id of VS Code Copilot, minting ghu_ tokens the Copilot API exchanges
@@ -63,7 +63,7 @@ var (
 		"      Use the `copilot` provider with a Copilot subscription token (`icebath",
 		"      setup` → GitHub Copilot), or pick any other provider.",
 	}
-	copilotProxyEpRe = pyre.MustCompile(`(?:^|;)\s*proxy-ep=([^;\s]+)`)
+	copilotProxyEpRe = regexutil.MustCompile(`(?:^|;)\s*proxy-ep=([^;\s]+)`)
 )
 
 // One exchanged Copilot API token, its expiry epoch and the account base url, empty base meaning none

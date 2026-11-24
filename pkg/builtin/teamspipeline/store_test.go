@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -301,7 +301,7 @@ func TestStoreUpsertRejectsNonePayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpsertSinkRecord("notion:m", nil); err == nil || pyrepr.ExceptionName(err) != "TypeError" || err.Error() != "the sink_records record to store is empty" {
+	if _, err := s.UpsertSinkRecord("notion:m", nil); err == nil || errorutil.Kind(err) != "TypeError" || err.Error() != "the sink_records record to store is empty" {
 		t.Fatalf("err %v", err)
 	}
 	if s.GetSinkRecord("notion:m") != nil {

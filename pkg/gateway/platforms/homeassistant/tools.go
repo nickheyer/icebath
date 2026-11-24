@@ -15,12 +15,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
@@ -365,9 +365,9 @@ func normalizeIDList(value any) map[string]bool {
 
 var (
 	// Valid entity id such as light.living_room
-	entityIDRE = pyre.MustCompile(`^[a-z_][a-z0-9_]*\.[a-z0-9_]+$`)
+	entityIDRE = regexutil.MustCompile(`^[a-z_][a-z0-9_]*\.[a-z0-9_]+$`)
 	// Domain and service names interpolated into the services path, so only lowercase word characters
-	serviceNameRE = pyre.MustCompile(`^[a-z][a-z0-9_]*$`)
+	serviceNameRE = regexutil.MustCompile(`^[a-z][a-z0-9_]*$`)
 )
 
 // Domains that run code or reach the network from the Home Assistant host

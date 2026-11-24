@@ -2,10 +2,10 @@ package telegram
 
 import (
 	"context"
-	"math/big"
+	"errors"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -126,45 +126,30 @@ func BuildInlineResults(ctx context.Context, query, offset string, pageSize int)
 		args = strings.TrimSpace(parts[1])
 	}
 	matches := FilterCatalog(CollectInlineCatalog(ctx), term)
-	start := new(big.Int)
+	start := 0
 	if offset != "" {
-		if parsed, ok := pyint.Parse(offset); ok && parsed.Sign() > 0 {
-			start = parsed
+		// A positive offset, held at the end of the catalog when it lies past it or past what an int64 holds
+		if parsed, err := strconv.ParseInt(strings.TrimSpace(offset), 10, 64); (err == nil || errors.Is(err, strconv.ErrRange)) && parsed > 0 {
+			start = int(min(parsed, int64(len(matches))))
 		}
 	}
-	end := new(big.Int).Add(start, big.NewInt(int64(pageSize)))
-	count := big.NewInt(int64(len(matches)))
+	end := start + pageSize
 	nextOffset := ""
-	if count.Cmp(end) > 0 {
-		nextOffset = end.String()
+	if len(matches) > end {
+		nextOffset = strconv.Itoa(end)
 	}
-	lo, hi := clampIndex(start, len(matches)), clampIndex(end, len(matches))
 	var results []InlineResult
-	for _, item := range matches[lo:max(lo, hi)] {
+	for _, item := range matches[start:max(start, min(end, len(matches)))] {
 		messageText := "/" + item.Name
 		if args != "" {
 			messageText += " " + args
 		}
 		results = append(results, InlineResult{
-			ID:          headRunes(start.String()+":"+item.Name, 64),
+			ID:          headRunes(strconv.Itoa(start)+":"+item.Name, 64),
 			Title:       "/" + item.Name,
 			Description: headRunes(item.Description, 100),
 			MessageText: headRunes(messageText, 4096),
 		})
 	}
 	return results, nextOffset
-}
-
-// Python slice bound of a nonnegative or negative big index over a sequence of length n
-func clampIndex(i *big.Int, n int) int {
-	if i.Sign() < 0 {
-		if i.Cmp(big.NewInt(int64(-n))) <= 0 {
-			return 0
-		}
-		return n + int(i.Int64())
-	}
-	if i.Cmp(big.NewInt(int64(n))) >= 0 {
-		return n
-	}
-	return int(i.Int64())
 }

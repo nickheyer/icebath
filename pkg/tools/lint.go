@@ -17,10 +17,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -88,7 +88,7 @@ func lintJSONInproc(content string) (bool, string) {
 	case excType == "":
 		return true, ""
 	case jerr != nil:
-		return false, "invalid JSON: " + jerr.Msg + " (line " + strconv.Itoa(jerr.Lineno) + ", column " + strconv.Itoa(jerr.Colno) + ")"
+		return false, "invalid JSON: " + jerr.Msg + " (line " + strconv.Itoa(jerr.Line) + ", column " + strconv.Itoa(jerr.Column) + ")"
 	}
 	return false, "invalid JSON: " + msg
 }
@@ -135,7 +135,7 @@ const pyIntMaxStrDigits = 4300
 func pyJSONLoadsCheck(text string) (string, string, *jsonutil.SyntaxError) {
 	rs := []rune(text)
 	if len(rs) > 0 && rs[0] == 0xfeff {
-		return "JSONDecodeError", "", &jsonutil.SyntaxError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Pos: 0, Lineno: 1, Colno: 1}
+		return "JSONDecodeError", "", &jsonutil.SyntaxError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Offset: 0, Line: 1, Column: 1}
 	}
 	scan := scanJSONHazards(rs)
 	parseText := text
@@ -149,7 +149,7 @@ func pyJSONLoadsCheck(text string) (string, string, *jsonutil.SyntaxError) {
 		if !errors.As(err, &jerr) {
 			return "ValueError", err.Error(), nil
 		}
-		errPos = jerr.Pos
+		errPos = utf8.RuneCountInString(parseText[:min(jerr.Offset, len(parseText))])
 	}
 	limit := len(rs)
 	if scan.overflowAt >= 0 {

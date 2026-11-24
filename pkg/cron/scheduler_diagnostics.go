@@ -66,7 +66,7 @@ type tracedError struct {
 
 func (e *tracedError) Error() string                { return e.msg }
 func (e *tracedError) Unwrap() error                { return e.cause }
-func (e *tracedError) PyTypeName() string           { return e.name }
+func (e *tracedError) ErrorKind() string            { return e.name }
 func (e *tracedError) StackFrames() []runtime.Frame { return e.frames }
 
 // Error of a recovered panic value with the frames of the panicking goroutine

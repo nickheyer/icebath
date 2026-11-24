@@ -59,8 +59,8 @@ func ManagedWorkerMain(ctx context.Context) (code int) {
 
 // Exception class and message of a failure the way the worker's stderr log carries it
 func formatWorkerFailure(err error) string {
-	if typed, ok := err.(interface{ PyTypeName() string }); ok {
-		return typed.PyTypeName() + ": " + err.Error()
+	if typed, ok := err.(interface{ ErrorKind() string }); ok {
+		return typed.ErrorKind() + ": " + err.Error()
 	}
 	return fmt.Sprintf("%T: %s", err, err)
 }

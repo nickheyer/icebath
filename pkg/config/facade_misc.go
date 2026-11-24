@@ -187,7 +187,7 @@ func RequireParseableUserConfig(ctx context.Context, h string, ignoreUserConfig 
 		if _, isMap := data.(map[string]any); data == nil || isMap {
 			return nil
 		}
-		parseErr = fmt.Errorf("top-level YAML value must be a mapping, got %s", PyTypeName(data))
+		parseErr = fmt.Errorf("top-level YAML value must be a mapping, got %s", ErrorKind(data))
 	}
 	backup, berr := BackupConfig(ctx, configPath, "corrupt", DefaultBackupKeep)
 	if berr != nil {

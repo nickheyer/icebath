@@ -10,13 +10,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -216,7 +216,7 @@ func sidebarItemHTML(s *jsonutil.Object) string {
 		title = textutil.First(title, 47) + "..."
 	}
 	date, _, _ := strings.Cut(htmlFormatTimestamp(htmlGetOr(s, "started_at", 0)), " ")
-	return "\n            <a class=\"session-item\" data-id=\"" + escapeHTML(sid) + "\" href=\"#" + pyurl.Quote(sid, "") + "\">\n" +
+	return "\n            <a class=\"session-item\" data-id=\"" + escapeHTML(sid) + "\" href=\"#" + urlutil.Escape(sid, "") + "\">\n" +
 		"                <div class=\"session-item-title\">" + escapeHTML(title) + "</div>\n" +
 		"                <div class=\"session-item-meta\">\n" +
 		"                    <span>" + escapeHTML(textutil.First(sid, min(8, utf8.RuneCountInString(sid)))) + "</span>\n" +

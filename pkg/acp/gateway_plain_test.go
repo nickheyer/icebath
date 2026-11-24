@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
 	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
@@ -155,7 +154,7 @@ func TestTheEffortPickerOffersDefaultOnlyWhileNoLevelIsSet(t *testing.T) {
 		options := gatewayConfigOptions(nil, jsonutil.ObjectOf("reasoning_effort", level), DefaultMode)
 		sel := options[len(options)-1].(*acputil.SessionConfigOptionSelect)
 		var values []string
-		for _, choice := range sel.Options.([]acputil.SessionConfigSelectOption) {
+		for _, choice := range sel.Options {
 			values = append(values, choice.Value)
 		}
 		return sel.CurrentValue, values
@@ -274,7 +273,7 @@ func TestGatewayAcpAdvertisesEverySessionCapabilityItImplements(t *testing.T) {
 		t.Fatal(err)
 	}
 	dump := func(c *acputil.SessionCapabilities) string {
-		text, _ := jsonutil.Encode(pyacp.Dump(c, pyacp.DumpOptions{ExcludeNone: true}), jsonutil.SortKeys())
+		text, _ := jsonutil.Encode(c, jsonutil.SortKeys())
 		return text
 	}
 	got := dump(advertised.AgentCapabilities.SessionCapabilities)

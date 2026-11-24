@@ -39,7 +39,7 @@ var runWhich = func(name string) (string, int, error) {
 	if err != nil {
 		return "", -1, err
 	}
-	return strings.ToValidUTF8(string(res.Stdout), "\uFFFD"), res.Returncode, nil
+	return strings.ToValidUTF8(string(res.Stdout), "\uFFFD"), res.ExitCode, nil
 }
 
 // Reports whether a which or where launch failed the way subprocess.run raises FileNotFoundError or TimeoutExpired

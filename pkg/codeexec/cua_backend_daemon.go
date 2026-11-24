@@ -53,7 +53,7 @@ func validateCuaDriverAppSignature(env *tools.Env, appPath string) error {
 	if err != nil {
 		return fmt.Errorf("could not verify CuaDriver.app signature: %v", err)
 	}
-	if proc.Returncode != 0 {
+	if proc.ExitCode != 0 {
 		return fmt.Errorf("CuaDriver.app at %s is not code-signed; refusing to launch it (%s)", appPath, strings.TrimSpace(proc.Stderr))
 	}
 	fields := map[string]string{}
@@ -369,7 +369,7 @@ func (d *embeddedCuaDaemon) startupFailure(what, fallback string) error {
 // cua-driver status --socket exits zero once the private daemon accepts connections
 func (d *embeddedCuaDaemon) socketReady(env map[string]string) bool {
 	probe, err := runQuiet([]string{d.command, "status", "--socket", d.socketPath}, 2.0, runOpts{Env: env})
-	return err == nil && probe.Returncode == 0
+	return err == nil && probe.ExitCode == 0
 }
 
 // MCP proxy invocation bound to the private socket

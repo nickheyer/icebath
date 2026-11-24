@@ -148,7 +148,7 @@ func transcribeCommandSTT(ctx context.Context, filePath string, p *commandProvid
 	case errors.As(err, &te):
 		return fail(fmt.Sprintf("STT command provider '%s' timed out after %ss", providerName, strconv.FormatFloat(timeout, 'g', 6, 64)))
 	case errors.As(err, &ee):
-		return fail(fmt.Sprintf("STT command provider '%s' exited with code %d: %s", providerName, ee.Returncode, commandFailureDetail(ee)))
+		return fail(fmt.Sprintf("STT command provider '%s' exited with code %d: %s", providerName, ee.ExitCode, commandFailureDetail(ee)))
 	case errors.As(err, &re):
 		return fail(re.msg)
 	default:

@@ -15,8 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -483,9 +481,9 @@ func (s *sessionSchema) advanceMessageUIDBackfill(ctx context.Context, conn SQLi
 	if err != nil {
 		return err
 	}
-	doneThrough := big.NewInt(0)
+	doneThrough := int64(0)
 	if cursorRow != nil {
-		if doneThrough, err = pyint.Of(cursorRow[0]); err != nil {
+		if doneThrough, err = anyutil.ToInt(cursorRow[0]); err != nil {
 			return fmt.Errorf("the message uid backfill cursor %v is not a whole number", cursorRow[0])
 		}
 	}
@@ -494,11 +492,11 @@ func (s *sessionSchema) advanceMessageUIDBackfill(ctx context.Context, conn SQLi
 		return err
 	}
 	high, _ := highRow[0].(int64)
-	if doneThrough.Cmp(big.NewInt(high)) < 0 {
-		if !doneThrough.IsInt64() || doneThrough.Int64() > math.MaxInt64-messageUIDBackfillChunk {
-			return oversizedInteger(new(big.Int).Add(doneThrough, big.NewInt(messageUIDBackfillChunk)))
+	if doneThrough < high {
+		if doneThrough > math.MaxInt64-messageUIDBackfillChunk {
+			return oversizedInteger(new(big.Int).Add(big.NewInt(doneThrough), big.NewInt(messageUIDBackfillChunk)))
 		}
-		through := doneThrough.Int64()
+		through := doneThrough
 		deadline := monotonicSeconds() + messageUIDBackfillBudgetS
 		for through < high {
 			upper := through + messageUIDBackfillChunk
@@ -807,9 +805,6 @@ func sqliteParam(index int, v any) (any, error) {
 		}
 		return int64(0), nil
 	case string:
-		if _, bad := pystr.FirstUnencodableSurrogate(t); bad {
-			return nil, pystr.StrictUTF8EncodeError(t)
-		}
 		return t, nil
 	case *big.Int:
 		if t.IsInt64() {

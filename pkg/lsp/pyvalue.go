@@ -15,9 +15,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Length of the UTF-8 sequence at i, or of its maximal invalid subpart with the CPython reason
@@ -117,11 +116,11 @@ func pyInt(v any) (int64, error) {
 	case int64:
 		return t, nil
 	case json.Number:
-		n, ok := new(big.Int).SetString(string(t), 10)
-		if ok && n.IsInt64() {
-			return n.Int64(), nil
+		n, err := strconv.ParseInt(string(t), 10, 64)
+		if err != nil {
+			return 0, errors.New("the number is too large for a whole number field")
 		}
-		return 0, errors.New("the number is too large for a whole number field")
+		return n, nil
 	case float64:
 		if math.IsInf(t, 0) {
 			return 0, errors.New("infinity is not a whole number")
@@ -131,11 +130,11 @@ func pyInt(v any) (int64, error) {
 		}
 		return int64(t), nil
 	case string:
-		n, ok := pyint.Parse(t)
-		if !ok || !n.IsInt64() {
+		n, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		if err != nil {
 			return 0, errors.New(t + " is not a whole number")
 		}
-		return n.Int64(), nil
+		return n, nil
 	}
 	return 0, errors.New("expected a whole number, got " + errchain.Kind(v))
 }
@@ -173,7 +172,7 @@ func pyBigInt(v any) (*big.Int, error) {
 		n, _ := new(big.Float).SetFloat64(t).Int(nil)
 		return n, nil
 	case string:
-		n, ok := pyint.Parse(t)
+		n, ok := new(big.Int).SetString(strings.TrimSpace(t), 10)
 		if !ok {
 			return nil, errors.New(t + " is not a whole number")
 		}
@@ -255,13 +254,13 @@ func pyOSError(err error, filename string) *pyExc {
 		if !errors.Is(err, exec.ErrNotFound) {
 			return &pyExc{typ: "OSError", text: err.Error(), err: err}
 		}
-		cause = syscall.ENOENT
+		cause, errno = syscall.ENOENT, syscall.ENOENT
 	}
-	text, _ := pypath.ErrnoText(cause)
+	text := errno.Error()
 	if filename != "" {
 		text += ": " + strconv.Quote(filename)
 	}
-	return &pyExc{typ: pypath.OSErrorClass(cause), text: text, err: err}
+	return &pyExc{typ: errorutil.Kind(cause), text: text, err: err}
 }
 
 // Python exception class name for an error the LSP layer logs
@@ -287,7 +286,7 @@ func errTypeName(err error) string {
 	case errors.As(err, &pathErr):
 		return pyOSError(pathErr.Err, pathErr.Path).typ
 	case errors.As(err, new(syscall.Errno)):
-		return pypath.OSErrorClass(err)
+		return errorutil.Kind(err)
 	}
 	return "RuntimeError"
 }

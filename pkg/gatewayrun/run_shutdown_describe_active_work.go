@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // One entry per in flight work unit the restart wait holds for, an unreadable source omitted

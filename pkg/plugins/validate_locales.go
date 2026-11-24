@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var localeKeyExports = map[string]string{"tui": "_keys.tui.json"}
@@ -58,7 +59,7 @@ func referenceKeys(ctx context.Context, surface string) (map[string]bool, error)
 	if err != nil {
 		return nil, err
 	}
-	if err := strictUTF8(raw); err != nil {
+	if err := textutil.ValidateUTF8(raw); err != nil {
 		return nil, err
 	}
 	data, err := jsonutil.Decode(stripBOM(raw))
@@ -136,7 +137,7 @@ func loadLocaleDocument(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := strictUTF8(raw); err != nil {
+	if err := textutil.ValidateUTF8(raw); err != nil {
 		return nil, err
 	}
 	return config.FastSafeLoad(raw)

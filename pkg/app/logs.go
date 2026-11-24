@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math"
-	"math/big"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -19,14 +17,12 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/logging"
 )
@@ -35,10 +31,10 @@ import (
 var logFiles = logging.LogFiles
 
 var (
-	logTSRE         = pyre.MustCompile(`(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})`)
-	logLevelRE      = pyre.MustCompile(`\s(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s`)
-	logLoggerNameRE = pyre.MustCompile(`\s(?:DEBUG|INFO|WARNING|ERROR|CRITICAL)(?:\s+\[.*?\])?\s+(\S+):`)
-	logSinceRE      = pyre.MustCompile(`^(\d+)\s*([smhd])$`)
+	logTSRE         = regexutil.MustCompile(`(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})`)
+	logLevelRE      = regexutil.MustCompile(`\s(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s`)
+	logLoggerNameRE = regexutil.MustCompile(`\s(?:DEBUG|INFO|WARNING|ERROR|CRITICAL)(?:\s+\[.*?\])?\s+(\S+):`)
+	logSinceRE      = regexutil.MustCompile(`^([0-9]+)\s*([smhd])$`)
 	logLevelOrder   = map[string]int{"DEBUG": 0, "INFO": 1, "WARNING": 2, "ERROR": 3, "CRITICAL": 4}
 )
 
@@ -74,19 +70,14 @@ func parseLogSince(since string) (time.Time, bool, error) {
 	if m == nil {
 		return time.Time{}, false, nil
 	}
-	n, _ := pystr.IntText(m[1])
+	n, err := textutil.ParseInt(m[1])
 	unit := map[string]int64{"s": 1, "m": 60, "h": 3600, "d": 86400}[m[2]]
-	total := new(big.Int).Mul(n, big.NewInt(unit))
-	days := new(big.Int).Div(total, big.NewInt(86400))
-	tooFar := &errorutil.Error{Kind: "OverflowError", Msg: "the --since window " + since + " reaches back before the year 1"}
-	if days.Cmp(big.NewInt(math.MaxInt32)) > 0 || days.Int64() > 999999999 {
-		return time.Time{}, false, tooFar
-	}
 	now := naiveLocalNow()
-	if total.Int64() > now.Unix()-time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).Unix() {
-		return time.Time{}, false, tooFar
+	reach := now.Unix() - time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC).Unix()
+	if err != nil || n > reach/unit {
+		return time.Time{}, false, &errorutil.Error{Kind: "OverflowError", Msg: "the --since window " + since + " reaches back before the year 1"}
 	}
-	return time.Unix(now.Unix()-total.Int64(), int64(now.Nanosecond())).UTC(), true, nil
+	return time.Unix(now.Unix()-n*unit, int64(now.Nanosecond())).UTC(), true, nil
 }
 
 // Local wall clock of now at microsecond precision as a naive time in UTC, as datetime.now gives it
@@ -101,7 +92,7 @@ func parseLogLineTimestamp(line string) (time.Time, bool) {
 	if m == nil {
 		return time.Time{}, false
 	}
-	t, _, err := pydatetime.Strptime(strings.ReplaceAll(m[1], "T", " "), "%Y-%m-%d %H:%M:%S")
+	t, err := time.Parse(time.DateTime, strings.ReplaceAll(m[1], "T", " "))
 	if err != nil {
 		return time.Time{}, false
 	}

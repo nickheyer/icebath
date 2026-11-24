@@ -18,12 +18,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -596,7 +596,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 	compile := func(patterns []string, warn func(pattern string, err error)) []*regexp2.Regexp {
 		var compiled []*regexp2.Regexp
 		for _, p := range patterns {
-			re, err := pyre.CompileIgnoreCase(p)
+			re, err := regexutil.Compile(p, regexutil.IgnoreCase())
 			if err != nil {
 				warn(p, err)
 				continue

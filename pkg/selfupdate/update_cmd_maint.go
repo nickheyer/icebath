@@ -469,7 +469,7 @@ func ensureFHSPathGuard(ctx context.Context, w io.Writer) error {
 		}
 		return err
 	}
-	if probe.Returncode == 0 {
+	if probe.ExitCode == 0 {
 		return nil
 	}
 	pathLine := `export PATH="/usr/local/bin:$PATH"`

@@ -36,7 +36,7 @@ type sessionHandlerNameError struct{}
 
 func (sessionHandlerNameError) Error() string { return "name 'Path' is not defined" }
 
-func (sessionHandlerNameError) PyTypeName() string { return "NameError" }
+func (sessionHandlerNameError) ErrorKind() string { return "NameError" }
 
 // Makes every admitted session socket fail with the NameError before it answers and returns to the ordinary gateway entry
 func breakSessionOwner() {
@@ -49,10 +49,10 @@ func breakSessionOwner() {
 func exceptionText(err error) string {
 	var named interface {
 		error
-		PyTypeName() string
+		ErrorKind() string
 	}
 	if errors.As(err, &named) {
-		return named.PyTypeName() + ": " + named.Error()
+		return named.ErrorKind() + ": " + named.Error()
 	}
 	return err.Error()
 }

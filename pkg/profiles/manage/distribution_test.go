@@ -185,7 +185,7 @@ func TestVersionRequiresCheckMatrix(t *testing.T) {
 func TestParseSemverHandlesPrerelease(t *testing.T) {
 	for _, v := range []string{"0.12.0-rc1", "v0.12.0+abc"} {
 		got, err := parseSemver(v)
-		if err != nil || got[0].Int64() != 0 || got[1].Int64() != 12 || got[2].Int64() != 0 {
+		if err != nil || got != [3]int64{0, 12, 0} {
 			t.Fatalf("%s: %v %v", v, got, err)
 		}
 	}

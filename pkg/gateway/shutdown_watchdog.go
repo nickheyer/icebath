@@ -16,12 +16,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 
 	"github.com/nickheyer/icebath/pkg/home"
@@ -111,7 +111,7 @@ func pyEventWait(e *syncutil.Event, timeoutS float64) (bool, error) {
 	if timeoutS > pyThreadTimeoutMax {
 		return false, errors.New("timeout value is too large")
 	}
-	return e.Wait(timeoutS), nil
+	return e.WaitTimeout(secondsDuration(timeoutS)), nil
 }
 
 // Self rescheduling no op loop timer that keeps one timer pending so selector waits stay bounded
@@ -365,7 +365,7 @@ func writeWatchdogDump(dumpPath string, delayS float64, snapshot any, event stri
 			f.Close()
 		}
 	}
-	delay, _ := pyrepr.Format(delayS, ".0f")
+	delay, _ := templateutil.Format("{v:.0f}", map[string]any{"v": delayS})
 	fmt.Fprintf(os.Stderr, "Gateway %s after %ss (pid=%d); dumping all thread stacks.\n", strings.ReplaceAll(event, "_", " "), delay, os.Getpid())
 	os.Stderr.Write(allGoroutineStacks())
 }
@@ -399,7 +399,7 @@ func ArmShutdownWatchdog(ctx context.Context, delayS any, opts ShutdownWatchdogO
 	go pprof.Do(context.Background(), pprof.Labels("name", name), func(context.Context) {
 		deadline := timeutil.Monotonic() + delay
 		for now := timeutil.Monotonic(); now < deadline; now = timeutil.Monotonic() {
-			if done.Wait(min(deadline-now, 1.0)) {
+			if done.WaitTimeout(secondsDuration(min(deadline-now, 1.0))) {
 				return
 			}
 		}
@@ -412,7 +412,7 @@ func ArmShutdownWatchdog(ctx context.Context, delayS any, opts ShutdownWatchdogO
 			target = GetShutdownWatchdogDumpPath(context.Background(), "")
 		}
 		writeWatchdogDump(target, delay, snapshot, "shutdown_watchdog_fired")
-		shown, _ := pyrepr.Format(delay, ".0f")
+		shown, _ := templateutil.Format("{v:.0f}", map[string]any{"v": delay})
 		pkgLog().Log(context.Background(), logLevelCritical, fmt.Sprintf("Shutdown watchdog fired after %ss — forcing process exit "+
 			"(asyncio drain path appears wedged; see %s)", shown, target))
 		os.Stdout.Sync()

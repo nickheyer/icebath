@@ -125,7 +125,7 @@ func scExe(ctx context.Context, verb, name string, service gatewaycli.WinService
 	if err != nil {
 		return err
 	}
-	if result.Returncode == 0 {
+	if result.ExitCode == 0 {
 		return nil
 	}
 	status, err := service.Status()
@@ -140,7 +140,7 @@ func scExe(ctx context.Context, verb, name string, service gatewaycli.WinService
 		detail = strings.ToValidUTF8(string(result.Stdout), "\uFFFD")
 	}
 	if detail = strings.TrimSpace(detail); detail == "" {
-		detail = fmt.Sprintf("sc.exe %s failed with %d", verb, result.Returncode)
+		detail = fmt.Sprintf("sc.exe %s failed with %d", verb, result.ExitCode)
 	}
 	return errors.New(detail)
 }

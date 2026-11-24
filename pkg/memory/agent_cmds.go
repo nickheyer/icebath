@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Clears memory.provider in config.yaml so only the built-in memory stays active
@@ -42,7 +42,7 @@ func MemoryReset(ctx context.Context, out io.Writer, in io.Reader, target string
 		if err != nil {
 			return err
 		}
-		size, err := pyrepr.Format(st.Size(), ",")
+		size, err := templateutil.Format("{v:,}", map[string]any{"v": st.Size()})
 		if err != nil {
 			return err
 		}

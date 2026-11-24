@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -26,6 +25,7 @@ import (
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -44,7 +44,7 @@ var (
 // Consecutive send failures before a subscription is dropped as a dead chat
 const kanbanMaxSendFailures = 12
 
-var kanbanLocalPathRe = pyre.MustCompile(`(?<![\w:/])(?:/(?:Users|home|private|tmp|var|etc|workspace)/[^\s,;]+|[A-Za-z]:\\[^\s,;]+)`)
+var kanbanLocalPathRe = regexutil.MustCompile(`(?<![\w:/])(?:/(?:Users|home|private|tmp|var|etc|workspace)/[^\s,;]+|[A-Za-z]:\\[^\s,;]+)`)
 
 // Value of key in an event payload mapping, nil when the payload is no mapping or lacks it
 func kanbanPayloadGet(payload any, key string) any {

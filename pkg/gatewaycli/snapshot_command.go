@@ -14,12 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Home and catalog lookup of one /snapshot run, T taking the snapshot keys of cli.commands
@@ -88,10 +88,10 @@ func snapshotSize(size int64) (string, error) {
 	case size < 1024:
 		return fmt.Sprintf("%d B", size), nil
 	case size < 1024*1024:
-		text, err := pyrepr.Format(float64(size)/1024, ".0f")
+		text, err := templateutil.Format("{v:.0f}", map[string]any{"v": float64(size) / 1024})
 		return text + " KB", err
 	}
-	text, err := pyrepr.Format(float64(size)/1024/1024, ".1f")
+	text, err := templateutil.Format("{v:.1f}", map[string]any{"v": float64(size) / 1024 / 1024})
 	return text + " MB", err
 }
 
@@ -115,8 +115,8 @@ func (s SnapshotCommand) List() ([]string, error) {
 		row := snapshotRow(raw)
 		size := int64(0)
 		if total, present := row["total_size"]; present {
-			if n, ok := pyrepr.Int(total); ok && n != nil {
-				size = n.Int64()
+			if n, ok := anyutil.Int(total); ok {
+				size = n
 			}
 		}
 		sizeText, err := snapshotSize(size)

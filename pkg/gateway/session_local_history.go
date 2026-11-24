@@ -8,7 +8,6 @@ import (
 	"sort"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -31,11 +30,11 @@ func historyRowID(row map[string]any) (int64, error) {
 	if !ok {
 		return 0, &pyKeyError{key: "_row_id"}
 	}
-	n, err := pyint.Of(raw)
+	n, err := anyutil.ToInt(raw)
 	if err != nil {
 		return 0, err
 	}
-	return n.Int64(), nil
+	return n, nil
 }
 
 // Row ids of a list of conversation rows
@@ -154,11 +153,11 @@ func omittedHistoryState(ctx context.Context, db *state.SessionDB, target string
 	plan := todoStateFromDB(ctx, db, target)
 	count := 0
 	if raw, _ := row.Get("message_count"); pyTruthy(raw) {
-		n, err := pyint.Of(raw)
+		n, err := anyutil.ToInt(raw)
 		if err != nil {
 			return nil, 0, err
 		}
-		count = int(n.Int64())
+		count = int(n)
 	}
 	return plan, count, nil
 }

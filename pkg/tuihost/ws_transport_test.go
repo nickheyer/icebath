@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Socket counting the sends in flight while each one takes a moment
@@ -65,7 +65,7 @@ func TestWsTransportRepliesWithErrorForUnserializableResponse(t *testing.T) {
 	ws := &recordingWS{}
 	bad := func() *jsonutil.Object {
 		return jsonutil.ObjectOf("jsonrpc", "2.0", "id", "profiles",
-			"result", jsonutil.ObjectOf("created", pydatetime.DateTime{Year: 2026, Month: 8, Day: 22}))
+			"result", jsonutil.ObjectOf("created", make(chan int)))
 	}
 	transport := NewWSTransport(ws, "serialization-test", nil)
 	if !transport.Write(bad()) {
@@ -100,7 +100,7 @@ func TestWsTransportRepliesWithErrorForUnserializableResponse(t *testing.T) {
 			t.Fatalf("frame = %s", frameText(t, frame))
 		}
 		message, _ := errObj.ValueOr("message", nil).(string)
-		if !strings.HasPrefix(message, "response serialization error") || !strings.Contains(message, "datetime") {
+		if !strings.HasPrefix(message, "response serialization error") || !strings.Contains(message, "chan int") {
 			t.Fatalf("message = %q", message)
 		}
 	}

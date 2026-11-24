@@ -23,13 +23,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -63,7 +62,7 @@ var (
 )
 
 func mustPyre(pattern string) func(string) bool {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}
@@ -839,8 +838,8 @@ func GitErrorStopClass(err error) *string {
 	if len(raw) == 0 {
 		raw = called.Stdout
 	}
-	code := called.Returncode
-	return GitOutputStopClass(strings.ToValidUTF8(string(raw), "\uFFFD"), called.Cmd, &code)
+	code := called.ExitCode
+	return GitOutputStopClass(strings.ToValidUTF8(string(raw), "\uFFFD"), called.Args, &code)
 }
 
 // Stop token for a git call that returned instead of raising
@@ -1145,8 +1144,8 @@ func truthy(v any) bool {
 	case map[string]any:
 		return len(t) > 0
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return n.Sign() != 0
+	if n, ok := anyutil.Int(v); ok {
+		return n != 0
 	}
 	return true
 }
@@ -1230,8 +1229,8 @@ func pyIntValue(v any) (int64, bool) {
 	case float64:
 		return 0, false
 	}
-	if n, ok := pyrepr.Int(v); ok && n.IsInt64() {
-		return n.Int64(), true
+	if n, ok := anyutil.Int(v); ok {
+		return n, true
 	}
 	return 0, false
 }

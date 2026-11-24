@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Loop double recording every callback the watcher schedules instead of running it
@@ -69,7 +71,7 @@ func TestWatcherFiresShutdownWhenMarkerAppears(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runPlannedStopWatcher(&syncutil.Event{}, watcherRunner(), loop, func(sig *int) { handled = append(handled, sig) }, 0.05)
+		runPlannedStopWatcher(&syncutil.Event{}, watcherRunner(), loop, func(sig *int) { handled = append(handled, sig) }, 50*time.Millisecond)
 	}()
 	select {
 	case <-done:
@@ -93,7 +95,7 @@ func TestWatcherToleratesMarkerPathResolutionErrors(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runPlannedStopWatcher(stop, watcherRunner(), loop, func(*int) {}, 0.05)
+		runPlannedStopWatcher(stop, watcherRunner(), loop, func(*int) {}, 50*time.Millisecond)
 	}()
 	time.Sleep(200 * time.Millisecond)
 	stop.Set()
@@ -117,7 +119,7 @@ func TestWatcherDoesNotFireForForeignPidMarker(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runPlannedStopWatcher(stop, watcherRunner(), loop, func(*int) { handled++ }, 0.05)
+		runPlannedStopWatcher(stop, watcherRunner(), loop, func(*int) { handled++ }, 50*time.Millisecond)
 	}()
 	time.Sleep(200 * time.Millisecond)
 	stop.Set()

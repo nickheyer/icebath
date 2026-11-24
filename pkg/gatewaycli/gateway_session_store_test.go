@@ -170,7 +170,7 @@ func TestRenameRefusalPrintsMainsTitleInUseText(t *testing.T) {
 	})
 	_, err = db.SetSessionTitle(ctx, "local-old", "Alpha Title")
 	var inUse *TitleInUseError
-	if !errors.As(err, &inUse) || inUse.PyTypeName() != "ValueError" ||
+	if !errors.As(err, &inUse) || inUse.ErrorKind() != "ValueError" ||
 		err.Error() != "Title 'Alpha Title' is already in use by session local-other" {
 		t.Fatalf("error %v", err)
 	}

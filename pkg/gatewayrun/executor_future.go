@@ -31,7 +31,7 @@ type futureInvalidStateError struct{ msg string }
 func (e *futureInvalidStateError) Error() string { return e.msg }
 
 // Exception class the error reports, InvalidStateError
-func (e *futureInvalidStateError) PyTypeName() string { return "InvalidStateError" }
+func (e *futureInvalidStateError) ErrorKind() string { return "InvalidStateError" }
 
 // Result slot of one pool work item, settled by the worker that ran it
 type concurrentFuture struct {

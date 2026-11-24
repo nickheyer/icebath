@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ScopeKey canonicalizes a profile home into the key scoped registrations live under

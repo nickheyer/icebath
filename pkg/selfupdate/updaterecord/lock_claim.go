@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,7 +21,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
@@ -79,11 +79,11 @@ func pauseAt(point string) {
 
 // Pid of the orchestrating updater named by the handoff variable, zero when absent or malformed
 func handoffPID() int {
-	value, ok := pyint.Parse(strings.TrimSpace(os.Getenv(HandoffPIDEnv)))
-	if !ok || value.Sign() <= 0 || !value.IsInt64() || value.Int64() > math.MaxInt32 {
+	value, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(HandoffPIDEnv)), 10, 64)
+	if err != nil || value <= 0 || value > math.MaxInt32 {
 		return 0
 	}
-	return int(value.Int64())
+	return int(value)
 }
 
 // Parent of pid as psutil reports it, absent when it has none, is gone or started after the child

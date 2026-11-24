@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
-	"math/big"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -543,8 +543,7 @@ func TestCompletionRetryBackoffAndCap(t *testing.T) {
 	record := filepath.Join(tmp, "source-completion-attempts")
 	ctx := context.Background()
 	state := func(now func() float64) (bool, int64, int64) {
-		may, attempts, backoff := CompletionRetryState(ctx, tmp, now)
-		return may, attempts.Int64(), backoff
+		return CompletionRetryState(ctx, tmp, now)
 	}
 	if may, attempts, backoff := state(nil); !may || attempts != 0 || backoff != 0 {
 		t.Fatalf("no record %v %d %d", may, attempts, backoff)
@@ -573,8 +572,12 @@ func TestCompletionRetryBackoffAndCap(t *testing.T) {
 		}
 	}
 	vsWrite(t, record, "not a number\n")
-	if may, attempts, backoff := CompletionRetryState(ctx, tmp, nil); !may || attempts.Cmp(new(big.Int)) != 0 || backoff != 0 {
-		t.Fatalf("corrupt record %v %v %d", may, attempts, backoff)
+	if may, attempts, backoff := state(nil); !may || attempts != 0 || backoff != 0 {
+		t.Fatalf("corrupt record %v %d %d", may, attempts, backoff)
+	}
+	vsWrite(t, record, "99999999999999999999\n")
+	if may, attempts, _ := state(nil); may || attempts != math.MaxInt64 {
+		t.Fatalf("a count past int64 %v %d", may, attempts)
 	}
 }
 

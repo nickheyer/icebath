@@ -10,20 +10,20 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const LoopCompleteMarker = "LOOP_COMPLETE"
 
 var (
-	loopCompleteRe   = pyre.MustCompile(`(?im)^\s*LOOP_COMPLETE\s*[.!]?\s*$`)
-	loopDigestClock  = pyre.MustCompile(`\d{1,2}:\d{2}(:\d{2})?`)
-	loopDigestDate   = pyre.MustCompile(`\d{4}-\d{2}-\d{2}`)
-	loopDigestSpan   = pyre.MustCompile(`\b\d+(\.\d+)?\s*(s|sec|secs|seconds|m|min|mins|minutes|h|hr|hrs|hours)\b`)
-	loopDigestSpaces = pyre.MustCompile(`\s+`)
+	loopCompleteRe   = regexutil.MustCompile(`(?im)^\s*LOOP_COMPLETE\s*[.!]?\s*$`)
+	loopDigestClock  = regexutil.MustCompile(`\d{1,2}:\d{2}(:\d{2})?`)
+	loopDigestDate   = regexutil.MustCompile(`\d{4}-\d{2}-\d{2}`)
+	loopDigestSpan   = regexutil.MustCompile(`\b\d+(\.\d+)?\s*(s|sec|secs|seconds|m|min|mins|minutes|h|hr|hrs|hours)\b`)
+	loopDigestSpaces = regexutil.MustCompile(`\s+`)
 )
 
 // Wakeup message framing a loop prompt for its tick number and cadence

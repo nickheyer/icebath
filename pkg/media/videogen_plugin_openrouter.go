@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptrace"
@@ -19,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -158,23 +156,23 @@ func openRouterNearest(value any, supported []any, height map[string]int) any {
 		}
 		return pick(scores)
 	}
-	want, err := pyint.Of(value)
+	want, err := anyutil.ToInt(value)
 	if err != nil {
 		return supported[0]
 	}
 	var best any
-	var bestDist *big.Int
+	var bestDist uint64
 	for i, s := range supported {
-		n, err := pyint.Of(s)
+		n, err := anyutil.ToInt(s)
 		if err != nil {
 			return supported[0]
 		}
-		d := new(big.Int).Abs(new(big.Int).Sub(n, want))
-		if i == 0 || d.Cmp(bestDist) < 0 {
+		d := uint64(max(n, want)) - uint64(min(n, want))
+		if i == 0 || d < bestDist {
 			best, bestDist = s, d
 			continue
 		}
-		if d.Cmp(bestDist) == 0 {
+		if d == bestDist {
 			less, ok := pyLess(s, best)
 			if !ok {
 				return supported[0]
@@ -224,8 +222,8 @@ func openRouterEntryCapabilities(entry map[string]any) map[string]any {
 		case string, nil, []any, map[string]any:
 			continue
 		}
-		if n, err := pyint.Of(d); err == nil && n.IsInt64() {
-			durations = append(durations, int(n.Int64()))
+		if n, err := anyutil.ToInt(d); err == nil {
+			durations = append(durations, int(n))
 		}
 	}
 	modalities := []any{"text"}
@@ -294,8 +292,8 @@ func openRouterBuildPayload(entry map[string]any, in openRouterPayloadInput) *js
 	}
 	if in.Duration != nil && *in.Duration != 0 {
 		picked := openRouterNearest(*in.Duration, entryList(entry, "supported_durations"), nil)
-		if n, err := pyint.Of(picked); err == nil {
-			payload.Set("duration", pyint.Native(n))
+		if n, err := anyutil.ToInt(picked); err == nil {
+			payload.Set("duration", int(n))
 		}
 	}
 	if in.ImageURL != "" {
@@ -616,8 +614,8 @@ func (p *openRouterVideoGenProvider) Generate(ctx context.Context, env *tools.En
 	}
 	duration := 0
 	if v := mustGet(payload, "duration"); pyTruthy(v) {
-		if n, err := pyint.Of(v); err == nil {
-			duration = int(n.Int64())
+		if n, err := anyutil.ToInt(v); err == nil {
+			duration = int(n)
 		}
 	}
 	return videoSuccessResponse(videoPath, modelID, prompt, modality, aspectOut, duration, "openrouter", extra), nil

@@ -15,6 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 var _ cron.GatewayRunner = (*GatewayRunner)(nil)
@@ -321,7 +323,7 @@ func startGatewayCronTicker(ctx context.Context, r *GatewayRunner, stop *syncuti
 	}
 	stopCh := make(chan struct{})
 	go func() {
-		stop.Wait(-1)
+		stop.Wait()
 		close(stopCh)
 	}()
 	cronThread := cron.NewSupervisedTickerThread(func() { p.Start(context.WithoutCancel(ctx), stopCh, opts) }, stopCh, "cron-ticker")

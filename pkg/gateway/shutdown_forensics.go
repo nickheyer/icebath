@@ -279,7 +279,7 @@ func systemdTimeoutStopUS(ctx context.Context, unitName string) *big.Int {
 	for _, flag := range [][]string{{"--user"}, {}} {
 		argv := append(append([]string{"systemctl"}, flag...), "show", unitName, "--property=TimeoutStopUSec")
 		result, err := executil.Run(ctx, argv, executil.Options{Timeout: 2 * time.Second})
-		if err != nil || result.Returncode != 0 {
+		if err != nil || result.ExitCode != 0 {
 			continue
 		}
 		for _, line := range textutil.Lines(strings.ToValidUTF8(string(result.Stdout), "\ufffd")) {

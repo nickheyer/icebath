@@ -385,7 +385,7 @@ func opWhoami(cli *secretsCLI, binary, account, tokenValue string) (string, bool
 		env["OP_SERVICE_ACCOUNT_TOKEN"] = tokenValue
 	}
 	res, err := executil.Run(cli.ctx, cmd, executil.Options{Env: envList(env), Timeout: 10 * time.Second})
-	if err != nil || res.Returncode != 0 {
+	if err != nil || res.ExitCode != 0 {
 		return "", false
 	}
 	identity := headRunes(strings.ReplaceAll(strings.TrimSpace(decodeCLIOutput(res.Stdout)), "\n", " "), 120)

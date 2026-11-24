@@ -13,7 +13,6 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -76,11 +75,11 @@ func parseDuration(text string) (int, error) {
 	}
 	value := int64(1)
 	if digits := m.GroupByNumber(1).String(); digits != "" {
-		n, ok := pyint.Parse(digits)
-		if !ok || !n.IsInt64() || n.Int64() > math.MaxInt64/1440 {
+		n, err := strconv.ParseInt(strings.TrimSpace(digits), 10, 64)
+		if err != nil || n > math.MaxInt64/1440 {
 			return 0, errDurationOverflow
 		}
-		value = n.Int64()
+		value = n
 	}
 	return int(value) * durationMultipliers[m.GroupByNumber(2).String()[0]], nil
 }
@@ -100,12 +99,12 @@ func parseClockTime(text string) (int, int, bool) {
 	if m == nil {
 		return 0, 0, false
 	}
-	hourN, _ := pyint.Parse(m.GroupByNumber(1).String())
-	hour := int(hourN.Int64())
+	hourN, _ := strconv.ParseInt(strings.TrimSpace(m.GroupByNumber(1).String()), 10, 64)
+	hour := int(hourN)
 	minute := 0
 	if g := m.GroupByNumber(2).String(); g != "" {
-		n, _ := pyint.Parse(g)
-		minute = int(n.Int64())
+		n, _ := strconv.ParseInt(strings.TrimSpace(g), 10, 64)
+		minute = int(n)
 	}
 	if meridiem := m.GroupByNumber(3).String(); meridiem != "" {
 		if hour < 1 || hour > 12 {

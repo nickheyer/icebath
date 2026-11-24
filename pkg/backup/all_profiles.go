@@ -9,14 +9,14 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Profile id grammar with Python match semantics, a trailing newline before the end accepted
 var profileIDRe = func() *regexp2.Regexp {
-	re, err := pyre.Compile(home.ProfileIDRe.String())
+	re, err := regexutil.Compile(home.ProfileIDRe.String())
 	if err != nil {
 		panic(err)
 	}

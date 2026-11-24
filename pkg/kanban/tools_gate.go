@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
 	"sort"
 	"strings"
@@ -13,8 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -578,8 +575,6 @@ func coerceStrList(value any, name, what string, strip bool) ([]any, bool, error
 		for _, s := range v {
 			items = append(items, s)
 		}
-	case pyrepr.Tuple:
-		items = []any(v)
 	default:
 		return nil, false, reject(fmt.Sprintf("%s must be a list of %s, got %s", name, what, errchain.Kind(value)))
 	}
@@ -629,8 +624,6 @@ func mergeArtifacts(metadata any, artifacts []any) (*jsonutil.Object, error) {
 	switch e := existing.(type) {
 	case []any:
 		prior = e
-	case pyrepr.Tuple:
-		prior = []any(e)
 	default:
 		out.Set("artifacts", artifacts)
 		return out, nil
@@ -676,16 +669,25 @@ func parseBoolArg(k *kanbanCall, name string) (bool, error) {
 	return parsed, nil
 }
 
-// Whole number of an optional argument, nil when it is absent, a plain refusal for any other value
-func optIntArg(value any) (*big.Int, error) {
+// Optional whole number argument: n is nil when it is absent or tooLarge, which marks a number past what a SQLite INTEGER holds
+type OptInt struct {
+	n        *int64
+	tooLarge bool
+}
+
+// Whole number of an optional argument, a plain refusal for a value no whole number reads from
+func optIntArg(value any) (OptInt, error) {
 	if value == nil {
-		return nil, nil
+		return OptInt{}, nil
 	}
-	n, err := pyint.Of(value)
+	n, err := anyutil.ToInt(value)
+	if f, isFloat := value.(float64); errors.Is(err, anyutil.ErrRange) && !(isFloat && math.IsInf(f, 0)) {
+		return OptInt{tooLarge: true}, nil
+	}
 	if err != nil {
-		return nil, &ValueError{wholeNumberRefusal(value)}
+		return OptInt{}, &ValueError{wholeNumberRefusal(value)}
 	}
-	return n, nil
+	return OptInt{n: &n}, nil
 }
 
 // Sentence refusing a value no whole number reads from

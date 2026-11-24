@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func memProvider() (*TracerProvider, *InMemorySpanExporter) {

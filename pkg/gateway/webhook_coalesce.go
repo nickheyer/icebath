@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
@@ -65,8 +64,8 @@ func webhookPositiveNumberValue(value any) bool {
 	case float32:
 		return v > 0
 	}
-	if n, ok := pyrepr.Int(value); ok {
-		return n.Sign() > 0
+	if n, ok := anyutil.Int(value); ok {
+		return n > 0
 	}
 	return false
 }

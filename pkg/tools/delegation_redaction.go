@@ -6,7 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var delegationParentEventFields = map[string]bool{
@@ -26,7 +27,7 @@ type ParentCopy struct {
 func (p *ParentCopy) PyStr() string { return p.Text }
 
 // JSON string of the parent text, the way json.dumps writes a str subclass
-func (p *ParentCopy) MarshalJSON() ([]byte, error) { return pyjson.AppendStringWTF8(nil, p.Text), nil }
+func (p *ParentCopy) MarshalJSON() ([]byte, error) { return jsonutil.Append(nil, p.Text) }
 
 // Text for the parent remembering the forced projection, the plain string when both match
 func NewParentCopy(text, forced string) any {
@@ -120,9 +121,6 @@ func redactChildValueAt(env *Env, value any, force bool, depth int) any {
 				cleaned = projectParentCopy(pc, force)
 			} else {
 				cleaned = redactChildValueAt(env, item, force, depth+1)
-			}
-			if _, seen := out.Get(rk); !seen {
-				out.Keys = append(out.Keys, rk)
 			}
 			out.Set(rk, cleaned)
 		}
@@ -234,9 +232,6 @@ func RedactChildResultAt(env *Env, result any, outputSchema any, force bool, val
 	structured := isJSONObject(outputSchema) || hasValid
 	cleaned := jsonutil.NewObject()
 	set := func(k string, v any) {
-		if _, seen := cleaned.Get(k); !seen {
-			cleaned.Keys = append(cleaned.Keys, k)
-		}
 		cleaned.Set(k, v)
 	}
 	for _, k := range keys {
@@ -301,10 +296,7 @@ func lookupKey(keys []string, k string) (int, bool) {
 }
 
 func deleteKey(o *jsonutil.Object, k string) {
-	if i := slices.Index(o.Keys(), k); i >= 0 {
-		o.Keys = slices.Delete(o.Keys, i, i+1)
-		o.Delete(k)
-	}
+	o.Delete(k)
 }
 
 // Completion event with child output scrubbed and parent instructions and routing left exact
@@ -316,16 +308,12 @@ func RedactCompletionEvent(env *Env, event any, force bool) any {
 	child := jsonutil.NewObject()
 	for _, k := range keys {
 		if !delegationParentEventFields[k] {
-			child.Keys = append(child.Keys, k)
 			child.Set(k, get(k))
 		}
 	}
 	cleaned := RedactChildResult(env, child, nil, force).(*jsonutil.Object)
 	for _, k := range keys {
 		if delegationParentEventFields[k] {
-			if _, seen := cleaned.Get(k); !seen {
-				cleaned.Keys = append(cleaned.Keys, k)
-			}
 			cleaned.Set(k, get(k))
 		}
 	}

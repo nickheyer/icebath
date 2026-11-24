@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,8 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -107,8 +106,8 @@ func pyNumber(v any) (*big.Rat, bool) {
 		}
 		return new(big.Rat).SetFloat64(t), true
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return new(big.Rat).SetInt(n), true
+	if n, ok := anyutil.Int(v); ok {
+		return new(big.Rat).SetInt64(n), true
 	}
 	return nil, false
 }
@@ -118,7 +117,7 @@ func pyIsInt(v any) bool {
 	if _, ok := v.(bool); ok {
 		return false
 	}
-	_, ok := pyrepr.Int(v)
+	_, ok := anyutil.Int(v)
 	return ok
 }
 
@@ -340,16 +339,16 @@ func startTimesAgree(current any, recorded ...any) (bool, error) {
 
 // Whether two start time fingerprints are the same incarnation within tolerance, an error for junk
 func StartTimeFingerprintsMatch(recorded, current any, tolerance int) (bool, error) {
-	c, err := pyint.Of(current)
+	c, err := anyutil.ToInt(current)
 	if err != nil {
 		return false, err
 	}
-	r, err := pyint.Of(recorded)
+	r, err := anyutil.ToInt(recorded)
 	if err != nil {
 		return false, err
 	}
-	diff := new(big.Int).Sub(c, r)
-	return diff.Abs(diff).Cmp(big.NewInt(int64(tolerance))) <= 0, nil
+	lo, hi := min(c, r), max(c, r)
+	return tolerance >= 0 && uint64(hi)-uint64(lo) <= uint64(tolerance), nil
 }
 
 func scopeHash(identity string) string {
@@ -476,8 +475,8 @@ func readJSONFile(path string, barePidOK bool) *jsonutil.Object {
 	if err != nil {
 		payload = nil
 		if barePidOK {
-			if n, ok := pyint.Parse(raw); ok {
-				payload = pyint.Native(n)
+			if n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); err == nil {
+				payload = int(n)
 			}
 		}
 	}
@@ -522,11 +521,11 @@ func pidFromRecord(record *jsonutil.Object, key string) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	n, err := pyint.Of(v)
-	if err != nil || !n.IsInt64() || n.Int64() != int64(int(n.Int64())) {
+	n, err := anyutil.ToInt(v)
+	if err != nil || n != int64(int(n)) {
 		return 0, false
 	}
-	return int(n.Int64()), true
+	return int(n), true
 }
 
 // Whether both start times are known and differ, the pid reuse guard

@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -229,8 +228,8 @@ func HandleFunctionCall(ctx context.Context, call *Call) string {
 
 // Bare Python style class name of an error, the Python class an error names for itself first
 func exceptionTypeName(err error) string {
-	if named, ok := err.(pyrepr.PyTypeNamed); ok && named.PyTypeName() != "" {
-		return named.PyTypeName()
+	if named, ok := err.(interface{ ErrorKind() string }); ok && named.ErrorKind() != "" {
+		return named.ErrorKind()
 	}
 	t := reflect.TypeOf(err)
 	for t != nil && t.Kind() == reflect.Pointer {

@@ -15,10 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -34,7 +34,7 @@ var (
 	// Field names that carry message content and are refused in a wake payload
 	contentFieldNames = map[string]bool{"body": true, "content": true, "message": true, "messages": true, "preview": true,
 		"snippet": true, "text": true}
-	safeScalarRE = pyre.MustCompile(`^[a-zA-Z0-9._:@/ -]+$`)
+	safeScalarRE = regexutil.MustCompile(`^[a-zA-Z0-9._:@/ -]+$`)
 	// Fields an activity event may carry
 	activityAllowedFields = map[string]bool{"schema": true, "eventId": true, "sessionId": true, "hookEventName": true, "status": true,
 		"occurredAt": true, "toolName": true, "toolInput": true, "toolOutput": true, "toolInputTruncated": true,

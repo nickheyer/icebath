@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
@@ -37,8 +36,8 @@ var auxLoadConfigReadonlyFn = func(ctx context.Context) (config.Tree, error) {
 
 // OpenRouter attribution headers every OpenRouter call carries
 func auxORHeadersBase() map[string]string {
-	return pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "HTTP-Referer", Value: attributionReferer},
-		pyhttpx.HeaderLine{Name: "X-Title", Value: attributionTitle}, pyhttpx.HeaderLine{Name: "X-OpenRouter-Categories", Value: "productivity,cli-agent"})
+	return fieldMap(headerField{Name: "HTTP-Referer", Value: attributionReferer},
+		headerField{Name: "X-Title", Value: attributionTitle}, headerField{Name: "X-OpenRouter-Categories", Value: "productivity,cli-agent"})
 }
 
 // Merges model.default_headers over the resolved headers, user values winning
@@ -47,19 +46,19 @@ func auxApplyUserDefaultHeaders(ctx context.Context, headers map[string]string) 
 	if len(user) == 0 {
 		return headers
 	}
-	var lines []pyhttpx.HeaderLine
+	var lines []headerField
 	for _, k := range slices.Sorted(maps.Keys(headers)) {
-		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
+		lines = append(lines, headerField{Name: k, Value: headers[k]})
 	}
 	for _, k := range config.MappingKeys(user) {
 		if v := user[k]; v != nil {
-			lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: anyutil.String(v)})
+			lines = append(lines, headerField{Name: k, Value: anyutil.String(v)})
 		}
 	}
 	if len(lines) == 0 {
 		return headers
 	}
-	return pyhttpx.OrderedHeaderMap(lines...)
+	return fieldMap(lines...)
 }
 
 // Resolved headers with model.default_headers merged over them, user values winning
@@ -74,7 +73,6 @@ func BuildORHeaders(ctx context.Context) map[string]string {
 		return headers
 	}
 	headers["X-OpenRouter-Cache"] = "true"
-	pyhttpx.SetHeaderOrder(headers, append(slices.Sorted(maps.Keys(auxORHeadersBase())), "X-OpenRouter-Cache"))
 	if ttl := settings.OpenrouterResponseCacheTtl.Get(ctx); ttl >= 1 && ttl <= 86400 {
 		headers["X-OpenRouter-Cache-TTL"] = strconv.Itoa(ttl)
 	}

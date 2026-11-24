@@ -8,8 +8,8 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -22,36 +22,15 @@ const timestampPrefixPattern = `^\[(?:` +
 	`)\]\s*`
 
 var (
-	timestampPrefixRE     = regexp2.MustCompile(mustTranslatePy(timestampPrefixPattern), regexp2.None)
-	timestampPrefixGroups = mustGroupIndexPy(timestampPrefixPattern)
+	timestampPrefixRE = regexutil.MustCompile(timestampPrefixPattern)
 )
 
 // System zone wall clock stamps are read in without a configured one, a seam for zone pinned tests
 var timestampLocalZone = func() *time.Location { return time.Local }
 
-func mustTranslatePy(pattern string) string {
-	out, err := pyre.Translate(pattern)
-	if err != nil {
-		panic(err)
-	}
-	return out
-}
-
-func mustGroupIndexPy(pattern string) map[string]int {
-	index, err := pyre.GroupIndex(pattern)
-	if err != nil {
-		panic(err)
-	}
-	return index
-}
-
 // Matched text of a named group of the timestamp prefix, empty when the group did not take part
 func timestampGroup(m *regexp2.Match, name string) string {
-	g := m.GroupByNumber(timestampPrefixGroups[name])
-	if g == nil || len(g.Captures) == 0 {
-		return ""
-	}
-	return g.String()
+	return regexutil.NamedGroup(m, name)
 }
 
 // Zone wall clock stamps are read in, the configured zone or the system one

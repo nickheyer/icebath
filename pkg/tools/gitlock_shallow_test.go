@@ -481,7 +481,7 @@ func TestTreelessCheckoutGetsItsWholeHistoryOnceSoWalksStayOffline(t *testing.T)
 				if err != nil {
 					t.Fatal(err)
 				}
-				return string(res.Stdout), res.Returncode
+				return string(res.Stdout), res.ExitCode
 			}
 			if _, rc := walk(); rc == 0 {
 				t.Fatal("premise: offline walk succeeded")

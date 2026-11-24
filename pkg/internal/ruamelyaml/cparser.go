@@ -1,7 +1,6 @@
 package ruamelyaml
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -206,7 +205,7 @@ func ComposeC(in Input) (doc *Document, ok bool, err error) {
 	} else {
 		name = "<unicode string>"
 		text := string(in.Text)
-		if e := pystr.StrictUTF8EncodeError(text); e != nil {
+		if e := textutil.ValidateUTF8(text); e != nil {
 			return nil, false, Raise("UnicodeEncodeError", e.Error())
 		}
 		input = text

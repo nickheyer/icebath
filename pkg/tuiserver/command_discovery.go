@@ -1,9 +1,9 @@
 package tuiserver
 
 import (
+	"cmp"
 	"context"
 	"fmt"
-	"math/big"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -50,7 +50,7 @@ func completionItem(text, meta string, display ...string) map[string]any {
 }
 
 // Skill activity count and hub, bundled or local origin lookups, zero and local when the usage store fails
-func skillUsageLookup(ctx context.Context) (func(string) *big.Int, func(string) string) {
+func skillUsageLookup(ctx context.Context) (func(string) int64, func(string) string) {
 	scope := skills.NewScope(home.Dir(ctx), nil)
 	records, err := scope.LoadUsage()
 	var bundled map[string]bool
@@ -59,17 +59,17 @@ func skillUsageLookup(ctx context.Context) (func(string) *big.Int, func(string) 
 	}
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("skill usage lookup unavailable: %s", err))
-		return func(string) *big.Int { return big.NewInt(0) }, func(string) string { return "local" }
+		return func(string) int64 { return 0 }, func(string) string { return "local" }
 	}
 	hub := scope.ReadHubInstalledNames()
-	usage := func(name string) *big.Int {
+	usage := func(name string) int64 {
 		rec, _ := records.ValueOr(name, nil).(*jsonutil.Object)
 		if rec == nil {
 			rec = jsonutil.NewObject()
 		}
 		count, err := skills.ActivityCount(rec)
 		if err != nil {
-			return big.NewInt(0)
+			return 0
 		}
 		return count
 	}
@@ -91,7 +91,7 @@ func slashNameOf(item map[string]any) string {
 }
 
 // Registry commands in order then skills by score, use and name, each kind capped at the completion limit
-func rankSlashCompletions(items []map[string]any, usage func(string) *big.Int, originOf func(string) string, browsing bool, scoreOf func(map[string]any) float64, registryCommandNames map[string]bool) []map[string]any {
+func rankSlashCompletions(items []map[string]any, usage func(string) int64, originOf func(string) string, browsing bool, scoreOf func(map[string]any) float64, registryCommandNames map[string]bool) []map[string]any {
 	var commands, skillItems []map[string]any
 	for _, item := range items {
 		if item["kind"] == "skill" {
@@ -103,7 +103,7 @@ func rankSlashCompletions(items []map[string]any, usage func(string) *big.Int, o
 	if browsing {
 		skillItems = slices.DeleteFunc(skillItems, func(item map[string]any) bool {
 			name := slashNameOf(item)
-			return originOf(name) == "bundled" && usage(name).Sign() <= 0
+			return originOf(name) == "bundled" && usage(name) <= 0
 		})
 	}
 	slices.SortStableFunc(skillItems, func(a, b map[string]any) int {
@@ -112,7 +112,7 @@ func rankSlashCompletions(items []map[string]any, usage func(string) *big.Int, o
 				return c
 			}
 		}
-		if c := usage(slashNameOf(b)).Cmp(usage(slashNameOf(a))); c != 0 {
+		if c := cmp.Compare(usage(slashNameOf(b)), usage(slashNameOf(a))); c != 0 {
 			return c
 		}
 		return strings.Compare(slashNameOf(a), slashNameOf(b))

@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -178,8 +177,8 @@ func pyPositive(v any) (positive, comparable bool) {
 			return f > 0, true
 		}
 	}
-	if i, ok := pyrepr.Int(v); ok {
-		return i.Sign() > 0, true
+	if i, ok := anyutil.Int(v); ok {
+		return i > 0, true
 	}
 	return false, false
 }

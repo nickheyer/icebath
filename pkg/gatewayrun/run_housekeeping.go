@@ -228,7 +228,7 @@ func startGatewayHousekeeping(ctx context.Context, stop *syncutil.Event, a house
 				housekeepingChore(c.label, c.fn)
 			}
 		}
-		waitForNextTick(ctx, stop, float64(interval), watch, chore)
+		waitForNextTick(ctx, stop, time.Duration(interval)*time.Second, watch, chore)
 	}
 	pkgLog().Info("Gateway housekeeping stopped")
 }

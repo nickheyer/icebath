@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const loopbackOwnerEnv = "ICEBATH_TEST_LOOPBACK_OWNER"

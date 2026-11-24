@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Host multiplexer with the launch profile on Discord and the served profile coder on Telegram, a restart notice owed

@@ -11,13 +11,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -64,7 +64,7 @@ type hygieneWaitTimeout struct{}
 func (hygieneWaitTimeout) Error() string { return "" }
 
 // Python class name the wait timeout carries
-func (hygieneWaitTimeout) PyTypeName() string { return "TimeoutError" }
+func (hygieneWaitTimeout) ErrorKind() string { return "TimeoutError" }
 
 // Duration of a setting in seconds, its registry default for a stored value that is not positive
 func positiveSeconds(ctx context.Context, e *settings.Duration) float64 {
@@ -168,7 +168,7 @@ func (r *GatewayRunner) hmwaHygienePlan(ctx context.Context, hs *hygieneSettings
 
 // Integer with comma thousands separators, the Python format spec of a comma
 func thousands(n int) string {
-	text, _ := pyrepr.Format(n, ",")
+	text, _ := templateutil.Format("{v:,}", map[string]any{"v": n})
 	return text
 }
 

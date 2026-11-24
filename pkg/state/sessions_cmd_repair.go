@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Python str of an exception a store command reports to the user
@@ -12,7 +14,7 @@ func cmdExcText(err error) string {
 	if _, ok := sqliteClassOf(err); ok {
 		return errText(err)
 	}
-	if isOSError(err) {
+	if errorutil.IsSystem(err) {
 		return err.Error()
 	}
 	return err.Error()
@@ -34,7 +36,7 @@ func CmdRepair(ctx context.Context, ns map[string]any, w io.Writer) (int, error)
 	if driftOnly {
 		reason, unhealthy, err = SchemaDriftReason(ctx, dbPath)
 		if err != nil {
-			if _, sqliteErr := sqliteClassOf(err); !sqliteErr && !isOSError(err) {
+			if _, sqliteErr := sqliteClassOf(err); !sqliteErr && !errorutil.IsSystem(err) {
 				return 1, err
 			}
 			printf("✗ Could not check session schema: %s", cmdExcText(err))

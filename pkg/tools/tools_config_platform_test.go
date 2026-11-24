@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Captures warnings written by the platform toolset resolver

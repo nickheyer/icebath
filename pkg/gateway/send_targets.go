@@ -4,8 +4,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 type notExplicitMarker struct{}
@@ -70,7 +69,7 @@ type StandaloneSendPolicy struct {
 
 // Python pattern compiled so a match must span the whole string like re.fullmatch, panicking like re.compile
 func fullMatchRegexp(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileFullmatch(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.Whole())
 	if err != nil {
 		panic(err)
 	}

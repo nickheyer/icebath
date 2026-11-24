@@ -14,10 +14,10 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -46,7 +46,7 @@ var reactionVerbs = map[string]string{"add": "added", "delete": "deleted"}
 var elementTextKeys = map[string]string{"text_run": "text", "docs_link": "url"}
 var allowedNoticeTypes = map[string]bool{"add_comment": true, "add_reply": true}
 
-var feishuDocURLRe = pyre.MustCompile(`(?:feishu\.cn|larkoffice\.com|larksuite\.com|lark\.suite\.com)` +
+var feishuDocURLRe = regexutil.MustCompile(`(?:feishu\.cn|larkoffice\.com|larksuite\.com|lark\.suite\.com)` +
 	`/(?P<doc_type>wiki|doc|docx|sheet|sheets|slides|mindnote|bitable|base|file)` + `/(?P<token>[A-Za-z0-9_-]{10,40})`)
 
 const commonInstructions = `This is a Feishu document comment thread, not an IM chat.

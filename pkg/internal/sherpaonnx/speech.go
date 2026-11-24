@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/fetch"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
 const releaseBase = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v" + Version + "/sherpa-onnx-v" + Version + "-"

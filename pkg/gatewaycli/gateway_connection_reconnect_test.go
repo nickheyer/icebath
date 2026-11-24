@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 const reconnectSID = "local-abc"
@@ -307,7 +307,7 @@ func TestASessionGoneDuringTheRestartIsSkippedAndNotRetried(t *testing.T) {
 
 func TestATransientResumeFailureFailsTheReconnectAndTheNextCallRetries(t *testing.T) {
 	failures := map[string]error{"storage_unavailable": &gateway.GatewayClientError{Msg: "storage_unavailable"},
-		"timeout": &pyrepr.FormatError{Class: "TimeoutError"}}
+		"timeout": &errorutil.Error{Kind: "TimeoutError"}}
 	for name, failure := range failures {
 		t.Run(name, func(t *testing.T) {
 			gw, conn := reconnectFixture(t)

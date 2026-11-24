@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One agent turn over the stored history, the user row stamped by append and the sequence repaired

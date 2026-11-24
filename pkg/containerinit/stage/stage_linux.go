@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/containerinit"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/skills"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 const (
@@ -88,8 +88,8 @@ func linkImageTools(ctx context.Context) error {
 	}
 	links = append(links, [2]string{"ffprobe", filepath.Join(filepath.Dir(links[3][1]), "ffprobe")})
 	npmPath := pm.EnvFor([]string{"npm"}, map[string]string{})["PATH"]
-	npx, ok := pyshutil.Which("npx", &npmPath)
-	if !ok {
+	npx, err := fsutil.LookPathIn("npx", npmPath)
+	if err != nil {
 		return fmt.Errorf("npx is not on the pm npm PATH %s", npmPath)
 	}
 	links = append(links, [2]string{"npx", npx})

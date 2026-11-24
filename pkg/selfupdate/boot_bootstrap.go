@@ -54,7 +54,7 @@ func ReadGitHead(ctx context.Context, root string) string {
 		return ""
 	}
 	out, err := executil.Run(ctx, []string{git, "-C", root, "rev-parse", "HEAD"}, executil.Options{Timeout: 10 * time.Second})
-	if err != nil || out.Returncode != 0 {
+	if err != nil || out.ExitCode != 0 {
 		return ""
 	}
 	sha := strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD"))

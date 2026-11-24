@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -35,7 +34,7 @@ func isValueError(err error) bool {
 	if errors.As(err, &unavailable) {
 		return true
 	}
-	return pyrepr.ExceptionName(err) == "ValueError"
+	return errorutil.Kind(err) == "ValueError"
 }
 
 // Drops env passthrough and credential file state at a conversation boundary

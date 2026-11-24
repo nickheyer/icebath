@@ -22,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -32,6 +31,7 @@ import (
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -93,7 +93,7 @@ func (m *toolMatcher) postInit(kind string) {
 	if m.Matcher == "" {
 		return
 	}
-	re, err := pyre.CompileFullmatch(m.Matcher)
+	re, err := regexutil.Compile(m.Matcher, regexutil.Whole())
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("%s matcher %s is invalid (%v) — treating as literal equality", kind, errchain.Show(m.Matcher), err))
 	}

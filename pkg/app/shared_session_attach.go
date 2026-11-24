@@ -7,14 +7,13 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -26,15 +25,15 @@ const attachReplyLimit = 65536
 
 // Host and port of an explicit loopback origin of the given scheme, an error for any other URL
 func attachLocalOrigin(raw, scheme string) (string, int, error) {
-	parts, err := pyurl.Split(raw)
+	parts, err := urlutil.Split(raw)
 	if err != nil {
 		return "", 0, err
 	}
 	host := parts.Hostname()
-	addr, ok := pyipaddress.IPAddress(host)
-	local := ok && addr.IsLoopback()
+	addr, err := netip.ParseAddr(host)
+	local := err == nil && addr.IsLoopback()
 	refused := errors.New("Shared runtime endpoint must be an explicit loopback address and port.")
-	if parts.Scheme != scheme || !local || strings.Contains(parts.Netloc, "@") || parts.Fragment != "" {
+	if parts.Scheme != scheme || !local || strings.Contains(parts.Authority, "@") || parts.Fragment != "" {
 		return "", 0, refused
 	}
 	port, present, err := parts.Port()
@@ -175,7 +174,7 @@ func discoverAttachURL(ctx context.Context, sessionID, registryHome string) (str
 	if err != nil {
 		return "", false, err
 	}
-	parts, err := pyurl.Split(endpointText)
+	parts, err := urlutil.Split(endpointText)
 	if err != nil {
 		return "", false, err
 	}
@@ -212,7 +211,7 @@ func discoverAttachURL(ctx context.Context, sessionID, registryHome string) (str
 	if wsHost != originHost || wsPort != originPort {
 		return "", false, differentEndpoint
 	}
-	wsParts, err := pyurl.Split(websocketURL)
+	wsParts, err := urlutil.Split(websocketURL)
 	if err != nil {
 		return "", false, err
 	}

@@ -6,16 +6,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 )
 
 // Encodes a frame as DEC sixel with up to 255 adaptive colours, leaving transparent pixels unpainted
 func encodeSixel(frame *image.NRGBA) string {
-	pal, err := pypil.QuantizeMedianCut(frame, 255)
-	if err != nil {
-		panic(err)
-	}
-	w, h := pal.W, pal.H
+	pal := imageutil.Quantize(frame, 255)
+	w, h := pal.Rect.Dx(), pal.Rect.Dy()
 	var out strings.Builder
 	out.WriteString("\x1bP0;1;0q")
 	fmt.Fprintf(&out, "\"1;1;%d;%d", w, h)
@@ -31,10 +28,9 @@ func encodeSixel(frame *image.NRGBA) string {
 	}
 	for _, idx := range used {
 		var rgb [3]int
-		for c := 0; c < 3; c++ {
-			if idx*3+c < len(pal.Palette) {
-				rgb[c] = int(pal.Palette[idx*3+c])
-			}
+		if idx < len(pal.Palette) {
+			r, g, b, _ := pal.Palette[idx].RGBA()
+			rgb = [3]int{int(r >> 8), int(g >> 8), int(b >> 8)}
 		}
 		fmt.Fprintf(&out, "#%d;2;%d;%d;%d", idx, rgb[0]*100/255, rgb[1]*100/255, rgb[2]*100/255)
 	}

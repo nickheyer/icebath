@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Gateway session store of the CLI, nil when none is open

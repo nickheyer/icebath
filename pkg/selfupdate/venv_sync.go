@@ -10,16 +10,15 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/big"
+	"math"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -228,21 +227,22 @@ func syncInputsDigest(root string) string {
 }
 
 // Attempt count and inputs digest of a record, an error when it is unreadable or its count is no integer
-func readCompletionAttempts(record string) (*big.Int, string, bool, error) {
+func readCompletionAttempts(record string) (int64, string, bool, error) {
 	data, err := os.ReadFile(record)
 	if err != nil {
-		return nil, "", false, err
+		return 0, "", false, err
 	}
 	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
-		return nil, "", false, err
+		return 0, "", false, err
 	}
 	words := strings.Fields(text)
-	attempts := new(big.Int)
+	var attempts int64
 	if len(words) > 0 {
-		n, ok := pyint.Parse(words[0])
-		if !ok {
-			return nil, "", false, &pm.PyError{Class: "ValueError", Message: "completion attempt count " + words[0] + " is not a whole number"}
+		// A count past what an int64 holds is held at the bound on its side
+		n, err := strconv.ParseInt(words[0], 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
+			return 0, "", false, &pm.PyError{Class: "ValueError", Message: "completion attempt count " + words[0] + " is not a whole number"}
 		}
 		attempts = n
 	}
@@ -263,12 +263,15 @@ func recordCompletionAttempt(ctx context.Context, root string, failed bool, inpu
 	}
 	attempts, recorded, hasRecorded, err := readCompletionAttempts(record)
 	if err != nil {
-		attempts, hasRecorded = new(big.Int), false
+		attempts, hasRecorded = 0, false
 	}
 	if inputs != "" && hasRecorded && recorded != inputs {
-		attempts = new(big.Int)
+		attempts = 0
 	}
-	body := new(big.Int).Add(attempts, big.NewInt(1)).String() + "\n"
+	if attempts < math.MaxInt64 {
+		attempts++
+	}
+	body := strconv.FormatInt(attempts, 10) + "\n"
 	if inputs != "" {
 		body += inputs + "\n"
 	}
@@ -277,19 +280,19 @@ func recordCompletionAttempt(ctx context.Context, root string, failed bool, inpu
 }
 
 // Whether the owed tail may run now, its attempts and the backoff seconds, never failing
-func CompletionRetryState(ctx context.Context, projectRoot string, now func() float64) (bool, *big.Int, int64) {
+func CompletionRetryState(ctx context.Context, projectRoot string, now func() float64) (bool, int64, int64) {
 	record := completionAttemptsPath(ctx, projectRoot)
 	attempts, inputs, hasInputs, err := readCompletionAttempts(record)
 	if err != nil {
-		return true, new(big.Int), 0
+		return true, 0, 0
 	}
-	if attempts.Sign() <= 0 || (hasInputs && inputs != syncInputsDigest(projectRoot)) {
-		return true, new(big.Int), 0
+	if attempts <= 0 || (hasInputs && inputs != syncInputsDigest(projectRoot)) {
+		return true, 0, 0
 	}
-	if attempts.Cmp(big.NewInt(CompletionRetryMaxAttempts)) >= 0 {
+	if attempts >= CompletionRetryMaxAttempts {
 		return false, attempts, 0
 	}
-	if attempts.Cmp(big.NewInt(CompletionRetryBackoffAttempts)) < 0 {
+	if attempts < CompletionRetryBackoffAttempts {
 		return true, attempts, 0
 	}
 	st, err := os.Stat(record)
@@ -472,11 +475,11 @@ func mayRetryCompletion(ctx context.Context, root string, command []string, curr
 	}
 	mayRetry, attempts, backoff := CompletionRetryState(ctx, root, nil)
 	switch {
-	case !mayRetry && attempts.Cmp(big.NewInt(CompletionRetryMaxAttempts)) >= 0:
-		sayLaunch("icebath: a source update could not be finished automatically (%s attempts); run `icebath update` from a shell to finish it", attempts.String())
+	case !mayRetry && attempts >= CompletionRetryMaxAttempts:
+		sayLaunch("icebath: a source update could not be finished automatically (%d attempts); run `icebath update` from a shell to finish it", attempts)
 	case !mayRetry && !current:
-		sayLaunch("icebath: running with the previous dependencies after %s failed syncs; next automatic retry in %d min, or run `icebath update` to finish it",
-			attempts.String(), max(1, floorDiv(backoff, 60)))
+		sayLaunch("icebath: running with the previous dependencies after %d failed syncs; next automatic retry in %d min, or run `icebath update` to finish it",
+			attempts, max(1, floorDiv(backoff, 60)))
 	}
 	return mayRetry
 }
@@ -504,21 +507,12 @@ func relaunchTarget(ctx context.Context, root, binary string, same bool) (string
 	return binary, nil
 }
 
-// os.path.abspath of a path, joined to the working directory and normalized lexically
+// Absolute form of a path, joined to the working directory and cleaned lexically, only cleaned when the working directory is unknown
 func abspath(path string) string {
-	if runtime.GOOS == "windows" {
-		abs, err := filepath.Abs(path)
-		if err != nil {
-			return path
-		}
+	if abs, err := filepath.Abs(path); err == nil {
 		return abs
 	}
-	if !strings.HasPrefix(path, "/") {
-		if wd, err := os.Getwd(); err == nil {
-			path = path.Join(wd, path)
-		}
-	}
-	return path.Clean(path)
+	return filepath.Clean(path)
 }
 
 // Reports the binary as this process's own executable by lexical identity, never following links

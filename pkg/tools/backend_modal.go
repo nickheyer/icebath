@@ -18,7 +18,6 @@ import (
 	"time"
 
 	modal "github.com/modal-labs/modal-client/go"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 

@@ -1,12 +1,13 @@
 package memory
 
 import (
+	"errors"
 	"fmt"
+	"math"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Python int or float result of summing stored cells, float once any operand was a float
@@ -108,14 +109,14 @@ func pyIntCell(v any) (int64, error) {
 	case []byte:
 		v = string(x)
 	}
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
+	if f, isFloat := v.(float64); errors.Is(err, anyutil.ErrRange) && !(isFloat && math.IsInf(f, 0)) {
+		return 0, fmt.Errorf("%s is too large for a 64-bit integer", errchain.Show(v))
+	}
 	if err != nil {
 		return 0, errchain.Reword(err, "%s is not a whole number", errchain.Show(v))
 	}
-	if !n.IsInt64() {
-		return 0, fmt.Errorf("%s is too large for a 64-bit integer", n)
-	}
-	return n.Int64(), nil
+	return n, nil
 }
 
 // Python three way comparison of None, numbers, str and bytes, a TypeError for mixed kinds
@@ -180,7 +181,7 @@ func pyFormat(v any, spec string) string {
 	if n, ok := v.(InsightsNum); ok {
 		v = n.py()
 	}
-	s, err := pyrepr.Format(v, spec)
+	s, err := templateutil.Format("{v:"+spec+"}", map[string]any{"v": v})
 	if err != nil {
 		panic("insights format spec " + spec + ": " + err.Error())
 	}

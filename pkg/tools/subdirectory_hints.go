@@ -11,6 +11,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 var hintFilenames = []string{"AGENTS.override.md", "AGENTS.md", "agents.md", "CLAUDE.md", "claude.md", ".cursorrules"}

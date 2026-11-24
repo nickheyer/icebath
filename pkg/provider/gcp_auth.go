@@ -33,7 +33,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -302,16 +304,16 @@ func gcpTokenEndpointRequest(ctx context.Context, tokenURI string, form [][2]str
 		if err != nil {
 			return nil, err
 		}
-		call := []pyhttpx.HeaderLine{{Name: "Content-Type", Value: contentType}}
+		call := []headerField{{Name: "Content-Type", Value: contentType}}
 		for _, k := range sortedHeaderKeys(header) {
 			for _, v := range header[k] {
-				call = append(call, pyhttpx.HeaderLine{Name: k, Value: v})
+				call = append(call, headerField{Name: k, Value: v})
 			}
 		}
 		lines := requestsLines(call...)
 		lines.Set("Content-Length", strconv.Itoa(len(payload)))
 		req.Host = httpxHost(req.URL)
-		resp, err := gcpWireClient(client).Do(pyhttpx.WithWire(req, lines))
+		resp, err := gcpWireClient(client).Do(withHeader(req, lines))
 		if err != nil {
 			return nil, &gcpTransportError{Msg: err.Error()}
 		}
@@ -1565,9 +1567,9 @@ func gcpWireClient(client *http.Client) *http.Client {
 	out := *client
 	base := client.Transport
 	if base == nil {
-		base = pyStackWireTransport(pyhttpx.RequestsProxy, 120*time.Second, 10)
+		base = pyStackWireTransport(120*time.Second, 10)
 	}
-	out.Transport = pyhttpx.WireTransport{Base: base, Decoders: requestsDecoders}
+	out.Transport = httputil.DecodingTransport(base)
 	return &out
 }
 

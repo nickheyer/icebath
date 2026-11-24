@@ -28,13 +28,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -514,7 +514,7 @@ func (p *WebPage) body() string {
 // Compiles a Python pattern once on first use, panicking on a pattern the translator rejects
 func pyreOnce(pattern string) func() *regexp2.Regexp {
 	return sync.OnceValue(func() *regexp2.Regexp {
-		re, err := pyre.Compile(pattern)
+		re, err := regexutil.Compile(pattern)
 		if err != nil {
 			panic(err)
 		}

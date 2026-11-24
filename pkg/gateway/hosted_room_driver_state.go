@@ -10,8 +10,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -249,7 +247,7 @@ func driverTaskPayload(value any) (map[string]any, string, string, error) {
 	if err != nil {
 		return nil, "", "", err
 	}
-	normalized := map[string]any{"target_profile": targetProfile, "prompt": prompt, "source_event_seq": pyint.Value(seq)}
+	normalized := map[string]any{"target_profile": targetProfile, "prompt": prompt, "source_event_seq": seq}
 	if input, has := fields["input_context"]; has {
 		validated, err := ValidateTaskInput(input)
 		if err != nil {
@@ -805,7 +803,7 @@ func driverRunFenceTransition(ctx context.Context, dbPath string, attempt TaskAt
 		if row.Value("run_lease_generation") != nil {
 			leaseGeneration = hrInt(row, "run_lease_generation")
 		} else if !nullAsZero {
-			return &pyjson.TypeError{Msg: "the driver run fence has no number"}
+			return errors.New("the driver run fence has no number")
 		}
 		if row.Value("run_gateway_id") != lease.GatewayID || row.Value("run_process_generation") != lease.ProcessGeneration || leaseGeneration != lease.LeaseGeneration {
 			return staleTask(guardStale)

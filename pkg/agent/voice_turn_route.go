@@ -50,9 +50,9 @@ func (a *AIAgent) SetVoiceTurnPending(pending bool) { a.voiceTurnPending = pendi
 
 // Entry the voice turn binds, nil when the slot follows the main model
 func voiceRouteTarget(ctx context.Context, a *AIAgent, cfg map[string]any) map[string]any {
-	providerName := strings.ToLower(strings.TrimSpace(anyutil.String(orEmpty(cfg["provider"]))))
-	model := strings.TrimSpace(anyutil.String(orEmpty(cfg["model"])))
-	baseURL := strings.TrimSpace(anyutil.String(orEmpty(cfg["base_url"])))
+	providerName := strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(cfg["provider"], ""))))
+	model := strings.TrimSpace(anyutil.String(anyutil.Or(cfg["model"], "")))
+	baseURL := strings.TrimSpace(anyutil.String(anyutil.Or(cfg["base_url"], "")))
 	switch providerName {
 	case "", "auto", "main":
 		switch {

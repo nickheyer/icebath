@@ -98,15 +98,11 @@ func (r *GatewayRunner) buildStreamConsumerConfig(source *gateway.SessionSource,
 	if source.Platform == gateway.PlatformTelegram {
 		freshFinal = scfg.FreshFinalAfterSeconds
 	}
-	threshold := gateway.DefaultStreamingBufferThreshold
-	if scfg.BufferThreshold != nil {
-		threshold = int(scfg.BufferThreshold.Int64())
-	}
 	transport := scfg.Transport
 	if transport == "" {
 		transport = "edit"
 	}
-	return &gateway.StreamConsumerConfig{EditInterval: scfg.EditInterval, BufferThreshold: threshold, Cursor: cursor,
+	return &gateway.StreamConsumerConfig{EditInterval: scfg.EditInterval, BufferThreshold: scfg.BufferThreshold, Cursor: cursor,
 		FreshFinalAfterSeconds: freshFinal, Transport: transport, ChatType: source.ChatType}, pauseTyping, nil
 }
 

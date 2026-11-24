@@ -15,6 +15,8 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Whether the sender is the bot itself, also true while the bot user id is unresolved

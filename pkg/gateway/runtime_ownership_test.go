@@ -155,7 +155,7 @@ func TestGroupBitsThatAreAnACLMaskNeverCountAsAPrivateGroup(t *testing.T) {
 	realPwall, realGrgid, realXattr := discoveryGetpwall, discoveryGetgrgid, aclListxattr
 	discoveryGetpwall = func() ([]userutil.Account, error) { return []userutil.Account{user}, nil }
 	discoveryGetgrgid = func(int) (userutil.Group, error) {
-		return userutil.Group{Name: user.Name, Passwd: "x", GID: user.GID}, nil
+		return userutil.Group{Name: user.Name, GID: user.GID}, nil
 	}
 	aclListxattr = func(path string, dest []byte) (int, error) {
 		names := "system.posix_acl_access\x00"

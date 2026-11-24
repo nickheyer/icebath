@@ -17,7 +17,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
@@ -543,8 +542,9 @@ func (h *managedRotatingFileHandler) handleError(rec *Record, err error) {
 		if !h.unavailableReported {
 			h.unavailableReported = true
 			text := errorText(err)
-			if t, ok := pypath.ErrnoText(err); ok {
-				text = t
+			var errno syscall.Errno
+			if errors.As(err, &errno) {
+				text = errno.Error()
 			}
 			_, _ = fmt.Fprintf(safeStderr(), "logging: %s unavailable (%s); file logging paused until it recovers\n", h.baseFilename, text)
 		}

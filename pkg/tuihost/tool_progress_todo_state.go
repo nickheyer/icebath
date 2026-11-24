@@ -1,12 +1,10 @@
 package tuihost
 
 import (
-	"math/big"
 	"reflect"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -26,17 +24,17 @@ func NormalizeTodoState(value any) *jsonutil.Object {
 	if !anyutil.IsTrue(raw) {
 		raw = int64(0)
 	}
-	revision, err := pyint.Of(raw)
+	revision, err := anyutil.ToInt(raw)
 	if err != nil {
 		return nil
 	}
-	if revision.Sign() < 0 {
-		revision = big.NewInt(0)
+	if revision < 0 {
+		revision = 0
 	}
-	if len(todos) == 0 && revision.Sign() == 0 {
+	if len(todos) == 0 && revision == 0 {
 		return nil
 	}
-	return jsonutil.ObjectOf("todos", append([]any{}, todos...), "revision", pyint.Value(revision))
+	return jsonutil.ObjectOf("todos", append([]any{}, todos...), "revision", revision)
 }
 
 // Rows of a transcript field that is a list of dicts

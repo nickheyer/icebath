@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -1080,8 +1079,8 @@ func pyJSONNumber(v any) (*big.Float, bool) {
 	case float64:
 		return new(big.Float).SetFloat64(x), true
 	}
-	if i, ok := pyrepr.Int(v); ok {
-		return new(big.Float).SetInt(i), true
+	if i, ok := anyutil.Int(v); ok {
+		return new(big.Float).SetInt64(i), true
 	}
 	return nil, false
 }

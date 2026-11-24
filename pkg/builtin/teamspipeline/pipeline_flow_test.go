@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -321,7 +321,7 @@ func TestRunJobRecordsRaisedPanicsAndMissingTranscriptionResult(t *testing.T) {
 func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 	payload := sinkPayload()
 	payload.Summary = int64(5)
-	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionName(err) != "TypeError" || err.Error() != "summary line 3 is a number where text was expected" {
+	if _, err := renderSummaryMarkdown(payload); errorutil.Kind(err) != "TypeError" || err.Error() != "summary line 3 is a number where text was expected" {
 		t.Fatalf("markdown %v", err)
 	}
 	transport := &sinkTransport{status: 200, body: `{"id": "p"}`}
@@ -329,7 +329,7 @@ func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := writer.WriteSummary(context.Background(), payload, obj("database_id", "db", "summary_property", "Summary"), nil); pyrepr.ExceptionName(err) != "TypeError" ||
+	if _, err := writer.WriteSummary(context.Background(), payload, obj("database_id", "db", "summary_property", "Summary"), nil); errorutil.Kind(err) != "TypeError" ||
 		err.Error() != "the meeting summary is a number where text or a list was expected" {
 		t.Fatalf("summary property %v", err)
 	}
@@ -344,7 +344,7 @@ func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 		t.Fatalf("notes %v", err)
 	}
 	payload.ConfidenceNotes, payload.MeetingRef = nil, nil
-	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionName(err) != "AttributeError" {
+	if _, err := renderSummaryMarkdown(payload); errorutil.Kind(err) != "AttributeError" {
 		t.Fatalf("payload without meeting_ref %v", err)
 	}
 	payload.Title = "Named"

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
@@ -42,7 +41,7 @@ func routermintHeaders() (map[string]string, error) {
 
 // QwenCode CLI identity headers the Qwen Portal expects
 func qwenPortalHeaders() map[string]string {
-	ua := fmt.Sprintf("QwenCode/%s (%s; %s)", qwenCodeVersion, strings.ToLower(pyplatform.System()), hostutil.Machine())
+	ua := fmt.Sprintf("QwenCode/%s (%s; %s)", qwenCodeVersion, strings.ToLower(hostutil.OSName()), hostutil.Machine())
 	return map[string]string{"User-Agent": ua, "X-DashScope-CacheControl": "enable", "X-DashScope-UserAgent": ua, "X-DashScope-AuthType": "qwen-oauth"}
 }
 

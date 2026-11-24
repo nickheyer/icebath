@@ -327,7 +327,7 @@ func postMessage(ctx context.Context, c *Context, text string) *PluginMessage {
 }
 
 // Python type name a hosted plugin sees for the handle
-func (h *PluginMessage) PyTypeName() string { return "PluginMessage" }
+func (h *PluginMessage) ErrorKind() string { return "PluginMessage" }
 
 // Repr a hosted plugin sees for the handle
 func (h *PluginMessage) PyRepr() string { return h.String() }

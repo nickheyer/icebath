@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -83,14 +82,14 @@ func (r *GatewayRunner) resolveResumeTarget(ctx context.Context, source *gateway
 			pkgLog().Debug(fmt.Sprintf("Failed to list titled sessions for numeric resume: %s", err.Error()))
 			return "", "", i18n.T(ctx, "gateway.resume.list_failed", "", map[string]any{"error": err.Error()}), nil
 		}
-		index, ok := pystr.IntText(name)
-		if !ok {
+		index, err := textutil.ParseInt(name)
+		if err != nil {
 			return "", "", "", fmt.Errorf("%s is not a session number", name)
 		}
-		if index.Sign() < 1 || !index.IsInt64() || index.Int64() > int64(len(titled)) {
+		if index < 1 || index > int64(len(titled)) {
 			return "", "", i18n.T(ctx, "gateway.resume.out_of_range", "", map[string]any{"index": index}), nil
 		}
-		target := titled[index.Int64()-1]
+		target := titled[index-1]
 		targetID = rowStr(target, "id")
 		if title := rowStr(target, "title"); title != "" {
 			name = title

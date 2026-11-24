@@ -3,6 +3,7 @@ package home
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -15,7 +16,6 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -384,7 +384,7 @@ func MarkProfileDeleted(profileHome string) error {
 // Unlinks the tombstone of a profile, a missing one ignored
 func ClearProfileDeleted(profileHome string) error {
 	err := os.Remove(TombstonePath(profileHome))
-	if err != nil && pypath.OSErrorClass(err) == "FileNotFoundError" {
+	if err != nil && errors.Is(err, fs.ErrNotExist) {
 		return nil
 	}
 	return err

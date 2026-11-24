@@ -13,10 +13,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -89,7 +88,7 @@ func dotSegments(p string) int {
 
 // Raw percent decoded once and resolved, empty when decoding adds a dot segment
 func decodedCandidate(raw string, cwd *string) (string, bool, error) {
-	decoded := pyurl.Unquote(raw)
+	decoded := urlutil.Unescape(raw)
 	if dotSegments(decoded) > dotSegments(raw) {
 		return "", false, nil
 	}
@@ -99,22 +98,22 @@ func decodedCandidate(raw string, cwd *string) (string, bool, error) {
 
 // Native path a file URL names decoded once, refusing an encoded separator or a foreign host
 func fileURLPath(url string) (string, error) {
-	parsed, err := pyurl.Parse(url)
+	parsed, err := urlutil.Split(url)
 	if err != nil {
 		return "", err
 	}
 	uriPath := parsed.Path
-	host := parsed.Netloc
+	host := parsed.Authority
 	if strings.ToLower(host) == "localhost" {
 		host = ""
 	}
-	windows := windowsHost || host != "" || fileURLDriveRe.MatchString(pyurl.Unquote(uriPath))
+	windows := windowsHost || host != "" || fileURLDriveRe.MatchString(urlutil.Unescape(uriPath))
 	if fileURLSlashRe.MatchString(uriPath) || (windows && fileURLBackslash.MatchString(uriPath)) {
-		return "", &pypath.ValueError{Msg: "file: URL encodes a path separator"}
+		return "", errors.New("file: URL encodes a path separator")
 	}
 	if host != "" {
 		if !windowsHost {
-			return "", &pypath.ValueError{Msg: "file: URL names another host"}
+			return "", errors.New("file: URL names another host")
 		}
 		uriPath = "//" + host + uriPath
 	}
@@ -290,7 +289,7 @@ func FsRegularFile(ctx context.Context, p, profileHome string) (string, fs.FileI
 	}
 	st, err := os.Stat(target)
 	if err != nil {
-		switch pypath.OSErrorClass(err) {
+		switch errorutil.Kind(err) {
 		case "FileNotFoundError", "NotADirectoryError":
 			return "", nil, &HTTPError{404, fsSandboxNotFoundDetail(ctx, target, profileHome)}
 		case "PermissionError":

@@ -14,12 +14,11 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -58,7 +57,7 @@ var (
 
 // Python compiled regex for a module level pattern, panicking at init on an invalid pattern
 func mustPyre(pattern string) *regexp2.Regexp {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}
@@ -260,11 +259,11 @@ func ledgerOwnerInt(v any) (int64, bool) {
 	case float64:
 		return int64(x), true
 	case string, []byte:
-		n, err := pyint.Of(anyutil.String(x))
-		if err != nil || !n.IsInt64() {
+		n, err := anyutil.ToInt(anyutil.String(x))
+		if err != nil {
 			return 0, false
 		}
-		return n.Int64(), true
+		return n, true
 	}
 	return 0, false
 }

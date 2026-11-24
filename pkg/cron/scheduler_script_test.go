@@ -457,11 +457,11 @@ func swapBashLookup(t *testing.T, found string) {
 	t.Helper()
 	prevWhich, prevFallback := cronWhich, cronBashFallback
 	t.Cleanup(func() { cronWhich, cronBashFallback = prevWhich, prevFallback })
-	cronWhich = func(name string, _ *string) (string, bool) {
+	cronWhich = func(name string) (string, error) {
 		if name == "bash" && found != "" {
-			return found, true
+			return found, nil
 		}
-		return "", false
+		return "", exec.ErrNotFound
 	}
 	cronBashFallback = filepath.Join(t.TempDir(), "no-bash-here")
 }

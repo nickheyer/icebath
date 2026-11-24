@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,13 +28,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fernetutil "github.com/nickheyer/icebath/pkg/utils/fernet"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var VaultKinds = []string{"login", "payment", "address"}
@@ -91,15 +91,18 @@ func NormalizeOTPSecret(value string) (string, error) {
 	}
 	digits, period, algo := 6, 30, "SHA1"
 	if strings.HasPrefix(strings.ToLower(value), "otpauth://") {
-		parsed, err := pyurl.Parse(value)
+		parsed, err := urlutil.Split(value)
 		if err != nil {
 			return "", &VaultError{"authenticator key must be a base32 secret or an otpauth:// URI"}
 		}
-		if strings.ToLower(parsed.Netloc) != "totp" {
+		if strings.ToLower(parsed.Authority) != "totp" {
 			return "", &VaultError{"only otpauth://totp links are supported (counter-based HOTP is not)"}
 		}
 		first := jsonutil.NewObject()
-		for _, kv := range pyurl.ParseQSL(parsed.Query, false) {
+		for _, kv := range urlutil.QueryPairs(parsed.Query) {
+			if kv[1] == "" {
+				continue
+			}
 			if _, seen := first.Get(kv[0]); !seen {
 				first.Set(kv[0], kv[1])
 			}
@@ -115,11 +118,11 @@ func NormalizeOTPSecret(value string) (string, error) {
 			if !ok {
 				return def, true
 			}
-			n, ok := pyint.Parse(raw)
-			if !ok || !n.IsInt64() {
+			n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+			if err != nil {
 				return 0, false
 			}
-			return int(n.Int64()), true
+			return int(n), true
 		}
 		var okD, okP bool
 		if digits, okD = parseInt("digits", digits); okD {
@@ -154,12 +157,12 @@ func TOTPAt(seed string, digits, period int, at float64) (string, error) {
 		if len(parts) != 4 {
 			return "", fmt.Errorf("the stored OTP seed has %d of its 4 parts", len(parts))
 		}
-		d, okD := pyint.Parse(parts[1])
-		p, okP := pyint.Parse(parts[2])
-		if !okD || !okP {
+		d, errD := strconv.ParseInt(strings.TrimSpace(parts[1]), 10, 64)
+		p, errP := strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
+		if errD != nil || errP != nil {
 			return "", errors.New("the stored OTP seed digits or period is not a whole number")
 		}
-		seed, digits, period = parts[0], int(d.Int64()), int(p.Int64())
+		seed, digits, period = parts[0], int(d), int(p)
 		if h, ok := otpAlgos[strings.ToUpper(parts[3])]; ok {
 			newHash = h
 		}
@@ -196,7 +199,7 @@ func NormalizeOrigin(urlOrOrigin string) (string, error) {
 	if !strings.Contains(value, "://") {
 		return "", &VaultError{fmt.Sprintf("origin must include a scheme (got %s)", anyutil.Quote(value))}
 	}
-	parts, err := pyurl.Split(value)
+	parts, err := urlutil.Split(value)
 	if err != nil {
 		return "", &VaultError{fmt.Sprintf("could not parse origin from %s", anyutil.Quote(value))}
 	}

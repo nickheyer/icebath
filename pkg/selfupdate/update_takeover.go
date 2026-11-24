@@ -140,7 +140,7 @@ func armFleetObligation(ctx context.Context, root string) error {
 func headSHA(ctx context.Context, root string) string {
 	head, err := executil.Run(ctx, []string{takeoverGitExecutable(ctx), "-C", root, "rev-parse", "HEAD"},
 		executil.Options{Timeout: 60 * time.Second})
-	if err == nil && head.Returncode == 0 {
+	if err == nil && head.ExitCode == 0 {
 		if sha := strings.TrimSpace(strings.ToValidUTF8(string(head.Stdout), "\uFFFD")); takeoverSHA.MatchString(sha) {
 			return sha
 		}

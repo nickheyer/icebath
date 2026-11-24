@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyplist"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -37,7 +36,7 @@ func systemdUnitIcebathHome(ctx context.Context, scopeCmd []string, svcName stri
 		}
 	}
 	shown, err := systemctl(ctx, fleetArgv(scopeCmd, "show", svcName, "--property=Environment", "--value"), 10)
-	if err != nil || shown == nil || shown.Returncode != 0 {
+	if err != nil || shown == nil || shown.ExitCode != 0 {
 		return "", false
 	}
 	envLine := strings.TrimSpace(completedStdout(shown))
@@ -80,16 +79,15 @@ func launchdLabelForeignHomeIn(ctx context.Context, label string, scope map[stri
 	if err != nil {
 		return "", false
 	}
-	root, ok := loaded.(*pyplist.Dict)
+	root, ok := loaded.(map[string]any)
 	if !ok {
 		return "", false
 	}
-	environment, _ := root.Get("EnvironmentVariables")
-	variables, ok := environment.(*pyplist.Dict)
+	variables, ok := root["EnvironmentVariables"].(map[string]any)
 	if !ok {
 		return "", false
 	}
-	value, ok := variables.Get("ICEBATH_HOME")
+	value, ok := variables["ICEBATH_HOME"]
 	if !ok {
 		return "", false
 	}

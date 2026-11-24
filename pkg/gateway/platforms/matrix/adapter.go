@@ -21,9 +21,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const processedEventsMax = 1000
@@ -251,7 +251,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 		a.allowedRoomIDs[r] = true
 	}
 	for _, pattern := range sortedKeys(gateway.SettingSet(ctx, settings.MatrixIgnoreUserPatterns)) {
-		re, err := pyre.Compile(pattern)
+		re, err := regexutil.Compile(pattern)
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Matrix: ignoring invalid ignored sender pattern %s: %v", anyutil.Quote(pattern), err))
 			continue

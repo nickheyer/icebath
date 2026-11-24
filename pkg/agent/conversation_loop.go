@@ -792,7 +792,7 @@ const (
 
 type canonEntry struct{ key, value string }
 
-var canonArgsLoads = jsonutil.Decode
+var canonArgsLoads = jsonutil.Decode[string]
 
 var canonArgsCache = struct {
 	sync.Mutex

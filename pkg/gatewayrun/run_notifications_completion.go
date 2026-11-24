@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Delivers a watch event to a stateless api_server session by raw id, a delegation as a durable row

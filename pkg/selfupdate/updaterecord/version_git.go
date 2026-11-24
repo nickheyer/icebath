@@ -15,7 +15,7 @@ import (
 func runGitQueryText(repoDir string, args ...string) string {
 	argv := append([]string{"git"}, args...)
 	out, err := executil.Run(context.Background(), argv, executil.Options{Dir: repoDir, Timeout: 3 * time.Second})
-	if err != nil || out.Returncode != 0 {
+	if err != nil || out.ExitCode != 0 {
 		return ""
 	}
 	return strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD"))
@@ -86,7 +86,7 @@ func GitVersionInfo(repoDir string, includeUntracked bool) VersionInfo {
 		status = append(status, "-uno")
 	}
 	dirty := false
-	if out, err := executil.Run(context.Background(), status, executil.Options{Dir: repoDir, Timeout: 3 * time.Second}); err == nil && out.Returncode == 0 {
+	if out, err := executil.Run(context.Background(), status, executil.Options{Dir: repoDir, Timeout: 3 * time.Second}); err == nil && out.ExitCode == 0 {
 		dirty = strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD")) != ""
 	}
 	var releases []string

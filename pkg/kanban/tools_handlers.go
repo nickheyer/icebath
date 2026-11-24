@@ -5,12 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -39,7 +38,10 @@ func sqliteRealText(v float64) (*string, error) {
 	return &text.String, nil
 }
 
-// Text SQLite stores in a TEXT column for a bound Python value, the sqlite3 binding error at that position otherwise
+// Binding error of a whole number past what a SQLite INTEGER holds
+var errSQLiteIntegerTooLarge = &RuntimeError{"the number is too large for a SQLite INTEGER"}
+
+// Text SQLite stores in a TEXT column for a bound value, the binding error at that position otherwise
 func sqliteBind(value any, position int) (*string, error) {
 	switch v := value.(type) {
 	case nil:
@@ -57,12 +59,12 @@ func sqliteBind(value any, position int) (*string, error) {
 	case float32:
 		return sqliteRealText(float64(v))
 	}
-	if n, isInt := pyrepr.Int(value); isInt {
-		if !n.IsInt64() {
-			return nil, &RuntimeError{"the number is too large for a SQLite INTEGER"}
-		}
-		text := n.String()
+	if n, isInt := anyutil.Int(value); isInt {
+		text := strconv.FormatInt(n, 10)
 		return &text, nil
+	}
+	if anyutil.Kind(value) == "integer" {
+		return nil, errSQLiteIntegerTooLarge
 	}
 	return nil, &RuntimeError{fmt.Sprintf("SQL parameter %d is %s, which SQLite cannot store", position, errchain.Kind(value))}
 }
@@ -159,17 +161,17 @@ func handleList(k *kanbanCall) (string, error) {
 	}
 	limit := int64(KanbanListDefaultLimit)
 	if raw := k.get("limit"); raw != nil {
-		n, err := pyint.Of(raw)
+		n, err := anyutil.ToInt(raw)
 		if err != nil {
 			return kanbanToolError("limit must be an integer"), nil
 		}
 		switch {
-		case n.Sign() < 1:
+		case n < 1:
 			return "", reject("limit must be >= 1")
-		case !n.IsInt64() || n.Int64() > KanbanListMaxLimit:
+		case n > KanbanListMaxLimit:
 			return "", reject(fmt.Sprintf("limit must be <= %d", KanbanListMaxLimit))
 		}
-		limit = n.Int64()
+		limit = n
 	}
 	return withBoard(k.ctx, k.get("board"), false, func(conn state.SQLiteConn) (string, error) {
 		promoted, err := RecomputeReady(k.ctx, conn, nil)

@@ -25,18 +25,16 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
@@ -64,8 +62,8 @@ var (
 		kind   gateway.MessageType
 	}{{"audio/", gateway.MessageTypeVoice}, {"image/", gateway.MessageTypePhoto}}
 
-	mediaTagPathsRE = pyre.MustCompile(`MEDIA:(\S+)`)
-	mediaTagRE      = pyre.MustCompile(`MEDIA:\S+`)
+	mediaTagPathsRE = regexutil.MustCompile(`MEDIA:(\S+)`)
+	mediaTagRE      = regexutil.MustCompile(`MEDIA:\S+`)
 )
 
 // Wall clock seconds since the epoch
@@ -284,7 +282,7 @@ func (a *SimplexAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 		return false, nil
 	}
 	warnNameAllowlistEntries(ctx)
-	probe, err := websocketutil.Connect(ctx, a.wsURL, pywebsockets.ConnectOptions{OpenTimeout: 10 * time.Second})
+	probe, err := websocketutil.Connect(ctx, a.wsURL, websocketutil.Options{OpenTimeout: 10 * time.Second, Compression: true, Proxy: httputil.Proxy})
 	if err != nil {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
@@ -343,8 +341,8 @@ func (a *SimplexAdapter) wsListener(ctx context.Context) error {
 	backoff := wsRetryDelayInitial
 	for a.IsConnected() {
 		pkgLog().Debug(fmt.Sprintf("SimpleX WS: connecting to %s", a.wsURL))
-		ws, err := websocketutil.Connect(ctx, a.wsURL, pywebsockets.ConnectOptions{PingInterval: 20 * time.Second,
-			PingTimeout: 20 * time.Second, CloseTimeout: 10 * time.Second})
+		ws, err := websocketutil.Connect(ctx, a.wsURL, websocketutil.Options{PingInterval: 20 * time.Second,
+			PingTimeout: 20 * time.Second, CloseTimeout: 10 * time.Second, OpenTimeout: 10 * time.Second, Compression: true, Proxy: httputil.Proxy})
 		if err == nil {
 			a.mu.Lock()
 			a.ws = ws
@@ -361,7 +359,7 @@ func (a *SimplexAdapter) wsListener(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		var closed *pywebsockets.ConnectionClosed
+		var closed *websocketutil.CloseError
 		switch {
 		case err == nil || !a.IsConnected():
 		case errors.As(err, &closed):
@@ -386,7 +384,7 @@ func (a *SimplexAdapter) wsListener(ctx context.Context) error {
 // Handles every frame of one socket until the adapter stops or the connection ends, a clean close ending quietly
 func (a *SimplexAdapter) readEvents(ctx context.Context, ws *websocketutil.Conn) error {
 	for {
-		raw, err := ws.Recv(ctx)
+		frame, err := ws.Receive(ctx)
 		if err != nil {
 			if websocketutil.IsCleanClose(err) {
 				return nil
@@ -399,14 +397,7 @@ func (a *SimplexAdapter) readEvents(ctx context.Context, ws *websocketutil.Conn)
 		a.mu.Lock()
 		a.lastWSActivity = nowSeconds()
 		a.mu.Unlock()
-		var parsed any
-		var perr error
-		switch frame := raw.(type) {
-		case string:
-			parsed, perr = jsonutil.Decode(frame)
-		case []byte:
-			parsed, perr = jsonutil.Decode(frame)
-		}
+		parsed, perr := jsonutil.Decode(frame.Data)
 		if perr == nil {
 			perr = a.handleEvent(ctx, jsonutil.Plain(parsed))
 		}
@@ -418,7 +409,7 @@ func (a *SimplexAdapter) readEvents(ctx context.Context, ws *websocketutil.Conn)
 		}
 		var decodeErr *jsonutil.SyntaxError
 		if errors.As(perr, &decodeErr) {
-			pkgLog().Debug(fmt.Sprintf("SimpleX WS: invalid JSON: %s", textutil.First(anyutil.String(raw), 100)))
+			pkgLog().Debug(fmt.Sprintf("SimpleX WS: invalid JSON: %s", textutil.First(string(frame.Data), 100)))
 			continue
 		}
 		pkgLog().Error("SimpleX WS: error handling event", "error", perr)
@@ -585,8 +576,8 @@ func (a *SimplexAdapter) onNewChatItem(ctx context.Context, resp any) error {
 
 // Dict key of a file id, equal numbers sharing one key
 func fileKey(fileID any) string {
-	if n, ok := pyrepr.Int(fileID); ok {
-		return "n:" + n.String()
+	if n, ok := anyutil.Int(fileID); ok {
+		return "n:" + strconv.FormatInt(n, 10)
 	}
 	return anyutil.Kind(fileID) + ":" + anyutil.Quote(fileID)
 }
@@ -850,8 +841,8 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		if !isStr {
 			return &gateway.PyError{Kind: "TypeError", Msg: "fromisoformat: argument must be str"}
 		}
-		if parsed, perr := pydatetime.FromISOFormat(tsText); perr == nil {
-			timestamp = parsed
+		if parsed, perr := timeutil.ParseISO(tsText, time.UTC); perr == nil {
+			timestamp = parsed.UTC()
 		}
 	}
 	body := ""
@@ -936,7 +927,7 @@ func (a *SimplexAdapter) sendWS(corrID, command string) error {
 	if err != nil {
 		return err
 	}
-	if err := ws.Send(frame); err != nil {
+	if err := ws.SendText(frame); err != nil {
 		pkgLog().Warn(fmt.Sprintf("SimpleX: WS send error: %s", err.Error()))
 	}
 	return nil
@@ -961,7 +952,7 @@ func (a *SimplexAdapter) sendCommand(ctx context.Context, command string, timeou
 	}
 	frame, err := commandFrame(corrID, command)
 	if err == nil {
-		err = ws.Send(frame)
+		err = ws.SendText(frame)
 	}
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("SimpleX: command failed: %s — %s", textutil.First(command, 50), err.Error()))
@@ -1212,14 +1203,7 @@ func prepareImage(filePath string) (string, string, error) {
 	if paletted {
 		thumb = nearestThumbnail(nrgba, 128)
 	} else {
-		hasAlpha := false
-		for i := 3; i < len(nrgba.Pix); i += 4 {
-			if nrgba.Pix[i] != 0xff {
-				hasAlpha = true
-				break
-			}
-		}
-		thumb = pypil.Thumbnail(nrgba, 128, hasAlpha)
+		thumb = imageutil.Thumbnail(nrgba, 128, imageutil.CatmullRom)
 	}
 	var encodable image.Image
 	if gray {
@@ -1269,7 +1253,7 @@ func pathExists(path string) bool {
 func (a *SimplexAdapter) SendImage(ctx context.Context, chatID, imageURL, caption, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	var filePath string
 	if strings.HasPrefix(imageURL, "file://") {
-		filePath = pyurl.Unquote(imageURL[7:])
+		filePath = urlutil.Unescape(imageURL[7:])
 	} else {
 		cached, err := gateway.CacheImageFromURL(ctx, imageURL, ".jpg", 2)
 		if err != nil {

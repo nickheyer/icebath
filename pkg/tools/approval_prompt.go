@@ -17,8 +17,8 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
+	browserutil "github.com/nickheyer/icebath/pkg/utils/browser"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Inputs of the interactive dangerous command prompt
@@ -171,7 +171,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 			AllowPermanent: o.allowPermanent, AllowSession: o.allowSession, SmartDenied: o.smartDenied, Title: o.title})
 		if err != nil {
 			envLog(env).Error("Approval callback failed", "error", err)
-			return unanswered("the approval callback failed: " + pyrepr.ExceptionName(err))
+			return unanswered("the approval callback failed: " + errorutil.Kind(err))
 		}
 		return promptChoice{value: answer}
 	}
@@ -198,7 +198,7 @@ func askHuman(ctx context.Context, env *Env, o promptOptions) promptChoice {
 			return unanswered("the prompt was interrupted before an answer was given")
 		}
 		envLog(env).Error("Approval callback failed", "error", err)
-		return unanswered("the approval callback failed: " + pyrepr.ExceptionName(err))
+		return unanswered("the approval callback failed: " + errorutil.Kind(err))
 	}
 	if result.Outcome == "cancelled" || len(result.Answers) == 0 {
 		return unanswered("the prompt was interrupted before an answer was given")
@@ -568,8 +568,7 @@ type ElicitationOptions struct {
 
 // Opens a consented elicitation link in the local browser, swapped by tests
 var openElicitationURL = func(link string) bool {
-	opened, err := pywebbrowser.Open(link, 2)
-	return err == nil && opened
+	return browserutil.Open(context.Background(), link) == nil
 }
 
 // RequestElicitationConsent routes an MCP elicitation to the surface owning the session and returns accept, decline, or cancel

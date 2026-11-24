@@ -1,10 +1,10 @@
 package goals
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -79,32 +79,23 @@ func goalWait(m Manager, arg string) (GoalCommandResult, error) {
 		return GoalCommandResult{Output: "Usage: /goal wait <pid> [reason]", Error: true}, nil
 	}
 	tokens := splitOnce(arg)
-	pid, err := pyint.Of(tokens[0])
-	if err != nil {
+	// A pid past what an int64 holds reads as the bound on its side, which no process has
+	pid, err := anyutil.ToInt(tokens[0])
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return GoalCommandResult{Output: "/goal wait: <pid> must be an integer process id.", Error: true}, nil
 	}
 	reason := ""
 	if len(tokens) > 1 {
 		reason = strings.TrimSpace(tokens[1])
 	}
-	if pid.IsInt64() {
-		if _, err := m.WaitOn(pid.Int64(), reason); err != nil {
-			return GoalCommandResult{}, err
-		}
-	} else {
-		if state := m.State(); state == nil || state.Status != "active" {
-			return GoalCommandResult{}, &errorutil.Error{Kind: "RuntimeError", Msg: "no active goal to park"}
-		}
-		if pid.Sign() <= 0 {
-			return GoalCommandResult{}, &errorutil.Error{Kind: "ValueError", Msg: "pid must be a positive integer"}
-		}
-		return GoalCommandResult{}, &errorutil.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
+	if _, err := m.WaitOn(pid, reason); err != nil {
+		return GoalCommandResult{}, err
 	}
 	suffix := ""
 	if reason != "" {
 		suffix = " (" + reason + ")"
 	}
-	return GoalCommandResult{Output: fmt.Sprintf("⏳ Goal parked on pid %s%s. Loop pauses until it exits.", pid, suffix)}, nil
+	return GoalCommandResult{Output: fmt.Sprintf("⏳ Goal parked on pid %d%s. Loop pauses until it exits.", pid, suffix)}, nil
 }
 
 func goalGateAdd(m Manager, arg string) (GoalCommandResult, error) {
@@ -117,18 +108,12 @@ func goalGateAdd(m Manager, arg string) (GoalCommandResult, error) {
 }
 
 func goalGateRemove(m Manager, arg string) (GoalCommandResult, error) {
-	index, err := pyint.Of(arg)
-	if err != nil {
+	// An index past what an int64 holds reads as the bound on its side, which lies outside every list
+	index, err := anyutil.ToInt(arg)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return GoalCommandResult{}, err
 	}
-	var command string
-	if index.IsInt64() {
-		command, err = m.RemoveGate(index.Int64())
-	} else if !m.HasGoal() {
-		err = &errorutil.Error{Kind: "RuntimeError", Msg: "no active goal"}
-	} else {
-		_, err = goalIndex(-1, len(m.State().Gates))
-	}
+	command, err := m.RemoveGate(index)
 	if err != nil {
 		return GoalCommandResult{}, err
 	}

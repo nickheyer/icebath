@@ -22,15 +22,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	netutil "github.com/nickheyer/icebath/pkg/utils/net"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // One A2A credential from the active profile scope, a secondary profile miss never reading the default env
@@ -273,7 +272,7 @@ var injectionPatterns = func() []*regexp2.Regexp {
 	}
 	out := make([]*regexp2.Regexp, len(sources))
 	for i, src := range sources {
-		re, err := pyre.CompileIgnoreCase(src)
+		re, err := regexutil.Compile(src, regexutil.IgnoreCase())
 		if err != nil {
 			panic(err)
 		}

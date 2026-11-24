@@ -69,7 +69,7 @@ func TestNumericCoercion(t *testing.T) {
 	check := func(t *testing.T, key, value string, want any, path ...string) {
 		t.Helper()
 		got, ok := setAndRead(t, key, value, path...)
-		if !ok || !pyEq(got, want) || PyTypeName(got) != PyTypeName(want) {
+		if !ok || !pyEq(got, want) || ErrorKind(got) != ErrorKind(want) {
 			t.Fatalf("%s=%q saved %#v want %#v", key, value, got, want)
 		}
 	}

@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -493,11 +492,11 @@ func spoolNotAfter(ts any) (*float64, error) {
 	if ts == nil {
 		return nil, nil
 	}
-	n, err := pyint.Of(ts)
+	n, err := anyutil.ToInt(ts)
 	if err != nil {
 		return nil, err
 	}
-	f, _ := new(big.Float).SetInt(n).Float64()
+	f := float64(n)
 	return &f, nil
 }
 

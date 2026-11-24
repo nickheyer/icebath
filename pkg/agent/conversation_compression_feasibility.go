@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Seams the feasibility tests replace like the patch of the auxiliary client and model metadata
@@ -92,7 +92,7 @@ func lowerThresholdToAuxContext(a *AIAgent, auxModel string, auxContext int, aux
 		auxLabel = auxProvider
 	}
 	if auxLabel == "" {
-		if u, err := pyurl.Parse(auxBaseURL); err != nil {
+		if u, err := urlutil.Split(auxBaseURL); err != nil {
 			auxLabel = auxBaseURL
 			if auxLabel == "" {
 				auxLabel = "auto"

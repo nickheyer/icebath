@@ -2,6 +2,7 @@ package gatewayrun
 
 import (
 	"github.com/nickheyer/icebath/pkg/gateway"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Insertion ordered adapter map of alternating platform and adapter arguments

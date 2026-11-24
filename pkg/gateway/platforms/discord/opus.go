@@ -1,13 +1,13 @@
 package discord
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
 	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
@@ -23,7 +23,7 @@ type opusCodec struct {
 // Loads libopus from a name or path, keeping the handle once the encoder symbol resolves
 func (o *opusCodec) load(path string) error {
 	if !dlutil.Supported {
-		return &pyctypes.OSError{Msg: "shared library loading is unavailable on this platform"}
+		return errors.New("shared library loading is unavailable on this platform")
 	}
 	lib, err := dlutil.Open(path, false)
 	if err != nil {
@@ -102,7 +102,7 @@ func findDiscordWindowsBundledOpus() string {
 
 // Loads the first libopus candidate that resolves the encoder, the last failure when none does
 func LoadOpusLibrary() error {
-	err := error(&pyctypes.OSError{Msg: "libopus not found"})
+	err := error(errors.New("libopus not found"))
 	for _, opusPath := range opusCandidates() {
 		if err = (&opusCodec{}).load(opusPath); err == nil {
 			return nil

@@ -10,11 +10,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	jsonschemautil "github.com/nickheyer/icebath/pkg/utils/jsonschema"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -247,20 +246,21 @@ func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args
 		return ""
 	}
 	candidate := deferredCandidateArgs(ctx, env, name, argsObj, def.Schema.Value("parameters"))
-	best, err := pyjsonschema.BestMatch(candidate, validationSchema, callerDepth)
+	sch, err := jsonschemautil.Compile(validationSchema)
 	if err != nil {
 		pkgLog().Debug("validate_deferred_call_args failed", "tool", name, "error", err)
 		return ""
 	}
+	best := jsonschemautil.BestMatch(sch.Errors(candidate))
 	if best == nil {
 		return ""
 	}
-	path := validationPath(best.AbsolutePath)
+	path := validationPath(best.InstancePath)
 	constraint := "schema"
-	if s, ok := best.Validator.(string); ok && s != "" {
-		constraint = s
+	if best.Keyword != "" {
+		constraint = best.Keyword
 	}
-	detail := strings.TrimSpace(validationCollapseSpace(best.Message))
+	detail := strings.Join(strings.Fields(best.Message), " ")
 	if utf8.RuneCountInString(detail) > 600 {
 		detail = textutil.First(detail, 597) + "..."
 	}
@@ -275,9 +275,37 @@ type ToolCallEntry struct {
 	Arguments *jsonutil.Object
 }
 
-// Arguments of an entry in the DecodeWTF8 shapes tool handlers read
+// Arguments of an entry in the shapes tool handlers read
 func (e ToolCallEntry) HandlerArgs() map[string]any {
-	return pyjson.WTF8Shape(e.Arguments).(map[string]any)
+	m, _ := handlerShape(e.Arguments).(map[string]any)
+	return m
+}
+
+// Value in the shapes tool handlers read: plain maps and float64 numbers
+func handlerShape(v any) any {
+	switch t := v.(type) {
+	case *jsonutil.Object:
+		out := make(map[string]any, t.Len())
+		for k, x := range t.All() {
+			out[k] = handlerShape(x)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			out[k] = handlerShape(x)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, x := range t {
+			out[i] = handlerShape(x)
+		}
+		return out
+	case int64:
+		return float64(t)
+	}
+	return v
 }
 
 // Python str of a value with its falsy forms read as empty and surrounding whitespace stripped

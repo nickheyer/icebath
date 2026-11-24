@@ -13,8 +13,8 @@ import (
 // Exception whose Python class name is the given transport error name
 type transportTestErr struct{ name string }
 
-func (e *transportTestErr) Error() string      { return "connection timed out" }
-func (e *transportTestErr) PyTypeName() string { return e.name }
+func (e *transportTestErr) Error() string     { return "connection timed out" }
+func (e *transportTestErr) ErrorKind() string { return e.name }
 
 // Fixture agent on a custom endpoint whose rebuilds and waits are doubled
 func newTransportAgent(t *testing.T, overrides map[string]any) *AIAgent {

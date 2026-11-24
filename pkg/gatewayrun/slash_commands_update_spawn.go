@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
@@ -35,7 +34,7 @@ func spawnDetachedUpdate(icebathCmd []string, outputPath, exitCodePath string) e
 		"rc=$?; printf '%%s' \"$rc\" > %s && mv -f %s %s", strings.Join(quoted, " "), shellutil.Quote(outputPath),
 		shellutil.Quote(exitCodePath+".tmp"), shellutil.Quote(exitCodePath+".tmp"), shellutil.Quote(exitCodePath))
 	argv := []string{"bash", "-c", updateCmd}
-	if setsid, ok := pyshutil.Which("setsid", nil); ok && setsid != "" {
+	if setsid, err := exec.LookPath("setsid"); err == nil {
 		argv = append([]string{setsid}, argv...)
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)

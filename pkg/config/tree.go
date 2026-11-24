@@ -229,7 +229,7 @@ func (t Tree) Set(path string, value any) error {
 			cur = next
 			i++
 		default:
-			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %s", PyTypeName(cur), PyRepr(path))}
+			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %s", ErrorKind(cur), PyRepr(path))}
 		}
 	}
 	return nil

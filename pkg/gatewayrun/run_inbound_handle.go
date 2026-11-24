@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Inbound message of any platform, a user message whose turn the session store refused held until it takes writes again
@@ -395,16 +395,15 @@ func (r *GatewayRunner) hmCmdNew(ctx context.Context, event *gateway.MessageEven
 	return r.hmConfirmDestructive(ctx, event, "new", i18n.T(ctx, "gateway.confirm.detail_new", "", nil), handlerOf(r.handleResetCommand))
 }
 
-// Turns an undo argument asks for, one when absent, malformed or below one
-func undoCount(raw string) *big.Int {
-	one := big.NewInt(1)
+// Turns an undo argument asks for, one when absent, malformed or below one, a count past what an int64 holds read as the largest one
+func undoCount(raw string) int64 {
 	fields := strings.Fields(raw)
 	if len(fields) == 0 {
-		return one
+		return 1
 	}
-	n, ok := pyint.Parse(fields[0])
-	if !ok || n.Cmp(one) < 0 {
-		return one
+	n, err := textutil.ParseInt(fields[0])
+	if (err != nil && !errors.Is(err, strconv.ErrRange)) || n < 1 {
+		return 1
 	}
 	return n
 }
@@ -413,8 +412,8 @@ func undoCount(raw string) *big.Int {
 func (r *GatewayRunner) hmCmdUndo(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, quickKey string) (bool, any, error) {
 	n := undoCount(strings.TrimSpace(event.GetCommandArgs()))
 	detail := i18n.T(ctx, "gateway.confirm.detail_undo_one", "", nil)
-	if n.Cmp(big.NewInt(1)) != 0 {
-		detail = i18n.T(ctx, "gateway.confirm.detail_undo_many", "", map[string]any{"count": pyint.Native(n)})
+	if n != 1 {
+		detail = i18n.T(ctx, "gateway.confirm.detail_undo_many", "", map[string]any{"count": n})
 	}
 	return r.hmConfirmDestructive(ctx, event, "undo", detail, handlerOf(r.handleUndoCommand))
 }

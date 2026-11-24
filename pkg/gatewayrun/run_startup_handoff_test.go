@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Adapter whose handoff thread creation answers a fixed thread id

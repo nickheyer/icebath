@@ -42,7 +42,7 @@ func (e *DecodeError) Error() string {
 }
 
 // Python class name of the error
-func (e *DecodeError) PyTypeName() string { return "UnicodeDecodeError" }
+func (e *DecodeError) ErrorKind() string { return "UnicodeDecodeError" }
 
 // Holds the cross process identity lock under root while fn runs
 func installIDFileLock(root string, fn func() (string, error)) (string, error) {

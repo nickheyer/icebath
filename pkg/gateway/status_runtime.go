@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -183,7 +182,7 @@ func mergeOverOnDisk(path string, payload *jsonutil.Object) *jsonutil.Object {
 	if existing == nil {
 		return payload
 	}
-	home.AdoptRecordKey(existing.Keys, existing.Vals)
+	home.AdoptRecordKey(existing)
 	merged := jsonutil.NewObject()
 	for _, k := range existing.Keys() {
 		merged.Set(k, recGet(existing, k))
@@ -417,7 +416,7 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 		if loaded == nil || loaded.Len() == 0 {
 			loaded = buildRuntimeStatusRecord()
 		}
-		home.AdoptRecordKey(loaded.Keys, loaded.Vals)
+		home.AdoptRecordKey(loaded)
 		runtimeStatusState = loaded
 	}
 	previous := runtimeStatusState
@@ -590,17 +589,17 @@ func RuntimeStatusPidIsLive(record *jsonutil.Object) bool {
 
 // Non negative active_agents of a persisted value, zero when int raises TypeError or ValueError
 func ParseActiveAgents(raw any) (any, error) {
-	n, err := pyint.Of(raw)
+	n, err := anyutil.ToInt(raw)
 	if err != nil {
 		if pe, ok := err.(*errorutil.Error); ok && pe.Kind == "OverflowError" {
 			return nil, err
 		}
 		return int64(0), nil
 	}
-	if n.Sign() < 0 {
+	if n < 0 {
 		return int64(0), nil
 	}
-	return pyint.Native(n), nil
+	return int(n), nil
 }
 
 // Whether a live serving gateway has active agents

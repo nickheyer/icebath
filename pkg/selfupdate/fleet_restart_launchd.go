@@ -98,7 +98,7 @@ func restartMacosLaunchdGateways(ctx context.Context, w io.Writer, restartedServ
 		if err != nil {
 			return err
 		}
-		if listing.Returncode != 0 {
+		if listing.ExitCode != 0 {
 			*failedOrStaleUnits = append(*failedOrStaleUnits, "launchd (listing failed)")
 			return nil
 		}

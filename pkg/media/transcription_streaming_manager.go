@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Resample converts one chunk, carrying the unconsumed tail into the next call

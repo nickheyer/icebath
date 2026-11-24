@@ -59,7 +59,7 @@ func RequireReadableConfigBeforeWrite(ctx context.Context, configPath string) (m
 	}
 	m, ok := loaded.(map[string]any)
 	if !ok {
-		kind := PyTypeName(loaded)
+		kind := ErrorKind(loaded)
 		terr := fmt.Errorf("top-level YAML must be a mapping, got %s", kind)
 		if werr := WarnConfigParseFailure(ctx, configPath, terr, "refuse-write"); werr != nil {
 			return nil, werr
@@ -318,7 +318,7 @@ func rtSet(root *yaml.Node, path string, value any) error {
 			if err := current.Decode(&held); err != nil {
 				return err
 			}
-			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %s", PyTypeName(held), PyRepr(path))}
+			return &PathError{"TypeError", fmt.Sprintf("Cannot navigate into %s at key %s", ErrorKind(held), PyRepr(path))}
 		}
 	}
 	return nil

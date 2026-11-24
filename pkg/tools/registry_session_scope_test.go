@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // tests/tools/test_mcp_session_scope.py session_tool_scope contract, current_session_tool_scope and _session_slot_key

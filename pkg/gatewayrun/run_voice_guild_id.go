@@ -2,7 +2,7 @@ package gatewayrun
 
 import (
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Discord slash command interaction carrying the guild it ran in, falsy outside a guild
@@ -16,11 +16,11 @@ func getGuildID(event *gateway.MessageEvent) (int64, bool, error) {
 	raw := event.RawMessage
 	if interaction, ok := raw.(interactionGuildCarrier); ok {
 		if id := interaction.InteractionGuildID(); id != nil && id != "" && id != int64(0) {
-			n, err := pyint.Of(id)
+			n, err := anyutil.ToInt(id)
 			if err != nil {
 				return 0, false, err
 			}
-			return n.Int64(), true, nil
+			return n, true, nil
 		}
 	}
 	if message, ok := raw.(messageGuildCarrier); ok {

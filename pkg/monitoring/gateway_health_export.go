@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"os"
 	"strings"
 	"sync"
@@ -18,7 +17,6 @@ import (
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -248,17 +246,16 @@ func metricFloat(v any) (float64, bool) {
 		}
 		return 0, false
 	}
-	if n, ok := pyint.Instance(v); ok {
-		f, _ := new(big.Float).SetInt(n).Float64()
-		return f, true
+	if n, ok := anyutil.Int(v); ok {
+		return float64(n), true
 	}
 	return 0, false
 }
 
 // Numeric value of a gauge observation as an integer, a float truncated
 func metricInt(v any) (int64, bool) {
-	if n, ok := pyint.Instance(v); ok && n.IsInt64() {
-		return n.Int64(), true
+	if n, ok := anyutil.Int(v); ok {
+		return n, true
 	}
 	if f, ok := metricFloat(v); ok {
 		return int64(f), true
@@ -405,8 +402,8 @@ func (s *GatewayDiagnosticLogStreamer) Call(batch []*jsonutil.Object) {
 			SeverityText:         strings.ToUpper(text),
 			Body:                 &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: RedactBounded("gateway diagnostic")}},
 		}
-		if ts, ok := pyint.Instance(ev.ValueOr("ts_ns", nil)); ok && ts.IsUint64() {
-			rec.TimeUnixNano = ts.Uint64()
+		if ts, ok := anyutil.Int(ev.ValueOr("ts_ns", nil)); ok && ts >= 0 {
+			rec.TimeUnixNano = uint64(ts)
 		}
 		attrs := diagnosticLogAttributes(ev)
 		for _, col := range keepByKind["gateway_diagnostic"] {

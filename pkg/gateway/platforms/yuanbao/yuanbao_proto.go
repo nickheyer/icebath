@@ -1,18 +1,18 @@
 package yuanbao
 
 import (
+	"encoding/binary"
+	"errors"
 	"fmt"
-	"math/big"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -61,71 +61,53 @@ func NextSeqNo() int64 {
 	return val
 }
 
-var mask64 = new(big.Int).SetUint64(^uint64(0))
+// EncodeVarint writes a protobuf varint, a negative value as its 64 bit two's complement
+func EncodeVarint(value int64) []byte { return binary.AppendUvarint(nil, uint64(value)) }
 
-// EncodeVarint writes a protobuf varint, negatives as 64 bit two's complement
-func EncodeVarint(value *big.Int) []byte {
-	v := new(big.Int).Set(value)
-	if v.Sign() < 0 {
-		v.And(v, mask64)
-	}
-	var out []byte
-	for {
-		bits := byte(new(big.Int).And(v, big.NewInt(0x7F)).Int64())
-		v.Rsh(v, 7)
-		if v.Sign() == 0 {
-			return append(out, bits)
-		}
-		out = append(out, bits|0x80)
-	}
-}
-
-func varint64(n int64) []byte { return EncodeVarint(big.NewInt(n)) }
-
-// DecodeVarint reads a varint at pos as int64 or *big.Int and returns the new position
-func DecodeVarint(data []byte, pos int) (any, int, error) {
-	result, shift := new(big.Int), uint(0)
-	for pos < len(data) {
+// DecodeVarint reads a varint at pos as a 64 bit two's complement integer and returns the new position, a varint the data ends inside read as far as it goes
+func DecodeVarint(data []byte, pos int) (int64, int, error) {
+	var result uint64
+	for shift := uint(0); pos < len(data); shift += 7 {
 		b := data[pos]
 		pos++
-		result.Or(result, new(big.Int).Lsh(big.NewInt(int64(b&0x7F)), shift))
-		shift += 7
-		if b&0x80 == 0 {
+		bits, last := uint64(b&0x7F), b&0x80 == 0
+		if shift == 63 {
+			if !last {
+				return 0, pos, errors.New("varint too long")
+			}
+			if bits > 1 {
+				return 0, pos, errors.New("varint overflows 64 bits")
+			}
+		}
+		result |= bits << shift
+		if last {
 			break
 		}
-		if shift >= 64 {
-			return nil, pos, fmt.Errorf("varint too long")
-		}
 	}
-	return pyint.Value(result), pos, nil
+	return int64(result), pos, nil
 }
 
 // EncodeField prefixes a value with its field tag
 func EncodeField(fieldNumber int64, wireType int64, value []byte) []byte {
-	return append(varint64(fieldNumber<<3|wireType), value...)
+	return append(EncodeVarint(fieldNumber<<3|wireType), value...)
 }
 
 // EncodeMessage length prefixes bytes or a nested message
-func EncodeMessage(b []byte) []byte { return append(varint64(int64(len(b))), b...) }
+func EncodeMessage(b []byte) []byte { return append(EncodeVarint(int64(len(b))), b...) }
 
 // EncodeString length prefixes the UTF-8 bytes of a string
 func EncodeString(s string) ([]byte, error) {
-	if err := pystr.StrictUTF8EncodeError(s); err != nil {
+	if err := textutil.ValidateUTF8(s); err != nil {
 		return nil, err
 	}
 	return EncodeMessage([]byte(s)), nil
 }
 
-// Field is one parsed field, Value an int64 or *big.Int for varints and bytes otherwise
+// Field is one parsed field, Value an int64 for varints and bytes otherwise
 type Field struct {
-	Number   any
+	Number   int64
 	WireType int64
 	Value    any
-}
-
-func asInt64(v any) (int64, bool) {
-	n, ok := v.(int64)
-	return n, ok
 }
 
 // ParseFields splits a protobuf message into its fields in wire order
@@ -133,14 +115,13 @@ func ParseFields(data []byte) ([]Field, error) {
 	var fields []Field
 	pos := 0
 	for pos < len(data) {
-		tagAny, next, err := DecodeVarint(data, pos)
+		tag, next, err := DecodeVarint(data, pos)
 		if err != nil {
 			return nil, err
 		}
 		pos = next
-		tag, _ := pyint.Instance(tagAny)
-		wireType := new(big.Int).And(tag, big.NewInt(7)).Int64()
-		number := pyint.Value(new(big.Int).Rsh(tag, 3))
+		wireType := tag & 7
+		number := int64(uint64(tag) >> 3)
 		var val any
 		if wireType == WTVarint {
 			val, pos, err = DecodeVarint(data, pos)
@@ -150,13 +131,12 @@ func ParseFields(data []byte) ([]Field, error) {
 		} else {
 			var length int
 			if wireType == WTLen {
-				lv, next, err := DecodeVarint(data, pos)
+				l, next, err := DecodeVarint(data, pos)
 				if err != nil {
 					return nil, err
 				}
 				pos = next
-				l, ok := asInt64(lv)
-				if !ok || l > int64(len(data)) {
+				if l < 0 || l > int64(len(data)) {
 					l = int64(len(data))
 				}
 				length = int(l)
@@ -180,16 +160,13 @@ type fieldEntry struct {
 }
 
 // FieldDict maps a field number to its entries in wire order, repeated fields holding several
-type FieldDict map[string][]fieldEntry
-
-func fieldKey(n any) string { return anyutil.String(n) }
+type FieldDict map[int64][]fieldEntry
 
 // FieldsToDict groups parsed fields by field number
 func FieldsToDict(fields []Field) FieldDict {
 	d := FieldDict{}
 	for _, f := range fields {
-		k := fieldKey(f.Number)
-		d[k] = append(d[k], fieldEntry{f.WireType, f.Value})
+		d[f.Number] = append(d[f.Number], fieldEntry{f.WireType, f.Value})
 	}
 	return d
 }
@@ -203,7 +180,7 @@ func parseDict(data []byte) (FieldDict, error) {
 }
 
 func (d FieldDict) first(fn int64, wt int64) any {
-	entries := d[fieldKey(int64(fn))]
+	entries := d[fn]
 	if len(entries) > 0 && entries[0].wireType == wt {
 		return entries[0].value
 	}
@@ -218,12 +195,10 @@ func (d FieldDict) GetString(fn int64) string {
 	return ""
 }
 
-// GetVarint returns the first varint field as int64 or *big.Int, zero when absent
-func (d FieldDict) GetVarint(fn int64) any {
-	if v := d.first(fn, WTVarint); v != nil {
-		return v
-	}
-	return int64(0)
+// GetVarint returns the first varint field, zero when absent
+func (d FieldDict) GetVarint(fn int64) int64 {
+	n, _ := d.first(fn, WTVarint).(int64)
+	return n
 }
 
 // GetBytes returns the first length delimited field, empty when absent
@@ -237,7 +212,7 @@ func (d FieldDict) GetBytes(fn int64) []byte {
 // GetRepeatedBytes returns every length delimited entry of a field
 func (d FieldDict) GetRepeatedBytes(fn int64) [][]byte {
 	var out [][]byte
-	for _, e := range d[fieldKey(int64(fn))] {
+	for _, e := range d[fn] {
 		if e.wireType == WTLen {
 			out = append(out, e.value.([]byte))
 		}
@@ -275,7 +250,7 @@ func (p *pbuf) s(fn int64, s string) {
 	p.b = append(p.b, EncodeField(fn, WTLen, enc)...)
 }
 
-func (p *pbuf) v(fn int64, n *big.Int) {
+func (p *pbuf) v(fn int64, n int64) {
 	if p.err == nil {
 		p.b = append(p.b, EncodeField(fn, WTVarint, EncodeVarint(n))...)
 	}
@@ -306,18 +281,18 @@ func typeErr(op string, v any) error {
 	return fmt.Errorf("expected text, got %s", errchain.Kind(v))
 }
 
-func intOf(v any) (*big.Int, error) {
-	if n, ok := pyint.Instance(v); ok {
+func intOf(v any) (int64, error) {
+	if n, ok := anyutil.Int(v); ok {
 		return n, nil
 	}
-	return nil, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
+	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
 }
 
 // Encodes the parts whose value is set, S always and n whenever not None
 func encodeParts(parts []part) ([]byte, error) {
 	p := &pbuf{}
 	for _, pt := range parts {
-		if !(pt.kind == 'S' || (pt.kind == 'n' && pt.val != nil) || (pt.kind != 'n' && truthyNum(pt.val))) {
+		if !(pt.kind == 'S' || (pt.kind == 'n' && pt.val != nil) || (pt.kind != 'n' && anyutil.IsTrue(pt.val))) {
 			continue
 		}
 		switch pt.kind {
@@ -411,7 +386,7 @@ func encodeSpec(objValue any, spec []specField) ([]byte, error) {
 				v = ""
 			}
 		}
-		if !truthyNum(v) {
+		if !anyutil.IsTrue(v) {
 			continue
 		}
 		switch f.kind {
@@ -425,7 +400,7 @@ func encodeSpec(objValue any, spec []specField) ([]byte, error) {
 			}
 			p.s(f.fn, s)
 		default:
-			n, err := pyint.Of(v)
+			n, err := anyutil.ToInt(v)
 			if err != nil {
 				p.fail(err)
 				continue
@@ -434,14 +409,6 @@ func encodeSpec(objValue any, spec []specField) ([]byte, error) {
 		}
 	}
 	return p.b, p.err
-}
-
-// Python truth value with arbitrary precision ints counted as numbers
-func truthyNum(v any) bool {
-	if n, ok := v.(*big.Int); ok {
-		return n.Sign() != 0
-	}
-	return anyutil.IsTrue(v)
 }
 
 func decodeSpec(fd FieldDict, spec []specField) *jsonutil.Object {
@@ -453,20 +420,20 @@ func decodeSpec(fd FieldDict, spec []specField) *jsonutil.Object {
 		} else {
 			v = fd.GetVarint(f.fn)
 		}
-		if truthyNum(v) {
+		if anyutil.IsTrue(v) {
 			out.Set(f.key, v)
 		}
 	}
 	return out
 }
 
-func encodeHead(cmdType int64, cmd string, seqNo int64, msgID, module string, needAck bool, status *big.Int) ([]byte, error) {
+func encodeHead(cmdType int64, cmd string, seqNo int64, msgID, module string, needAck bool, status int64) ([]byte, error) {
 	ack := int64(0)
 	if needAck {
 		ack = 1
 	}
 	return encodeParts([]part{{1, 'v', cmdType}, {2, 's', cmd}, {3, 'v', seqNo}, {4, 's', msgID}, {5, 's', module},
-		{6, 'v', ack}, {10, 'v', new(big.Int).And(status, mask64)}})
+		{6, 'v', ack}, {10, 'v', status}})
 }
 
 func decodeHead(data []byte) (*jsonutil.Object, error) {
@@ -480,14 +447,14 @@ func decodeHead(data []byte) (*jsonutil.Object, error) {
 	head.Set("seq_no", fd.GetVarint(3))
 	head.Set("msg_id", fd.GetString(4))
 	head.Set("module", fd.GetString(5))
-	head.Set("need_ack", truthyNum(fd.GetVarint(6)))
+	head.Set("need_ack", fd.GetVarint(6) != 0)
 	head.Set("status", fd.GetVarint(10))
 	return head, nil
 }
 
 // EncodeConnMsgFull encodes a ConnMsg with every head field and the optional payload
 func EncodeConnMsgFull(cmdType int64, cmd string, seqNo int64, msgID, module string, data []byte, needAck bool) ([]byte, error) {
-	head, err := encodeHead(cmdType, cmd, seqNo, msgID, module, needAck, big.NewInt(0))
+	head, err := encodeHead(cmdType, cmd, seqNo, msgID, module, needAck, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -719,7 +686,7 @@ func DecodeInboundPush(data []byte) *jsonutil.Object {
 		if err != nil {
 			return nil
 		}
-		if truthyNum(v) || f.key == "msg_body" || f.key == "msg_seq" {
+		if anyutil.IsTrue(v) || f.key == "msg_body" || f.key == "msg_seq" {
 			out.Set(f.key, v)
 		}
 	}
@@ -864,7 +831,7 @@ func EncodeSendPrivateHeartbeat(fromAccount, toAccount string, heartbeat int64) 
 	p := &pbuf{}
 	p.s(1, fromAccount)
 	p.s(2, toAccount)
-	p.v(3, big.NewInt(heartbeat))
+	p.v(3, heartbeat)
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -884,8 +851,8 @@ func EncodeSendGroupHeartbeat(fromAccount, groupCode string, heartbeat, sendTime
 	p.s(1, fromAccount)
 	p.s(2, "")
 	p.s(3, groupCode)
-	p.v(4, big.NewInt(ts))
-	p.v(5, big.NewInt(heartbeat))
+	p.v(4, ts)
+	p.v(5, heartbeat)
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -914,7 +881,7 @@ func DecodeQueryGroupInfoRsp(data []byte) *jsonutil.Object {
 		result.Set("message", s)
 	}
 	gi := FieldDict{}
-	if entries := fd[fieldKey(int64(3))]; len(entries) > 0 {
+	if entries := fd[3]; len(entries) > 0 {
 		if b, ok := entries[0].value.([]byte); ok && len(b) > 0 {
 			if gi, err = parseDict(b); err != nil {
 				return nil
@@ -933,9 +900,9 @@ func EncodeGetGroupMemberList(groupCode string, offset, limit int64) ([]byte, er
 	p := &pbuf{}
 	p.s(1, groupCode)
 	if offset != 0 {
-		p.v(2, big.NewInt(offset))
+		p.v(2, offset)
 	}
-	p.v(3, big.NewInt(limit))
+	p.v(3, limit)
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -959,7 +926,7 @@ func DecodeGetGroupMemberListRsp(data []byte) *jsonutil.Object {
 			k string
 			v any
 		}{{"user_id", m.GetString(1)}, {"nickname", m.GetString(2)}, {"role", m.GetVarint(3)}, {"join_time", m.GetVarint(4)}, {"name_card", m.GetString(5)}} {
-			if truthyNum(kv.v) || kv.k == "role" {
+			if anyutil.IsTrue(kv.v) || kv.k == "role" {
 				mem.Set(kv.k, kv.v)
 			}
 		}
@@ -970,6 +937,6 @@ func DecodeGetGroupMemberListRsp(data []byte) *jsonutil.Object {
 	out.Set("message", fd.GetString(2))
 	out.Set("members", members)
 	out.Set("next_offset", fd.GetVarint(4))
-	out.Set("is_complete", truthyNum(fd.GetVarint(5)))
+	out.Set("is_complete", fd.GetVarint(5) != 0)
 	return out
 }

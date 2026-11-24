@@ -171,7 +171,7 @@ func ExportPet(h, slug string) (string, []byte, error) {
 		if err != nil || !info.Mode().IsRegular() || strings.HasPrefix(file, ".") {
 			continue
 		}
-		if err := archive.Write(path, name+"/"+file); err != nil {
+		if err := archive.AddFile(path, name+"/"+file); err != nil {
 			archive.Close()
 			return "", nil, err
 		}

@@ -81,7 +81,7 @@ var linuxX11ActiveWindowID = func(env *tools.Env) *int64 {
 		return nil
 	}
 	proc, err := runQuiet(argv, 5, runOpts{Env: childEnv})
-	if err != nil || proc.Returncode != 0 {
+	if err != nil || proc.ExitCode != 0 {
 		return nil
 	}
 	if id, ok := parseXpropNetActiveWindow(proc.Stdout); ok {

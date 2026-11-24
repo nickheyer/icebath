@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -121,11 +119,11 @@ func stringsToAny(values []string) []any {
 
 // Python int of a value as the smallest Go integer holding it
 func pyIntValue(v any) (any, error) {
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return nil, err
 	}
-	return pyint.Value(n), nil
+	return n, nil
 }
 
 // Python int of the offset argument floored at zero
@@ -134,27 +132,27 @@ func offsetArg(a toolArgs) (any, error) {
 	if !anyutil.IsTrue(raw) {
 		raw = int64(0)
 	}
-	n, err := pyint.Of(raw)
+	n, err := anyutil.ToInt(raw)
 	if err != nil {
 		return nil, err
 	}
-	if n.Sign() < 0 {
-		n = big.NewInt(0)
+	if n < 0 {
+		n = 0
 	}
-	return pyint.Value(n), nil
+	return n, nil
 }
 
 // Limit argument clamped to Spotify's 1 to 50 window, the default when it is not a number
 func limitArg(a toolArgs, def int64) int64 {
 	value := def
-	if n, err := pyint.Of(a["limit"]); err == nil {
+	if n, err := anyutil.ToInt(a["limit"]); err == nil {
 		switch {
-		case n.Cmp(big.NewInt(50)) > 0:
+		case n > 50:
 			value = 50
-		case n.Cmp(big.NewInt(1)) < 0:
+		case n < 1:
 			value = 1
 		default:
-			value = n.Int64()
+			value = n
 		}
 		return value
 	}
@@ -443,17 +441,17 @@ var handleSpotifyPlayback = dispatcher("spotify_playback", "get_state", map[stri
 		return pbCmd(c, a, action, "PUT", "/me/player/shuffle", "state", state)
 	},
 	"set_volume": pbRequiredParam("/me/player/volume", "volume_percent", func(v any) (any, error) {
-		n, err := pyint.Of(v)
+		n, err := anyutil.ToInt(v)
 		if err != nil {
 			return nil, err
 		}
 		switch {
-		case n.Sign() < 0:
+		case n < 0:
 			return int64(0), nil
-		case n.Cmp(big.NewInt(100)) > 0:
+		case n > 100:
 			return int64(100), nil
 		}
-		return n.Int64(), nil
+		return n, nil
 	}),
 	"recently_played": pbRecentlyPlayed,
 }, nil)

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +16,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,8 +26,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -37,6 +35,7 @@ import (
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -133,12 +132,11 @@ func WebhookIsUsableSecret(secret any) bool {
 
 // Whether an integer timestamp header lies within the replay window, a stale one logging the message
 func webhookTimestampFresh(raw, staleMsg string) bool {
-	stamp, err := pyint.Of(raw)
+	stamp, err := anyutil.ToInt(raw)
 	if err != nil {
 		return false
 	}
-	age := new(big.Int).Sub(big.NewInt(time.Now().Unix()), stamp)
-	if age.Abs(age).Cmp(big.NewInt(webhookV2ReplayWindowSeconds)) > 0 {
+	if now := time.Now().Unix(); stamp < now-webhookV2ReplayWindowSeconds || stamp > now+webhookV2ReplayWindowSeconds {
 		pkgLog().Warn(staleMsg)
 		return false
 	}
@@ -851,7 +849,10 @@ func webhookParseBody(rawBody []byte) (any, bool, error) {
 		return nil, false, nil
 	}
 	form := jsonutil.NewObject()
-	for _, pair := range pyurl.ParseQSL(string(rawBody), false) {
+	for _, pair := range urlutil.QueryPairs(string(rawBody)) {
+		if pair[1] == "" {
+			continue
+		}
 		form.Set(pair[0], pair[1])
 	}
 	return form, true, nil
@@ -1505,8 +1506,8 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		pkgLog().Error("[webhook] github_comment delivery missing repo or pr_number")
 		return SendResult{Success: false, Error: "Missing repo or pr_number"}, nil
 	}
-	prInt, err := pyint.Of(prNumber)
-	if err == nil && prInt.Sign() <= 0 {
+	prInt, err := anyutil.ToInt(prNumber)
+	if err == nil && prInt <= 0 {
 		err = &PyError{Kind: "ValueError", Msg: "non-positive"}
 	}
 	if err != nil {
@@ -1531,7 +1532,7 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		pkgLog().Error("[webhook] github_comment delivery error: " + err.Error())
 		return SendResult{Success: false, Error: err.Error()}, nil
 	}
-	argv := []string{"gh", "pr", "comment", prInt.String(), "--repo", repoText, "--body", content}
+	argv := []string{"gh", "pr", "comment", strconv.FormatInt(prInt, 10), "--repo", repoText, "--body", content}
 	result, err := executil.Run(ctx, argv, executil.Options{Env: env, Timeout: 30 * time.Second})
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
@@ -1546,7 +1547,7 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		pkgLog().Error("[webhook] github_comment delivery error: " + text)
 		return SendResult{Success: false, Error: text}, nil
 	}
-	if result.Returncode == 0 {
+	if result.ExitCode == 0 {
 		pkgLog().Info(fmt.Sprintf("[webhook] Posted comment on %s#%s", repoText, anyutil.String(prNumber)))
 		return SendResult{Success: true}, nil
 	}

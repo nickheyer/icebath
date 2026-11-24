@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -92,8 +93,8 @@ func ParseClientEnvRules(raw any) (*ClientEnvRules, error) {
 // An error carrying its Python exception class name
 type stateTypedError struct{ kind, msg string }
 
-func (e *stateTypedError) Error() string      { return e.msg }
-func (e *stateTypedError) PyTypeName() string { return e.kind }
+func (e *stateTypedError) Error() string     { return e.msg }
+func (e *stateTypedError) ErrorKind() string { return e.kind }
 
 // Value of a dict shaped config node
 func configDictGet(v any, key string) (any, bool) {

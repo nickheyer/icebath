@@ -64,8 +64,8 @@ func (r *GatewayRunner) sessionHousekeeping(ctx context.Context) error {
 	now := float64(time.Now().UnixNano()) / 1e9
 	if now-r.lastSessionStorePruneTs > sessionStorePruneInterval {
 		maxAge := 0
-		if r.config != nil && r.config.SessionStoreMaxAgeDays != nil {
-			maxAge = int(r.config.SessionStoreMaxAgeDays.Int64())
+		if r.config != nil {
+			maxAge = r.config.SessionStoreMaxAgeDays
 		}
 		if maxAge > 0 {
 			n, err := r.asyncSessionStore.Store().PruneOldEntries(ctx, maxAge)

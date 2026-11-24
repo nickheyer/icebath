@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Journal mode the SQLite header bytes of a file report, read with no connection open
@@ -110,7 +112,7 @@ func CmdSetJournalMode(ctx context.Context, ns map[string]any, w io.Writer) (int
 	}
 	conn, err := ConnectSQLite(dbPath, SQLiteConfig{Timeout: 0.0})
 	if err != nil {
-		if _, sqliteErr := sqliteClassOf(err); !sqliteErr && !isOSError(err) {
+		if _, sqliteErr := sqliteClassOf(err); !sqliteErr && !errorutil.IsSystem(err) {
 			return 1, err
 		}
 		printf("✗ Cannot open %s: %s", dbPath, cmdExcText(err))

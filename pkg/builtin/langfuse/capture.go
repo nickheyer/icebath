@@ -13,10 +13,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -28,7 +28,7 @@ const (
 )
 
 var (
-	readFileLineRe  = pyre.MustCompile(`^\s*(\d+)\|(.*)$`)
+	readFileLineRe  = regexutil.MustCompile(`^\s*(\d+)\|(.*)$`)
 	readFileMetaKey = []string{"total_lines", "file_size", "truncated", "is_binary", "is_image", "hint",
 		"_warning", "mime_type", "dimensions", "similar_files", "error"}
 	captureModes         = []string{"metadata", "sanitized", "full"}

@@ -475,7 +475,7 @@ func (o *ConnectionOperation) RequestPayload() *jsonutil.Object {
 }
 
 func copyObject(src *jsonutil.Object) *jsonutil.Object {
-	out := &jsonutil.Object{Keys: append([]string(nil), src.Keys()...), Vals: make(map[string]any, src.Len())}
+	out := jsonutil.NewObject()
 	for k, v := range src.All() {
 		out.Set(k, v)
 	}

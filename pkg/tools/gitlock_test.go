@@ -309,7 +309,7 @@ func TestRecoveryMarksUnmarkedPacksAndRetriesTheSameFetch(t *testing.T) {
 				return &executil.Completed{Args: append(gitCmd, args...)}, nil
 			}
 			res, err := FetchWithPartialCloneRecovery(runner, []string{"git"}, []string{"fetch", "origin", "main"}, root)
-			if err != nil || res.Returncode != 0 || len(calls) != 2 {
+			if err != nil || res.ExitCode != 0 || len(calls) != 2 {
 				t.Fatalf("%v %v %v", res, err, calls)
 			}
 			for _, c := range calls {

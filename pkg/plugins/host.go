@@ -964,7 +964,7 @@ type HostFacade interface {
 // Parent object a ctx method returns that the plugin keeps by reference, with the Python type name and repr it shows
 type HostObjectFacade interface {
 	HostFacade
-	PyTypeName() string
+	ErrorKind() string
 	PyRepr() string
 }
 

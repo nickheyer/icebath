@@ -11,10 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Multiplexer and terminal emulator identity env vars checked in order when no tty path is available
@@ -87,7 +88,7 @@ func WriteBreadcrumb(ctx context.Context, sessionID, cwd string) {
 	if err := config.AtomicJSONWriteWith(ctx, filepath.Join(dir, terminalID), payload); err != nil {
 		return
 	}
-	pyfs.UnlinkFilesOlderThan(dir, "*", staleBreadcrumbAfter, &now)
+	fsutil.RemoveOlderThan(dir, "*", timeutil.FromEpoch(now-staleBreadcrumbAfter))
 }
 
 // This terminal's breadcrumb payload, nil when missing, corrupt or stale

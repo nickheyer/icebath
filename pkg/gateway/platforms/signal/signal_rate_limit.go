@@ -10,8 +10,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const (
@@ -39,7 +42,7 @@ type SignalSchedulerError struct{ Message string }
 
 func (e *SignalSchedulerError) Error() string { return e.Message }
 
-var retryAfterRe, _ = pyre.Compile(`(?i)Retry after (\d+(?:\.\d+)?)\s*second`)
+var retryAfterRe, _ = regexutil.Compile(`(?i)Retry after (\d+(?:\.\d+)?)\s*second`)
 
 var processStart = time.Now()
 
@@ -104,8 +107,8 @@ func extractRetryAfterSeconds(err any) (float64, bool, error) {
 				if !isDict || !anyutil.IsTrue(rm["retryAfterSeconds"]) {
 					continue
 				}
-				if c, ok := pyhttpx.RetryAfterValue(rm["retryAfterSeconds"]); ok && (!found || c > best) {
-					best, found = c, true
+				if wait, ok := httputil.RetryAfterValue(rm["retryAfterSeconds"]); ok && (!found || wait.Seconds() > best) {
+					best, found = wait.Seconds(), true
 				}
 			}
 		case string, map[string]any:
@@ -122,8 +125,8 @@ func extractRetryAfterSeconds(err any) (float64, bool, error) {
 	if match == nil {
 		return 0, false, nil
 	}
-	v, ok := pyhttpx.RetryAfterValue(match.Groups()[1].String())
-	return v, ok, nil
+	wait, ok := httputil.RetryAfterValue(match.Groups()[1].String())
+	return wait.Seconds(), ok, nil
 }
 
 // Whether a signal-cli RPC error is a rate limit by typed code, legacy substrings or a leaked retry later

@@ -3,13 +3,14 @@ package langfuse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -31,15 +32,15 @@ var usageFields = []usageField{
 	{"output_reasoning_tokens", "reasoning_tokens", "output"},
 }
 
-// Python int() of a token count that may be None, a float, a numeric string or a bool
+// Whole number of a token count that may be absent, a float, numeric text or a bool, counts written as integers held within the int32 range
 func pyIntOf(v any) int {
 	if !anyutil.IsTrue(v) {
 		return 0
 	}
 	switch t := v.(type) {
 	case string:
-		n, ok := pyint.Parse(t)
-		if !ok {
+		n, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			panic(&errorutil.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(t)})
 		}
 		return clampInt(n)
@@ -48,7 +49,7 @@ func pyIntOf(v any) int {
 	case float32:
 		return floatToInt(float64(t))
 	case json.Number:
-		if n, ok := new(big.Int).SetString(t.String(), 10); ok {
+		if n, err := strconv.ParseInt(t.String(), 10, 64); err == nil || errors.Is(err, strconv.ErrRange) {
 			return clampInt(n)
 		}
 		f, err := t.Float64()
@@ -57,7 +58,10 @@ func pyIntOf(v any) int {
 		}
 		return floatToInt(f)
 	case *big.Int:
-		return clampInt(t)
+		if !t.IsInt64() {
+			return clampInt(int64(t.Sign()) * math.MaxInt64)
+		}
+		return clampInt(t.Int64())
 	}
 	if n, ok := pyIntValue(v); ok {
 		return toInt(n)

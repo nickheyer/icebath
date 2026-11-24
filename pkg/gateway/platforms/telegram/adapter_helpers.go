@@ -42,8 +42,8 @@ func redactTelegramProxyErrorText(err error, proxyURL string) (out string) {
 // Deadline expiry of a bounded Telegram call, reported as the builtin TimeoutError
 type deadlineTimeoutError struct{ msg string }
 
-func (e *deadlineTimeoutError) Error() string      { return e.msg }
-func (e *deadlineTimeoutError) PyTypeName() string { return "TimeoutError" }
+func (e *deadlineTimeoutError) Error() string     { return e.msg }
+func (e *deadlineTimeoutError) ErrorKind() string { return "TimeoutError" }
 
 // Runs fn under a wall clock deadline that abandons it on expiry and runs the cleanup detached
 func awaitWithThreadDeadline(ctx context.Context, fn func(ctx context.Context) (any, error), timeout float64,

@@ -58,7 +58,7 @@ func driverJSON(ctx context.Context, env *tools.Env, driverCmd string, timeout f
 		return nil
 	}
 	out := strings.TrimSpace(proc.Stdout)
-	if out == "" || proc.Returncode != 0 {
+	if out == "" || proc.ExitCode != 0 {
 		return nil
 	}
 	return jsonObject(out)
@@ -360,7 +360,7 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 			}
 			result, reason = nil, "manifest check failed: "+err.Error()
 		}
-		if result != nil && result.Returncode != 0 {
+		if result != nil && result.ExitCode != 0 {
 			text := result.Stderr
 			if text == "" {
 				text = result.Stdout

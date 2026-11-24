@@ -470,4 +470,4 @@ func NewExaWebProvider() WebProvider {
 }
 
 // Class name the registry log and type errors print, the plugin provider class
-func (*exaProvider) PyTypeName() string { return "ExaWebSearchProvider" }
+func (*exaProvider) ErrorKind() string { return "ExaWebSearchProvider" }

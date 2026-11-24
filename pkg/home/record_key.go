@@ -1,6 +1,10 @@
 package home
 
-import "strings"
+import (
+	"strings"
+
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 // Key of the home directory in pid, lock, identity and runtime records
 const RecordKey = "icebath_home"
@@ -9,18 +13,9 @@ const RecordKey = "icebath_home"
 func RetiredRecordKey(key string) string { return strings.Replace(key, RecordKey, "hermes_home", 1) }
 
 // Moves the home of a record an older icebath wrote to the current key in place, so the next write carries it
-func AdoptRecordKey(keys []string, vals map[string]any) {
-	retired := RetiredRecordKey(RecordKey)
-	if _, has := vals[RecordKey]; has {
-		return
-	}
-	for i, k := range keys {
-		if k == retired {
-			keys[i] = RecordKey
-			vals[RecordKey] = vals[retired]
-			delete(vals, retired)
-			return
-		}
+func AdoptRecordKey(record *jsonutil.Object) {
+	if !record.Has(RecordKey) {
+		record.Rename(RetiredRecordKey(RecordKey), RecordKey)
 	}
 }
 

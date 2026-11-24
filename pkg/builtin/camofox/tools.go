@@ -12,12 +12,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -38,8 +38,8 @@ const (
 var cookieAllowedFields = []string{"name", "value", "domain", "path", "expires", "httpOnly", "secure", "sameSite"}
 
 var (
-	imgAltRE = pyre.MustCompile(`img\s+"([^"]*)"`)
-	imgURLRE = pyre.MustCompile(`/url:\s*(\S+)`)
+	imgAltRE = regexutil.MustCompile(`img\s+"([^"]*)"`)
+	imgURLRE = regexutil.MustCompile(`/url:\s*(\S+)`)
 )
 
 // Body of one tab tool run against the session, its result text or the error it raised

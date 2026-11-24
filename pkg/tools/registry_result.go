@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Bounds a str result, keeps the multimodal envelope as JSON and turns any other value into a contract error

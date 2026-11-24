@@ -10,18 +10,18 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
-	headerRE     = pyre.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
-	tableRuleRE  = pyre.MustCompile(`^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$`)
-	fenceRE      = pyre.MustCompile("^```([^\\n`]*)\\s*$")
-	boldLineRE   = pyre.MustCompile(`^\*\*[^*]+\*\*$`)
-	numberedRE   = pyre.MustCompile(`^\d+\.\s`)
+	headerRE     = regexutil.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
+	tableRuleRE  = regexutil.MustCompile(`^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$`)
+	fenceRE      = regexutil.MustCompile("^```([^\\n`]*)\\s*$")
+	boldLineRE   = regexutil.MustCompile(`^\*\*[^*]+\*\*$`)
+	numberedRE   = regexutil.MustCompile(`^\d+\.\s`)
 	sendTargetRE = `^\s*((?:wxid|gh|v\d+|wm|wb)_[A-Za-z0-9_-]+|[A-Za-z0-9._-]+@chatroom|filehelper)\s*$`
 )
 

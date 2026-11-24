@@ -20,7 +20,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -130,17 +129,14 @@ func sessionSearchInt(v any) (int64, bool) {
 	if v == nil {
 		return 0, false
 	}
-	n, err := pyint.Of(v)
-	if err != nil {
+	if f, isFloat := v.(float64); isFloat && math.IsInf(f, 0) {
 		return 0, false
 	}
-	if n.IsInt64() {
-		return n.Int64(), true
+	n, err := anyutil.ToInt(v)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
+		return 0, false
 	}
-	if n.Sign() > 0 {
-		return math.MaxInt64, true
-	}
-	return math.MinInt64, true
+	return n, true
 }
 
 // Two ids compared as Python ints, false when either is not an int
@@ -684,11 +680,11 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 
 // Decimal digits of an int with thousands separators like the Python comma format
 func thousands(v any) string {
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return anyutil.String(v)
 	}
-	digits := n.String()
+	digits := strconv.FormatInt(n, 10)
 	sign := ""
 	if strings.HasPrefix(digits, "-") {
 		sign, digits = "-", digits[1:]

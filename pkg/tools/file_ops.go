@@ -19,8 +19,6 @@ import (
 	"unicode/utf8"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )

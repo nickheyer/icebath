@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Denial message when the source may not run the canonical command, empty when it may

@@ -226,7 +226,7 @@ func lastActivity(path string) float64 {
 		return nowSeconds()
 	}
 	status, err := run(60*time.Second, "status", "--porcelain", "-z", "-uall", "--no-renames")
-	if err != nil || status.Returncode != 0 {
+	if err != nil || status.ExitCode != 0 {
 		return nowSeconds()
 	}
 	gitDir := strings.TrimSpace(string(gd.Stdout))
@@ -537,7 +537,7 @@ func ArchiveThenRemove(repoRoot, path, reason string, maxUntrackedMB float64, un
 	if err != nil {
 		return nil, err
 	}
-	if removed.Returncode != 0 {
+	if removed.ExitCode != 0 {
 		stderr := strings.TrimSpace(removed.Stderr)
 		envLog(nil).Warn(fmt.Sprintf("Archived %s to %s but could not remove it: %s", path, arc.Ref, stderr))
 		if stderr == "" {

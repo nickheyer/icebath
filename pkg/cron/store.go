@@ -22,7 +22,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -499,10 +498,7 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 					skipped = append(skipped, anyutil.Quote(k))
 					continue
 				}
-				flat := &jsonutil.Object{Keys: append([]string(nil), v.Keys()...), Vals: map[string]any{}}
-				for kk, vv := range v.All() {
-					flat.Set(kk, vv)
-				}
+				flat := v.Clone()
 				id, _ := v.Get("id")
 				if !anyutil.IsTrue(id) {
 					id = k
@@ -612,12 +608,12 @@ func normalizeRepeatCompleted(o *jsonutil.Object) bool {
 			return false
 		}
 	}
-	v, err := pyint.Of(c)
-	if err != nil || v.Sign() < 0 {
+	v, err := anyutil.ToInt(c)
+	if err != nil || v < 0 {
 		rep.Set("completed", int64(0))
 		return true
 	}
-	rep.Set("completed", pyint.Value(v))
+	rep.Set("completed", v)
 	return true
 }
 
@@ -888,11 +884,11 @@ func (s *Store) TickerHeartbeatWriterAlive() bool {
 	if len(fields) < 2 {
 		return false
 	}
-	pid, ok := pyint.Parse(fields[1])
-	if !ok || !pid.IsInt64() || pid.Int64() > math.MaxInt32 || pid.Int64() < math.MinInt32 {
+	pid, err := strconv.ParseInt(strings.TrimSpace(fields[1]), 10, 64)
+	if err != nil || pid > math.MaxInt32 || pid < math.MinInt32 {
 		return false
 	}
-	alive, err := tools.PidExistsStdlib(int(pid.Int64()))
+	alive, err := tools.PidExistsStdlib(int(pid))
 	return err == nil && alive
 }
 

@@ -63,5 +63,5 @@ func (r routeFake) Model() string    { return r.model }
 // Exception with no message whose Python type is KeyError
 type keyErrorValue struct{}
 
-func (keyErrorValue) Error() string      { return "" }
-func (keyErrorValue) PyTypeName() string { return "KeyError" }
+func (keyErrorValue) Error() string     { return "" }
+func (keyErrorValue) ErrorKind() string { return "KeyError" }

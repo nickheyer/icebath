@@ -96,7 +96,7 @@ func (p *BrowserbaseBrowserProvider) CreateSession(env *tools.Env, taskID string
 	}
 	dropped := map[string]bool{}
 	for _, fb := range browserbasePaidFallbacks {
-		if _, held := cfg.Get(fb[0]); resp.Status == 402 && held {
+		if _, held := cfg.Get(fb[0]); resp.StatusCode == 402 && held {
 			dropped[fb[0]] = true
 			log.Warn(fb[1])
 			cfg.Delete(fb[0])

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -40,7 +40,13 @@ type doctorWebRow struct {
 }
 
 var (
-	doctorWhich                 = func(cmd string) string { p, _ := pyshutil.Which(cmd, nil); return p }
+	doctorWhich = func(cmd string) string {
+		p, err := exec.LookPath(cmd)
+		if err != nil {
+			return ""
+		}
+		return p
+	}
 	doctorIsTermux              = hostinfo.IsTermux
 	doctorIsContainer           = hostinfo.IsContainer
 	doctorSubprocessRun         = executil.Run
@@ -130,7 +136,7 @@ var doctorRunOK = func(ctx context.Context, cmd []string, timeout time.Duration)
 		}
 		return false, err
 	}
-	return done.Returncode == 0, nil
+	return done.ExitCode == 0, nil
 }
 
 // Termux fallback notes, the Matrix line present only when this binary was built without the goolm tag

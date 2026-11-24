@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -428,10 +428,7 @@ func (d *SessionDB) validateImportSession(raw any, sessionID string, seen map[st
 	if err != nil {
 		return nil, pyValueError("session must be JSON serializable")
 	}
-	sessionBytes, err := utf8StrictLen(text)
-	if err != nil {
-		return nil, err
-	}
+	sessionBytes := len(text)
 	if sessionBytes > importMaxSessionBytes {
 		return nil, pyValueError("session exceeds the import size limit")
 	}
@@ -449,17 +446,6 @@ func (d *SessionDB) validateImportSession(raw any, sessionID string, seen map[st
 		return nil, pyValueError("messages exceeds the total import limit")
 	}
 	return item, nil
-}
-
-// Byte length of the text under the strict utf-8 codec, a UnicodeEncodeError for a lone surrogate
-func utf8StrictLen(text string) (int, error) {
-	for i := 0; i < len(text); i++ {
-		if pystr.SurrogateAt(text, i) {
-			r := pystr.SurrogateRune(text, i)
-			return 0, &stateTypedError{"UnicodeEncodeError", fmt.Sprintf("the text holds a lone surrogate U+%04X at character %d, which UTF-8 cannot encode", r, len([]rune(text[:i])))}
-		}
-	}
-	return len(text), nil
 }
 
 // Parsed JSON of a stored text column, the text itself when it does not parse

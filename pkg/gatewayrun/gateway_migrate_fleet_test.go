@@ -14,6 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	_ "github.com/nickheyer/icebath/pkg/gatewayapi"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hidden first argument of a re-executed test binary whose command line reads as a running gateway

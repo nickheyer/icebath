@@ -21,7 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -358,9 +357,9 @@ func (e *doctorProbeEnv) doctorAnthropicMessagesProbe(base, key string) (*httput
 	}{model, 1, []map[string]string{{"role": "user", "content": "ping"}}}); err != nil {
 		return nil, err
 	}
-	var params pyhttpx.Params
+	params := make(url.Values, len(defaultQuery))
 	for k, v := range defaultQuery {
-		params = append(params, [2]string{k, v})
+		params.Set(k, v)
 	}
 	target := httputil.MergeQuery(normalized+"/v1/messages", params)
 	headers = append(headers, [2]string{"Content-Type", "application/json"})

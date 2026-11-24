@@ -13,12 +13,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -43,11 +42,11 @@ func intValue(v any) int {
 		return 0
 	}
 	if s, ok := v.(string); ok {
-		n, ok := pystr.IntText(strings.TrimSpace(s))
-		if !ok || !n.IsInt64() {
+		n, err := textutil.ParseInt(strings.TrimSpace(s))
+		if err != nil {
 			return 0
 		}
-		return int(n.Int64())
+		return int(n)
 	}
 	n, err := anyutil.ToInt(v)
 	if err != nil {
@@ -112,7 +111,7 @@ func clipText(text string, limit int) string {
 
 // Python format of a float with no decimals
 func fmt0(f float64) string {
-	s, _ := pyrepr.Format(f, ".0f")
+	s, _ := templateutil.Format("{v:.0f}", map[string]any{"v": f})
 	return s
 }
 

@@ -323,8 +323,8 @@ func (c *WorkerControls) read(input *bufio.Reader) {
 		}
 		c.Stop()
 		c.setFinish()
-		var valueErr interface{ PyTypeName() string }
-		if !(errors.As(err, &valueErr) && valueErr.PyTypeName() == "ValueError") {
+		var valueErr interface{ ErrorKind() string }
+		if !(errors.As(err, &valueErr) && valueErr.ErrorKind() == "ValueError") {
 			dieWithOwner()
 		}
 		return

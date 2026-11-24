@@ -7,10 +7,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
 func systemMathLibrary(t *testing.T) string {
@@ -45,15 +44,14 @@ func TestPorcupineConstructorValidationOrder(t *testing.T) {
 		_, err = NewPorcupine("key", lib, model, "best", []string{keyword}, []float64{bad})
 		wantPyError(t, err, "ValueError", "A sensitivity value should be within [0, 1].")
 	}
-	var missing *pyctypes.AttributeError
-	if _, err = NewPorcupine("key", lib, model, "best", []string{keyword}, []float64{0, 1}[:1]); !errors.As(err, &missing) ||
-		!strings.Contains(missing.Msg, "undefined symbol: pv_set_sdk") {
+	var missing *dlutil.SymbolError
+	if _, err = NewPorcupine("key", lib, model, "best", []string{keyword}, []float64{0, 1}[:1]); !errors.As(err, &missing) || missing.Symbol != "pv_set_sdk" {
 		t.Fatalf("library without the engine symbols gave %v", err)
 	}
-	if _, err = ListHardwareDevices(lib); !errors.As(err, &missing) || !strings.Contains(missing.Msg, "undefined symbol: pv_porcupine_list_hardware_devices") {
+	if _, err = ListHardwareDevices(lib); !errors.As(err, &missing) || missing.Symbol != "pv_porcupine_list_hardware_devices" {
 		t.Fatalf("device listing on a library without the engine symbols gave %v", err)
 	}
-	var loadErr *pyctypes.OSError
+	var loadErr *dlutil.LoadError
 	if _, err = NewPorcupine("key", model, model, "best", []string{keyword}, []float64{0.5}); !errors.As(err, &loadErr) {
 		t.Fatalf("unloadable library gave %v", err)
 	}

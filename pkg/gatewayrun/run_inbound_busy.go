@@ -10,10 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Tool interrupt reason of a turn whose session slot was evicted
@@ -21,7 +21,7 @@ const interruptToolReasonEvicted = "session evicted"
 
 // Python fixed point format with no decimals, inf for an unbounded value
 func zeroDecimals(value float64) string {
-	text, err := pyrepr.Format(value, ".0f")
+	text, err := templateutil.Format("{v:.0f}", map[string]any{"v": value})
 	if err != nil {
 		return fmt.Sprintf("%.0f", value)
 	}

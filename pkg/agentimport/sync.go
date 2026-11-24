@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // SyncManifestName is the per profile file listing every imported source

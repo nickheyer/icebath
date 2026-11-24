@@ -18,8 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -159,7 +157,7 @@ func pruneOrphanRescueRefs(ctx context.Context, gitCmd []string, cwd, branch str
 		if maxAgeDays > 0 {
 			cutoff := time.Now().UTC().Add(-time.Duration(maxAgeDays) * 24 * time.Hour)
 			for _, ref := range refs {
-				stamp, _, err := pydatetime.Strptime(clipRunes(ref[len(prefix):], 15), "%Y%m%d-%H%M%S")
+				stamp, err := time.Parse("20060102-150405", clipRunes(ref[len(prefix):], 15))
 				if err != nil {
 					continue
 				}
@@ -318,11 +316,11 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 	if ahead.ReturnCode != 0 || !textutil.IsDigits(aheadText) {
 		return false, "unverifiable", nil
 	}
-	aheadCount, ok := pyint.Parse(aheadText)
-	if !ok {
+	aheadCount, err := strconv.ParseInt(strings.TrimSpace(aheadText), 10, 64)
+	if err != nil {
 		return false, "unverifiable", nil
 	}
-	if aheadCount.Sign() == 0 {
+	if aheadCount == 0 {
 		return true, "", nil
 	}
 	promisor, err := gitRunCaptured(ctx, gitCmd, []string{"config", "--get-regexp", `^(remote\..*\.promisor|extensions\.partialclone)$`}, cwd, false, nil)
@@ -335,7 +333,7 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 			return false, "", &pm.PyError{Class: "IndexError", Message: "git printed an empty status line"}
 		}
 		if strings.ToLower(fields[len(fields)-1]) != "false" {
-			return true, "unmerged:" + aheadCount.String(), nil
+			return true, "unmerged:" + strconv.FormatInt(aheadCount, 10), nil
 		}
 	}
 	cherry, err := gitRunCaptured(ctx, gitCmd, []string{"cherry", "origin/" + targetBranch}, cwd, false, noLazyFetchGitEnv())
@@ -343,7 +341,7 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 		return false, "", err
 	}
 	if cherry.ReturnCode != 0 {
-		return true, "unmerged:" + aheadCount.String(), nil
+		return true, "unmerged:" + strconv.FormatInt(aheadCount, 10), nil
 	}
 	unmerged := 0
 	for _, line := range textutil.Lines(cherry.Stdout) {
@@ -373,8 +371,8 @@ func noLazyFetchGitEnv() []string {
 func printParkedBranchSkipWarning(ctx context.Context, w io.Writer, gitCmd []string, cwd, currentBranch, targetBranch, reason string) {
 	behind, known := 0, false
 	if text, ok := gitStdout(ctx, gitCmd, []string{"rev-list", "HEAD..origin/" + targetBranch, "--count"}, cwd, false); ok && text != "" {
-		if n, parsed := pyint.Parse(text); parsed && n.IsInt64() {
-			behind, known = int(n.Int64()), true
+		if n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64); err == nil {
+			behind, known = int(n), true
 		}
 	}
 	why, ok := parkedSkipWhy[reason]
@@ -433,11 +431,11 @@ func countCommitsBetween(ctx context.Context, gitCmd []string, cwd, base, head s
 	if !ok {
 		return -1
 	}
-	n, parsed := pyint.Parse(text)
-	if !parsed || !n.IsInt64() {
+	n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	if err != nil {
 		return -1
 	}
-	return int(n.Int64())
+	return int(n)
 }
 
 // Whether the user previously declined to add the upstream remote

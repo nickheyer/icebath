@@ -17,11 +17,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/memory"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -40,12 +40,12 @@ var AgentDefaultDirs = map[string]string{"claude-code": ".claude", "codex": ".co
 var skillCategory = map[string]string{"claude-code": "claude-code-imports", "codex": "codex-imports", "cursor": "cursor-imports"}
 
 var (
-	frontmatterRe  = pyre.MustCompile(`(?s)\A---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)`)
-	secretKeyRe    = pyre.MustCompile(`(?i)(?:^|_)(?:API[_-]?KEY|APIKEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)(?:_|$)|KEY$`)
-	headingRe      = pyre.MustCompile(`^(#{1,6})\s+(.*\S)\s*$`)
-	bulletRe       = pyre.MustCompile(`^\s*(?:[-*]|\d+\.)\s+(.*\S)\s*$`)
-	contextFileRe  = pyre.MustCompile(`(?i)\b(MEMORY|USER|SOUL|AGENTS|TOOLS|IDENTITY|CLAUDE)\.md\b`)
-	bashRuleRe     = pyre.MustCompile(`^Bash\((?P<inner>.*)\)$`)
+	frontmatterRe  = regexutil.MustCompile(`(?s)\A---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)`)
+	secretKeyRe    = regexutil.MustCompile(`(?i)(?:^|_)(?:API[_-]?KEY|APIKEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTH|PRIVATE[_-]?KEY|ACCESS[_-]?KEY)(?:_|$)|KEY$`)
+	headingRe      = regexutil.MustCompile(`^(#{1,6})\s+(.*\S)\s*$`)
+	bulletRe       = regexutil.MustCompile(`^\s*(?:[-*]|\d+\.)\s+(.*\S)\s*$`)
+	contextFileRe  = regexutil.MustCompile(`(?i)\b(MEMORY|USER|SOUL|AGENTS|TOOLS|IDENTITY|CLAUDE)\.md\b`)
+	bashRuleRe     = regexutil.MustCompile(`^Bash\((?P<inner>.*)\)$`)
 	credentialName = map[string]bool{".credentials.json": true, "auth.json": true, "credentials.json": true}
 )
 

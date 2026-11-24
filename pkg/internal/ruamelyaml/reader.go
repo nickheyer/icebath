@@ -5,8 +5,6 @@ import (
 	"errors"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
@@ -73,9 +71,9 @@ func newReader(in Input) (*reader, error) {
 		} else {
 			text, err := charsetutil.Decode(raw, r.encoding)
 			if err != nil {
-				var de *pycodecs.UnicodeDecodeError
+				var de *charsetutil.DecodeError
 				if errors.As(err, &de) {
-					return nil, &ReaderError{Name: r.name, Position: de.Pos, Character: int(raw[de.Pos]), Encoding: r.encoding, Reason: de.Reason}
+					return nil, &ReaderError{Name: r.name, Position: de.Offset, Character: int(raw[de.Offset]), Encoding: r.encoding, Reason: de.Reason}
 				}
 				return nil, err
 			}
@@ -97,7 +95,10 @@ func utf8Failure(raw []byte) (int, string, bool) {
 		if c == utf8.RuneError && size == 1 {
 			reason := "invalid start byte"
 			if b := raw[i]; b >= 0xC2 && b <= 0xF4 {
-				n := pystr.UTF8MaximalSubpart(raw[i:])
+				n := 1
+				for n < len(raw)-i && n < 4 && raw[i+n]&0xC0 == 0x80 {
+					n++
+				}
 				reason = "invalid continuation byte"
 				if i+n == len(raw) {
 					reason = "unexpected end of data"

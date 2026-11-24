@@ -26,7 +26,7 @@ const PrepareBandRatio = 0.12
 
 const failedPassBackoffSeconds = 60.0
 
-const waitPollSeconds = 0.5
+const waitPoll = 500 * time.Millisecond
 
 var preparedSlots = syncutil.NewSemaphore(2)
 
@@ -426,7 +426,7 @@ func (p *PreparedCompaction) await(ctx context.Context, pending *pendingPass) (*
 	}
 	miss := func() *preparedMiss {
 		defer pending.setHooks(nil, nil)
-		for !pending.done.Wait(max(0.0, min(waitPollSeconds, time.Until(deadline()).Seconds()))) {
+		for !pending.done.WaitTimeout(min(waitPoll, time.Until(deadline()))) {
 			if pending.cancelled.IsSet() {
 				return &preparedMiss{"discarded_while_waiting", "running pass discarded"}
 			}
@@ -542,7 +542,7 @@ func (p *PreparedCompaction) MaybePrepare(ctx context.Context, a *AIAgent, compr
 	}
 	focus := worker.DeriveAutoFocusTopic(working)
 	window := preparedWindow{compressor.CompressorSessionID(), start, end, PrefixIdentities(working, end)}
-	if !preparedSlots.Acquire(false) {
+	if !preparedSlots.TryAcquire() {
 		return nil
 	}
 	p.mu.Lock()

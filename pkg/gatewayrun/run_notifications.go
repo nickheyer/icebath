@@ -17,12 +17,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var (
@@ -347,7 +347,7 @@ func (r *GatewayRunner) deliverMediaFromResponse(ctx context.Context, response s
 		var others []gateway.MediaRef
 		for _, m := range mediaFiles {
 			if isPhoto(m) {
-				images = append(images, gateway.ImageRef{URL: "file://" + pyurl.Quote(m.Path, "/")})
+				images = append(images, gateway.ImageRef{URL: "file://" + urlutil.Escape(m.Path, "/")})
 			} else {
 				others = append(others, m)
 			}

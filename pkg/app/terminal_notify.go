@@ -11,6 +11,7 @@ import (
 
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var c0AndDelRe = regexp.MustCompile("[\x00-\x1f\x7f]")

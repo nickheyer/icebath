@@ -126,7 +126,7 @@ func pyFloatRepr(f float64) string {
 }
 
 // Python type name of a YAML shaped value
-func PyTypeName(v any) string {
+func ErrorKind(v any) string {
 	switch v.(type) {
 	case nil:
 		return "NoneType"

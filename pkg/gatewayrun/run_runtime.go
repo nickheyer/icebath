@@ -299,7 +299,7 @@ type ProfileOwnershipRetained struct{ Msg string }
 func (e *ProfileOwnershipRetained) Error() string { return e.Msg }
 
 // Python exception class of the retained ownership refusal
-func (e *ProfileOwnershipRetained) PyTypeName() string { return "ProfileOwnershipRetained" }
+func (e *ProfileOwnershipRetained) ErrorKind() string { return "ProfileOwnershipRetained" }
 
 // Recovers every serving ledger's native rows once hot served adapters connected, logging a failed store
 func (r *GatewayRunner) recoverServedNativeRows(ctx context.Context) {

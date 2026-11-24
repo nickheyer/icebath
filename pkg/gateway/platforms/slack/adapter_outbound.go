@@ -16,12 +16,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Shows the thread status line through the session status API, refreshes keeping the first start time
@@ -362,7 +362,7 @@ func collectImageUploads(ctx context.Context, chunk []gateway.ImageRef) ([]fileU
 			comments = append(comments, img.Alt)
 		}
 		if strings.HasPrefix(img.URL, "file://") {
-			localPath := pyurl.Unquote(img.URL[7:])
+			localPath := urlutil.Unescape(img.URL[7:])
 			if _, err := os.Stat(localPath); err != nil {
 				pkgLog().Warn(fmt.Sprintf("[Slack] Skipping missing image: %s", localPath))
 				continue

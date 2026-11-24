@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,8 +30,8 @@ func itemTexts(items []map[string]any) []string {
 }
 
 // Usage lookup over a fixed table, zero for any other name
-func usageTable(table map[string]int64) func(string) *big.Int {
-	return func(name string) *big.Int { return big.NewInt(table[name]) }
+func usageTable(table map[string]int64) func(string) int64 {
+	return func(name string) int64 { return table[name] }
 }
 
 func userOrigin(string) string { return "user" }

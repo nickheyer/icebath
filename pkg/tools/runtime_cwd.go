@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const sessionCwdKey = "session.cwd"

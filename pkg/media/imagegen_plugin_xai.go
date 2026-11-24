@@ -220,7 +220,7 @@ type xaiUnhashableError struct{ kind string }
 func (e *xaiUnhashableError) Error() string {
 	return "xAI image model is " + e.kind + " where text was expected"
 }
-func (e *xaiUnhashableError) PyTypeName() string { return "TypeError" }
+func (e *xaiUnhashableError) ErrorKind() string { return "TypeError" }
 
 // String form, truthiness and hashability of a caller model kwarg
 func xaiCallerModel(v any) (string, bool, error) {

@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/pm"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -148,8 +147,7 @@ func systemServiceIdentity(runAsUser string) (string, string, string, int, error
 		fmt.Fprintln(lifecycleOut, cliui.Color("    This is fine for LXC/container environments but not recommended on bare-metal hosts.", cliui.Dim))
 	}
 	info, err := userutil.Lookup(username)
-	var keyErr *pypwd.KeyError
-	if errors.As(err, &keyErr) {
+	if errors.Is(err, userutil.ErrNotFound) {
 		return "", "", "", 0, &ServiceUserError{"Unknown user: " + username}
 	}
 	if err != nil {
@@ -159,7 +157,7 @@ func systemServiceIdentity(runAsUser string) (string, string, string, int, error
 	if err != nil {
 		return "", "", "", 0, err
 	}
-	return username, group.Name, info.Dir, info.UID, nil
+	return username, group.Name, info.Home, info.UID, nil
 }
 
 // Path with the caller home prefix swapped for the target home, other paths expanded and kept

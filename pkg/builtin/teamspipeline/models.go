@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -318,11 +317,11 @@ func MeetingArtifactFromDict(payload *jsonutil.Object) (*MeetingArtifact, error)
 		return nil, err
 	}
 	if size := pick(payload, "size_bytes", "size"); size != nil {
-		n, err := pyint.Of(size)
+		n, err := anyutil.ToInt(size)
 		if err != nil {
 			return nil, err
 		}
-		v := n.Int64()
+		v := n
 		a.SizeBytes = &v
 	}
 	return a, nil
@@ -362,8 +361,8 @@ type TeamsMeetingSummaryPayload struct {
 // Summary payload missing a mandatory key, classed KeyError for the job error record
 type missingPayloadKey struct{ key string }
 
-func (e *missingPayloadKey) Error() string      { return "the meeting summary payload has no " + e.key }
-func (e *missingPayloadKey) PyTypeName() string { return "KeyError" }
+func (e *missingPayloadKey) Error() string     { return "the meeting summary payload has no " + e.key }
+func (e *missingPayloadKey) ErrorKind() string { return "KeyError" }
 
 // Summary payload whose meeting_ref key is mandatory and nested payloads read from snake case keys only
 func TeamsMeetingSummaryPayloadFromDict(payload *jsonutil.Object) (*TeamsMeetingSummaryPayload, error) {
@@ -494,11 +493,11 @@ func TeamsMeetingPipelineJobFromDict(payload *jsonutil.Object) (*TeamsMeetingPip
 	if !anyutil.IsTrue(retry) {
 		retry = int64(0)
 	}
-	n, err := pyint.Of(retry)
+	n, err := anyutil.ToInt(retry)
 	if err != nil {
 		return nil, err
 	}
-	j.RetryCount = n.Int64()
+	j.RetryCount = n
 	return j, nil
 }
 

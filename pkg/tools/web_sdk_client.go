@@ -250,14 +250,14 @@ type pyAttrError struct{ msg string }
 
 func (e *pyAttrError) Error() string { return e.msg }
 
-func (e *pyAttrError) PyTypeName() string { return "AttributeError" }
+func (e *pyAttrError) ErrorKind() string { return "AttributeError" }
 
 // TypeError raised while iterating, joining or slicing a decoded payload
 type pyTypeError struct{ msg string }
 
 func (e *pyTypeError) Error() string { return e.msg }
 
-func (e *pyTypeError) PyTypeName() string { return "TypeError" }
+func (e *pyTypeError) ErrorKind() string { return "TypeError" }
 
 // The value sliced to its first n items like v[:n], the TypeError of an unsliceable value
 func pySubscriptTo(v any, n int) (any, error) {

@@ -7,16 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Marks the Spotify tool errors whose text is shown to the model as is
@@ -28,16 +27,16 @@ type spotifyErrorKind interface {
 // Base Spotify tool error
 type SpotifyError struct{ Msg string }
 
-func (e *SpotifyError) Error() string      { return e.Msg }
-func (e *SpotifyError) PyTypeName() string { return "SpotifyError" }
-func (*SpotifyError) spotifyError()        {}
+func (e *SpotifyError) Error() string     { return e.Msg }
+func (e *SpotifyError) ErrorKind() string { return "SpotifyError" }
+func (*SpotifyError) spotifyError()       {}
 
 // Raised when the user needs to authenticate with Spotify first
 type SpotifyAuthRequiredError struct{ Msg string }
 
-func (e *SpotifyAuthRequiredError) Error() string      { return e.Msg }
-func (e *SpotifyAuthRequiredError) PyTypeName() string { return "SpotifyAuthRequiredError" }
-func (*SpotifyAuthRequiredError) spotifyError()        {}
+func (e *SpotifyAuthRequiredError) Error() string     { return e.Msg }
+func (e *SpotifyAuthRequiredError) ErrorKind() string { return "SpotifyAuthRequiredError" }
+func (*SpotifyAuthRequiredError) spotifyError()       {}
 
 // Structured Spotify API failure with its status, raw body and request path
 type SpotifyAPIError struct {
@@ -47,9 +46,9 @@ type SpotifyAPIError struct {
 	Path         string
 }
 
-func (e *SpotifyAPIError) Error() string      { return e.Msg }
-func (e *SpotifyAPIError) PyTypeName() string { return "SpotifyAPIError" }
-func (*SpotifyAPIError) spotifyError()        {}
+func (e *SpotifyAPIError) Error() string     { return e.Msg }
+func (e *SpotifyAPIError) ErrorKind() string { return "SpotifyAPIError" }
+func (*SpotifyAPIError) spotifyError()       {}
 
 // Python built in exception of a failed conversion or lookup, ValueError, KeyError or TypeError
 type pyError struct {
@@ -57,8 +56,8 @@ type pyError struct {
 	msg  string
 }
 
-func (e *pyError) Error() string      { return e.msg }
-func (e *pyError) PyTypeName() string { return e.kind }
+func (e *pyError) Error() string     { return e.msg }
+func (e *pyError) ErrorKind() string { return e.kind }
 
 // Python class name of an error raised inside a tool
 func exceptionName(err error) string {
@@ -66,7 +65,7 @@ func exceptionName(err error) string {
 	if errors.As(err, &pe) {
 		return pe.Kind
 	}
-	return pyrepr.ExceptionName(err)
+	return errorutil.Kind(err)
 }
 
 // Resolves the stored Spotify login for a home, swapped by callers that serve a fixed runtime
@@ -160,21 +159,19 @@ func queryValue(v any) string {
 	return anyutil.String(v)
 }
 
-// httpx query params of a mapping, a list value repeating its key
-func queryParams(o *jsonutil.Object) pyhttpx.Params {
-	var out pyhttpx.Params
+// Query values of a mapping, a list value repeating its key
+func queryParams(o *jsonutil.Object) url.Values {
+	out := make(url.Values, o.Len())
 	for _, k := range o.Keys() {
 		switch t := o.Value(k).(type) {
 		case []any:
 			for _, item := range t {
-				out = append(out, [2]string{k, queryValue(item)})
+				out.Add(k, queryValue(item))
 			}
 		case []string:
-			for _, item := range t {
-				out = append(out, [2]string{k, item})
-			}
+			out[k] = append(out[k], t...)
 		default:
-			out = append(out, [2]string{k, queryValue(t)})
+			out.Add(k, queryValue(t))
 		}
 	}
 	return out
@@ -303,7 +300,7 @@ func checkType(itemType, expectedType string) error {
 
 // Path segments of an open.spotify.com URL as urlparse reads them
 func urlPathSegments(cleaned string) ([]string, error) {
-	u, err := pyurl.Split(cleaned)
+	u, err := urlutil.Split(cleaned)
 	if err != nil {
 		return nil, &pyError{kind: "ValueError", msg: err.Error()}
 	}

@@ -117,11 +117,11 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 	}
 	refExists := func(ref string) bool {
 		r, err := run([]string{"rev-parse", "--verify", "--quiet", ref + "^{commit}"}, 20)
-		return err == nil && r.Returncode == 0
+		return err == nil && r.ExitCode == 0
 	}
 	fetchHeadAge := func() (float64, bool) {
 		gd, err := run([]string{"rev-parse", "--git-dir"}, 20)
-		if err != nil || gd.Returncode != 0 {
+		if err != nil || gd.ExitCode != 0 {
 			return 0, false
 		}
 		gitDir := strings.TrimSpace(gd.Stdout)
@@ -142,7 +142,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 		fetched, err := run([]string{"fetch", remote, trackingRefspec(remote, branch)}, fetchTimeout)
 		var timeout *executil.TimeoutError
 		switch {
-		case err == nil && fetched.Returncode == 0:
+		case err == nil && fetched.ExitCode == 0:
 			return ref, fmt.Sprintf("%s (fetched)", ref)
 		case err == nil:
 			reason = "fetch failed"
@@ -160,7 +160,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 	up, err := run([]string{"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"}, 20)
 	if err != nil {
 		envLog(nil).Debug(fmt.Sprintf("worktree base: upstream resolution failed: %s", err))
-	} else if up.Returncode == 0 {
+	} else if up.ExitCode == 0 {
 		if upstream := strings.TrimSpace(up.Stdout); upstream != "" && strings.Contains(upstream, "/") {
 			remote, branch, _ := strings.Cut(upstream, "/")
 			return refresh(remote, branch, upstream)
@@ -172,7 +172,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 		return "HEAD", "HEAD (local — could not reach remote)"
 	}
 	defaultRef := ""
-	if headRef.Returncode == 0 {
+	if headRef.ExitCode == 0 {
 		defaultRef = strings.Replace(strings.TrimSpace(headRef.Stdout), "refs/remotes/", "", 1)
 	}
 	if defaultRef == "" {
@@ -246,14 +246,14 @@ func worktreeAdd(repoRoot, wtPath, branchName, baseRef, baseLabel string, cprint
 		return worktreeGit(args, repoRoot, 120*time.Second, env)
 	}
 	result, err := create([]string{"-c", "checkout.workers=8", "-c", "checkout.thresholdForParallelism=100"})
-	if err == nil && result.Returncode != 0 {
+	if err == nil && result.ExitCode != 0 {
 		if baseRef != "HEAD" {
 			envLog(nil).Warn(fmt.Sprintf("worktree add from %s failed (%s); retrying from local HEAD", baseRef, strings.TrimSpace(result.Stderr)))
 			cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName)
 			baseRef, baseLabel = "HEAD", "HEAD (fallback — remote base failed)"
 			result, err = create(nil)
 		}
-		if err == nil && result.Returncode != 0 {
+		if err == nil && result.ExitCode != 0 {
 			cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName)
 			cprint(fmt.Sprintf("\x1b[31m✗ Failed to create worktree: %s\x1b[0m", strings.TrimSpace(result.Stderr)))
 			return "", "", false

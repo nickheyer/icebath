@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestWatchPatternsBlocked(t *testing.T) {

@@ -6,12 +6,12 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Compiles a Python re pattern with Python semantics, panicking on an invalid pattern
 func mustPyRe(pattern string) *regexp2.Regexp {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}
@@ -35,14 +35,14 @@ func pyReMatch(re *regexp2.Regexp, text string) bool {
 // Error a ValueError raised by the plugin event naming carries
 type PluginEventNameError struct{ Msg string }
 
-func (e *PluginEventNameError) Error() string      { return e.Msg }
-func (e *PluginEventNameError) PyTypeName() string { return "ValueError" }
+func (e *PluginEventNameError) Error() string     { return e.Msg }
+func (e *PluginEventNameError) ErrorKind() string { return "ValueError" }
 
 // Error a TypeError raised for a plugin event payload that is not a dict carries
 type PluginEventPayloadError struct{ Msg string }
 
-func (e *PluginEventPayloadError) Error() string      { return e.Msg }
-func (e *PluginEventPayloadError) PyTypeName() string { return "TypeError" }
+func (e *PluginEventPayloadError) Error() string     { return e.Msg }
+func (e *PluginEventPayloadError) ErrorKind() string { return "TypeError" }
 
 // Wire name plugin dot id dot event, a ValueError for an id or event that cannot form one
 func PluginEventName(pluginID, event string) (string, error) {

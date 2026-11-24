@@ -23,8 +23,8 @@ type pyExc struct {
 	cause, context error
 }
 
-func (e *pyExc) Error() string      { return e.msg }
-func (e *pyExc) PyTypeName() string { return e.class }
+func (e *pyExc) Error() string     { return e.msg }
+func (e *pyExc) ErrorKind() string { return e.class }
 func (e *pyExc) Unwrap() []error {
 	var out []error
 	if e.cause != nil {

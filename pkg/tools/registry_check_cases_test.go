@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fresh registry with the verdict and definition caches cleared before and after the test

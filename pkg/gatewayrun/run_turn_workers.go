@@ -30,7 +30,7 @@ func toolCallLogger(ctx context.Context) *logging.Logger {
 			pkgLog().Error(fmt.Sprintf("write_tool_log error: %s", err))
 			return toolLogger
 		}
-		handler, err := logging.NewRedactingRotatingFileHandler(ctx, filepath.Join(logDir, "tool_calls.log"), 5*1024*1024, 3, "%(message)s")
+		handler, err := logging.NewRedactingRotatingFileHandler(ctx, filepath.Join(logDir, "tool_calls.log"), 5*1024*1024, 3, "{message}")
 		if err != nil {
 			pkgLog().Error(fmt.Sprintf("write_tool_log error: %s", err))
 			return toolLogger

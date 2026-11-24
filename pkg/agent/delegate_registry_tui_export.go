@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
@@ -12,7 +11,7 @@ func OwnedSubagentRecords(sessionID string, transport, owner any) []map[string]a
 	out := []map[string]any{}
 	for _, record := range activeSubagents.values() {
 		if anyutil.Equal(record["owner_session_id"], sessionID) && subagentTransportMatches(record, transport) &&
-			pyrepr.Is(record["owner_session_record"], owner) {
+			sameRecord(record["owner_session_record"], owner) {
 			out = append(out, copySubagentRecord(record))
 		}
 	}
@@ -30,7 +29,7 @@ func VisibleSubagentRecords(sessionID string, transport, owner any, parent *AIAg
 	out := []map[string]any{}
 	for _, record := range records {
 		exact := anyutil.Equal(record["owner_session_id"], sessionID) && subagentTransportMatches(record, transport) &&
-			pyrepr.Is(record["owner_session_record"], owner)
+			sameRecord(record["owner_session_record"], owner)
 		if exact || ownsSubagentRecord(record, parent) {
 			out = append(out, record)
 		}

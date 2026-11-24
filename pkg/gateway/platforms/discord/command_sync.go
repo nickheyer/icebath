@@ -23,7 +23,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -293,11 +292,11 @@ func intOr(v any, def int64) int64 {
 	if !anyutil.IsTrue(v) {
 		return def
 	}
-	n, err := pyint.Of(v)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(v)
+	if err != nil {
 		return def
 	}
-	return n.Int64()
+	return n
 }
 
 func strOr(v any) string {

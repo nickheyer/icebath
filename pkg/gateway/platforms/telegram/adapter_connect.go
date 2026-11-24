@@ -19,7 +19,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -508,7 +507,7 @@ func botCommands(menu []CatalogItem) []models.BotCommand {
 func menuFingerprint(ctx context.Context, menu []CatalogItem) string {
 	rows := make([]any, 0, len(menu))
 	for _, item := range menu {
-		rows = append(rows, pyrepr.Tuple{item.Name, item.Description})
+		rows = append(rows, []any{item.Name, item.Description})
 	}
 	payload := anyutil.Quote([]any{i18n.GetLanguage(ctx), rows})
 	sum := sha256.Sum256([]byte(payload))
@@ -870,8 +869,8 @@ func (a *TelegramAdapter) onPlatformUpdate(ctx context.Context, update *Update) 
 // Python ValueError raised by the platform event auth boundary
 type valueError struct{ msg string }
 
-func (e *valueError) Error() string      { return e.msg }
-func (e *valueError) PyTypeName() string { return "ValueError" }
+func (e *valueError) Error() string     { return e.msg }
+func (e *valueError) ErrorKind() string { return "ValueError" }
 
 // Auth source of a reaction or edit update, a ValueError for update types without an extractor
 func (a *TelegramAdapter) sourceForPlatformEventAuth(ctx context.Context, update *models.Update) (*gateway.SessionSource, error) {

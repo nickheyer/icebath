@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strconv"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const todoToolsSQL = "tool_name IN ('todo_list', 'todo')"
@@ -219,7 +221,7 @@ func pyIntConvertible(v any) error {
 		}
 		return nil
 	case string:
-		if _, ok := pyint.ParseBase(x, 10); !ok {
+		if _, err := strconv.ParseInt(x, 10, 64); err != nil {
 			return errTodoSkip
 		}
 		return nil

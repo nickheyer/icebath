@@ -9,6 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Fetched thread context of one thread with the root text and author for mention wake checks

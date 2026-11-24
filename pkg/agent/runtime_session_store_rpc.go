@@ -32,8 +32,8 @@ func IsWorkerProcess() bool { return workerProcess.Load() }
 // Python exception a worker store raises that is not a WorkerPersistenceError
 type workerStoreError struct{ kind, msg string }
 
-func (e *workerStoreError) Error() string      { return e.msg }
-func (e *workerStoreError) PyTypeName() string { return e.kind }
+func (e *workerStoreError) Error() string     { return e.msg }
+func (e *workerStoreError) ErrorKind() string { return e.kind }
 
 // Mirrors the owner's in place row stamps onto the worker's dicts, a None annotation popping the key
 func ApplyRowAnnotations(messages []map[string]any, annotations any) error {

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
@@ -933,10 +932,10 @@ func TestPendingAndIdleProbesDoNotScanFinishedHistory(t *testing.T) {
 		t.Fatalf("writer connection %T exposes no raw handle", inner)
 	}
 	ticks := 0
-	if err := pysqlite.SetProgressHandler(raw, func() int { ticks++; return 0 }, 1000); err != nil {
+	if err := sqliteutil.SetProgressHandler(raw, func() bool { ticks++; return false }, 1000); err != nil {
 		t.Fatal(err)
 	}
-	defer pysqlite.SetProgressHandler(raw, nil, 0)
+	defer sqliteutil.SetProgressHandler(raw, nil, 0)
 	pinned := withReadConn(ctx, db.conn)
 	probes := []struct {
 		name string

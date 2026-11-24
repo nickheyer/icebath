@@ -370,7 +370,7 @@ func (a *QQAdapter) convertFFmpegToWAV(ctx context.Context, srcPath, wavPath str
 		pkgLog().Warn(fmt.Sprintf("[%s] ffmpeg conversion error: %v", a.logTag(), err))
 		return ""
 	}
-	if proc.Returncode != 0 {
+	if proc.ExitCode != 0 {
 		pkgLog().Warn(fmt.Sprintf("[%s] ffmpeg failed for %s: %s", a.logTag(), pathutil.Name(srcPath),
 			strings.ToValidUTF8(string(proc.Stderr[:min(200, len(proc.Stderr))]), "\uFFFD")))
 		return ""

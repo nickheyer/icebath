@@ -1,15 +1,17 @@
 package telegram
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"regexp"
-	"slices"
 	"strings"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // TelegramError is a Bot API failure standing for the python-telegram-bot exception class it names
@@ -21,9 +23,9 @@ type TelegramError struct {
 	Err        error
 }
 
-func (e *TelegramError) Error() string      { return e.Message }
-func (e *TelegramError) Unwrap() error      { return e.Err }
-func (e *TelegramError) PyTypeName() string { return e.Class }
+func (e *TelegramError) Error() string     { return e.Message }
+func (e *TelegramError) Unwrap() error     { return e.Err }
+func (e *TelegramError) ErrorKind() string { return e.Class }
 
 // Parent class of each python-telegram-bot exception, BadRequest and TimedOut being network errors
 var ptbErrorParents = map[string]string{
@@ -65,8 +67,8 @@ func className(err error) string {
 	if err == nil {
 		return "NoneType"
 	}
-	if named, ok := err.(pyrepr.PyTypeNamed); ok && named.PyTypeName() != "" {
-		return named.PyTypeName()
+	if named, ok := err.(interface{ ErrorKind() string }); ok && named.ErrorKind() != "" {
+		return named.ErrorKind()
 	}
 	if m := exceptionClassPrefixRE.FindStringSubmatch(err.Error()); m != nil {
 		return m[1]
@@ -92,7 +94,7 @@ func isOSError(err error) bool {
 	if err == os.ErrDeadlineExceeded {
 		return true
 	}
-	return slices.Contains(pyrepr.BuiltinExceptionMRO(className(err)), "OSError")
+	return errorutil.IsSystem(err) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // Error and every wrapped ancestor in depth first order, each visited once even across cycles
@@ -140,11 +142,11 @@ func isComparable(err error) (ok bool) {
 // Polling startup fenced by teardown, internal control flow only
 type pollingLifecycleAbort struct{ msg string }
 
-func (e *pollingLifecycleAbort) Error() string      { return e.msg }
-func (e *pollingLifecycleAbort) PyTypeName() string { return "_PollingLifecycleAbort" }
+func (e *pollingLifecycleAbort) Error() string     { return e.msg }
+func (e *pollingLifecycleAbort) ErrorKind() string { return "_PollingLifecycleAbort" }
 
 // Confirmed getUpdates stall from the watchdog or the post reconnect verifier, not a transport drop
 type PollingStallError struct{ Msg string }
 
-func (e *PollingStallError) Error() string      { return e.Msg }
-func (e *PollingStallError) PyTypeName() string { return "_PollingStallError" }
+func (e *PollingStallError) Error() string     { return e.Msg }
+func (e *PollingStallError) ErrorKind() string { return "_PollingStallError" }

@@ -164,11 +164,11 @@ func (*TopicAlreadyLinkedError) Error() string {
 	return "session is already linked to another Telegram topic"
 }
 
-func (*TopicAlreadyLinkedError) PyTypeName() string { return "ValueError" }
+func (*TopicAlreadyLinkedError) ErrorKind() string { return "ValueError" }
 
 func (e *pyConvError) Error() string { return e.Msg }
 
-func (e *pyConvError) PyTypeName() string { return e.Class }
+func (e *pyConvError) ErrorKind() string { return e.Class }
 
 // Decimal value of a Unicode digit, runs of ten starting at zero per the Unicode guarantee
 func pyDigitValue(r rune) (int, bool) {

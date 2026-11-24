@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
-	"math/big"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // SessionDB members the search mixin calls beyond the FTS lifecycle ones, provided by the SessionDB
@@ -66,14 +66,6 @@ func (s *sessionSearch) writer() (SQLiteConn, error) {
 		return conn, nil
 	}
 	return nil, errWriterClosed
-}
-
-// Integer as SQLite binds it, a typed rejection past the signed 64 bit range
-func sqliteInt(n *big.Int) (int64, error) {
-	if !n.IsInt64() {
-		return 0, oversizedInteger(n)
-	}
-	return n.Int64(), nil
 }
 
 var searchMessageResultFields = []string{"id", "session_id", "role", "snippet", "timestamp", "tool_name", "source",
@@ -216,27 +208,22 @@ func (s *sessionSearch) mergeFTSIncrementally(ctx context.Context, maxPages int,
 	return executed, nil
 }
 
-// Deferred rebuild markers of one backfill, high water and progress as Python ints
+// Deferred rebuild markers of one backfill, its high water and its progress
 type ftsRebuildState struct {
-	total   *big.Int
-	indexed *big.Int
+	total   int64
+	indexed int64
 }
 
 // Status payload with pending, total, indexed and the truncated percent capped at 100
 func (st *ftsRebuildState) info() (*jsonutil.Object, error) {
-	ratio, _ := new(big.Rat).SetFrac(new(big.Int).Mul(big.NewInt(100), st.indexed), st.total).Float64()
-	if math.IsInf(ratio, 0) {
-		return nil, &errorutil.Error{Kind: "OverflowError", Msg: "integer division result too large for a float"}
-	}
-	var percent any = 100
-	if ratio < 100 {
-		n, _ := big.NewFloat(ratio).Int(nil)
-		percent = pyint.Native(n)
+	percent := 100
+	if ratio := 100 * float64(st.indexed) / float64(st.total); ratio < 100 {
+		percent = int(ratio)
 	}
 	out := jsonutil.NewObject()
 	out.Set("pending", true)
-	out.Set("total", pyint.Value(st.total))
-	out.Set("indexed", pyint.Value(st.indexed))
+	out.Set("total", st.total)
+	out.Set("indexed", st.indexed)
 	out.Set("percent", percent)
 	return out, nil
 }
@@ -276,17 +263,17 @@ func (s *sessionSearch) rebuildState(ctx context.Context, prefix string) (*ftsRe
 	if !ok || highWater == nil {
 		return nil, nil
 	}
-	total, err := pyint.Of(highWater)
+	total, err := anyutil.ToInt(highWater)
 	if err != nil {
 		return nil, fmt.Errorf("the %s_high_water marker %v is not a whole number", prefix, highWater)
 	}
-	if total.Sign() <= 0 {
+	if total <= 0 {
 		return nil, nil
 	}
 	progressRaw := meta[prefix+"_progress"]
-	progress := big.NewInt(0)
+	progress := int64(0)
 	if pyTruthy(progressRaw) {
-		if progress, err = pyint.Of(progressRaw); err != nil {
+		if progress, err = anyutil.ToInt(progressRaw); err != nil {
 			return nil, fmt.Errorf("the %s_progress marker %v is not a whole number", prefix, progressRaw)
 		}
 	}
@@ -359,18 +346,12 @@ func (s *sessionSearch) rebuildFinish(ctx context.Context, prefix string, sweeps
 			return err
 		}
 		if hwRow != nil {
-			hw, err := pyint.Of(hwRow[0])
+			hw, err := anyutil.ToInt(hwRow[0])
 			if err != nil {
 				return err
 			}
-			lo, err := sqliteInt(new(big.Int).Sub(hw, big.NewInt(1000)))
-			if err != nil {
-				return err
-			}
-			hi, err := sqliteInt(new(big.Int).Add(hw, big.NewInt(1000)))
-			if err != nil {
-				return err
-			}
+			lo := hw - 1000
+			hi := hw + 1000
 			for _, sw := range sweeps {
 				args := []any{}
 				if sw.bounded {
@@ -413,7 +394,7 @@ func (s *sessionSearch) rebuildStep(ctx context.Context, prefix string, insertSQ
 	if err != nil || !ok {
 		return false, err
 	}
-	highWater, err := pyint.Of(raw)
+	highWater, err := anyutil.ToInt(raw)
 	if err != nil {
 		return false, err
 	}
@@ -426,21 +407,15 @@ func (s *sessionSearch) rebuildStep(ctx context.Context, prefix string, insertSQ
 		if err != nil || row == nil {
 			return err
 		}
-		doneN, err := pyint.Of(row[0])
+		doneN, err := anyutil.ToInt(row[0])
 		if err != nil {
 			return err
 		}
-		if doneN.Cmp(highWater) >= 0 {
+		if doneN >= highWater {
 			return nil
 		}
-		done, err := sqliteInt(doneN)
-		if err != nil {
-			return err
-		}
-		hw, err := sqliteInt(highWater)
-		if err != nil {
-			return err
-		}
+		done := doneN
+		hw := highWater
 		nth, err := fetchOne(ctx, conn, "SELECT id FROM messages WHERE id > ? AND id <= ? ORDER BY id LIMIT 1 OFFSET ?",
 			done, hw, chunk-1)
 		if err != nil {
@@ -448,13 +423,11 @@ func (s *sessionSearch) rebuildStep(ctx context.Context, prefix string, insertSQ
 		}
 		upper, chunkCovered := hw, 0
 		if nth != nil {
-			n, err := pyint.Of(nth[0])
+			n, err := anyutil.ToInt(nth[0])
 			if err != nil {
 				return err
 			}
-			if upper, err = sqliteInt(n); err != nil {
-				return err
-			}
+			upper = n
 			chunkCovered = chunk
 		}
 		if nth == nil && progress != nil {
@@ -487,7 +460,7 @@ func (s *sessionSearch) rebuildStep(ctx context.Context, prefix string, insertSQ
 		if err != nil {
 			return false, err
 		}
-		if (finishWhenEmpty && highWater.Sign() <= 0) || (st != nil && st.indexed.Cmp(st.total) >= 0) {
+		if (finishWhenEmpty && highWater <= 0) || (st != nil && st.indexed >= st.total) {
 			if err := finish(ctx); err != nil {
 				return false, err
 			}
@@ -557,13 +530,11 @@ func (s *sessionSearch) ftsTeardownTrashStep(ctx context.Context, progress *tear
 			}
 			var highWater int64
 			if row != nil {
-				n, err := pyint.Of(row[0])
+				n, err := anyutil.ToInt(row[0])
 				if err != nil {
 					return err
 				}
-				if highWater, err = sqliteInt(n); err != nil {
-					return err
-				}
+				highWater = n
 			}
 			upperRow, err := fetchOne(ctx, conn, fmt.Sprintf("SELECT %s FROM %s WHERE %s > ? ORDER BY %s LIMIT 1 OFFSET ?",
 				key, tbl, key, key), highWater, limit-1)
@@ -658,14 +629,11 @@ func (s *sessionSearch) ftsTeardownStartTable(ctx context.Context, conn SQLiteCo
 	}
 	where, params := "", []any{}
 	if marker != nil {
-		n, err := pyint.Of(marker[0])
+		n, err := anyutil.ToInt(marker[0])
 		if err != nil {
 			return err
 		}
-		bound, err := sqliteInt(n)
-		if err != nil {
-			return err
-		}
+		bound := n
 		where, params = "WHERE rowid > ?", []any{bound}
 	}
 	tableCount := progress.tableCount
@@ -781,11 +749,11 @@ func ftsIndexKnownEmpty(ctx context.Context, conn SQLiteConn) (bool, error) {
 		}
 		return false, err
 	}
-	n, err := pyint.Of(row[0])
+	n, err := anyutil.ToInt(row[0])
 	if err != nil {
 		return false, err
 	}
-	return n.Sign() == 0, nil
+	return n == 0, nil
 }
 
 // Truncates the base and trigram indexes with FTS5 delete all, skipping absent tables
@@ -799,28 +767,28 @@ func resetFTSIndexToEmpty(ctx context.Context, conn SQLiteConn) error {
 }
 
 // Writes full backfill markers returning the high water, without force only repairing a missing progress key
-func (s *sessionSearch) seedFTSRebuildMarkers(ctx context.Context, conn SQLiteConn, force bool) (*big.Int, error) {
+func (s *sessionSearch) seedFTSRebuildMarkers(ctx context.Context, conn SQLiteConn, force bool) (int64, error) {
 	existing, err := metaRow(ctx, conn, "fts_rebuild_high_water")
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	if existing != nil && !force {
 		if err := s.reseedMissingProgress(ctx, conn); err != nil {
-			return nil, err
+			return 0, err
 		}
-		return pyint.Of(existing[0])
+		return anyutil.ToInt(existing[0])
 	}
 	row, err := fetchOne(ctx, conn, "SELECT COALESCE(MAX(id), 0) FROM messages")
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	if err := s.host.setMeta(ctx, "fts_rebuild_high_water", anyutil.String(row[0]), conn); err != nil {
-		return nil, err
+		return 0, err
 	}
 	if err := s.host.setMeta(ctx, "fts_rebuild_progress", "0", conn); err != nil {
-		return nil, err
+		return 0, err
 	}
-	return pyint.Of(row[0])
+	return anyutil.ToInt(row[0])
 }
 
 // Reseeds orphan progress and claims a full backfill for an empty external index, never on a legacy inline store
@@ -891,8 +859,8 @@ func metaPresent(ctx context.Context, conn SQLiteConn, key string) (bool, error)
 }
 
 // Demotes legacy FTS vtables to plain trash tables with backfill markers, then recreates the v23 tables
-func (s *sessionSearch) demoteLegacyFTSToTrash(ctx context.Context) (*big.Int, error) {
-	var hw *big.Int
+func (s *sessionSearch) demoteLegacyFTSToTrash(ctx context.Context) (int64, error) {
+	var hw int64
 	err := s.host.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := dropFTSTriggers(ctx, conn); err != nil {
 			return err
@@ -933,10 +901,10 @@ func (s *sessionSearch) demoteLegacyFTSToTrash(ctx context.Context) (*big.Int, e
 		return deleteMeta(ctx, conn, "fts_optimize_available")
 	}, nil)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	if err := s.ensureV23FTSTables(ctx, "failed to create v23 messages_fts during optimize-storage demote"); err != nil {
-		return nil, err
+		return 0, err
 	}
 	return hw, nil
 }
@@ -971,14 +939,8 @@ func (s *sessionSearch) backfillProgress(ctx context.Context, phase, prefix stri
 	if err != nil || st == nil {
 		return nil, err
 	}
-	indexed, err := sqliteInt(st.indexed)
-	if err != nil {
-		return nil, err
-	}
-	total, err := sqliteInt(st.total)
-	if err != nil {
-		return nil, err
-	}
+	indexed := st.indexed
+	total := st.total
 	var count, done int64
 	err = s.host.readCtx(ctx, true, func(conn SQLiteConn) error {
 		return conn.QueryRowContext(ctx, "SELECT COUNT(*), COALESCE(SUM(id <= ?), 0) FROM messages WHERE +id <= ?",

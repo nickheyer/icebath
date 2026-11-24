@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/lsp"
 	"github.com/nickheyer/icebath/pkg/pm"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
@@ -126,8 +126,8 @@ func registerInstalledTool(t *testing.T, name, executable string, companions ...
 // Temp home whose PM store holds the Node found on PATH, with home, store binary and external path
 func nodeStore(t *testing.T) (string, string, string) {
 	t.Helper()
-	node, ok := pyshutil.Which("node", nil)
-	if !ok {
+	node, err := exec.LookPath("node")
+	if err != nil {
 		t.Skip("requires an already-installed Node executable")
 	}
 	abs, err := filepath.Abs(node)
@@ -182,7 +182,7 @@ func factsBytes(t *testing.T) []byte {
 
 // Search of an explicit PATH value, empty when the command is absent
 func whichOn(command, path string) string {
-	found, _ := pyshutil.Which(command, &path)
+	found, _ := fsutil.LookPathIn(command, path)
 	return found
 }
 

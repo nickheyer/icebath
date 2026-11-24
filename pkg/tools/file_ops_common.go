@@ -8,7 +8,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 

@@ -24,7 +24,7 @@ func (e *pyRuntimeError) Error() string { return e.msg }
 func (e *pyRuntimeError) Unwrap() error { return e.cause }
 
 // Exception class the error reports, RuntimeError
-func (e *pyRuntimeError) PyTypeName() string { return "RuntimeError" }
+func (e *pyRuntimeError) ErrorKind() string { return "RuntimeError" }
 
 // Python AttributeError carrying only its message
 type pyAttributeError struct{ msg string }
@@ -32,7 +32,7 @@ type pyAttributeError struct{ msg string }
 func (e *pyAttributeError) Error() string { return e.msg }
 
 // Exception class the error reports, AttributeError
-func (e *pyAttributeError) PyTypeName() string { return "AttributeError" }
+func (e *pyAttributeError) ErrorKind() string { return "AttributeError" }
 
 // Async database of the active profile scope, one per path, borrowing the session store handle when present
 func (r *GatewayRunner) openSessionDBForActiveScope(ctx context.Context, raiseOnError bool) (*state.AsyncSessionDB, error) {

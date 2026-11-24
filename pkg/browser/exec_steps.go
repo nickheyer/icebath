@@ -30,7 +30,9 @@ import (
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // A png that has not arrived by then will not, a hidden tab answers jpeg within a few seconds
@@ -918,7 +920,7 @@ func shrinkImageFile(path string, side int) error {
 	case *image.NRGBA, *image.NRGBA64:
 		hasAlpha = true
 	}
-	thumb := pypil.Thumbnail(imageutil.ToNRGBA(img), side, hasAlpha)
+	thumb := imageutil.Thumbnail(imageutil.ToNRGBA(img), side, imageutil.CatmullRom)
 	var buf bytes.Buffer
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {

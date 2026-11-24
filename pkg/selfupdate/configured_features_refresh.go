@@ -9,7 +9,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/pm"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -61,7 +60,7 @@ func failureText(err error) string {
 	}
 	var subCalled *executil.StatusError
 	if errors.As(err, &subCalled) {
-		return fmt.Sprintf("%s exited %d", strings.Join(subCalled.Cmd, " "), subCalled.Returncode)
+		return fmt.Sprintf("%s exited %d", strings.Join(subCalled.Args, " "), subCalled.ExitCode)
 	}
 	name := exceptionName(err)
 	if text := err.Error(); text != "" {
@@ -72,16 +71,16 @@ func failureText(err error) string {
 
 // Python exception class an error stands for
 func exceptionName(err error) string {
-	var named interface{ PyTypeName() string }
+	var named interface{ ErrorKind() string }
 	if errors.As(err, &named) {
-		return named.PyTypeName()
+		return named.ErrorKind()
 	}
 	var pyErr *pm.PyError
 	if errors.As(err, &pyErr) && pyErr.Class != "" {
 		return pyErr.Class
 	}
 	if errorutil.IsSystem(err) {
-		return pypath.OSErrorClass(err)
+		return errorutil.Kind(err)
 	}
 	return "RuntimeError"
 }

@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -132,13 +131,13 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 		if !strings.HasPrefix(text, "file:") {
 			continue
 		}
-		parsed, err := pyurl.Parse(text)
+		parsed, err := urlutil.Split(text)
 		if err != nil {
 			return false, err
 		}
 		local, err := urlutil.FilePath("file:" + parsed.Path)
 		if err != nil {
-			var remote *pyurl.URLError
+			var remote *urlutil.FileURLError
 			if errors.As(err, &remote) {
 				return false, errchain.Reword(err, "cannot use %s as a local path: %s", text, remote.Reason)
 			}

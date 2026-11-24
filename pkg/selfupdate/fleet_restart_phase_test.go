@@ -171,7 +171,7 @@ func TestFleetRestartTimeoutIsolationTimeoutOnMiddleUnitContinuesRemainingUnits(
 		return nil
 	}, func(svcName string, timeout error) {
 		failed = append(failed, svcName)
-		timeoutCmds = append(timeoutCmds, asCommandTimeout(timeout).Cmd)
+		timeoutCmds = append(timeoutCmds, asCommandTimeout(timeout).Args)
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -16,11 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -29,6 +25,7 @@ import (
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -67,7 +64,7 @@ var (
 	goalScopedSessionCwd  = tools.ScopedSessionCwd
 	goalResolveAgentCwd   = tools.ResolveAgentCwd
 	goalToolEnvFrom       = tools.ToolEnvFrom
-	goalPyFormatTemplates = i18n.PyFormat
+	goalPyFormatTemplates = templateutil.Format
 	goalRunGate           = RunGate
 )
 
@@ -161,7 +158,7 @@ func gatePipe(sink *gateOutput) (read, write *os.File, done chan struct{}, err e
 // Shell run of one gate giving pass, exit code and output tail, a timeout as minus one
 func RunGate(ctx context.Context, gate GoalGate, cwd string) (passed bool, exitCode int64, outputTail string, interrupted error) {
 	couldNotRun := func(err error) (bool, int64, string, error) {
-		return false, -1, fmt.Sprintf("[gate could not run: %s: %s]", pypath.OSErrorClass(err), err.Error()), nil
+		return false, -1, fmt.Sprintf("[gate could not run: %s: %s]", errorutil.Kind(err), err.Error()), nil
 	}
 	shell, err := executil.ShellCommand(gate.Command)
 	if err != nil {
@@ -298,11 +295,11 @@ func goalJudgeSetting(ctx context.Context, key string, def any, cast func(any) (
 
 // Python int cast of a setting and whether it is above zero
 func castJudgeInt(raw any) (any, bool, error) {
-	n, err := pyint.Of(raw)
+	n, err := anyutil.ToInt(raw)
 	if err != nil {
 		return nil, false, err
 	}
-	return pyint.Value(n), n.Sign() > 0, nil
+	return n, n > 0, nil
 }
 
 // Python float cast of a setting and whether it is above zero
@@ -405,15 +402,15 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 			if value == nil {
 				continue
 			}
-			iv, convErr := pyint.Of(value)
+			iv, convErr := anyutil.ToInt(value)
 			if convErr != nil {
 				if kind := convErr.(*errorutil.Error).Kind; kind == "TypeError" || kind == "ValueError" {
 					continue
 				}
 				panic(convErr)
 			}
-			if iv.Sign() > 0 {
-				return pyint.Value(iv)
+			if iv > 0 {
+				return iv
 			}
 		}
 		return nil
@@ -573,7 +570,7 @@ func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) J
 			return JudgeResult{Verdict: "continue", Reason: "goal_judge auxiliary client unavailable: " + err.Error(), TransportFailed: true}
 		}
 		pkgLog().Info(fmt.Sprintf("goal judge: API call failed (%s) — falling through to continue", err.Error()))
-		return JudgeResult{Verdict: "continue", Reason: "judge error: " + pyrepr.ExceptionName(err), TransportFailed: true}
+		return JudgeResult{Verdict: "continue", Reason: "judge error: " + errorutil.Kind(err), TransportFailed: true}
 	}
 	verdict, reason, parseFailed, wait, err := parseJudgeResponse(raw)
 	if err != nil {

@@ -42,7 +42,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
@@ -1550,9 +1549,9 @@ func (t *EntraBearerTransport) RoundTrip(req *http.Request) (*http.Response, err
 		}
 		return nil, err
 	}
-	wire := pyhttpx.WireOf(out)
+	wire := out.Header
 	if wire != nil {
-		wire = pyhttpx.NewHeaders(wire.Lines()...)
+		wire = headerOf(fieldsOf(wire)...)
 	}
 	for _, h := range []string{"Authorization", "Api-Key", "X-Api-Key"} {
 		out.Header.Del(h)
@@ -1577,7 +1576,7 @@ func (t *EntraBearerTransport) RoundTrip(req *http.Request) (*http.Response, err
 		}
 	}
 	if wire != nil {
-		out = pyhttpx.WithWire(out, wire)
+		out = withHeader(out, wire)
 	}
 	return t.Base.RoundTrip(out)
 }

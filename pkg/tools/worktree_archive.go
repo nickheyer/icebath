@@ -105,7 +105,7 @@ func archiveOK(args []string, cwd string, env map[string]string, timeout time.Du
 	if err != nil {
 		return "", err
 	}
-	if r.Returncode != 0 {
+	if r.ExitCode != 0 {
 		return "", &ArchiveError{fmt.Sprintf("git %s failed: %s", args[0], archiveStderrTail(r.Stderr))}
 	}
 	return string(r.Stdout), nil
@@ -117,12 +117,12 @@ func archiveRawAttrs(args []string, cwd string, env map[string]string, emptyTree
 	if err != nil {
 		return "", err
 	}
-	if r.Returncode != 0 && strings.Contains(string(r.Stderr), "attr-source") {
+	if r.ExitCode != 0 && strings.Contains(string(r.Stderr), "attr-source") {
 		if r, err = archiveRun(args, cwd, env, 0, nil); err != nil {
 			return "", err
 		}
 	}
-	if r.Returncode != 0 {
+	if r.ExitCode != 0 {
 		return "", &ArchiveError{fmt.Sprintf("git %s failed: %s", args[0], archiveStderrTail(r.Stderr))}
 	}
 	return string(r.Stdout), nil
@@ -392,7 +392,7 @@ func archiveCreateRef(repoRoot, name, sha string, env map[string]string) (string
 		if err != nil {
 			return "", err
 		}
-		if r.Returncode == 0 {
+		if r.ExitCode == 0 {
 			return ref, nil
 		}
 	}
@@ -637,7 +637,7 @@ func PruneExpiredArchives(repoRoot string, retentionDays float64, now float64, d
 		if err != nil {
 			return nil, err
 		}
-		if r.Returncode == 0 {
+		if r.ExitCode == 0 {
 			deleted = append(deleted, a.Ref)
 		}
 	}
@@ -646,7 +646,7 @@ func PruneExpiredArchives(repoRoot string, retentionDays float64, now float64, d
 
 func archiveBranchTip(repoRoot, branch string, env map[string]string) (string, bool, error) {
 	r, err := archiveRun([]string{"rev-parse", "--verify", "-q", "refs/heads/" + branch + "^{commit}"}, repoRoot, env, 0, nil)
-	if err != nil || r.Returncode != 0 {
+	if err != nil || r.ExitCode != 0 {
 		return "", false, err
 	}
 	return strings.TrimSpace(string(r.Stdout)), true, nil

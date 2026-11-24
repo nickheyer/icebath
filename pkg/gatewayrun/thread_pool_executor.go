@@ -38,7 +38,7 @@ type pyValueError struct{ msg string }
 func (e *pyValueError) Error() string { return e.msg }
 
 // Exception class the error reports, ValueError
-func (e *pyValueError) PyTypeName() string { return "ValueError" }
+func (e *pyValueError) ErrorKind() string { return "ValueError" }
 
 // Appends one queue entry and wakes a waiting thread, nil being the exit sentinel
 func (e *threadPoolExecutor) put(item *executorItem) {

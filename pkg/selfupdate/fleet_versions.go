@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -92,11 +91,11 @@ func socketIdentity(h string) (int, *jsonutil.Object, bool) {
 		}
 		return n, identity, true
 	}
-	pid, ok := pyrepr.Int(raw)
-	if !ok || !pid.IsInt64() {
+	pid, ok := anyutil.Int(raw)
+	if !ok {
 		return 0, nil, false
 	}
-	return int(pid.Int64()), identity, true
+	return int(pid), identity, true
 }
 
 // Install root holding the icebath binary that contains an absolute process path
@@ -143,7 +142,7 @@ func updaterCodeRoot() string {
 func gatewayCodeRoot(pid int, h string) string {
 	if record := fleetReadStatus(filepath.Join(h, "gateway_state.json")); record != nil {
 		raw, _ := record.Get("pid")
-		if n, ok := pyrepr.Int(raw); ok && n.IsInt64() && int(n.Int64()) == pid {
+		if n, ok := anyutil.Int(raw); ok && int(n) == pid {
 			argv, _ := record.Get("argv")
 			if items, ok := argv.([]any); ok {
 				for _, probe := range items {
@@ -262,11 +261,11 @@ func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*jso
 		if record == nil || record.Len() == 0 {
 			continue
 		}
-		n, ok := pyrepr.Int(objectGet(record, "pid"))
-		if !ok || !n.IsInt64() {
+		n, ok := anyutil.Int(objectGet(record, "pid"))
+		if !ok {
 			continue
 		}
-		pid := int(n.Int64())
+		pid := int(n)
 		live, found, err := fleetLiveGatewayPID(ph.home)
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("Fleet version probe failed: %s", errchain.OSText(err)))

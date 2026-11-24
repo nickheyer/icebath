@@ -15,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -578,8 +577,7 @@ var migratePreflightApply = func(ctx context.Context, plan *MigrationPlan, targe
 			}
 		} else {
 			_, err := userutil.Lookup(runAsUser)
-			var keyErr *pypwd.KeyError
-			if errors.As(err, &keyErr) {
+			if errors.Is(err, userutil.ErrNotFound) {
 				return fmt.Sprintf("default: the recorded service user '%s' does not exist on this host", runAsUser), nil
 			}
 			if err != nil {

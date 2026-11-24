@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // SystemdStopMarkEntry is the hidden argument the unit ExecStop runs to mark a supervisor stop as planned
@@ -37,11 +37,11 @@ func resolveStopMarkTargetPid(argv []string) int {
 	if !set {
 		return 0
 	}
-	n, ok := pystr.IntText(raw)
-	if !ok || n.Sign() <= 0 || !n.IsInt64() || n.Int64() != int64(int(n.Int64())) {
+	n, err := textutil.ParseInt(raw)
+	if err != nil || n <= 0 || n != int64(int(n)) {
 		return 0
 	}
-	return int(n.Int64())
+	return int(n)
 }
 
 // Writes the planned stop marker for the supervised pid, exiting zero whatever happens

@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
@@ -260,7 +259,7 @@ func TestAGitElsewhereExitingMidScanIsGoneNotAHiddenHolder(t *testing.T) {
 	repo := glRepo(t)
 	tmp := t.TempDir()
 	other := filepath.Join(tmp, "other")
-	if err := pyshutil.CopyTreeIgnore(repo, other, false, false, fsutil.IgnorePatterns("*.lock")); err != nil {
+	if err := fsutil.CopyTree(repo, other, fsutil.CopyTreeOptions{Ignore: fsutil.IgnorePatterns("*.lock")}); err != nil {
 		t.Fatal(err)
 	}
 	lock := filepath.Join(repo, ".git", "index.lock")

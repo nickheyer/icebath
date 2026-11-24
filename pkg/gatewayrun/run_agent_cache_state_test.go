@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Bare runner with an ordered agent cache and its lock, the cache infrastructure of a real runner

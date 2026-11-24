@@ -94,7 +94,7 @@ func TestTeamsSummaryWriterIncomingWebhookDeliveryAndRefusals(t *testing.T) {
 		t.Fatalf("existing record = %v %v", again, err)
 	}
 	transport.status = 404
-	if _, err := writer.WriteSummary(ctx, makeSummaryPayload(), config, nil); err == nil || !strings.HasPrefix(err.Error(), "Client error '404 Not Found' for url 'https://hooks.example/abc'") {
+	if _, err := writer.WriteSummary(ctx, makeSummaryPayload(), config, nil); err == nil || err.Error() != "client error 404 Not Found for https://hooks.example/abc" {
 		t.Fatalf("status error = %v", err)
 	}
 	if _, err := writer.WriteSummary(ctx, makeSummaryPayload(), jsonutil.NewObject(), nil); err == nil || err.Error() != "Teams delivery_mode must be 'incoming_webhook' or 'graph'." {

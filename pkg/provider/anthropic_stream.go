@@ -89,7 +89,7 @@ func (e *StreamEventOrderError) Error() string {
 }
 
 // Python exception class the SDK raises for an out of order stream event
-func (e *StreamEventOrderError) PyTypeName() string { return "RuntimeError" }
+func (e *StreamEventOrderError) ErrorKind() string { return "RuntimeError" }
 
 // Whether a stream failed because an event arrived before message_start
 func IsStreamEventOrderError(err error) bool {

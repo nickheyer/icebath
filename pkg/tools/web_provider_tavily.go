@@ -219,4 +219,4 @@ func NewTavilyWebProvider() WebProvider {
 }
 
 // Class name the registry log and type errors print, the plugin provider class
-func (*tavilyProvider) PyTypeName() string { return "TavilyWebSearchProvider" }
+func (*tavilyProvider) ErrorKind() string { return "TavilyWebSearchProvider" }

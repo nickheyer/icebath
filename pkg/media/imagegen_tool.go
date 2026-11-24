@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -46,23 +45,23 @@ func imageDebugSession(env *tools.Env) *tools.DebugSession {
 // Python ValueError raised by the image pipeline
 type imageValueError struct{ msg string }
 
-func (e *imageValueError) Error() string      { return e.msg }
-func (e *imageValueError) PyTypeName() string { return "ValueError" }
+func (e *imageValueError) Error() string     { return e.msg }
+func (e *imageValueError) ErrorKind() string { return "ValueError" }
 
 // Raised when the user interrupts while a FAL job is in flight
 type imageGenerationInterrupted struct{ msg string }
 
-func (e *imageGenerationInterrupted) Error() string      { return e.msg }
-func (e *imageGenerationInterrupted) PyTypeName() string { return "ImageGenerationInterrupted" }
+func (e *imageGenerationInterrupted) Error() string     { return e.msg }
+func (e *imageGenerationInterrupted) ErrorKind() string { return "ImageGenerationInterrupted" }
 
-func (e *falClientHTTPError) PyTypeName() string      { return "FalClientHTTPError" }
-func (falMissingCredentialsError) PyTypeName() string { return "MissingCredentialsError" }
+func (e *falClientHTTPError) ErrorKind() string      { return "FalClientHTTPError" }
+func (falMissingCredentialsError) ErrorKind() string { return "MissingCredentialsError" }
 
 // Python exception class name of an error for the error_type field
 func pyErrorTypeName(err error) string {
-	var named interface{ PyTypeName() string }
+	var named interface{ ErrorKind() string }
 	if errors.As(err, &named) {
-		return named.PyTypeName()
+		return named.ErrorKind()
 	}
 	var ue *url.Error
 	if errors.As(err, &ue) {
@@ -228,7 +227,7 @@ func pyIsInt(v any) bool {
 	if _, ok := v.(bool); ok {
 		return true
 	}
-	_, ok := pyrepr.Int(v)
+	_, ok := anyutil.Int(v)
 	return ok
 }
 

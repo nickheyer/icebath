@@ -24,8 +24,8 @@ func sdkStatusError(status int, body string, header http.Header) *AuxSDKError {
 
 type declaredClassError struct{ class string }
 
-func (e *declaredClassError) Error() string      { return "declared " + e.class }
-func (e *declaredClassError) PyTypeName() string { return e.class }
+func (e *declaredClassError) Error() string     { return "declared " + e.class }
+func (e *declaredClassError) ErrorKind() string { return e.class }
 
 func TestSDKAndStreamErrorsAreNotLocalValidationErrors(t *testing.T) {
 	refused := &AuxSDKError{Class: "APIConnectionError", Message: "Connection error.", Err: &net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}}

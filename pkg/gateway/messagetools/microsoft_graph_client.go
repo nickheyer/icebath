@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -354,18 +354,13 @@ func (c *MicrosoftGraphClient) request(ctx context.Context, method, pathOrURL st
 	rawURL := c.resolveURL(pathOrURL)
 	reqURL := rawURL
 	if params != nil {
-		keys := make([]string, 0, len(params))
-		for k := range params {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys)
-		var ps pyhttpx.Params
-		for _, k := range keys {
-			for _, v := range queryValues(params[k]) {
-				ps = append(ps, [2]string{k, v})
+		query := make(url.Values, len(params))
+		for k, v := range params {
+			if values := queryValues(v); len(values) > 0 {
+				query[k] = values
 			}
 		}
-		reqURL = httputil.MergeQuery(rawURL, ps)
+		reqURL = httputil.MergeQuery(rawURL, query)
 	}
 	var body []byte
 	if jsonBody != nil {
@@ -496,8 +491,8 @@ func decodeGraphJSON(resp *graphResponse) (any, error) {
 // Retry-After seconds when the response names them, else half a second doubling per attempt up to eight
 func graphRetryDelay(resp *httputil.Response, attempt int) float64 {
 	if resp != nil {
-		if v, ok := pyhttpx.RetryAfterSeconds(resp.Header); ok {
-			return v
+		if wait, ok := httputil.RetryAfter(resp.Header); ok {
+			return wait.Seconds()
 		}
 	}
 	return min(8.0, 0.5*float64(int64(1)<<min(attempt, 62)))
@@ -520,8 +515,9 @@ func buildGraphAPIError(method, rawURL string, resp *httputil.Response) *Microso
 		}
 	}
 	var retryAfter *float64
-	if v, has := pyhttpx.RetryAfterSeconds(resp.Header); has {
-		retryAfter = &v
+	if wait, has := httputil.RetryAfter(resp.Header); has {
+		seconds := wait.Seconds()
+		retryAfter = &seconds
 	}
 	return NewMicrosoftGraphAPIError(resp.StatusCode, method, rawURL, detail, retryAfter, payload)
 }

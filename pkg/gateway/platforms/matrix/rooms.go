@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"

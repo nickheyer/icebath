@@ -403,4 +403,4 @@ func NewFirecrawlWebProvider() WebProvider {
 }
 
 // Class name the registry log and type errors print, the plugin provider class
-func (*firecrawlProvider) PyTypeName() string { return "FirecrawlWebSearchProvider" }
+func (*firecrawlProvider) ErrorKind() string { return "FirecrawlWebSearchProvider" }

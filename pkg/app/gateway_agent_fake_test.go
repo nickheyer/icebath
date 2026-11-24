@@ -8,6 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Gateway client double answering every call through a handler and recording what was asked

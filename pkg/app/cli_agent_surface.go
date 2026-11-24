@@ -58,7 +58,7 @@ func (a *GatewayAgent) StagePendingCLIUserMessage(staged map[string]any, appendT
 }
 
 // Python class name, the name an attribute error about the agent carries
-func (a *GatewayAgent) PyTypeName() string { return "GatewayAgent" }
+func (a *GatewayAgent) ErrorKind() string { return "GatewayAgent" }
 
 // Gateway agent behind the surface, whose session figures the CLI's usage and switch readers take
 func (a *GatewayAgent) gateway() *GatewayAgent { return a }

@@ -15,7 +15,7 @@ import (
 )
 
 // Polls for the planned stop marker naming this process and drives the shutdown handler on the loop once
-func runPlannedStopWatcher(stop *syncutil.Event, r *GatewayRunner, loop gateway.EventLoop, shutdownHandler func(sig *int), pollInterval float64) {
+func runPlannedStopWatcher(stop *syncutil.Event, r *GatewayRunner, loop gateway.EventLoop, shutdownHandler func(sig *int), pollInterval time.Duration) {
 	markerPath := gateway.PlannedStopMarkerPath()
 	for !stop.IsSet() {
 		fired := func() (fired bool) {
@@ -45,7 +45,7 @@ func runPlannedStopWatcher(stop *syncutil.Event, r *GatewayRunner, loop gateway.
 		if fired {
 			return
 		}
-		stop.Wait(pollInterval)
+		stop.WaitTimeout(pollInterval)
 	}
 }
 

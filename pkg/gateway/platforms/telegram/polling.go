@@ -111,15 +111,15 @@ type osError struct {
 	cause error
 }
 
-func (e *osError) Error() string      { return e.msg }
-func (e *osError) Unwrap() error      { return e.cause }
-func (e *osError) PyTypeName() string { return "OSError" }
+func (e *osError) Error() string     { return e.msg }
+func (e *osError) Unwrap() error     { return e.cause }
+func (e *osError) ErrorKind() string { return "OSError" }
 
 // Python RuntimeError raised by the lifecycle
 type runtimeError struct{ msg string }
 
-func (e *runtimeError) Error() string      { return e.msg }
-func (e *runtimeError) PyTypeName() string { return "RuntimeError" }
+func (e *runtimeError) Error() string     { return e.msg }
+func (e *runtimeError) ErrorKind() string { return "RuntimeError" }
 
 type pollingGenerationKey struct{}
 

@@ -19,9 +19,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
@@ -77,7 +76,7 @@ func azureIdentityAuthority() (string, error) {
 	if !ok {
 		authority = "login.microsoftonline.com"
 	}
-	parsed, err := pyurl.Parse(authority)
+	parsed, err := urlutil.Split(authority)
 	if err != nil {
 		return "", err
 	}
@@ -99,9 +98,9 @@ var azureIdentityTransport http.RoundTripper
 func newAzureIdentityPipeline() *azureIdentityPipeline {
 	tr := azureIdentityTransport
 	if tr == nil {
-		tr = pyStackWireTransport(pyhttpx.RequestsProxy, 300*time.Second, 10)
+		tr = pyStackWireTransport(300*time.Second, 10)
 	}
-	return &azureIdentityPipeline{client: &http.Client{Transport: pyhttpx.WireTransport{Base: tr, Decoders: requestsDecoders}, CheckRedirect: httpxNoRedirects}}
+	return &azureIdentityPipeline{client: &http.Client{Transport: httputil.DecodingTransport(tr), CheckRedirect: httpxNoRedirects}}
 }
 
 // Statuses RetryPolicy treats as safe, every other status under 999 retried
@@ -114,13 +113,13 @@ func azureRetryableStatus(status int) bool {
 }
 
 // Runs one request through RequestIdPolicy, UserAgentPolicy and RetryPolicy, the form body urlencoded as requests sends it
-func (p *azureIdentityPipeline) run(ctx context.Context, method, target string, headers []pyhttpx.HeaderLine, form [][2]string, retryPOST bool) (int, []byte, error) {
+func (p *azureIdentityPipeline) run(ctx context.Context, method, target string, headers []headerField, form [][2]string, retryPOST bool) (int, []byte, error) {
 	requestID, err := uuid.NewUUID()
 	if err != nil {
 		return 0, nil, err
 	}
-	call := append(append([]pyhttpx.HeaderLine(nil), headers...), pyhttpx.HeaderLine{Name: "x-ms-client-request-id", Value: requestID.String()},
-		pyhttpx.HeaderLine{Name: "User-Agent", Value: azureIdentityUserAgent()})
+	call := append(append([]headerField(nil), headers...), headerField{Name: "x-ms-client-request-id", Value: requestID.String()},
+		headerField{Name: "User-Agent", Value: azureIdentityUserAgent()})
 	body := urlutil.EncodeQuery(form)
 	total, connects, reads, statuses := 10, 3, 3, 3
 	history := 0
@@ -133,7 +132,7 @@ func (p *azureIdentityPipeline) run(ctx context.Context, method, target string, 
 		if err != nil {
 			return 0, nil, err
 		}
-		resp, err := p.client.Do(pyhttpx.WithWire(req, requestsLines(call...)))
+		resp, err := p.client.Do(withHeader(req, requestsLines(call...)))
 		if err != nil {
 			if ctx.Err() != nil {
 				return 0, nil, err
@@ -225,13 +224,13 @@ type msalTelemetry struct {
 }
 
 // client-request-id and the current and last telemetry headers of one token request
-func (t *msalTelemetry) headers(api, reason int, correlation string) []pyhttpx.HeaderLine {
+func (t *msalTelemetry) headers(api, reason int, correlation string) []headerField {
 	var reqs, errs []string
 	for _, f := range t.failures {
 		reqs = append(reqs, f[0]+","+f[1])
 		errs = append(errs, f[2])
 	}
-	return []pyhttpx.HeaderLine{
+	return []headerField{
 		{Name: "client-request-id", Value: correlation},
 		{Name: "x-client-current-telemetry", Value: fmt.Sprintf("4|%d,%d|", api, reason)},
 		{Name: "x-client-last-telemetry", Value: fmt.Sprintf("4|%d|%s|%s|", t.succeeded, strings.Join(reqs, ","), strings.Join(errs, ","))},
@@ -390,7 +389,7 @@ func (a *msalConfidentialApp) requestToken(ctx context.Context, scopes []string,
 	if scope := strings.Join(scopes, " "); scope != "" {
 		form = append(form, [2]string{"scope", scope})
 	}
-	headers := []pyhttpx.HeaderLine{{Name: "Content-Type", Value: "application/x-www-form-urlencoded"}, {Name: "Accept", Value: "application/json"},
+	headers := []headerField{{Name: "Content-Type", Value: "application/x-www-form-urlencoded"}, {Name: "Accept", Value: "application/json"},
 		{Name: "x-client-sku", Value: "MSAL.Python"}, {Name: "x-client-ver", Value: msalVersion}, {Name: "x-client-os", Value: msalClientOS()},
 		{Name: "x-ms-lib-capability", Value: "retry-after, h429"}}
 	headers = append(headers, a.telemetry.headers(msalAcquireTokenForClientID, reason, correlation)...)

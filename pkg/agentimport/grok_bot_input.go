@@ -15,6 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Prints how to ask each Bot for its export and how to bring it back

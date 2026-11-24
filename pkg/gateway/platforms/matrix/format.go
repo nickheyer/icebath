@@ -9,14 +9,14 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	ghtml "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/util"
 	"golang.org/x/net/html"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 )
 
 var sanitizerAllowedTags = map[string]bool{
@@ -28,10 +28,10 @@ var sanitizerAllowedTags = map[string]bool{
 var sanitizerVoidTags = map[string]bool{"br": true, "hr": true}
 
 var (
-	safeURLControlRE  = pyre.MustCompile(`[\x00-\x1f\x7f]+`)
-	safeURLSchemeRE   = pyre.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*):`)
-	codeLanguageRE    = pyre.MustCompile(`\A(?:language-[A-Za-z0-9_+.-]{1,64})\Z`)
-	sanitizerEntityRE = pyre.MustCompile(`&(?:#(?:[0-9]+|[xX][0-9a-fA-F]+)|[a-zA-Z][-.a-zA-Z0-9]*)`)
+	safeURLControlRE  = regexutil.MustCompile(`[\x00-\x1f\x7f]+`)
+	safeURLSchemeRE   = regexutil.MustCompile(`^([A-Za-z][A-Za-z0-9+.-]*):`)
+	codeLanguageRE    = regexutil.MustCompile(`\A(?:language-[A-Za-z0-9_+.-]{1,64})\Z`)
+	sanitizerEntityRE = regexutil.MustCompile(`&(?:#(?:[0-9]+|[xX][0-9a-fA-F]+)|[a-zA-Z][-.a-zA-Z0-9]*)`)
 )
 
 // Allowlist sanitizer state for Matrix compatible formatted HTML
@@ -231,12 +231,12 @@ func markdownToHTML(text string) string {
 }
 
 var (
-	outboundMentionRE    = pyre.MustCompile(`(?<![\w/])(@[0-9A-Za-z._=/-]+:[0-9A-Za-z.-]+(?::\d+)?)`)
-	outboundRoomRE       = pyre.MustCompile(`(?<![\w/])@room(?![\w:.-])`)
-	protectedRegionREs   = []*regexp2.Regexp{pyre.MustCompile("```[\\s\\S]*?```"), pyre.MustCompile("`[^`\\n]+`"), pyre.MustCompile(`\[[^\]]+\]\([^)]+\)`)}
-	markdownImageRE      = pyre.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
-	mentionSpacingRE     = pyre.MustCompile(`[ \t]{2,}`)
-	mentionPunctuationRE = pyre.MustCompile(`\s+([,.;:!?])`)
+	outboundMentionRE    = regexutil.MustCompile(`(?<![\w/])(@[0-9A-Za-z._=/-]+:[0-9A-Za-z.-]+(?::\d+)?)`)
+	outboundRoomRE       = regexutil.MustCompile(`(?<![\w/])@room(?![\w:.-])`)
+	protectedRegionREs   = []*regexp2.Regexp{regexutil.MustCompile("```[\\s\\S]*?```"), regexutil.MustCompile("`[^`\\n]+`"), regexutil.MustCompile(`\[[^\]]+\]\([^)]+\)`)}
+	markdownImageRE      = regexutil.MustCompile(`!\[([^\]]*)\]\(([^)]+)\)`)
+	mentionSpacingRE     = regexutil.MustCompile(`[ \t]{2,}`)
+	mentionPunctuationRE = regexutil.MustCompile(`\s+([,.;:!?])`)
 )
 
 // Text content with HTML and outbound mention metadata, plain when the HTML would outgrow the budget
@@ -355,7 +355,7 @@ func (a *MatrixAdapter) isBotMentioned(body, formattedBody string, mentionUserID
 		return true
 	}
 	if localpart := a.userLocalpart(); localpart != "" {
-		re, err := pyre.CompileIgnoreCase(`\b` + pyreEscape(localpart) + `\b`)
+		re, err := regexutil.Compile(`\b`+pyreEscape(localpart)+`\b`, regexutil.IgnoreCase())
 		if err == nil && reSearch(re, body) {
 			return true
 		}
@@ -394,7 +394,7 @@ func (a *MatrixAdapter) stripMention(body string) string {
 		body = strings.ReplaceAll(body, a.userID, "")
 	}
 	if localpart := a.userLocalpart(); localpart != "" {
-		if re, err := pyre.CompileIgnoreCase(`(?<![\w])@` + pyreEscape(localpart) + `\b`); err == nil {
+		if re, err := regexutil.Compile(`(?<![\w])@`+pyreEscape(localpart)+`\b`, regexutil.IgnoreCase()); err == nil {
 			body = reSub(re, body, func(regexp2.Match) string { return "" })
 		}
 	}

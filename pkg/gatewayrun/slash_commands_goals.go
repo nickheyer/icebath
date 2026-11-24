@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"slices"
 	"strings"
 
@@ -12,8 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -25,7 +22,7 @@ func pyErrorClass(err error) string {
 	if errors.As(err, &pe) && pe.Kind != "" {
 		return pe.Kind
 	}
-	return pyrepr.ExceptionName(err)
+	return errorutil.Kind(err)
 }
 
 // Truth of the probe, false when it fails
@@ -167,7 +164,7 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 		return i18n.T(ctx, "gateway.heartbeat.none_set", "", nil), nil
 	}
 	tokens := textutil.FieldsN(args, 2)
-	var interval *big.Int
+	var interval int64
 	var err error
 	prompt := ""
 	if strings.ToLower(tokens[0]) == "every" && len(tokens) >= 2 {
@@ -181,14 +178,14 @@ func (r *GatewayRunner) handleHeartbeatCommand(ctx context.Context, event *gatew
 		if interval, err = agent.ParseHeartbeatInterval(tokens[0]); err != nil {
 			return "", err
 		}
-		if interval != nil && interval.Sign() > 0 {
+		if interval > 0 {
 			prompt = strings.TrimSpace(args[len(tokens[0]):])
 		}
 	}
-	if interval == nil {
+	if interval == 0 {
 		return i18n.T(ctx, "gateway.heartbeat.usage", "", nil), nil
 	}
-	if interval.Sign() < 0 {
+	if interval < 0 {
 		return i18n.T(ctx, "gateway.heartbeat.interval_too_small", "", map[string]any{"min_seconds": agent.MinHeartbeatIntervalSeconds}), nil
 	}
 	if strings.TrimSpace(prompt) == "" {
@@ -226,11 +223,11 @@ func (r *GatewayRunner) handleSubgoalCommand(ctx context.Context, event *gateway
 		if rest == "" {
 			return i18n.T(ctx, "gateway.subgoal.usage_remove", "", nil), nil
 		}
-		idx, ok := pystr.IntText(strings.Fields(rest)[0])
-		if !ok {
+		idx, err := textutil.ParseInt(strings.Fields(rest)[0])
+		if err != nil {
 			return i18n.T(ctx, "gateway.subgoal.remove_not_int", "", nil), nil
 		}
-		removed, err := mgr.RemoveSubgoal(idx.Int64())
+		removed, err := mgr.RemoveSubgoal(idx)
 		if err != nil {
 			return mgrCallError("/subgoal remove", err, "IndexError", "RuntimeError")
 		}

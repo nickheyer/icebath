@@ -9,7 +9,6 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -225,11 +224,11 @@ func messageThreadIDForTyping(threadID *string) (*int, error) {
 
 // Python int() of text as a Go int, the ValueError text on failure
 func pyIntOf(text string) (int, error) {
-	n, err := pyint.Of(text)
+	n, err := anyutil.ToInt(text)
 	if err != nil {
 		return 0, err
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Whether the Bot API rejected the forum or DM thread as missing

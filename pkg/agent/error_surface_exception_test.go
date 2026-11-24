@@ -12,8 +12,8 @@ import (
 
 type surfaceKeyError struct{ key string }
 
-func (e surfaceKeyError) Error() string      { return "'" + e.key + "'" }
-func (e surfaceKeyError) PyTypeName() string { return "KeyError" }
+func (e surfaceKeyError) Error() string     { return "'" + e.key + "'" }
+func (e surfaceKeyError) ErrorKind() string { return "KeyError" }
 
 type surfaceStatusError struct {
 	msg    string

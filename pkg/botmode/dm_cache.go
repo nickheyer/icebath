@@ -6,9 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Folder name of the per user DM payload directory under the temp root
@@ -63,9 +65,14 @@ func CleanupBotDMCache(maxAgeHours float64, now *float64) int {
 	if dir, err := dmDir(); err == nil {
 		locations = append(locations, [2]string{dir, "*.txt"}, [2]string{dir, "*.live.json"})
 	}
+	cutoff := time.Now()
+	if now != nil {
+		cutoff = timeutil.FromEpoch(*now)
+	}
+	cutoff = cutoff.Add(-time.Duration(maxAgeHours * float64(time.Hour)))
 	total := 0
 	for _, loc := range locations {
-		total += pyfs.UnlinkFilesOlderThan(loc[0], loc[1], maxAgeHours*3600, now)
+		total += fsutil.RemoveOlderThan(loc[0], loc[1], cutoff)
 	}
 	return total
 }

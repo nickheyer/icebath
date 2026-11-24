@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -28,7 +27,7 @@ func groupWithReplicas(ctx context.Context, dbPath string, params map[string]any
 		return listed, nil
 	}
 	if offset, present := params["offset"]; present {
-		if n, err := pyint.Of(offset); err != nil || n.Sign() != 0 {
+		if n, err := anyutil.ToInt(offset); err != nil || n != 0 {
 			return listed, err
 		}
 	}

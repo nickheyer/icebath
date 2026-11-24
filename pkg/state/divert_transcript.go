@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Appends pending messages to sessions/<id>.jsonl under the home, returning the path or empty when nothing was written

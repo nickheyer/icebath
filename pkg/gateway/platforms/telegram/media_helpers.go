@@ -3,7 +3,7 @@ package telegram
 import (
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Note telling the agent a Telegram file was skipped for exceeding the download cap
@@ -21,11 +21,11 @@ func intOrZero(value any) (int64, bool) {
 	if !pyTruthy(value) {
 		return 0, true
 	}
-	n, err := pyint.Of(value)
+	n, err := anyutil.ToInt(value)
 	if err != nil {
 		return 0, false
 	}
-	return n.Int64(), true
+	return n, true
 }
 
 // Whether a media file fits the getFile cap before downloading, with the skip note when it does not

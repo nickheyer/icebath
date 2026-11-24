@@ -17,7 +17,6 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
@@ -142,9 +141,9 @@ type wsError struct {
 	cause      error
 }
 
-func (e *wsError) Error() string      { return e.msg }
-func (e *wsError) Unwrap() error      { return e.cause }
-func (e *wsError) PyTypeName() string { return e.class }
+func (e *wsError) Error() string     { return e.msg }
+func (e *wsError) Unwrap() error     { return e.cause }
+func (e *wsError) ErrorKind() string { return e.class }
 
 // Parsed ws or wss URI, refused the way the websockets parser refuses it
 func wsParseURI(raw string) (*url.URL, error) {
@@ -379,10 +378,10 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *s
 			return &ttsRuntimeError{msg: "xAI WS closed mid-stream: " + closed, cause: err}
 		}
 		if kind == websocket.TextMessage {
-			var bad *pycodecs.UnicodeDecodeError
+			var bad *charsetutil.DecodeError
 			if _, derr := charsetutil.Decode(data, "utf-8"); errors.As(derr, &bad) {
 				peerClosed = true
-				reason := fmt.Sprintf("%s at position %d", bad.Reason, bad.Pos)
+				reason := fmt.Sprintf("%s at position %d", bad.Reason, bad.Offset)
 				_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, reason), time.Now().Add(time.Second))
 				return &ttsRuntimeError{msg: "xAI WS closed mid-stream: sent " + wsCloseFrameText(websocket.CloseInvalidFramePayloadData, reason) + "; no close frame received", cause: derr}
 			}

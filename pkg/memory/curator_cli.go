@@ -3,6 +3,7 @@ package memory
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -135,11 +135,11 @@ func (c *CuratorCLI) confirm(prompt, cancel, eofPrefix string) bool {
 }
 
 func curatorCLIInt(v any) int {
-	n, err := pyint.Of(v)
-	if err != nil {
+	n, err := anyutil.ToInt(v)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return 0
 	}
-	return curatorBigToInt(n)
+	return curatorClampInt(n)
 }
 
 func (c *CuratorCLI) printSkillRows(title string, rows []*jsonutil.Object) {

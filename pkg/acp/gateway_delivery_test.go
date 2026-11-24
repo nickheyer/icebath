@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -22,7 +21,7 @@ func dumpUpdates(t *testing.T, updates []acputil.SessionUpdate) []string {
 	t.Helper()
 	var out []string
 	for _, u := range updates {
-		text, err := jsonutil.Encode(pyacp.Dump(u, pyacp.DumpOptions{ByAlias: true, ExcludeNone: true}))
+		text, err := jsonutil.Encode(u)
 		if err != nil {
 			t.Fatal(err)
 		}

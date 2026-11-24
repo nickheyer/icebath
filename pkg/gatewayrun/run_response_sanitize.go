@@ -10,12 +10,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Programmatic and local surfaces whose replies keep raw text
@@ -51,7 +51,7 @@ var providerErrorMarkers = []string{
 
 // Python regex compiled case insensitive, a bad pattern panicking at init
 func mustCompileIgnoreCase(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileIgnoreCase(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.IgnoreCase())
 	if err != nil {
 		panic(err)
 	}

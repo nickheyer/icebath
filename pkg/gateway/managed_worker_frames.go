@@ -2,16 +2,14 @@ package gateway
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"slices"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -39,7 +37,7 @@ var managedStructuredOrder = []string{"billing_block"}
 // Whether a value is None, a bool, int or float, or a string of at most 4096 characters
 func managedScalar(value any) bool {
 	switch typed := value.(type) {
-	case nil, bool, int, int64, float64, *big.Int:
+	case nil, bool, int, int64, float64:
 		return true
 	case string:
 		return utf8.RuneCountInString(typed) <= 4096
@@ -64,7 +62,7 @@ func managedStructured(key string, value any) bool {
 // Whether a value is None or a bool, int, float or string
 func managedWireValue(value any) bool {
 	switch value.(type) {
-	case nil, bool, int, int64, float64, *big.Int, string:
+	case nil, bool, int, int64, float64, string:
 		return true
 	}
 	return false
@@ -109,7 +107,7 @@ func invalidWorkerResult() error {
 	return &PyError{Kind: "ValueError", Msg: "invalid_worker_result"}
 }
 
-// Python sum of two receipt scalars, the TypeError of a mixed text and number pair
+// Sum of two receipt scalars: texts joined, numbers added with bools as 0 and 1, a TypeError for a mixed text and number pair
 func scalarAdd(left, right any) (any, error) {
 	if l, isText := left.(string); isText {
 		if r, both := right.(string); both {
@@ -132,30 +130,23 @@ func scalarAdd(left, right any) (any, error) {
 		}
 		return lf + rf, nil
 	}
-	sum := new(big.Int).Add(scalarInt(left), scalarInt(right))
-	if sum.IsInt64() {
-		return sum.Int64(), nil
-	}
-	return sum, nil
+	return scalarInt(left) + scalarInt(right), nil
 }
 
 // Integer of an int or bool scalar, a bool counting as 0 or 1
-func scalarInt(value any) *big.Int {
+func scalarInt(value any) int64 {
 	if flag, isBool := value.(bool); isBool {
 		if flag {
-			return big.NewInt(1)
+			return 1
 		}
-		return big.NewInt(0)
+		return 0
 	}
-	n, _ := pyrepr.Int(value)
+	n, _ := anyutil.Int(value)
 	return n
 }
 
 // Float of an int or bool scalar
-func scalarFloat(value any) float64 {
-	f, _ := new(big.Float).SetInt(scalarInt(value)).Float64()
-	return f
-}
+func scalarFloat(value any) float64 { return float64(scalarInt(value)) }
 
 // Value or zero when falsy, the Python value or 0
 func orZero(value any) any {
@@ -201,8 +192,8 @@ func AcceptResult(result any) (*jsonutil.Object, *jsonutil.Object, error) {
 		if value == nil {
 			continue
 		}
-		n, isInt := pyrepr.Int(value)
-		if _, isBool := value.(bool); isBool || !isInt || n.Sign() < 0 {
+		n, isInt := anyutil.Int(value)
+		if _, isBool := value.(bool); isBool || !isInt || n < 0 {
 			return nil, nil, invalidWorkerResult()
 		}
 	}
@@ -266,7 +257,7 @@ func ReadFrame(stream *bufio.Reader) (*jsonutil.Object, error) {
 func EncodeFrame(frame any) ([]byte, error) {
 	text, err := jsonutil.Encode(frame, jsonutil.ASCII())
 	if err != nil {
-		var typeErr *pyjson.TypeError
+		var typeErr *json.UnsupportedTypeError
 		if errors.As(err, &typeErr) {
 			return nil, &PyError{Kind: "TypeError", Msg: err.Error()}
 		}

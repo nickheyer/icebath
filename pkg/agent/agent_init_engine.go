@@ -196,7 +196,7 @@ type contextBelowMinimumError struct{ msg string }
 
 func (e *contextBelowMinimumError) Error() string { return e.msg }
 
-func (e *contextBelowMinimumError) PyTypeName() string { return "ValueError" }
+func (e *contextBelowMinimumError) ErrorKind() string { return "ValueError" }
 
 // Context engine tool schemas appended to the surface, then the engine session start hook
 func injectContextEngineTools(ctx context.Context, a *AIAgent) {

@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -200,12 +200,12 @@ func busyReason(ctx context.Context, r *GatewayRunner, window float64) (reason s
 	defer func() {
 		if rec := recover(); rec != nil {
 			pkgLog().Debug("idle-exit probe failed; staying up", "exc_info", rec)
-			reason = fmt.Sprintf("idle probe failed (%s)", pyrepr.ExceptionName(fmt.Errorf("%v", rec)))
+			reason = fmt.Sprintf("idle probe failed (%s)", errorutil.Kind(fmt.Errorf("%v", rec)))
 		}
 	}()
 	failed := func(err error) string {
 		pkgLog().Debug("idle-exit probe failed; staying up", "exc_info", err)
-		return fmt.Sprintf("idle probe failed (%s)", pyrepr.ExceptionName(err))
+		return fmt.Sprintf("idle probe failed (%s)", errorutil.Kind(err))
 	}
 	if reason := clientBusy(r, window); reason != "" {
 		return reason

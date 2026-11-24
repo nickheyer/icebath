@@ -8,7 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
@@ -167,7 +166,7 @@ func int64sToAny(ids []int64) []any {
 	return out
 }
 
-func messageIdentity(message map[string]any) (pyrepr.Tuple, error) {
+func messageIdentity(message map[string]any) ([]any, error) {
 	role := any("unknown")
 	if r, ok := message["role"]; ok {
 		role = r
@@ -175,7 +174,7 @@ func messageIdentity(message map[string]any) (pyrepr.Tuple, error) {
 	return rowIdentity(role, message["content"], message["tool_call_id"], parseToolCalls(message["tool_calls"]))
 }
 
-func storedRowIdentity(row map[string]any) (pyrepr.Tuple, error) {
+func storedRowIdentity(row map[string]any) ([]any, error) {
 	return rowIdentity(row["role"], decodeMessageContent(row["content"]), row["tool_call_id"], parseToolCalls(row["tool_calls"]))
 }
 
@@ -188,14 +187,14 @@ func rowUID(row map[string]any) string {
 
 type heldByRow struct {
 	index    int
-	identity pyrepr.Tuple
+	identity []any
 	uid      string
 	hasUID   bool
 }
 
 type heldByUID struct {
 	index    int
-	identity pyrepr.Tuple
+	identity []any
 }
 
 // Held dicts by the name they carry, row id first and message uid otherwise, unnamed dicts never claim
@@ -466,7 +465,7 @@ func carriedTailSlots(carried map[int64]int, compactedCount, tailCount int) int 
 }
 
 type carriedKey struct {
-	identity pyrepr.Tuple
+	identity []any
 	rowID    int64
 	hasRowID bool
 	stamp    any
@@ -489,8 +488,8 @@ func (d *SessionDB) resolveCarriedRowIDs(ctx context.Context, conn SQLiteConn, s
 		rowID, ok := namedRowID(message["_row_id"])
 		carried = append(carried, carriedKey{identity, rowID, ok, message["timestamp"]})
 	}
-	index := func(ids []int64) (map[int64]pyrepr.Tuple, map[string][]int64, error) {
-		byID, byKey := map[int64]pyrepr.Tuple{}, map[string][]int64{}
+	index := func(ids []int64) (map[int64][]any, map[string][]int64, error) {
+		byID, byKey := map[int64][]any{}, map[string][]int64{}
 		narrow, args := "", []any{sessionID}
 		if len(ids) > 0 {
 			narrow = " AND id IN (" + placeholders(len(ids)) + ")"

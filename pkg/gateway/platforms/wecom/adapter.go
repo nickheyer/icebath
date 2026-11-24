@@ -17,12 +17,12 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
@@ -53,12 +53,12 @@ var (
 
 	wecomPrefixRE  = mustIgnoreCase(`^wecom:`)
 	entryKindRE    = mustIgnoreCase(`^(user|group):`)
-	groupMentionRE = pyre.MustCompile(`^@\S+\s*`)
+	groupMentionRE = regexutil.MustCompile(`^@\S+\s*`)
 )
 
 // Case insensitive Python pattern, panicking on a pattern that does not compile
 func mustIgnoreCase(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileIgnoreCase(pattern)
+	re, err := regexutil.Compile(pattern, regexutil.IgnoreCase())
 	if err != nil {
 		panic(err)
 	}

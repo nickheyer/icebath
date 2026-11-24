@@ -41,7 +41,7 @@ func runContainerProbe(argv []string) (returncode int, timedOut bool, err error)
 	if err != nil {
 		return 0, false, err
 	}
-	return done.Returncode, false, nil
+	return done.ExitCode, false, nil
 }
 
 // Container inspect probe, exit 1 with the daemon message when it times out

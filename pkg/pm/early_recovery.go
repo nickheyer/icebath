@@ -11,10 +11,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -56,11 +56,11 @@ func readMarkerAttempts(marker string) *big.Int {
 	for i := len(lines) - 1; i >= 0; i-- {
 		key, value, found := strings.Cut(lines[i], "=")
 		if found && strings.TrimSpace(key) == "attempts" {
-			n, ok := pyint.Parse(value)
-			if !ok {
+			n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+			if err != nil {
 				return new(big.Int)
 			}
-			return nonNegative(n)
+			return nonNegative(big.NewInt(n))
 		}
 	}
 	return new(big.Int)
@@ -100,11 +100,11 @@ func markerOwnerIsLive(marker string) (bool, error) {
 	for _, line := range textutil.Lines(body) {
 		key, value, found := strings.Cut(line, "=")
 		if found && strings.TrimSpace(key) == "pid" {
-			pid, ok := pyint.Parse(strings.TrimSpace(value))
-			if !ok {
+			pid, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+			if err != nil {
 				return false, nil
 			}
-			return pidIsRunning(pid)
+			return pidIsRunning(big.NewInt(pid))
 		}
 	}
 	return false, nil

@@ -2,7 +2,7 @@ package yuanbao
 
 import (
 	"bytes"
-	"math/big"
+	"math"
 	"sync"
 	"testing"
 
@@ -19,7 +19,7 @@ func get(o *jsonutil.Object, keys ...string) any {
 
 func TestVarintSmallValues(t *testing.T) {
 	for _, v := range []int64{0, 1, 127, 128, 255, 300, 16383, 16384, 1 << 21, 1 << 28} {
-		enc := EncodeVarint(big.NewInt(v))
+		enc := EncodeVarint(v)
 		dec, pos, err := DecodeVarint(enc, 0)
 		if err != nil || dec != v || pos != len(enc) {
 			t.Fatalf("round trip %d: %v %d %v", v, dec, pos, err)
@@ -28,24 +28,33 @@ func TestVarintSmallValues(t *testing.T) {
 }
 
 func TestVarintKnownValues(t *testing.T) {
-	if got := EncodeVarint(big.NewInt(300)); !bytes.Equal(got, []byte{0xAC, 0x02}) {
+	if got := EncodeVarint(300); !bytes.Equal(got, []byte{0xAC, 0x02}) {
 		t.Fatalf("got %x", got)
 	}
-	if got := EncodeVarint(big.NewInt(-1)); len(got) != 10 || got[9] != 0x01 {
+	if got := EncodeVarint(-1); len(got) != 10 || got[9] != 0x01 {
 		t.Fatalf("negative got %x", got)
 	}
 }
 
 func TestVarintPartialDecode(t *testing.T) {
-	data := append(append([]byte{0}, EncodeVarint(big.NewInt(300))...), 0)
+	data := append(append([]byte{0}, EncodeVarint(300)...), 0)
 	if v, pos, err := DecodeVarint(data, 1); err != nil || v != int64(300) || pos != 3 {
 		t.Fatalf("got %v %d %v", v, pos, err)
 	}
 	if _, _, err := DecodeVarint(bytes.Repeat([]byte{0xFF}, 11), 0); err == nil || err.Error() != "varint too long" {
 		t.Fatalf("long varint err = %v", err)
 	}
-	if v, _, _ := DecodeVarint(append(bytes.Repeat([]byte{0xFF}, 9), 0x7F), 0); v.(*big.Int).BitLen() != 70 {
-		t.Fatalf("70 bit varint = %v", v)
+	if _, _, err := DecodeVarint(append(bytes.Repeat([]byte{0xFF}, 9), 0x7F), 0); err == nil || err.Error() != "varint overflows 64 bits" {
+		t.Fatalf("70 bit varint err = %v", err)
+	}
+	if v, pos, err := DecodeVarint(EncodeVarint(-1), 0); err != nil || v != -1 || pos != 10 {
+		t.Fatalf("negative round trip = %v %d %v", v, pos, err)
+	}
+	if v, pos, err := DecodeVarint(EncodeVarint(math.MinInt64), 0); err != nil || v != math.MinInt64 || pos != 10 {
+		t.Fatalf("smallest round trip = %v %d %v", v, pos, err)
+	}
+	if v, pos, err := DecodeVarint([]byte{0x80, 0x80}, 0); err != nil || v != 0 || pos != 2 {
+		t.Fatalf("cut off varint = %v %d %v", v, pos, err)
 	}
 }
 
@@ -123,7 +132,7 @@ func buildInboundPush(t *testing.T, from, to, groupCode, msgKey string, msgSeq i
 	if groupCode != "" {
 		buf = append(buf, EncodeField(6, WTLen, str(groupCode))...)
 	}
-	buf = append(buf, EncodeField(8, WTVarint, EncodeVarint(big.NewInt(msgSeq)))...)
+	buf = append(buf, EncodeField(8, WTVarint, EncodeVarint(msgSeq))...)
 	buf = append(buf, EncodeField(11, WTLen, str(msgKey))...)
 	return append(buf, EncodeField(13, WTLen, EncodeMessage(el))...)
 }
@@ -248,7 +257,7 @@ func TestEndToEndSendRecvC2C(t *testing.T) {
 }
 
 func TestGroupInfoAndMemberListDecoders(t *testing.T) {
-	gi := append(EncodeField(1, WTLen, EncodeMessage([]byte("g"))), EncodeField(4, WTVarint, EncodeVarint(big.NewInt(9)))...)
+	gi := append(EncodeField(1, WTLen, EncodeMessage([]byte("g"))), EncodeField(4, WTVarint, EncodeVarint(9))...)
 	rsp := append(EncodeField(2, WTLen, EncodeMessage([]byte("ok"))), EncodeField(3, WTLen, EncodeMessage(gi))...)
 	got, _ := jsonutil.Encode(DecodeQueryGroupInfoRsp(rsp))
 	if got != `{"code": 0, "message": "ok", "group_name": "g", "owner_id": "", "owner_nickname": "", "member_count": 9}` {

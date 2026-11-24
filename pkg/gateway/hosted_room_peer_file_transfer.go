@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Raw bytes one file request carries between two gateways
@@ -103,7 +103,7 @@ func (c *PeerRunsHTTPClient) SendFile(_ context.Context, grant string, file map[
 		lost := false
 		for held < size && !lost {
 			end := min(size, held+peerFileChunkBytes)
-			answer, err = c.request("/v1/room-members/files/"+pyurl.Quote(fileID, ""), "PUT",
+			answer, err = c.request("/v1/room-members/files/"+urlutil.Escape(fileID, ""), "PUT",
 				jsonutil.ObjectOf("offset", held, "data_base64", base64.StdEncoding.EncodeToString(data[held:end])), nil, scoped)
 			var failure *PeerRunsHTTPError
 			switch {
@@ -212,7 +212,7 @@ func (c *PeerRunsHTTPClient) pullFile(fileID, name string, size int64, digest, g
 		pkgLog().Info(fmt.Sprintf("hosted room reply file %s resumed at %d of %d bytes", name, len(data), size))
 	}
 	for int64(len(data)) < size {
-		path := "/v1/room-members/files/" + pyurl.Quote(fileID, "") + "?offset=" + strconv.Itoa(len(data))
+		path := "/v1/room-members/files/" + urlutil.Escape(fileID, "") + "?offset=" + strconv.Itoa(len(data))
 		answer, err := c.request(path, "GET", nil, nil, grant)
 		if err != nil {
 			c.mu.Lock()

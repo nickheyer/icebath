@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -25,7 +26,6 @@ import (
 	"encoding/base64"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -436,8 +436,8 @@ func absoluteGit(gitCmd []string) string {
 	if len(gitCmd) > 0 {
 		head = gitCmd[0]
 	}
-	found, ok := pyshutil.Which(head, nil)
-	if !ok || found == "" {
+	found, err := exec.LookPath(head)
+	if err != nil || found == "" {
 		return ""
 	}
 	abs, err := filepath.Abs(found)
@@ -578,7 +578,7 @@ func requiresOtherPython(pyproject []byte) (bool, error) {
 // Stdout of a read only interpreter child, false when it could not run or exited nonzero
 func runPython(ctx context.Context, argv []string, stdin string, timeout time.Duration) (string, bool) {
 	done, err := executil.Run(ctx, argv, executil.Options{Input: []byte(stdin), Timeout: timeout, Attr: tools.WindowsHideAttr()})
-	if err != nil || done == nil || done.Returncode != 0 {
+	if err != nil || done == nil || done.ExitCode != 0 {
 		return "", false
 	}
 	return textutil.NormalizeNewlines(strings.ToValidUTF8(string(done.Stdout), "\uFFFD")), true
@@ -617,17 +617,13 @@ func admittedPython(ctx context.Context, spec string) (string, bool, error) {
 	return "", false, nil
 }
 
-// First source the running interpreter's compiler rejects, with its exception class and text
+// First source the compiler rejects, with the kind and text of its error
 func compileHere(sources []sourceFile) (*syntaxFault, error) {
 	for _, source := range sources {
 		if err := pythonutil.Compile(source.Data, source.Rel); err != nil {
 			var syntax *pythonutil.SyntaxError
 			if errors.As(err, &syntax) {
-				return &syntaxFault{Path: source.Rel, Error: syntax.Class + ": " + syntax.Error()}, nil
-			}
-			var other *pythonutil.LimitError
-			if errors.As(err, &other) && other.Class == "ValueError" {
-				return &syntaxFault{Path: source.Rel, Error: other.Msg}, nil
+				return &syntaxFault{Path: source.Rel, Error: syntax.Kind.String() + ": " + syntax.Error()}, nil
 			}
 			return nil, err
 		}

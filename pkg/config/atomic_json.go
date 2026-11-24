@@ -57,7 +57,7 @@ func AtomicJSONWriteMode(ctx context.Context, path string, data any, mode os.Fil
 
 // JSON text of data under the dump options, raw UTF-8 unless the payload holds surrogate escapes
 func atomicJSONText(data any, opts []jsonutil.Option) (string, error) {
-	text, err := jsonutil.Encode(data, append(append([]jsonutil.Option{}, opts...))...)
+	text, err := jsonutil.Encode(data, opts...)
 	if err != nil {
 		return "", err
 	}

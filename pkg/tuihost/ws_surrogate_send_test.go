@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Lone high surrogate U+D83D as a str holds it
@@ -17,7 +17,7 @@ const loneSurrogate = "\xed\xa0\xbd"
 func TestSanitizeWsTextMakesUtf8Encodable(t *testing.T) {
 	dirty := "gateway.ready " + loneSurrogate + " payload"
 	out := sanitizeWSText(dirty)
-	if !utf8.ValidString(out) || pystr.StrictUTF8EncodeError(out) != nil {
+	if !utf8.ValidString(out) || textutil.ValidateUTF8(out) != nil {
 		t.Fatalf("not encodable: %q", out)
 	}
 	if strings.Contains(out, loneSurrogate) {
@@ -40,11 +40,11 @@ type encodingWS struct {
 }
 
 func (w *encodingWS) SendText(ctx context.Context, line string) error {
-	if err := pystr.StrictUTF8EncodeError(line); err != nil {
+	if err := textutil.ValidateUTF8(line); err != nil {
 		return err
 	}
 	if w.raiseOn != "" && strings.Contains(line, w.raiseOn) {
-		return pystr.StrictUTF8EncodeError(loneSurrogate)
+		return textutil.ValidateUTF8(loneSurrogate)
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()

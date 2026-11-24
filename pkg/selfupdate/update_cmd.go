@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/google/uuid"
 
@@ -192,21 +191,6 @@ func healStaleShallowCheckout(ctx context.Context, w io.Writer, repoRoot, branch
 	return nil
 }
 
-// Words of a compiler error class, IndentationError reading indentation error
-func compileErrorWords(class string) string {
-	if class == "" {
-		class = "SyntaxError"
-	}
-	var b strings.Builder
-	for i, r := range class {
-		if i > 0 && unicode.IsUpper(r) {
-			b.WriteByte(' ')
-		}
-		b.WriteRune(unicode.ToLower(r))
-	}
-	return b.String()
-}
-
 // One line naming where a Python source fails to compile and why
 func pyCompileErrorMessage(err error, file string) string {
 	var se *pythonutil.SyntaxError
@@ -215,14 +199,14 @@ func pyCompileErrorMessage(err error, file string) string {
 		if msg == "" {
 			msg = "no detail available"
 		}
-		if se.HasLineno {
-			return fmt.Sprintf("%s at line %d, column %d: %s", compileErrorWords(se.Class), se.Lineno, max(se.Offset, 1), msg)
+		if se.Line > 0 {
+			return fmt.Sprintf("%s at line %d, column %d: %s", se.Kind, se.Line, max(se.Column, 1), msg)
 		}
-		return compileErrorWords(se.Class) + ": " + msg
+		return se.Kind.String() + ": " + msg
 	}
 	var limit *pythonutil.LimitError
 	if errors.As(err, &limit) {
-		return "the source exceeds a compiler limit: " + limit.Msg
+		return "the source exceeds a compiler limit: " + limit.Error()
 	}
 	return "the source does not compile: " + err.Error()
 }
@@ -341,7 +325,7 @@ func asCalledProcessError(err error) (*calledProcess, bool) {
 	}
 	var plain *executil.StatusError
 	if errors.As(err, &plain) {
-		return &calledProcess{Cmd: plain.Cmd, ReturnCode: plain.Returncode, Stdout: strings.ToValidUTF8(string(plain.Stdout), "\uFFFD"),
+		return &calledProcess{Cmd: plain.Args, ReturnCode: plain.ExitCode, Stdout: strings.ToValidUTF8(string(plain.Stdout), "\uFFFD"),
 			Stderr: strings.ToValidUTF8(string(plain.Stderr), "\uFFFD")}, true
 	}
 	var worker *pm.CalledProcessError

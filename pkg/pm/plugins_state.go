@@ -76,7 +76,7 @@ func ReadHomeSelection(ctx context.Context, homeDir string) (map[string]any, err
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			return nil, nil
-		case config.IsOSError(err), errors.As(err, &load) && strings.HasPrefix(load.PyTypeName(), "Unicode"):
+		case config.IsOSError(err), errors.As(err, &load) && strings.HasPrefix(load.ErrorKind(), "Unicode"):
 			return nil, unreadable
 		case errors.As(err, &load) && ry.IsYAMLError(load.Err):
 			return nil, &PyError{Class: "ValueError", Message: "could not parse plugin selection: " + configPath}

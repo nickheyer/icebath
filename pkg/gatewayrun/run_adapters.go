@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Home of a named routed profile, the unresolved marker never standing for the launch profile
@@ -153,7 +153,7 @@ func (r *GatewayRunner) connectAdapterBounded(ctx context.Context, adapter gatew
 
 // Python format of a float under the g presentation
 func pyFormatG(value float64) string {
-	text, err := pyrepr.Format(value, "g")
+	text, err := templateutil.Format("{v:g}", map[string]any{"v": value})
 	if err != nil {
 		return anyutil.String(value)
 	}

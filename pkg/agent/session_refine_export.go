@@ -15,7 +15,7 @@ func (r *backgroundReviewRun) MarkRequestFinished() bool { return r.markRequestF
 func (r *backgroundReviewRun) SetRequestDone() { r.requestDone.Set() }
 
 // Blocks until the run's request phase has exited
-func (r *backgroundReviewRun) WaitRequestDone() { r.requestDone.Wait(-1) }
+func (r *backgroundReviewRun) WaitRequestDone() { r.requestDone.Wait() }
 
 // Spawns or idle queues a background review with the focus text and explicit flag of a refine request
 func (a *AIAgent) SpawnBackgroundReview(ctx context.Context, messagesSnapshot []map[string]any, reviewMemory, reviewSkills bool, focus *string, explicit bool) {

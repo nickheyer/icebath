@@ -14,8 +14,8 @@ import (
 	"github.com/line/line-bot-sdk-go/v8/linebot/webhook"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -61,17 +61,17 @@ var mdStripRules = []struct {
 	re   *regexp2.Regexp
 	repl func(m regexp2.Match) string
 }{
-	{pyre.MustCompile("(?s)```[a-zA-Z0-9_+-]*\\n?(.*?)```"), func(m regexp2.Match) string {
+	{regexutil.MustCompile("(?s)```[a-zA-Z0-9_+-]*\\n?(.*?)```"), func(m regexp2.Match) string {
 		return strings.TrimRight(m.GroupByNumber(1).String(), "\n")
 	}},
-	{pyre.MustCompile("`([^`]+)`"), group1},
-	{pyre.MustCompile(`\[([^\]]+)\]\((https?://[^\s)]+)\)`), func(m regexp2.Match) string {
+	{regexutil.MustCompile("`([^`]+)`"), group1},
+	{regexutil.MustCompile(`\[([^\]]+)\]\((https?://[^\s)]+)\)`), func(m regexp2.Match) string {
 		return m.GroupByNumber(1).String() + " (" + m.GroupByNumber(2).String() + ")"
 	}},
-	{pyre.MustCompile(`\*\*(.+?)\*\*`), group1},
-	{pyre.MustCompile(`(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)`), group1},
-	{pyre.MustCompile(`(?m)^#{1,6}\s+`), func(regexp2.Match) string { return "" }},
-	{pyre.MustCompile(`(?m)^[\s]*[-*+]\s+`), func(regexp2.Match) string { return "• " }},
+	{regexutil.MustCompile(`\*\*(.+?)\*\*`), group1},
+	{regexutil.MustCompile(`(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)`), group1},
+	{regexutil.MustCompile(`(?m)^#{1,6}\s+`), func(regexp2.Match) string { return "" }},
+	{regexutil.MustCompile(`(?m)^[\s]*[-*+]\s+`), func(regexp2.Match) string { return "• " }},
 }
 
 // First capture group of a match

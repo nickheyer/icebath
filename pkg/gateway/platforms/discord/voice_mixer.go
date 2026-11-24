@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,8 +15,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // Mixer PCM geometry, 48 kHz stereo signed 16 bit little endian in 20 millisecond frames
@@ -281,14 +283,14 @@ func decodeToPCM(ctx context.Context, path string, timeout time.Duration) []byte
 
 // Synthesised looping ambient bed of two detuned partials under a slow tremolo plus default_rng(7) smoothed noise
 func synthAmbientPCM(seconds float64) ([]byte, error) {
-	count, err := pyint.Of(float64(mixerSampleRate * seconds))
+	count, err := anyutil.ToInt(float64(mixerSampleRate * seconds))
+	if errors.Is(err, anyutil.ErrRange) && !math.IsInf(seconds, 0) {
+		return nil, errors.New("Maximum allowed size exceeded")
+	}
 	if err != nil {
 		return nil, err
 	}
-	if !count.IsInt64() {
-		return nil, errors.New("Maximum allowed size exceeded")
-	}
-	n := int(count.Int64())
+	n := int(count)
 	if seconds == 0 {
 		return nil, &errorutil.Error{Kind: "ZeroDivisionError", Msg: "division by zero"}
 	}
@@ -298,20 +300,19 @@ func synthAmbientPCM(seconds float64) ([]byte, error) {
 	}
 	f1, f2, trem := wholeCycle(110.0), wholeCycle(110.5), wholeCycle(0.5)
 	w1, w2, w3 := 2*math.Pi*f1, 2*math.Pi*f2, 2*math.Pi*trem
-	noise, err := pynumpy.DefaultRNG(7).StandardNormal(n)
-	if err != nil {
-		return nil, err
+	if n < 0 {
+		return nil, fmt.Errorf("negative ambient bed length %v s", seconds)
 	}
-	if noise, err = pynumpy.ConvolveSameBox64(noise); err != nil {
-		return nil, err
+	rng := rand.New(rand.NewPCG(7, 0))
+	noise := make([]float64, n)
+	for i := range noise {
+		noise[i] = rng.NormFloat64()
 	}
-	if n != len(noise) && n != 1 {
-		return nil, fmt.Errorf("operands could not be broadcast together with shapes (%d,) (%d,) ", n, len(noise))
-	}
+	noise = mathutil.MovingAverage(noise, 64)
 	signal := make([]float64, len(noise))
 	peak := 0.0
 	for i := range signal {
-		t := float64(min(i, n-1)) / mixerSampleRate
+		t := float64(i) / mixerSampleRate
 		pad := float64(0.55*math.Sin(float64(w1*t))) + float64(0.45*math.Sin(float64(w2*t)))
 		tremolo := 0.6 + float64(0.4*float64(0.5*float64(1+math.Sin(float64(w3*t)))))
 		signal[i] = float64(pad*tremolo) + float64(0.08*noise[i])

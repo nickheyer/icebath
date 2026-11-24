@@ -21,10 +21,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Usage record keys whose first parseable value dates a skill
@@ -212,56 +212,11 @@ func invalidISOFormat(s string) error {
 
 // Parses an ISO 8601 string with the rules of CPython datetime fromisoformat, naive results in UTC
 func pyFromISOFormat(s string) (time.Time, error) {
-	rs := []rune(s)
-	if len(rs) < 7 {
+	t, err := timeutil.ParseISO(s, time.UTC)
+	if err != nil {
 		return time.Time{}, invalidISOFormat(s)
 	}
-	sep, ok := isoDatetimeSeparator(rs)
-	if !ok {
-		return time.Time{}, invalidISOFormat(s)
-	}
-	year, month, day, ok := isoParseDate(string(rs[:min(sep, len(rs))]))
-	if !ok {
-		return time.Time{}, invalidISOFormat(s)
-	}
-	hour, minute, second, micro := 0, 0, 0, 0
-	offset := time.Duration(0)
-	if len(rs) > sep {
-		var offSeconds, offMicro int
-		var aware bool
-		hour, minute, second, micro, offSeconds, offMicro, aware, ok = isoParseTime(string(rs[sep+1:]))
-		if !ok {
-			return time.Time{}, invalidISOFormat(s)
-		}
-		if aware {
-			offset = time.Duration(offSeconds)*time.Second + time.Duration(offMicro)*time.Microsecond
-			if offset <= -24*time.Hour || offset >= 24*time.Hour {
-				return time.Time{}, fmt.Errorf("offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not %s.", pyTimedeltaRepr(offset))
-			}
-		}
-	}
-	if hour == 24 {
-		if minute != 0 || second != 0 || micro != 0 {
-			return time.Time{}, fmt.Errorf("minute, second, and microsecond must be 0 when hour is 24")
-		}
-		hour = 0
-		day++
-		if month >= 1 && month <= 12 && year >= 1 && day > daysInMonth(year, month) {
-			day = 1
-			month++
-			if month > 12 {
-				month = 1
-				year++
-			}
-		}
-	}
-	if msg := pydatetime.DateArgsError(year, month, day); msg != "" {
-		return time.Time{}, fmt.Errorf("%s", msg)
-	}
-	if msg := pydatetime.TimeArgsError(hour, minute, second); msg != "" {
-		return time.Time{}, fmt.Errorf("%s", msg)
-	}
-	return time.Date(year, time.Month(month), day, hour, minute, second, micro*1000, time.UTC).Add(-offset), nil
+	return t.UTC(), nil
 }
 
 // Python repr of a timedelta offset for the out of range message

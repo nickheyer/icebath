@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 const journalHint = `journalctl --user -u icebath-gateway --since "5 min ago"`
@@ -45,7 +46,7 @@ func ExplainServiceFailure(err error) []string {
 	case errors.As(err, &gwErr):
 		cmd, err = gwErr.Cmd, gwErr
 	case errors.As(err, &spErr):
-		cmd, err = spErr.Cmd, spErr
+		cmd, err = spErr.Args, spErr
 	default:
 		return nil
 	}

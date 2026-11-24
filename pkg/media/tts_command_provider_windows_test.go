@@ -10,7 +10,7 @@ func TestTTSCommandWindowsConsoleHidden(t *testing.T) {
 	t.Run("test_popen_kwargs_hide_console_window_windows", func(t *testing.T) {
 		got := captureCommandSpawn(t)
 		res, err := runCommandProvider(context.Background(), nil, "echo hi", 5, nil)
-		if err != nil || res.Returncode != 0 {
+		if err != nil || res.ExitCode != 0 {
 			t.Fatalf("run = %v, %v", res, err)
 		}
 		flags := got.cmd.SysProcAttr.CreationFlags

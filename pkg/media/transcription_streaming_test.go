@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
@@ -76,7 +77,7 @@ func TestLiveSessionStreamsPartialsBeforeEndAndKeepsEarlyAudio(t *testing.T) {
 	session.Start()
 	session.PushAudio([]byte(strings.Repeat("\x01\x00", 160)))
 	session.PushAudio([]byte(strings.Repeat("\x02\x00", 160)))
-	if !seenPartial.Wait(5) {
+	if !seenPartial.WaitTimeout(5 * time.Second) {
 		t.Fatal("a partial must arrive while audio is still streaming")
 	}
 	result := session.Finalize(5)

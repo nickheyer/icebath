@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -28,15 +29,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
 // Decoded result of one worktree git call
 type worktreeGitResult struct {
-	Returncode int
-	Stdout     string
-	Stderr     string
+	ExitCode int
+	Stdout   string
+	Stderr   string
 }
 
 // Runs git in cwd capturing utf-8 text with replacement, env nil inherits the process environment
@@ -49,7 +49,7 @@ func worktreeGit(args []string, cwd string, timeout time.Duration, env map[strin
 	if err != nil {
 		return nil, err
 	}
-	return &worktreeGitResult{r.Returncode, strings.ToValidUTF8(string(r.Stdout), "\uFFFD"), strings.ToValidUTF8(string(r.Stderr), "\uFFFD")}, nil
+	return &worktreeGitResult{r.ExitCode, strings.ToValidUTF8(string(r.Stdout), "\uFFFD"), strings.ToValidUTF8(string(r.Stderr), "\uFFFD")}, nil
 }
 
 // Stripped stdout with ok false on a non zero exit, errors raise like the git call
@@ -58,7 +58,7 @@ func worktreeGitOut(args []string, cwd string, timeout time.Duration) (string, b
 	if err != nil {
 		return "", false, err
 	}
-	if r.Returncode != 0 {
+	if r.ExitCode != 0 {
 		return "", false, nil
 	}
 	return strings.TrimSpace(r.Stdout), true, nil
@@ -262,7 +262,7 @@ func worktreeIsDirty(worktreePath, repoRoot string, timeout time.Duration) bool 
 		return true
 	}
 	r, err := worktreeGit([]string{"status", "--porcelain", "-z", "--untracked-files=normal"}, worktreePath, timeout, env)
-	if err != nil || r.Returncode != 0 {
+	if err != nil || r.ExitCode != 0 {
 		return true
 	}
 	var entries []string
@@ -339,7 +339,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 				envLog(nil).Debug(fmt.Sprintf("Deepening shallow repo failed (non-fatal): %s", err))
 				return true
 			}
-			if r.Returncode == 0 {
+			if r.ExitCode == 0 {
 				break
 			}
 			label := ""
@@ -479,11 +479,11 @@ func worktreeCommitsAllMergedUpstream(worktreePath string, timeout time.Duration
 	if ahead == "" {
 		ahead = "0"
 	}
-	n, okN := pyint.Parse(ahead)
-	if !okN {
+	n, err := strconv.ParseInt(strings.TrimSpace(ahead), 10, 64)
+	if err != nil {
 		return false
 	}
-	count := n.Int64()
+	count := n
 	if count == 0 {
 		return memo(true)
 	}
@@ -491,7 +491,7 @@ func worktreeCommitsAllMergedUpstream(worktreePath string, timeout time.Duration
 		return memo(false)
 	}
 	cherry, err := worktreeGit([]string{"cherry", base, "HEAD"}, worktreePath, timeout, nil)
-	if err != nil || cherry.Returncode != 0 {
+	if err != nil || cherry.ExitCode != 0 {
 		return false
 	}
 	var lines []string
@@ -522,7 +522,7 @@ var worktreeGhRun = func(args []string, cwd string, timeout time.Duration) (*wor
 	if err != nil {
 		return nil, err
 	}
-	return &worktreeGitResult{r.Returncode, strings.ToValidUTF8(string(r.Stdout), "\uFFFD"), strings.ToValidUTF8(string(r.Stderr), "\uFFFD")}, nil
+	return &worktreeGitResult{r.ExitCode, strings.ToValidUTF8(string(r.Stdout), "\uFFFD"), strings.ToValidUTF8(string(r.Stderr), "\uFFFD")}, nil
 }
 
 // Whether the branch pull request is merged on GitHub, caching only true verdicts per branch and head
@@ -545,7 +545,7 @@ func worktreeBranchPRMerged(worktreePath string, timeout time.Duration, cache *m
 		}
 	}
 	r, err := worktreeGhRun([]string{"pr", "list", "--head", branch, "--state", "merged", "--json", "number", "--limit", "1"}, worktreePath, timeout)
-	if err != nil || r.Returncode != 0 {
+	if err != nil || r.ExitCode != 0 {
 		return false
 	}
 	text := r.Stdout
@@ -567,7 +567,7 @@ func worktreeBranchPRMerged(worktreePath string, timeout time.Duration, cache *m
 // Branch to sha map of every origin branch from one ls-remote, nil when origin cannot be read
 func fetchRemoteBranchHeads(repoRoot string, timeout time.Duration) map[string]string {
 	r, err := worktreeGit([]string{"ls-remote", "--heads", "origin"}, repoRoot, timeout, NoninteractiveGitEnv(nil))
-	if err != nil || r.Returncode != 0 {
+	if err != nil || r.ExitCode != 0 {
 		return nil
 	}
 	heads := map[string]string{}
@@ -607,7 +607,7 @@ func retainWorktreeForSession(repoRoot, worktreePath, sessionID, dbPath string) 
 		envLog(nil).Debug(fmt.Sprintf("worktree retain lock failed for %s: %s", worktreePath, err))
 		return false
 	}
-	return r.Returncode == 0
+	return r.ExitCode == 0
 }
 
 // Native path identity of a spelling, the os.path.normcase tests patch
@@ -908,11 +908,11 @@ func worktreeLockIsLive(repoRoot, worktreePath string, timeout time.Duration) st
 	}
 	hasPid, hasDB := m[2] >= 0, m[4] >= 0
 	if hasPid {
-		n, ok := pyint.Parse((*reason)[m[2]:m[3]])
-		if !ok || !n.IsInt64() {
+		n, err := strconv.ParseInt(strings.TrimSpace((*reason)[m[2]:m[3]]), 10, 64)
+		if err != nil {
 			return "live"
 		}
-		pid := n.Int64()
+		pid := n
 		if pid == int64(os.Getpid()) {
 			return "live"
 		}
@@ -1082,7 +1082,7 @@ func reapPruneVerdicts(repoRoot string, verdicts []pruneVerdict, staleWorkCutoff
 			if err != nil {
 				return err
 			}
-			if rm.Returncode != 0 {
+			if rm.ExitCode != 0 {
 				envLog(nil).Debug(fmt.Sprintf("Failed to remove worktree %s: %s", name, strings.TrimSpace(rm.Stderr)))
 				return nil
 			}

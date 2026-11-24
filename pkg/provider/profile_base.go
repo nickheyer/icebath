@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
@@ -186,11 +185,11 @@ func (h *LazyHeaders) Items() [][2]string {
 
 // Copy returns a plain resolved map
 func (h *LazyHeaders) Copy() map[string]string {
-	var lines []pyhttpx.HeaderLine
+	var lines []headerField
 	for _, kv := range h.Items() {
-		lines = append(lines, pyhttpx.HeaderLine{Name: kv[0], Value: kv[1]})
+		lines = append(lines, headerField{Name: kv[0], Value: kv[1]})
 	}
-	return pyhttpx.OrderedHeaderMap(lines...)
+	return fieldMap(lines...)
 }
 
 // Set stores a value after resolving, appending a new key at the end
@@ -360,7 +359,7 @@ func (p Profile) DefaultHeaders() map[string]string {
 	if p.LazyHeaders != nil {
 		return p.LazyHeaders.Copy()
 	}
-	return pyhttpx.MergeHeaderMaps(p.Headers)
+	return MergeHeaderMaps(p.Headers)
 }
 
 // ModelAliasMap returns the provider native model alias table
@@ -602,16 +601,16 @@ func (p Profile) FetchModels(ctx context.Context, apiKey, baseURL string, timeou
 			target = strings.TrimRight(effectiveBase, "/") + "/models"
 		}
 	}
-	var lines []pyhttpx.HeaderLine
+	var lines []headerField
 	if apiKey != "" {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey})
+		lines = append(lines, headerField{Name: "Authorization", Value: "Bearer " + apiKey})
 	}
-	lines = append(lines, pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "User-Agent", Value: profileUserAgent()})
+	lines = append(lines, headerField{Name: "Accept", Value: "application/json"}, headerField{Name: "User-Agent", Value: profileUserAgent()})
 	defaults := p.DefaultHeaders()
 	for _, k := range slices.Sorted(maps.Keys(defaults)) {
-		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: defaults[k]})
+		lines = append(lines, headerField{Name: k, Value: defaults[k]})
 	}
-	headers := pyhttpx.OrderedHeaderMap(lines...)
+	headers := fieldMap(lines...)
 	data, err := modelsGetJSON(ctx, target, timeout, headers, nil)
 	if err != nil {
 		pkgLog().Debug("fetch_models(" + p.Name + "): " + err.Error())

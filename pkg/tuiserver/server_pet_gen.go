@@ -21,9 +21,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 )
 
@@ -161,8 +161,8 @@ var petReferenceRe = regexp.MustCompile(`(?s)^data:image/([a-zA-Z0-9.+-]+);base6
 // Value error of a rejected reference image
 type petReferenceError struct{ msg string }
 
-func (e *petReferenceError) Error() string      { return e.msg }
-func (e *petReferenceError) PyTypeName() string { return "ValueError" }
+func (e *petReferenceError) Error() string     { return e.msg }
+func (e *petReferenceError) ErrorKind() string { return "ValueError" }
 
 // Decodes and validates a reference image data URL into the stage directory
 func petReferenceImagesFromDataURL(refRaw, stage string) ([]string, error) {
@@ -225,7 +225,7 @@ func petConfigBlock(cfg map[string]any) (map[string]any, any, error) {
 	}
 	displayMap, isDict := display.(map[string]any)
 	if !isDict {
-		return nil, nil, &pyrepr.FormatError{Class: "AttributeError", Msg: "the display section of the config must be a mapping, got " + errchain.Kind(display)}
+		return nil, nil, &errorutil.Error{Kind: "AttributeError", Msg: "the display section of the config must be a mapping, got " + errchain.Kind(display)}
 	}
 	petVal, present := displayMap["pet"]
 	if !present {
@@ -257,7 +257,7 @@ func updatePetConfig(ctx context.Context, whenSlug *string, values map[string]an
 		}
 	}
 	if petMap == nil {
-		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "display.pet in the config must be a mapping, got " + errchain.Kind(petVal)}
+		return false, &errorutil.Error{Kind: "AttributeError", Msg: "display.pet in the config must be a mapping, got " + errchain.Kind(petVal)}
 	}
 	for key, value := range values {
 		petMap[key] = value

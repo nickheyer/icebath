@@ -16,7 +16,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
@@ -172,7 +171,7 @@ func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[strin
 				continue
 			}
 		case []any, *jsonutil.Object:
-			return nil, &pyjson.TypeError{Msg: "a process checkpoint session id is " + errchain.Kind(id) + ", expected text"}
+			return nil, errors.New("a process checkpoint session id is " + errchain.Kind(id) + ", expected text")
 		}
 		log := adoptableLog(env, entry.Value("output_log"))
 		if log == "" {
@@ -221,7 +220,7 @@ type checkpointItemError struct{ msg string }
 func (e *checkpointItemError) Error() string { return e.msg }
 
 // Python class name of the error
-func (e *checkpointItemError) PyTypeName() string { return "AttributeError" }
+func (e *checkpointItemError) ErrorKind() string { return "AttributeError" }
 
 // Items a for loop yields over a decoded JSON value, the TypeError of a value that is not iterable
 func checkpointItems(v any) ([]any, error) {
@@ -242,7 +241,7 @@ func checkpointItems(v any) ([]any, error) {
 		}
 		return chars, nil
 	}
-	return nil, &pyjson.TypeError{Msg: fmt.Sprintf("the process checkpoint is %s, expected a list", errchain.Kind(v))}
+	return nil, fmt.Errorf("the process checkpoint is %s, expected a list", errchain.Kind(v))
 }
 
 // RecoverFromCheckpoint probes the checkpointed pids at startup and re adopts the live ones as detached sessions

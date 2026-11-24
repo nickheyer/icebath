@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -106,11 +106,11 @@ func (s *Store) CatchUpOccurrenceCount() int {
 	if err != nil {
 		return 0
 	}
-	n, ok := pyint.Parse(strings.TrimSpace(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")))
-	if !ok || n.Sign() < 0 || !n.IsInt64() {
+	n, err := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")), 10, 64)
+	if err != nil || n < 0 {
 		return 0
 	}
-	return int(n.Int64())
+	return int(n)
 }
 
 // Counts one catch up run in the store marker

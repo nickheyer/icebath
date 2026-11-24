@@ -4,18 +4,17 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Python exception raised by the engine, str giving the message the script would print
@@ -27,7 +26,7 @@ type PyError struct {
 func (e *PyError) Error() string { return e.Msg }
 
 // Python exception class name of the error
-func (e *PyError) PyTypeName() string { return e.Type }
+func (e *PyError) ErrorKind() string { return e.Type }
 
 // Carrier of a raised exception through a panic, recovered at the engine entry points
 type raised struct{ err error }
@@ -354,14 +353,14 @@ func pyInt(v any) (int, error) {
 		}
 		return 0, nil
 	case string:
-		n, ok := pystr.IntText(x)
-		if !ok {
+		n, err := textutil.ParseInt(x)
+		if errors.Is(err, strconv.ErrRange) {
+			return 0, &PyError{Type: "OverflowError", Msg: "the number " + strings.TrimSpace(x) + " is larger than a 64 bit integer holds"}
+		}
+		if err != nil {
 			return 0, &PyError{Type: "ValueError", Msg: x + " is not a whole number"}
 		}
-		if !n.IsInt64() {
-			return 0, &PyError{Type: "OverflowError", Msg: "the number " + n.String() + " is larger than a 64 bit integer holds"}
-		}
-		return int(n.Int64()), nil
+		return int(n), nil
 	case float64:
 		if math.IsNaN(x) {
 			return 0, &PyError{Type: "ValueError", Msg: "NaN is not a whole number"}
@@ -371,30 +370,30 @@ func pyInt(v any) (int, error) {
 		}
 		return int(math.Trunc(x)), nil
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		if !n.IsInt64() {
-			return 0, &PyError{Type: "OverflowError", Msg: "the number " + n.String() + " is larger than a 64 bit integer holds"}
-		}
-		return int(n.Int64()), nil
+	if n, ok := anyutil.Int(v); ok {
+		return int(n), nil
+	}
+	if anyutil.Kind(v) == "integer" {
+		return 0, &PyError{Type: "OverflowError", Msg: "the number " + anyutil.String(v) + " is larger than a 64 bit integer holds"}
 	}
 	return 0, &PyError{Type: "TypeError", Msg: "expected a whole number, got " + errchain.Kind(v)}
 }
 
 // Numeric value of an int, bool or float for arithmetic, false for any other type
-func pyNumber(v any) (*big.Int, float64, bool, bool) {
+func pyNumber(v any) (int64, float64, bool, bool) {
 	switch x := v.(type) {
 	case bool:
 		if x {
-			return big.NewInt(1), 0, false, true
+			return 1, 0, false, true
 		}
-		return big.NewInt(0), 0, false, true
+		return 0, 0, false, true
 	case float64:
-		return nil, x, true, true
+		return 0, x, true, true
 	}
-	if n, ok := pyrepr.Int(v); ok {
+	if n, ok := anyutil.Int(v); ok {
 		return n, 0, false, true
 	}
-	return nil, 0, false, false
+	return 0, 0, false, false
 }
 
 // Python min(v // 10, 200), Euclidean division by a positive divisor being floor division
@@ -413,15 +412,11 @@ func floorDiv10Min200(v any) any {
 		}
 		return q
 	}
-	q, m := new(big.Int), new(big.Int)
-	q.DivMod(n, big.NewInt(10), m)
-	if q.Cmp(big.NewInt(200)) > 0 {
-		return int64(200)
+	q := n / 10
+	if n%10 < 0 {
+		q--
 	}
-	if q.IsInt64() {
-		return q.Int64()
-	}
-	return q
+	return min(q, 200)
 }
 
 // Python list(dict.fromkeys(values)), TypeError for an unhashable element
@@ -478,13 +473,13 @@ func numLess(a, b any) bool {
 	an, af, aFloat, _ := pyNumber(a)
 	bn, bf, bFloat, _ := pyNumber(b)
 	if !aFloat && !bFloat {
-		return an.Cmp(bn) < 0
+		return an < bn
 	}
 	if !aFloat {
-		af, _ = new(big.Float).SetInt(an).Float64()
+		af = float64(an)
 	}
 	if !bFloat {
-		bf, _ = new(big.Float).SetInt(bn).Float64()
+		bf = float64(bn)
 	}
 	return af < bf
 }

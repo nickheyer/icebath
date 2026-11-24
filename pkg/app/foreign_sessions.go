@@ -20,20 +20,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const foreignTitleMax = 60
 
 var foreignWrapperTagRE = func() *regexp2.Regexp {
-	re, err := pyre.CompileIgnoreCase(`^<(?:user_instructions|environment_context|recommended_plugins|` +
-		`skills_instructions|permissions[_-]instructions|turn_context|` +
-		`command-name|command-message|local-command-stdout|system-reminder)\b`)
+	re, err := regexutil.Compile(`^<(?:user_instructions|environment_context|recommended_plugins|`+
+		`skills_instructions|permissions[_-]instructions|turn_context|`+
+		`command-name|command-message|local-command-stdout|system-reminder)\b`, regexutil.IgnoreCase())
 	if err != nil {
 		panic(err)
 	}

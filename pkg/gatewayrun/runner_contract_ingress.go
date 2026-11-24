@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 var _ gateway.RunnerIngressContract = (*GatewayRunner)(nil)

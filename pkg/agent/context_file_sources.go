@@ -8,9 +8,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Glyph and trailing note of each context file status, an empty note meaning none
@@ -158,7 +158,7 @@ func RenderContextFileLines(sources []ContextFileSource) []string {
 		if display[1] != "" {
 			suffix = "  (" + display[1] + ")"
 		}
-		row, _ := i18n.PyFormat("{glyph} {label:<{width}} ~{tokens:>9,} tokens{suffix}",
+		row, _ := templateutil.Format("{glyph} {label:<{width}} ~{tokens:>9,} tokens{suffix}",
 			map[string]any{"glyph": display[0], "label": src.Label, "width": width, "tokens": src.EstTokens, "suffix": suffix})
 		lines = append(lines, row)
 	}

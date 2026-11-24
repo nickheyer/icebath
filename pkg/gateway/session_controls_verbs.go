@@ -5,12 +5,10 @@ import (
 	"errors"
 	"maps"
 	"math"
-	"math/big"
 	"slices"
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -34,8 +32,8 @@ func generationParam(value any) int64 {
 		}
 		return absentGeneration
 	}
-	if n, ok := pyrepr.Int(value); ok && n.IsInt64() {
-		return n.Int64()
+	if n, ok := anyutil.Int(value); ok {
+		return n
 	}
 	return absentGeneration
 }
@@ -359,8 +357,8 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 		return nil, runtimeRefusal("permission_denied")
 	}
 	limit, isInt := strictInt(params.ValueOr("limit", int64(200)))
-	if paramsOutside(params, "limit", "title", "include_hidden", "include_archived", "scope") || !isInt || limit.Cmp(big.NewInt(1)) < 0 ||
-		limit.Cmp(big.NewInt(200)) > 0 {
+	if paramsOutside(params, "limit", "title", "include_hidden", "include_archived", "scope") || !isInt || limit < 1 ||
+		limit > 200 {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	scope := params.ValueOr("scope", "live")
@@ -375,7 +373,7 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 	}
 	a := c.authority
 	if scope == "stored" {
-		return storedPickerSessions(ctx, a, c.actor, int(limit.Int64()), pyTruthy(params.ValueOr("include_hidden", false)), pyTruthy(params.ValueOr("include_archived", false)))
+		return storedPickerSessions(ctx, a, c.actor, int(limit), pyTruthy(params.ValueOr("include_hidden", false)), pyTruthy(params.ValueOr("include_archived", false)))
 	}
 	if hasTitle {
 		title := params.ValueOr("title", nil)
@@ -450,7 +448,7 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 	})
 	out := []any{}
 	for i, session := range sessions {
-		if i >= int(limit.Int64()) {
+		if i >= int(limit) {
 			break
 		}
 		out = append(out, session)

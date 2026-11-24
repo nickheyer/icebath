@@ -46,7 +46,7 @@ func TestMacosRefreshRegistersPostEnsureSignedApp(t *testing.T) {
 		var registered [][]string
 		cuSwap(t, &cuaSetupRunText, func(argv []string, _ float64, _ map[string]string, _ bool) (*completedProcess, error) {
 			registered = append(registered, slices.Clone(argv))
-			return &completedProcess{Args: argv, Returncode: registrationExit}, nil
+			return &completedProcess{Args: argv, ExitCode: registrationExit}, nil
 		})
 		var out bytes.Buffer
 		if _, err := InstallCuaDriver(context.Background(), &out, false); err != nil {

@@ -15,7 +15,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	userutil "github.com/nickheyer/icebath/pkg/utils/user"
@@ -57,7 +56,7 @@ func HomeModeUnsafe(st *syscall.Stat_t, path string) bool {
 			return true
 		}
 	}
-	for _, m := range group.Mem {
+	for _, m := range group.Members {
 		if m != user.Name {
 			return true
 		}
@@ -83,7 +82,7 @@ func privateNode(path, kind string, isHome bool) (*syscall.Stat_t, error) {
 		match = raw&0o170000 == 0o040000
 	}
 	if !match {
-		return nil, newDiscoveryError("unsafe_control_path", fmt.Sprintf("%s is %s, expected %s", path, pyfs.Filemode(raw), kind), "")
+		return nil, newDiscoveryError("unsafe_control_path", fmt.Sprintf("%s is %s, expected %s", path, info.Mode().String(), kind), "")
 	}
 	expected := discoveryGetuid()
 	if int(st.Uid) != expected {

@@ -14,10 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Fields explaining why this install cannot self update from git, nil when it can
@@ -76,7 +76,7 @@ func readRuntimeVerdict(ctx context.Context, repository, sha string) *bool {
 		}
 	}
 	dir := filepath.ToSlash(filepath.Dir(StateModules))
-	launch(fmt.Sprintf("%s/repos/%s/contents/%s?ref=%s", sourceGitHubAPI, repository, dir, pyurl.Quote(sha, "")), true)
+	launch(fmt.Sprintf("%s/repos/%s/contents/%s?ref=%s", sourceGitHubAPI, repository, dir, urlutil.Escape(sha, "")), true)
 	reply, ok := receive()
 	if !ok || reply == nil {
 		return nil
@@ -102,7 +102,7 @@ func readRuntimeVerdict(ctx context.Context, repository, sha string) *bool {
 	next := 0
 	pending := 0
 	for ; next < len(paths) && next < 4; next++ {
-		launch(fmt.Sprintf("%s/%s/%s/%s", sourceRawBase, repository, sha, pyurl.Quote(paths[next], "/")), false)
+		launch(fmt.Sprintf("%s/%s/%s/%s", sourceRawBase, repository, sha, urlutil.Escape(paths[next], "/")), false)
 		pending++
 	}
 	for pending > 0 {
@@ -116,7 +116,7 @@ func readRuntimeVerdict(ctx context.Context, repository, sha string) *bool {
 		}
 		pending--
 		if next < len(paths) {
-			launch(fmt.Sprintf("%s/%s/%s/%s", sourceRawBase, repository, sha, pyurl.Quote(paths[next], "/")), false)
+			launch(fmt.Sprintf("%s/%s/%s/%s", sourceRawBase, repository, sha, urlutil.Escape(paths[next], "/")), false)
 			next++
 			pending++
 		}

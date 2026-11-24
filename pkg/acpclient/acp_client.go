@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,14 +17,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
@@ -44,7 +42,7 @@ type Error struct {
 func (e *Error) Error() string { return e.Msg }
 
 // Python exception class name the error stands for
-func (e *Error) PyTypeName() string { return e.Kind }
+func (e *Error) ErrorKind() string { return e.Kind }
 
 func pyErr(kind, format string, args ...any) error {
 	return &Error{Kind: kind, Msg: fmt.Sprintf(format, args...)}
@@ -55,7 +53,7 @@ var acpProbe = struct {
 	verdicts map[string]bool
 }{verdicts: map[string]bool{}}
 
-var acpFlagRE = pyre.MustCompile(`(?m)(?:^|[\s\[])--acp(?:[\s=\],]|$)`)
+var acpFlagRE = regexutil.MustCompile(`(?m)(?:^|[\s\[])--acp(?:[\s=\],]|$)`)
 
 // Runs the help probe like subprocess.run with captured utf-8 output, replaced by tests at this seam
 var probeRun = func(ctx context.Context, argv []string) (*executil.Completed, error) {
@@ -75,7 +73,7 @@ func acpSupported(ctx context.Context, command string, args []string) *bool {
 		return &cached
 	}
 	probe, err := probeRun(ctx, []string{command, "--help"})
-	if err != nil || probe.Returncode != 0 {
+	if err != nil || probe.ExitCode != 0 {
 		return nil
 	}
 	matched, err := acpFlagRE.MatchString(strings.ToValidUTF8(string(probe.Stdout), "\uFFFD"))
@@ -107,7 +105,7 @@ func resolveHomeDir() string {
 	if err != nil {
 		return tmp()
 	}
-	if dir := strings.TrimSpace(entry.Dir); dir != "" {
+	if dir := strings.TrimSpace(entry.Home); dir != "" {
 		return dir
 	}
 	return tmp()
@@ -427,43 +425,32 @@ func durationSeconds(ds ...time.Duration) []float64 {
 	return out
 }
 
-// Float of a Python int, float or bool value
+// Float of a number or bool value, true and false as 1 and 0
 func pyNumber(v any) (float64, bool) {
 	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
 	case bool:
 		if n {
 			return 1, true
 		}
 		return 0, true
-	case *big.Int:
-		f, _ := new(big.Float).SetInt(n).Float64()
-		return f, true
 	case *float64:
 		if n != nil {
 			return *n, true
 		}
 		return 0, false
 	}
-	if i, ok := pyrepr.Int(v); ok {
-		f, _ := new(big.Float).SetInt(i).Float64()
-		return f, true
-	}
-	return 0, false
+	return anyutil.Float(v)
 }
 
-// Python int value of a JSON number, bools counting as ints
-func pyInt(v any) (*big.Int, bool) {
+// Integer value of a JSON number, bools counting as 1 and 0
+func pyInt(v any) (int64, bool) {
 	if b, ok := v.(bool); ok {
 		if b {
-			return big.NewInt(1), true
+			return 1, true
 		}
-		return big.NewInt(0), true
+		return 0, true
 	}
-	return pyrepr.Int(v)
+	return anyutil.Int(v)
 }
 
 // Answers fs/read_text_file with the redacted text inside the cwd, an optional line window applied
@@ -492,12 +479,12 @@ func fsReadTextFile(env *tools.Env, params any, cwd string) (any, error) {
 		return nil, err
 	}
 	line, limit := dictGet(params, "line"), dictGet(params, "limit")
-	if l, ok := pyInt(line); ok && l.Cmp(big.NewInt(1)) > 0 {
+	if l, ok := pyInt(line); ok && l > 1 {
 		lines := slices.Collect(strings.Lines(content))
-		start := clampIndex(new(big.Int).Sub(l, big.NewInt(1)), len(lines))
+		start := clampIndex(l-1, len(lines))
 		end := len(lines)
-		if n, ok := pyInt(limit); ok && n.Sign() > 0 {
-			end = clampIndex(new(big.Int).Add(new(big.Int).Sub(l, big.NewInt(1)), n), len(lines))
+		if n, ok := pyInt(limit); ok && n > 0 {
+			end = start + clampIndex(n, len(lines)-start)
 		}
 		content = ""
 		if start < end {
@@ -513,11 +500,11 @@ func fsReadTextFile(env *tools.Env, params any, cwd string) (any, error) {
 }
 
 // Non negative slice index clamped to the sequence size
-func clampIndex(i *big.Int, size int) int {
-	if i.Cmp(big.NewInt(int64(size))) > 0 {
+func clampIndex(i int64, size int) int {
+	if i > int64(size) {
 		return size
 	}
-	return int(i.Int64())
+	return int(i)
 }
 
 // str of a params entry with falsy values reading as empty, the AttributeError for params that are no dict

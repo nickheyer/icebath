@@ -3,7 +3,6 @@ package gateway
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
@@ -76,8 +75,6 @@ func coerceSlashList(raw any, normalize func(string) string) map[string]struct{}
 	case nil:
 		return out
 	case []any:
-		items = v
-	case pyrepr.Tuple:
 		items = v
 	case []string:
 		for _, s := range v {

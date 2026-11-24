@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Recovers every serving authority against the published routing index and the adapters connected now

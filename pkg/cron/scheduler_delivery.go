@@ -598,8 +598,8 @@ func attributeError(obj any, media string) error {
 
 type pyAttributeError struct{ msg string }
 
-func (e *pyAttributeError) Error() string      { return e.msg }
-func (e *pyAttributeError) PyTypeName() string { return "AttributeError" }
+func (e *pyAttributeError) Error() string     { return e.msg }
+func (e *pyAttributeError) ErrorKind() string { return "AttributeError" }
 
 // True only for a success result with no delivered false, an evidence gap appended when no id or raw response
 func (s *Store) confirmAdapterDelivery(result any, jobID string, unverified *[]bool) bool {

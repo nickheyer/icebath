@@ -28,10 +28,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -684,7 +684,7 @@ func attachmentBody(spaceID, safePath, kind, name, mimeType, caption string) map
 
 // MIME type guessed from a path extension, empty when unknown
 func guessMime(path string) string {
-	t, _, _ := pymimetypes.GuessType(path, true)
+	t := mimeutil.TypeByName(path)
 	return t
 }
 

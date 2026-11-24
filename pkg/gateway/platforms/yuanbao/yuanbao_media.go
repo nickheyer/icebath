@@ -12,21 +12,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -191,13 +190,12 @@ func DownloadURL(ctx context.Context, env *tools.Env, rawURL string, maxSizeMB i
 	if !anyutil.IsTrue(lengthValue) {
 		lengthValue = int64(0)
 	}
-	contentLength, err := pyint.Of(lengthValue)
+	contentLength, err := anyutil.ToInt(lengthValue)
 	if err != nil {
 		return nil, "", err
 	}
-	if contentLength.Sign() > 0 && contentLength.Cmp(big.NewInt(maxBytes)) > 0 {
-		mb, _ := new(big.Float).Quo(new(big.Float).SetInt(contentLength), big.NewFloat(1024*1024)).Float64()
-		return nil, "", valueError(fmt.Sprintf("文件过大: %.1f MB > %d MB", mb, maxSizeMB))
+	if contentLength > 0 && contentLength > maxBytes {
+		return nil, "", valueError(fmt.Sprintf("文件过大: %.1f MB > %d MB", float64(contentLength)/(1024*1024), maxSizeMB))
 	}
 	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -242,7 +240,7 @@ func hmacSHA1Hex(key, msg string) string {
 func sortedKV(d [][2]string) [][2]string {
 	out := make([][2]string, len(d))
 	for i, kv := range d {
-		out[i] = [2]string{strings.ToLower(kv[0]), pyurl.Quote(kv[1], "")}
+		out[i] = [2]string{strings.ToLower(kv[0]), urlutil.Escape(kv[1], "")}
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i][0] != out[j][0] {
@@ -254,8 +252,8 @@ func sortedKV(d [][2]string) [][2]string {
 }
 
 // CosSign builds the q-sign-algorithm=sha1 COS Authorization header from temporary credentials
-func CosSign(method, signPath string, params, headers [][2]string, secretID, secretKey string, startTime, expireSeconds *big.Int) string {
-	qSignTime := startTime.String() + ";" + new(big.Int).Add(startTime, expireSeconds).String()
+func CosSign(method, signPath string, params, headers [][2]string, secretID, secretKey string, startTime, expireSeconds int64) string {
+	qSignTime := strconv.FormatInt(startTime, 10) + ";" + strconv.FormatInt(startTime+expireSeconds, 10)
 	signKey := hmacSHA1Hex(secretKey, qSignTime)
 	sortedParams, sortedHeaders := sortedKV(params), sortedKV(headers)
 	kv := func(pairs [][2]string) string {
@@ -400,7 +398,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 			anyutil.String(secretID != ""), anyutil.String(secretKey != ""), anyutil.String(cosKey != ""))}
 	}
 	cosHost := bucket + ".cos.accelerate.myqcloud.com"
-	encodedKey := strings.TrimLeft(pyurl.Quote(cosKey, "/"), "/")
+	encodedKey := strings.TrimLeft(urlutil.Escape(cosKey, "/"), "/")
 	cosURL := "https://" + cosHost + "/" + encodedKey
 	if contentType == "" || contentType == "application/octet-stream" {
 		contentType = "application/octet-stream"
@@ -408,23 +406,23 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 			contentType = GuessMIMEType(filename)
 		}
 	}
-	now := big.NewInt(unixNow())
+	now := unixNow()
 	start := now
 	if anyutil.IsTrue(startTime) {
-		n, ok := pyint.Instance(startTime)
+		n, ok := anyutil.Int(startTime)
 		if !ok {
 			return nil, fmt.Errorf("the upload start_time must be a whole number, got %s", errchain.Kind(startTime))
 		}
 		start = n
 	}
-	expire := big.NewInt(3600)
+	expire := int64(3600)
 	if anyutil.IsTrue(expiredTime) {
-		n, ok := pyint.Instance(expiredTime)
+		n, ok := anyutil.Int(expiredTime)
 		if !ok {
 			return nil, fmt.Errorf("the upload expired_time must be a whole number, got %s", errchain.Kind(expiredTime))
 		}
-		if n.Cmp(now) > 0 {
-			expire = new(big.Int).Sub(n, now)
+		if n > now {
+			expire = n - now
 		}
 	}
 	authorization := CosSign("put", "/"+encodedKey, nil,
@@ -464,7 +462,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 }
 
 func basenameFromURL(rawURL string) string {
-	u, err := pyurl.Parse(rawURL)
+	u, err := urlutil.Split(rawURL)
 	if err != nil {
 		return ""
 	}

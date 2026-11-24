@@ -11,15 +11,15 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Windows gate of the launcher heal and quarantine sweep, the module attribute tests patch
@@ -72,7 +72,7 @@ func RestoreQuarantinedShims(moved [][2]string, stream io.Writer, backoffMS []in
 		}
 		fmt.Fprintf(stream, "  ✖ FAILED to restore %s (%s) — it is still quarantined as %s.\n"+
 			"    `%s` will NOT be on PATH until it is put back. Run this, then re-run the update:\n"+
-			"      move \"%s\" \"%s\"\n", name, pypath.OSErrorClass(lastErr), filepath.Base(quarantined), stem, quarantined, original)
+			"      move \"%s\" \"%s\"\n", name, errorutil.Kind(lastErr), filepath.Base(quarantined), stem, quarantined, original)
 	}
 	return failed
 }
@@ -84,11 +84,11 @@ func QuarantineStampMS(name string) (int64, bool) {
 	if idx < 0 {
 		return 0, false
 	}
-	value, ok := pyint.Parse(base[idx+len(".old."):])
-	if !ok || !value.IsInt64() {
+	value, err := strconv.ParseInt(strings.TrimSpace(base[idx+len(".old."):]), 10, 64)
+	if err != nil {
 		return 0, false
 	}
-	return value.Int64(), true
+	return value, true
 }
 
 // The venv Scripts directory of the checkout when it exists, empty otherwise

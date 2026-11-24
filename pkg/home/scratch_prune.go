@@ -18,13 +18,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -444,11 +442,8 @@ func readJSONList(path string) ([]any, bool) {
 
 // Text of utf-8-sig bytes, false when they are not valid UTF-8
 func utf8SigText(data []byte) (string, bool) {
-	data = []byte(strings.TrimPrefix(string(data), "\xef\xbb\xbf"))
-	if _, ok := pystr.ValidIndex(data); !ok {
-		return "", false
-	}
-	return string(data), true
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
+	return text, err == nil
 }
 
 // Live pids icebath registered for home in the spawn ledger and the process checkpoints, reused pids excluded
@@ -509,8 +504,8 @@ func numberEquals(v any, n int64) bool {
 	case bool:
 		return (t && n == 1) || (!t && n == 0)
 	}
-	if big, ok := pyrepr.Int(v); ok {
-		return big.IsInt64() && big.Int64() == n
+	if big, ok := anyutil.Int(v); ok {
+		return big == n
 	}
 	return false
 }
@@ -737,7 +732,7 @@ func excInfo(err error) (string, string) {
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return pypath.OSErrorClass(err), err.Error()
+		return errorutil.Kind(err), err.Error()
 	}
 	return "OSError", err.Error()
 }

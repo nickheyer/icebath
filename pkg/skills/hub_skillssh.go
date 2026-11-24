@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -108,7 +109,7 @@ func (s *SkillsShSource) Search(ctx context.Context, query string, limit int) (o
 	if ok {
 		return pyHeadMetas(cached, limit), nil
 	}
-	data, err := s.h.getJSON(ctx, skillsShSearchURL, hubGet{Params: [][2]string{{"q", query}, {"limit", fmt.Sprint(limit)}}})
+	data, err := s.h.getJSON(ctx, skillsShSearchURL, hubGet{Params: url.Values{"q": {query}, "limit": {fmt.Sprint(limit)}}})
 	if err != nil {
 		return nil, err
 	}

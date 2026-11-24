@@ -18,12 +18,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -382,16 +382,16 @@ type recoveryProgress struct {
 
 // Whole number of a progress value grouped by thousands, zero for a value that is not a number
 func groupedInt(v any) string {
-	n, ok := pyrepr.Int(v)
+	n, ok := anyutil.Int(v)
 	if !ok {
 		if f, isFloat := v.(float64); isFloat {
-			n, ok = pyrepr.Int(int64(f))
+			n, ok = anyutil.Int(int64(f))
 		}
 	}
 	if !ok {
 		return "0"
 	}
-	text, _ := pyrepr.Format(n, ",")
+	text, _ := templateutil.Format("{v:,}", map[string]any{"v": n})
 	return text
 }
 

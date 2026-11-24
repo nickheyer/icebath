@@ -41,7 +41,7 @@ func unitStopStartBudgets(ctx context.Context, scopeCmd []string, svcName string
 		}
 		return 0, 0, err
 	}
-	if show.Returncode == 0 {
+	if show.ExitCode == 0 {
 		for _, line := range textutil.Lines(completedStdout(show)) {
 			key, raw, _ := strings.Cut(line, "=")
 			if _, known := budgets[key]; !known {
@@ -101,7 +101,7 @@ func unitJobState(ctx context.Context, scopeCmd []string, svcName string) (map[s
 		return nil, err
 	}
 	state := map[string]string{}
-	if show.Returncode != 0 {
+	if show.ExitCode != 0 {
 		return state, nil
 	}
 	for _, line := range textutil.Lines(completedStdout(show)) {
@@ -131,7 +131,7 @@ func runUnitJobTo(ctx context.Context, w io.Writer, manageCmd, scopeCmd []string
 	if expired == nil {
 		return result, err
 	}
-	argv := expired.Cmd
+	argv := expired.Args
 	budget, err := unitJobBudget(ctx, scopeCmd, svcName, verb)
 	if err != nil {
 		return nil, err

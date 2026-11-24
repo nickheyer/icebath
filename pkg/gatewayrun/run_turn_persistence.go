@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
@@ -587,7 +586,7 @@ func (r *GatewayRunner) hmwaDeliverTurnResponse(ctx context.Context, event *gate
 // Error reply of a failed agent turn with the inbound user turn persisted once and a sanitized hint
 func (r *GatewayRunner) hmwaAgentErrorReply(ctx context.Context, turnErr error, event *gateway.MessageEvent, source *gateway.SessionSource, entry *gateway.SessionEntry, sessionKey string, prepared *preparedTurn) string {
 	r.hmwaStopTypingForTurn(ctx, event, source)
-	pkgLog().Error(fmt.Sprintf("Agent error in session %s", sessionKey), "error", pyrepr.ExceptionRepr(turnErr))
+	pkgLog().Error(fmt.Sprintf("Agent error in session %s", sessionKey), "error", turnErr.Error())
 	statusCode := 0
 	var statusErr interface{ StatusCode() int }
 	if errors.As(turnErr, &statusErr) {

@@ -477,7 +477,7 @@ func TestExitCodeReaderParsesLikeTheGatewayWatcher(t *testing.T) {
 	paths := updatePaths{exitCode: filepath.Join(t.TempDir(), ".update_exit_code")}
 	for text, want := range map[string]int64{"0\n": 0, "": 1, " \t\n": 1, "\xef\xbb\xbf3": 3, "1_0": 10, "-2 ": -2, "+7": 7} {
 		os.WriteFile(paths.exitCode, []byte(text), 0o644)
-		if n, err := updateExitCode(paths); err != nil || n.Int64() != want {
+		if n, err := updateExitCode(paths); err != nil || n != want {
 			t.Fatalf("%q read %v %v", text, n, err)
 		}
 	}

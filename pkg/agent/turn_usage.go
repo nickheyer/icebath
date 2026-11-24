@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // ResponseUsageOutcome carries the possibly rearmed compression budget and whether the loop clears its preflight latch
@@ -104,7 +104,7 @@ func pyIntAttr(v any) (int64, bool) {
 }
 
 func groupedInt(n int) string {
-	text, _ := pyrepr.Format(n, ",")
+	text, _ := templateutil.Format("{v:,}", map[string]any{"v": n})
 	return text
 }
 

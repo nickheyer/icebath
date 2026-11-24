@@ -13,7 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // InvokeModel body version the AnthropicBedrock client stamps on every Messages body
@@ -144,11 +146,11 @@ func (t *anthBedrockTransport) Request(ctx context.Context, op anthOperation, bo
 	if err != nil {
 		return nil, err
 	}
-	return pyhttpx.WithWire(req, signed), nil
+	return withHeader(req, signed), nil
 }
 
 // Lines the _prepare_request hook leaves, the route key or client bearer set as Authorization, else botocore SigV4 over the route keys or credential chain
-func (t *anthBedrockTransport) authorize(ctx context.Context, req *http.Request, lines *pyhttpx.Headers, data []byte, client *awsServiceClient, region string) (*pyhttpx.Headers, error) {
+func (t *anthBedrockTransport) authorize(ctx context.Context, req *http.Request, lines http.Header, data []byte, client *awsServiceClient, region string) (http.Header, error) {
 	bearer := ""
 	switch {
 	case bedrockRealAPIKey(t.route.APIKey):
@@ -157,7 +159,7 @@ func (t *anthBedrockTransport) authorize(ctx context.Context, req *http.Request,
 		bearer = client.bearer
 	}
 	if bearer != "" {
-		out := pyhttpx.NewHeaders(lines.Lines()...)
+		out := headerOf(fieldsOf(lines)...)
 		out.Set("Authorization", "Bearer "+bearer)
 		return out, nil
 	}

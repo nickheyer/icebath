@@ -10,11 +10,11 @@ import (
 	"iter"
 	"maps"
 	"math"
-	"math/big"
 	"net"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,10 +22,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -278,17 +277,6 @@ func latin1Text(s string) string {
 	return b.String()
 }
 
-// Machine int of a Python int, saturating past the int64 range
-func saturatedInt(n *big.Int) int {
-	if n.IsInt64() {
-		return int(n.Int64())
-	}
-	if n.Sign() < 0 {
-		return math.MinInt
-	}
-	return math.MaxInt
-}
-
 // PCM rate an OpenAI compatible endpoint advertises in X-Audio-Sample-Rate or the Content-Type rate parameter
 func sampleRateFromHeaders(headers http.Header) (int, bool) {
 	if len(headers) == 0 {
@@ -304,11 +292,12 @@ func sampleRateFromHeaders(headers http.Header) (int, bool) {
 		}
 		raw = m[1]
 	}
-	n, ok := pyint.Parse(strings.TrimSpace(raw))
-	if !ok || n.Sign() <= 0 {
+	// A rate past what an int holds is held at the largest one
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if (err != nil && !errors.Is(err, strconv.ErrRange)) || n <= 0 {
 		return 0, false
 	}
-	return saturatedInt(n), true
+	return int(min(n, math.MaxInt)), true
 }
 
 // Open speech reply of the OpenAI client, its headers and its body chunks
@@ -651,7 +640,7 @@ func pyB64DecodeValue(v any) ([]byte, error) {
 	if !ok {
 		return nil, &ttsTypeError{msg: fmt.Sprintf("audio payload is %s where base64 text was expected", errchain.Kind(v))}
 	}
-	return pybase64.B64Decode(s)
+	return base64util.Decode(s)
 }
 
 // Decoded PCM of every inline audio part in the SSE reply

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyplist"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
 )
@@ -33,16 +32,15 @@ func ServicePinnedHome(definition string) (string, error) {
 	if err != nil {
 		return "", nil
 	}
-	d, ok := data.(*pyplist.Dict)
+	d, ok := data.(map[string]any)
 	if !ok {
 		return "", nil
 	}
-	envValue, _ := d.Get("EnvironmentVariables")
-	env, ok := envValue.(*pyplist.Dict)
+	env, ok := d["EnvironmentVariables"].(map[string]any)
 	if !ok {
 		return "", nil
 	}
-	value, present := env.Get("ICEBATH_HOME")
+	value, present := env["ICEBATH_HOME"]
 	if !present || value == nil {
 		return "", nil
 	}

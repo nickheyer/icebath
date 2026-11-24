@@ -11,17 +11,17 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -42,7 +42,7 @@ var (
 	freshRestartSupervisors = map[string]bool{"systemd": true, "launchd": true, "service": true, "s6": true}
 	systemdScopes           = []systemdScope{{"user", []string{"systemctl", "--user"}}, {"system", []string{"systemctl"}}}
 	listGatewayUnits        = []string{"list-units", "icebath-gateway*", "--plain", "--no-legend", "--no-pager"}
-	fatalExitParkRe         = pyre.MustCompile(fmt.Sprintf(`(?m)^RestartPreventExitStatus=.*\b%d\b`, gateway.GatewayFatalConfigExitCode))
+	fatalExitParkRe         = regexutil.MustCompile(fmt.Sprintf(`(?m)^RestartPreventExitStatus=.*\b%d\b`, gateway.GatewayFatalConfigExitCode))
 
 	fleetRepairUnit        = repairUnitWithoutFatalExitPark
 	fleetUnitOwned         = systemdUnitOwnedByUpdate
@@ -59,10 +59,6 @@ var (
 	// Runs one captured command under a timeout in seconds, the call the tests replace
 	fleetRunCommand = func(ctx context.Context, cmd []string, timeout float64) (*executil.Completed, error) {
 		result, err := executil.Run(ctx, cmd, executil.Options{Timeout: time.Duration(timeout * float64(time.Second))})
-		var expired *executil.TimeoutError
-		if errors.As(err, &expired) && timeout != math.Trunc(timeout) {
-			expired.TimeoutFloat = &timeout
-		}
 		if err != nil {
 			return nil, err
 		}
@@ -99,10 +95,10 @@ func asCommandTimeout(err error) *executil.TimeoutError {
 // Argv of a timed out command joined by spaces, or the words unknown command
 func timeoutCmdText(err error) string {
 	expired := asCommandTimeout(err)
-	if expired == nil || len(expired.Cmd) == 0 {
+	if expired == nil || len(expired.Args) == 0 {
 		return "unknown command"
 	}
-	return strings.Join(expired.Cmd, " ")
+	return strings.Join(expired.Args, " ")
 }
 
 // Captured stdout of a finished command as text with undecodable bytes replaced
@@ -162,18 +158,18 @@ func unitMainPid(ctx context.Context, scopeCmd []string, svcName string) (int, e
 		}
 		return 0, err
 	}
-	if result == nil || result.Returncode != 0 {
+	if result == nil || result.ExitCode != 0 {
 		return 0, nil
 	}
 	text := strings.TrimSpace(completedStdout(result))
 	if text == "" {
 		return 0, nil
 	}
-	pid, ok := pyint.Parse(text)
-	if !ok || !pid.IsInt64() {
+	pid, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	if err != nil {
 		return 0, nil
 	}
-	return int(pid.Int64()), nil
+	return int(pid), nil
 }
 
 // Scope qualified restart targets of every listing in discovery order
@@ -306,11 +302,11 @@ func sudoNoninteractiveOk(ctx context.Context, targetedProbe []string) bool {
 	if err != nil {
 		return false
 	}
-	if blanket.Returncode == 0 {
+	if blanket.ExitCode == 0 {
 		return true
 	}
 	targeted, err := fleetRunCommand(ctx, fleetArgv([]string{"sudo", "-n"}, targetedProbe...), 5)
-	return err == nil && targeted.Returncode == 0
+	return err == nil && targeted.ExitCode == 0
 }
 
 // Command prefix for manage-units verbs in a scope, nil when no non interactive privilege path exists
@@ -398,8 +394,8 @@ func restartOneSystemdGatewayUnit(ctx context.Context, w io.Writer, svcName, sco
 			return err
 		}
 	} else if text := strings.TrimSpace(completedStdout(show)); text != "" {
-		if pid, ok := pyint.Parse(text); ok && pid.IsInt64() {
-			mainPID = int(pid.Int64())
+		if pid, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64); err == nil {
+			mainPID = int(pid)
 		}
 	}
 
@@ -458,7 +454,7 @@ func restartOneSystemdGatewayUnit(ctx context.Context, w io.Writer, svcName, sco
 	if err != nil {
 		return err
 	}
-	if restart.Returncode != 0 {
+	if restart.ExitCode != 0 {
 		*failedOrStaleUnits = append(*failedOrStaleUnits, svcName)
 		fmt.Fprintf(w, "  ⚠ Failed to restart %s: %s\n", svcName, strings.TrimSpace(completedStderr(restart)))
 		return nil

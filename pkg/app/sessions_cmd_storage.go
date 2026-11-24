@@ -14,11 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Reports the size before and after, preferring the page accounting of SQLite over the file size
@@ -90,7 +90,7 @@ func infoOr(info *jsonutil.Object, key string, fallback any) any {
 
 // Python format of a progress value under a format spec
 func progressFormat(v any, spec string) string {
-	text, _ := pyrepr.Format(v, spec)
+	text, _ := templateutil.Format("{v:"+spec+"}", map[string]any{"v": v})
 	return text
 }
 

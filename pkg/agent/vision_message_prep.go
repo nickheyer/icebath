@@ -10,12 +10,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var visionImagePartTypes = map[string]bool{"image_url": true, "input_image": true}
@@ -125,7 +125,7 @@ func materializeDataURLForVision(imageURL any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	raw, err := pybase64.B64Decode(data)
+	raw, err := base64util.Decode(data)
 	if err == nil {
 		_, err = tmp.Write(raw)
 	}
@@ -142,7 +142,7 @@ func materializeDataURLForVision(imageURL any) (string, error) {
 // Cached vision_analyze description note standing in for an image the active model cannot read
 func (a *AIAgent) describeImageForAnthropicFallback(ctx context.Context, imageURL any, role string) (string, error) {
 	source := pyStrOr(imageURL, "")
-	if err := pystr.StrictUTF8EncodeError(source); err != nil {
+	if err := textutil.ValidateUTF8(source); err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256([]byte(source))

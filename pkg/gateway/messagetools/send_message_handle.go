@@ -12,18 +12,18 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 var slackUserIDRE = func() interface {
 	MatchString(string) (bool, error)
 } {
-	re, err := pyre.CompileFullmatch(`^\s*(U[A-Z0-9]{8,})\s*$`)
+	re, err := regexutil.Compile(`^\s*(U[A-Z0-9]{8,})\s*$`, regexutil.Whole())
 	if err != nil {
 		panic(err)
 	}

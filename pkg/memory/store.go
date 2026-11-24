@@ -24,7 +24,6 @@ import (
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 )
 
 // Block header titles the prompt renderer and compression share to spot a leftover block
@@ -1033,10 +1032,6 @@ func writeEntriesFile(ctx context.Context, path string, entries []string) error 
 	if err == nil {
 		return nil
 	}
-	var ee *pyfs.EncodeError
-	if errors.As(err, &ee) {
-		return &pyError{class: "UnicodeEncodeError", msg: ee.Msg}
-	}
 	return &pyError{class: "RuntimeError", msg: fmt.Sprintf("Failed to write memory file %s: %s", path, osErrorText(err))}
 }
 
@@ -1422,7 +1417,7 @@ type pyError struct {
 
 func (e *pyError) Error() string { return e.msg }
 
-func (e *pyError) PyTypeName() string { return e.class }
+func (e *pyError) ErrorKind() string { return e.class }
 
 // Text a falsy value collapses to, a crash for a truthy non string before a str method call
 func strMethodArg(v any) (string, error) {

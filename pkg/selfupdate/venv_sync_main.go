@@ -16,7 +16,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -43,7 +42,7 @@ var osErrorClasses = map[string]bool{
 // Python class name of an error, the errno subclass for an OS error
 func launchErrorClass(err error) string {
 	if errorutil.IsSystem(err) {
-		return pypath.OSErrorClass(err)
+		return errorutil.Kind(err)
 	}
 	return pm.ErrorClass(err)
 }

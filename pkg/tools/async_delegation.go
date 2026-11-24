@@ -396,7 +396,6 @@ func asyncOrdered(m map[string]any, order []string) *jsonutil.Object {
 	for _, k := range order {
 		listed[k] = true
 		if v, ok := m[k]; ok {
-			out.Keys = append(out.Keys, k)
 			out.Set(k, v)
 		}
 	}
@@ -408,7 +407,6 @@ func asyncOrdered(m map[string]any, order []string) *jsonutil.Object {
 	}
 	sort.Strings(rest)
 	for _, k := range rest {
-		out.Keys = append(out.Keys, k)
 		out.Set(k, m[k])
 	}
 	return out
@@ -1661,9 +1659,9 @@ type AsyncDispatch struct {
 
 // Python exception class name of a runner failure
 func asyncExceptionName(err error) string {
-	var named interface{ PyTypeName() string }
+	var named interface{ ErrorKind() string }
 	if errors.As(err, &named) {
-		return named.PyTypeName()
+		return named.ErrorKind()
 	}
 	return "RuntimeError"
 }

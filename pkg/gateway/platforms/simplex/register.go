@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
@@ -99,13 +99,13 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return failed(err)
 	}
-	ws, err := websocketutil.Connect(ctx, anyutil.String(wsURL), pywebsockets.ConnectOptions{OpenTimeout: 10 * time.Second,
-		CloseTimeout: 5 * time.Second})
+	ws, err := websocketutil.Connect(ctx, anyutil.String(wsURL), websocketutil.Options{OpenTimeout: 10 * time.Second,
+		CloseTimeout: 5 * time.Second, Compression: true, Proxy: httputil.Proxy})
 	if err != nil {
 		return failed(err)
 	}
 	defer ws.Close()
-	if err := ws.Send(frame); err != nil {
+	if err := ws.SendText(frame); err != nil {
 		return failed(err)
 	}
 	timer := time.NewTimer(500 * time.Millisecond)

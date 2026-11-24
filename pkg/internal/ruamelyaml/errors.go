@@ -98,7 +98,7 @@ func (m *Mark) String() string {
 // Python class name, message text and exception kind every load failure carries
 type PyError interface {
 	error
-	PyTypeName() string
+	ErrorKind() string
 }
 
 // ruamel MarkedYAMLError and its subclasses, the class name selecting ScannerError, ParserError and the rest
@@ -113,7 +113,7 @@ type MarkedError struct {
 
 func strp(s string) *string { return &s }
 
-func (e *MarkedError) PyTypeName() string { return e.Class }
+func (e *MarkedError) ErrorKind() string { return e.Class }
 
 // Lines of context, context mark unless it equals the problem mark, problem, problem mark and dedented note
 func (e *MarkedError) Error() string {
@@ -207,7 +207,7 @@ type ReaderError struct {
 	Reason    string
 }
 
-func (e *ReaderError) PyTypeName() string { return "ReaderError" }
+func (e *ReaderError) ErrorKind() string { return "ReaderError" }
 
 func (e *ReaderError) Error() string {
 	return fmt.Sprintf("unacceptable character #x%04x: %s\n  in \"%s\", position %d", e.Character, e.Reason, e.Name, e.Position)
@@ -220,8 +220,8 @@ type PyException struct {
 	YAMLError bool
 }
 
-func (e *PyException) PyTypeName() string { return e.Class }
-func (e *PyException) Error() string      { return e.Msg }
+func (e *PyException) ErrorKind() string { return e.Class }
+func (e *PyException) Error() string     { return e.Msg }
 
 // Python exception of a class with the given str text
 func Raise(class, msg string) *PyException { return &PyException{Class: class, Msg: msg} }

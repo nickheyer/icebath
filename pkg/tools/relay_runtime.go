@@ -20,7 +20,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -546,10 +550,10 @@ func relayLoadSegmentsConfig(ctx context.Context) relaySegmentsConfig {
 	if !anyutil.IsTrue(raw) {
 		raw = 0
 	}
-	if n, err := pyint.Of(raw); err == nil && n.Sign() > 0 {
+	if n, err := anyutil.ToInt(raw); err == nil && n > 0 {
 		out.maxTurns = math.MaxInt
-		if n.IsInt64() && n.Int64() < math.MaxInt {
-			out.maxTurns = int(n.Int64())
+		if n < math.MaxInt {
+			out.maxTurns = int(n)
 		}
 	}
 	return out
@@ -1121,10 +1125,7 @@ func (r *RelayRuntime) sessionContext(ctx context.Context, session *RelaySession
 		return nil, errors.New("Icebath Relay session context is unavailable")
 	}
 	out := ctxutil.CopyStore(ctx)
-	runCtx := ctxutil.WithStore(ctx, out)
-	for _, item := range session.Context.Copy().Items() {
-		item.Var.Set(runCtx, item.Value)
-	}
+	out.Overlay(session.Context)
 	return out, nil
 }
 
@@ -1383,7 +1384,7 @@ func (r *RelayRuntime) Shutdown() {
 		return
 	}
 	go pprof.Do(context.Background(), pprof.Labels("thread", "icebath-nemo-relay-shutdown-"+r.RuntimeID[:8]), func(context.Context) {
-		r.operationsIdle.Wait(-1)
+		r.operationsIdle.Wait()
 		r.finishShutdown()
 	})
 }

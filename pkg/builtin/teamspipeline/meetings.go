@@ -13,15 +13,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Graph resource patterns with a quoted key group and a slash key group per segment
@@ -67,7 +66,7 @@ func matchID(m []string, groups ...int) string {
 	}
 	for _, g := range groups {
 		if m[g] != "" {
-			return strings.TrimSpace(pyurl.Unquote(m[g]))
+			return strings.TrimSpace(urlutil.Unescape(m[g]))
 		}
 	}
 	return ""
@@ -116,7 +115,7 @@ func decodedIDHint(value string) string {
 		return ""
 	}
 	padded := stripped + strings.Repeat("=", (4-n%4)%4)
-	for _, decode := range []func(string) ([]byte, error){base64.URLEncoding.DecodeString, pybase64.B64Decode} {
+	for _, decode := range []func(string) ([]byte, error){base64.URLEncoding.DecodeString, base64util.Decode} {
 		if raw, err := decode(padded); err == nil {
 			return strings.ToLower(strings.ToValidUTF8(string(raw), ""))
 		}
@@ -127,14 +126,14 @@ func decodedIDHint(value string) string {
 // Organizer scoped meetings collection when the organizer is known, required for app only access
 func meetingsCollection(organizerUserID any) string {
 	if anyutil.IsTrue(organizerUserID) {
-		return "/users/" + pyurl.Quote(anyutil.String(organizerUserID), "") + "/onlineMeetings"
+		return "/users/" + urlutil.Escape(anyutil.String(organizerUserID), "") + "/onlineMeetings"
 	}
 	return "/communications/onlineMeetings"
 }
 
 // Graph path of the referenced meeting
 func meetingPath(ref *TeamsMeetingRef) string {
-	return meetingsCollection(ref.OrganizerUserID) + "/" + pyurl.Quote(ref.MeetingID, "")
+	return meetingsCollection(ref.OrganizerUserID) + "/" + urlutil.Escape(ref.MeetingID, "")
 }
 
 // Permission, not found or generic meeting error for a Graph API failure
@@ -221,11 +220,11 @@ func newMeetingArtifact(kind, id string, displayName, contentType, sourceURL, do
 		return nil, err
 	}
 	if size != nil {
-		n, err := pyint.Of(size)
+		n, err := anyutil.ToInt(size)
 		if err != nil {
 			return nil, err
 		}
-		v := n.Int64()
+		v := n
 		a.SizeBytes = &v
 	}
 	return a, nil
@@ -289,7 +288,7 @@ func resolveMeetingReference(ctx context.Context, client graphClient, meetingID,
 	switch {
 	case meetingID != "":
 		missing := "Teams meeting not found: " + meetingID
-		got, err := client.GetJSON(ctx, collection+"/"+pyurl.Quote(meetingID, ""), nil, nil)
+		got, err := client.GetJSON(ctx, collection+"/"+urlutil.Escape(meetingID, ""), nil, nil)
 		if err != nil {
 			return nil, graph(err, missing)
 		}
@@ -355,7 +354,7 @@ func listRecordingArtifacts(ctx context.Context, client graphClient, ref *TeamsM
 
 // Downloads an artifact from its download URL or its content endpoint into destination
 func downloadArtifact(ctx context.Context, client graphClient, ref *TeamsMeetingRef, a *MeetingArtifact, destination, kind string, headers map[string]string) (map[string]any, error) {
-	path := meetingPath(ref) + "/" + kind + "s/" + pyurl.Quote(a.ArtifactID, "") + "/content"
+	path := meetingPath(ref) + "/" + kind + "s/" + urlutil.Escape(a.ArtifactID, "") + "/content"
 	if anyutil.IsTrue(a.DownloadURL) {
 		path = anyutil.String(a.DownloadURL)
 	}
@@ -470,7 +469,7 @@ func enrichMeetingWithCallRecord(ctx context.Context, client graphClient, ref *T
 	if id == "" {
 		return nil, nil
 	}
-	got, err := client.GetJSON(ctx, "/communications/callRecords/"+pyurl.Quote(id, ""), nil, nil)
+	got, err := client.GetJSON(ctx, "/communications/callRecords/"+urlutil.Escape(id, ""), nil, nil)
 	if err != nil {
 		var api *messagetools.MicrosoftGraphAPIError
 		if !errors.As(err, &api) {

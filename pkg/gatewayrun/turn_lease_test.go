@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Seconds as an optional timeout

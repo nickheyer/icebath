@@ -487,7 +487,7 @@ func readRawConfigImpl(ctx context.Context, h string) (map[string]any, error) {
 	data, ok := doc.(map[string]any)
 	if !ok {
 		failed := map[string]any{}
-		markFailedRead(failed, fmt.Errorf("top-level YAML must be a mapping, got %s", PyTypeName(doc)))
+		markFailedRead(failed, fmt.Errorf("top-level YAML must be a mapping, got %s", ErrorKind(doc)))
 		return failed, nil
 	}
 	forgetParseFailure(path)

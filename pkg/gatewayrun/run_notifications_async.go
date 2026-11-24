@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -235,8 +234,8 @@ func backOffRefusedCompletions(group []map[string]any) {
 	for _, evt := range group {
 		step := 1
 		if raw := evt["_watch_retry_step"]; anyutil.IsTrue(raw) {
-			if n, err := pyint.Of(raw); err == nil && n.IsInt64() {
-				step = int(n.Int64()) + 1
+			if n, err := anyutil.ToInt(raw); err == nil {
+				step = int(n) + 1
 			}
 		}
 		evt["_watch_retry_step"] = step

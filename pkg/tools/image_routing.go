@@ -15,9 +15,9 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"golang.org/x/image/tiff"
 
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Image extensions auto attached from free text, documents and archives excluded
@@ -30,7 +30,7 @@ var (
 )
 
 func mustPyre(pattern string) *regexp2.Regexp {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}
@@ -372,11 +372,7 @@ func guessImageMime(path string, raw []byte, haveRaw bool) (string, error) {
 		mime = sniffImageRoutingMime(raw)
 	}
 	if mime == "" {
-		guessed, _, err := pymimetypes.GuessType(path, true)
-		if err != nil {
-			return "", err
-		}
-		mime = guessed
+		mime = mimeutil.TypeByName(path)
 	}
 	if strings.HasPrefix(mime, "image/") {
 		return mime, nil

@@ -6,10 +6,10 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 var demotedRowRE = mustPyRE(`\[[^\s\]]* output demoted at compaction — [\d,]+ chars preserved in session history\.`)
 
 func mustPyRE(pattern string) *regexp2.Regexp {
-	re, err := pyre.Compile(pattern)
+	re, err := regexutil.Compile(pattern)
 	if err != nil {
 		panic(err)
 	}
@@ -76,7 +76,7 @@ func leanRecoveryLine(toolName string, contentLen int, sessionID string) string 
 	if toolName == "" {
 		toolName = "tool"
 	}
-	count, _ := pyrepr.Format(contentLen, ",")
+	count, _ := templateutil.Format("{v:,}", map[string]any{"v": contentLen})
 	return "[" + toolName + " output demoted at compaction — " + count + " chars preserved in session history." + hint + "]"
 }
 

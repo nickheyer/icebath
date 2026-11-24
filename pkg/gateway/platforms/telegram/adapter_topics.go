@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Creates a forum topic in a private chat, nil when the bot is absent or the topic cannot be created
@@ -155,7 +155,7 @@ func (a *TelegramAdapter) EnsureDMTopic(ctx context.Context, chatID, name string
 }
 
 // Renames a forum topic in a private chat
-func (a *TelegramAdapter) RenameDMTopic(ctx context.Context, chatID string, threadID *big.Int, title string) error {
+func (a *TelegramAdapter) RenameDMTopic(ctx context.Context, chatID string, threadID int64, title string) error {
 	b := a.currentBot()
 	if b == nil {
 		return nil
@@ -164,13 +164,13 @@ func (a *TelegramAdapter) RenameDMTopic(ctx context.Context, chatID string, thre
 	if n, err := strconv.ParseInt(strings.TrimSpace(chatID), 10, 64); err == nil {
 		chatArg = n
 	}
-	if !threadID.IsInt64() {
+	if int64(int(threadID)) != threadID {
 		return &valueError{msg: "thread id out of range"}
 	}
-	if _, err := b.EditForumTopic(ctx, &bot.EditForumTopicParams{ChatID: chatArg, MessageThreadID: int(threadID.Int64()), Name: title}); err != nil {
+	if _, err := b.EditForumTopic(ctx, &bot.EditForumTopicParams{ChatID: chatArg, MessageThreadID: int(threadID), Name: title}); err != nil {
 		return ptbError(err)
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] Renamed DM topic in chat %s thread_id=%s -> '%s'", a.Name(), chatID, threadID.String(), title))
+	pkgLog().Info(fmt.Sprintf("[%s] Renamed DM topic in chat %s thread_id=%d -> '%s'", a.Name(), chatID, threadID, title))
 	return nil
 }
 

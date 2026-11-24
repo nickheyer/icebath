@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Python class names of the transient network errors the loop logs and swallows
@@ -18,11 +17,8 @@ var transientNetworkErrorClassNames = map[string]bool{
 
 // Python class name of one link of an error chain, never looking past the link itself
 func ownExceptionName(err error) string {
-	if named, ok := err.(pyrepr.PyTypeNamed); ok && named.PyTypeName() != "" {
-		return named.PyTypeName()
-	}
-	if fe, ok := err.(*pyrepr.FormatError); ok && fe.Class != "" {
-		return fe.Class
+	if named, ok := err.(interface{ ErrorKind() string }); ok && named.ErrorKind() != "" {
+		return named.ErrorKind()
 	}
 	name := strings.TrimLeft(fmt.Sprintf("%T", err), "*")
 	if i := strings.LastIndex(name, "."); i >= 0 {

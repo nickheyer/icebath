@@ -29,10 +29,10 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	unicodeutil "github.com/nickheyer/icebath/pkg/utils/unicode"
 	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
@@ -1080,7 +1080,7 @@ func ddgsWait(futures []*ddgsFuture, notify chan struct{}, timeout time.Duration
 }
 
 var ddgsWordSplitRe = sync.OnceValue(func() *regexp2.Regexp {
-	re, err := pyre.Compile(`\W+`)
+	re, err := regexutil.Compile(`\W+`)
 	if err != nil {
 		panic(err)
 	}

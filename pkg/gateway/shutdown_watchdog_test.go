@@ -56,7 +56,7 @@ func TestArmShutdownWatchdogFiresWithDumpAndExit(t *testing.T) {
 		DumpPath: dump,
 		ExitCode: &code,
 	})
-	if !fired.Wait(5.0) {
+	if !fired.WaitTimeout(5 * time.Second) {
 		t.Fatal("watchdog did not fire")
 	}
 	mu.Lock()
@@ -196,7 +196,7 @@ func TestLoopLivenessWatchdogFiresOnAFrozenLoopAndStaysQuietOnALiveOne(t *testin
 	frozen := NewCallbackLoop()
 	h := StartLoopLivenessWatchdog(ctx, frozen, 0.05, 0.05, 2, GatewayServiceRestartExitCode)
 	defer func() { h.Stop(); h.Join(nil) }()
-	if !fired.Wait(5.0) {
+	if !fired.WaitTimeout(5 * time.Second) {
 		t.Fatal("watchdog never fired on a frozen loop")
 	}
 }

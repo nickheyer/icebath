@@ -576,14 +576,9 @@ func (r *GatewayRunner) currentStopTask() *gatewayTask {
 	return r.stopTask
 }
 
-// Blocks until the shutdown event is set
+// Blocks until the shutdown event is set, the context's error when ctx ends first
 func (r *GatewayRunner) WaitForShutdown(ctx context.Context) error {
-	for !r.shutdownEvent.Wait(0.1) {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-	}
-	return nil
+	return r.shutdownEvent.WaitContext(ctx)
 }
 
 // Starts the restart orchestration once, refusing new turns while the requesting turn can still deliver

@@ -371,11 +371,11 @@ func TestConfigSetCoercionFollowsPythonNumberParsers(t *testing.T) {
 			}
 			continue
 		}
-		if !ok || !pyEq(got, want) || PyTypeName(got) != PyTypeName(want) {
+		if !ok || !pyEq(got, want) || ErrorKind(got) != ErrorKind(want) {
 			t.Fatalf("%q coerced to %#v want %#v", in, got, want)
 		}
 	}
-	if PyTypeName(big) != "int" {
+	if ErrorKind(big) != "int" {
 		t.Fatal("a big int is an int")
 	}
 }

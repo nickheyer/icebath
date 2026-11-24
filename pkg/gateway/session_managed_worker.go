@@ -11,12 +11,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
@@ -730,7 +730,7 @@ func lossReason(err error) string {
 	if errors.As(err, &decode) {
 		return "JSONDecodeError"
 	}
-	return pypath.OSErrorClass(err)
+	return errorutil.Kind(err)
 }
 
 // Refuses a turn whose folder is gone before any worker exists, else runs it in a managed worker

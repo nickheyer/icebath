@@ -14,7 +14,7 @@ func TestResolveIcebathUidGidReturnsParsedValuesWhenBothSet(t *testing.T) {
 	t.Setenv("ICEBATH_UID", "1000")
 	t.Setenv("ICEBATH_GID", "911")
 	uid, gid := resolveIcebathUIDGID()
-	if uid == nil || gid == nil || uid.Int64() != 1000 || gid.Int64() != 911 {
+	if uid == nil || gid == nil || *uid != 1000 || *gid != 911 {
 		t.Fatalf("uid %v gid %v", uid, gid)
 	}
 }

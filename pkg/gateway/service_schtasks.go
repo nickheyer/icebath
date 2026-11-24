@@ -23,7 +23,6 @@ import (
 	term "github.com/charmbracelet/x/term"
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -1333,7 +1332,7 @@ func readStartAttestation(ctx context.Context) any {
 }
 
 // Positive integer pids of an attestation, empty when any entry is malformed
-func attestedPidsFrom(data any) []*big.Int {
+func attestedPidsFrom(data any) []int64 {
 	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
@@ -1343,10 +1342,10 @@ func attestedPidsFrom(data any) []*big.Int {
 	if !ok {
 		return nil
 	}
-	pids := make([]*big.Int, 0, len(list))
+	pids := make([]int64, 0, len(list))
 	for _, p := range list {
-		n, isInt := pyrepr.Int(p)
-		if !pyIsInt(p) || !isInt || n.Sign() <= 0 {
+		n, isInt := anyutil.Int(p)
+		if !pyIsInt(p) || !isInt || n <= 0 {
 			return nil
 		}
 		pids = append(pids, n)
@@ -1355,7 +1354,7 @@ func attestedPidsFrom(data any) []*big.Int {
 }
 
 // Create time an attestation bound pid to, nil for older markers
-func attestedCreateTime(data any, pid *big.Int) *float64 {
+func attestedCreateTime(data any, pid int64) *float64 {
 	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
@@ -1365,25 +1364,21 @@ func attestedCreateTime(data any, pid *big.Int) *float64 {
 	if !ok {
 		return nil
 	}
-	value, _ := times.Get(pid.String())
-	if f, ok := value.(float64); ok {
-		return &f
-	}
-	if n, ok := pyrepr.Int(value); ok && pyIsInt(value) {
-		f, _ := new(big.Float).SetInt(n).Float64()
+	value, _ := times.Get(strconv.FormatInt(pid, 10))
+	if f, ok := pyFloatOf(value); ok {
 		return &f
 	}
 	return nil
 }
 
 // Whether a decoded JSON value equals pid under Python numeric equality
-func pyEqualsInt(v any, pid *big.Int) bool {
+func pyEqualsInt(v any, pid int64) bool {
 	r, ok := pyNumber(v)
-	return ok && r != nil && r.Cmp(new(big.Rat).SetInt(pid)) == 0
+	return ok && r != nil && r.Cmp(new(big.Rat).SetInt64(pid)) == 0
 }
 
 // Whether the lifecycle ledger shows a clean exit for pid, or proves the bound incarnation is not the one recorded
-func attestedPidExitedCleanly(ctx context.Context, pid *big.Int, createTime *float64) bool {
+func attestedPidExitedCleanly(ctx context.Context, pid int64, createTime *float64) bool {
 	raw, err := os.ReadFile(GetLifecycleSentinelPath(ctx, winHome(ctx)))
 	if err != nil {
 		return false
@@ -1417,15 +1412,14 @@ func pyFloatOf(v any) (float64, bool) {
 	if f, ok := v.(float64); ok {
 		return f, true
 	}
-	if n, ok := pyrepr.Int(v); ok && pyIsInt(v) {
-		f, _ := new(big.Float).SetInt(n).Float64()
-		return f, true
+	if n, ok := anyutil.Int(v); ok && pyIsInt(v) {
+		return float64(n), true
 	}
 	return 0, false
 }
 
 // Whether attested pids died, no gateway running now and no clean exit recorded for any of them
-func attestedDead(ctx context.Context, attested []*big.Int, currentPids []int, data any) bool {
+func attestedDead(ctx context.Context, attested []int64, currentPids []int, data any) bool {
 	if len(currentPids) > 0 {
 		return false
 	}
@@ -1472,10 +1466,10 @@ func pyOrStr(obj *jsonutil.Object, key, fallback string) string {
 }
 
 // Multi line warning naming the attested pids and the Job Object cause with the task recovery hint
-func formatAttestationWarning(ctx context.Context, attested []*big.Int, data *jsonutil.Object) string {
+func formatAttestationWarning(ctx context.Context, attested []int64, data *jsonutil.Object) string {
 	parts := make([]string, len(attested))
 	for i, p := range attested {
-		parts[i] = p.String()
+		parts[i] = strconv.FormatInt(p, 10)
 	}
 	lines := []string{
 		"⚠ The previous gateway start (" + pyOrStr(data, "via", "direct spawn") + ", " + pyOrStr(data, "ts", "unknown time") + ") reported success, but the " +

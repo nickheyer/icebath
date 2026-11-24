@@ -5,8 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Float of an environment knob, the default when it is absent, empty or malformed
@@ -28,15 +26,15 @@ func envInt(name string, def int) int {
 	if raw == "" {
 		return def
 	}
-	value, ok := pyint.Parse(raw)
-	if !ok {
+	value, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
 		return def
 	}
-	if !value.IsInt64() || value.Int64() > math.MaxInt || value.Int64() < math.MinInt {
-		if value.Sign() < 0 {
+	if value > math.MaxInt || value < math.MinInt {
+		if value < 0 {
 			return math.MinInt
 		}
 		return math.MaxInt
 	}
-	return int(value.Int64())
+	return int(value)
 }

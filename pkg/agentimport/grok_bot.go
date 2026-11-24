@@ -16,7 +16,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 const (
@@ -34,10 +37,10 @@ var grokSystemAppDirs = []string{"/Applications/Grok Bot.app"}
 var exportGlobs = []string{"grok-bot-export*.json", "grok-bot-export*.md", "grok-bot-export*.txt"}
 
 var (
-	fenceRe         = pyre.MustCompile("(?s)```(?:json)?\\s*\\n(.*?)\\n```")
+	fenceRe         = regexutil.MustCompile("(?s)```(?:json)?\\s*\\n(.*?)\\n```")
 	slugRe          = regexp.MustCompile(`[^a-z0-9]+`)
-	secretValueRe   = pyre.MustCompile(`\b(?:sk-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})|(?i:bearer\s+[A-Za-z0-9._~+/-]{20,})`)
-	frontNameRe     = pyre.MustCompile(`(?m)\A(---\s*\n(?:.*\n)*?)name:[^\n]*\n`)
+	secretValueRe   = regexutil.MustCompile(`\b(?:sk-[A-Za-z0-9_-]{16,}|xox[abprs]-[A-Za-z0-9-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})|(?i:bearer\s+[A-Za-z0-9._~+/-]{20,})`)
+	frontNameRe     = regexutil.MustCompile(`(?m)\A(---\s*\n(?:.*\n)*?)name:[^\n]*\n`)
 	scheduleTrigger = map[string]bool{"schedule": true, "scheduled": true, "time": true, "cron": true, "interval": true}
 	smartQuotes     = strings.NewReplacer("“", `"`, "”", `"`, "‘", "'", "’", "'")
 	listKeys        = []string{"routines", "skills", "apps", "memories", "user_facts"}

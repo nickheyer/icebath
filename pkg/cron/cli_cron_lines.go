@@ -2,12 +2,13 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
@@ -212,14 +213,12 @@ func parseCronFlags(tokens []string) *cronFlags {
 			opts.lists[cronListFlags[token]] = append(opts.lists[cronListFlags[token]], tokens[i+1])
 			i += 2
 		case token == "--repeat" && hasValue:
-			n, ok := pystr.IntText(tokens[i+1])
-			if !ok {
+			// A count past what an int64 holds is held at the bound on its side
+			n, err := textutil.ParseInt(tokens[i+1])
+			if err != nil && !errors.Is(err, strconv.ErrRange) {
 				return nil
 			}
-			opts.repeat = n
-			if n.IsInt64() {
-				opts.repeat = int(n.Int64())
-			}
+			opts.repeat = int(n)
 			i += 2
 		case cronValueFlags[token] != "" && hasValue:
 			v := tokens[i+1]

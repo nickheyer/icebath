@@ -16,7 +16,6 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
@@ -52,7 +51,7 @@ func (benignProbeMethodFilter) Filter(rec *logging.Record) bool {
 
 // Routes all logging to stderr through the redactor so stdout stays clean for ACP stdio
 var setupLogging = func() error {
-	handler, err := logging.NewRedactingStderrHandler("%(asctime)s [%(levelname)s] %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+	handler, err := logging.NewRedactingStderrHandler("{asctime} [{levelname}] {name}: {message}", "%Y-%m-%d %H:%M:%S")
 	if err != nil {
 		return err
 	}
@@ -162,7 +161,7 @@ var newEntryAgent = func() entryAgent { return NewAgent().(entryAgent) }
 
 // Serves the agent over stdio until the editor disconnects
 var runAgent = func(agent any, useUnstableProtocol bool) error {
-	return pyacp.RunAgent(agent, nil, nil, useUnstableProtocol, acputil.DefaultLineLimit)
+	return acputil.RunAgent(context.Background(), agent, nil, nil, acputil.UnstableMethods(useUnstableProtocol))
 }
 
 // Trusts the operating system certificate store before any outbound call

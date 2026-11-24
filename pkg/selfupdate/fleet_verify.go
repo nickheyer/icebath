@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
@@ -207,11 +206,11 @@ func gatewayUnitRunsOneOf(ctx context.Context, unit string, pids map[int]bool) (
 		loaded = true
 		mainPID := 0
 		if text := props["MainPID"]; text != "" {
-			parsed, ok := pyint.Parse(strings.TrimSpace(text))
-			if !ok || !parsed.IsInt64() {
+			parsed, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+			if err != nil {
 				return false, nil
 			}
-			mainPID = int(parsed.Int64())
+			mainPID = int(parsed)
 		}
 		if !pids[mainPID] {
 			return false, nil

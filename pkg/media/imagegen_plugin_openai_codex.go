@@ -13,11 +13,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
@@ -329,7 +329,7 @@ func (p *openAICodexImageGenProvider) Generate(ctx context.Context, env *tools.E
 	if b64 == "" {
 		return fail("Codex images API response contained no image data", "empty_response"), nil
 	}
-	raw, err := pybase64.B64Decode(b64)
+	raw, err := base64util.Decode(b64)
 	if err != nil {
 		return fail("Could not save image to cache: "+err.Error(), "io_error"), nil
 	}

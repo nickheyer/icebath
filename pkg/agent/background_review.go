@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
@@ -17,8 +18,8 @@ import (
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
-// Seconds a live turn waits for the review to acknowledge its cancellation, a test shortens it
-var backgroundReviewCancelTimeoutSeconds = 2.0
+// How long a live turn waits for the review to acknowledge its cancellation, a test shortens it
+var backgroundReviewCancelTimeout = 2 * time.Second
 
 const (
 	reviewSupersededMessage      = "superseded by a new live turn"
@@ -146,7 +147,9 @@ func interruptBackgroundReview(reviewAgent any, message, toolReason string) {
 }
 
 // Waits for the review's request exit event, replaced by tests observing the wait
-var awaitReviewAck = func(run *backgroundReviewRun, timeout float64) bool { return run.requestDone.Wait(timeout) }
+var awaitReviewAck = func(run *backgroundReviewRun, timeout time.Duration) bool {
+	return run.requestDone.WaitTimeout(timeout)
+}
 
 // Cancels the running review for a new live turn and waits briefly for its acknowledgement
 func cancelBackgroundReviewForLiveTurn(a *AIAgent) {
@@ -175,9 +178,9 @@ func (a *AIAgent) CancelBackgroundReview(message, toolReason string) {
 	if run == nil {
 		return
 	}
-	if !awaitReviewAck(run, backgroundReviewCancelTimeoutSeconds) {
+	if !awaitReviewAck(run, backgroundReviewCancelTimeout) {
 		pkgLog().Warn(fmt.Sprintf("Background review did not acknowledge cancellation within %.1fs; proceeding (%s)",
-			backgroundReviewCancelTimeoutSeconds, message))
+			backgroundReviewCancelTimeout.Seconds(), message))
 	}
 }
 

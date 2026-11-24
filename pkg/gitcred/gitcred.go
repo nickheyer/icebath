@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"iter"
 	"maps"
-	"math/big"
 	"os"
 	"os/exec"
 	"runtime"
@@ -21,12 +20,11 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var githubHosts = map[string]bool{"github.com": true, "gist.github.com": true}
@@ -158,7 +156,7 @@ func anyList(s []string) []any {
 
 // Origin of an https URL with brackets around IPv6 hosts and any explicit port, absent for other schemes
 func httpsOrigin(raw string) (string, bool, error) {
-	u, err := pyurl.Split(raw)
+	u, err := urlutil.Split(raw)
 	if err != nil {
 		return "", false, err
 	}
@@ -230,12 +228,12 @@ func fillCredential(ctx context.Context, origin string) (BasicAuth, bool) {
 	env["GCM_INTERACTIVE"] = "Never"
 	delete(env, "GIT_ASKPASS")
 	delete(env, "SSH_ASKPASS")
-	parsed, err := pyurl.Split(origin)
+	parsed, err := urlutil.Split(origin)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("git credential fill failed for %s: %v", origin, err))
 		return BasicAuth{}, false
 	}
-	request := "protocol=https\nhost=" + parsed.Netloc + "\n\n"
+	request := "protocol=https\nhost=" + parsed.Authority + "\n\n"
 	res, err := runProcess(ctx, runSpec{argv: []string{git, "-c", "core.askPass=", "credential", "fill"}, env: env,
 		input: &request, timeout: 15 * time.Second, hide: true})
 	if err != nil {
@@ -279,7 +277,7 @@ func IterGitBasicAuth(ctx context.Context, url string) iter.Seq2[Credential, err
 			return BasicAuth{Username: "x-access-token", Password: token}, true, nil
 		}
 		var sources []source
-		parsed, err := pyurl.Split(origin)
+		parsed, err := urlutil.Split(origin)
 		if err != nil {
 			yield(Credential{}, err)
 			return
@@ -355,14 +353,14 @@ func WithGitAuth(ctx context.Context, env map[string]string, url string, auth *B
 	if countText == "" {
 		countText = "0"
 	}
-	idx, valid := pyint.Parse(countText)
-	if !valid {
+	idx, err := strconv.ParseInt(strings.TrimSpace(countText), 10, 64)
+	if err != nil {
 		return nil, fmt.Errorf("invalid literal for int() with base 10: %s", strconv.Quote(countText))
 	}
-	n := idx.String()
+	n := strconv.FormatInt(idx, 10)
 	out["GIT_CONFIG_KEY_"+n] = "http." + origin + "/.extraheader"
 	out["GIT_CONFIG_VALUE_"+n] = "Authorization: basic " + encoded
-	out["GIT_CONFIG_COUNT"] = new(big.Int).Add(idx, big.NewInt(1)).String()
+	out["GIT_CONFIG_COUNT"] = strconv.FormatInt(idx+1, 10)
 	return out, nil
 }
 
@@ -377,7 +375,7 @@ func authHeaders(env map[string]string) map[string]bool {
 }
 
 var credentialRequiredRE = sync.OnceValue(func() *regexp2.Regexp {
-	re, err := pyre.Compile(`(?i)could not read (?:username|password)|terminal prompts disabled|authentication failed` +
+	re, err := regexutil.Compile(`(?i)could not read (?:username|password)|terminal prompts disabled|authentication failed` +
 		`|(?:error|status|http)[: ]+40[13]\b`)
 	if err != nil {
 		panic(err)

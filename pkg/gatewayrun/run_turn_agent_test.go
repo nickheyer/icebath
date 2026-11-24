@@ -12,6 +12,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 var cleanupCaptureNextMid atomic.Int64

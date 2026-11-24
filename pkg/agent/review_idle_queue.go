@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -119,7 +119,7 @@ type reviewWake interface {
 // Event backed wake that waits without a timeout
 type eventWake struct{ ev syncutil.Event }
 
-func (w *eventWake) Wait()  { w.ev.Wait(-1) }
+func (w *eventWake) Wait()  { w.ev.Wait() }
 func (w *eventWake) Set()   { w.ev.Set() }
 func (w *eventWake) Clear() { w.ev.Clear() }
 
@@ -429,7 +429,7 @@ func managedServerIdle() (idle bool) {
 		}
 	}
 	for _, mid := range loaded {
-		slots, err := get("/slots?model=" + pyurl.Quote(mid, "/") + "&autoload=false")
+		slots, err := get("/slots?model=" + urlutil.Escape(mid, "/") + "&autoload=false")
 		if err != nil {
 			return true
 		}

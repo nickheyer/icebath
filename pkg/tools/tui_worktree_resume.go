@@ -12,6 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -129,7 +132,7 @@ func recordedTreeFor(ctx context.Context, cwd string) map[string]string {
 // Whether the branch exists in the repository
 func tuiBranchExists(repoRoot, branch string) bool {
 	result, err := worktreeGit([]string{"rev-parse", "--verify", "--quiet", "refs/heads/" + branch}, repoRoot, 0, nil)
-	return err == nil && result.Returncode == 0
+	return err == nil && result.ExitCode == 0
 }
 
 // RecreateTUIWorktree brings back the launcher made tree a resumed session's missing cwd names, empty when it cannot
@@ -167,7 +170,7 @@ func RecreateTUIWorktree(ctx context.Context, cwd, sessionID string) string {
 		log.Warn(fmt.Sprintf("could not recreate worktree %s: %s", tree, err))
 		return ""
 	}
-	if result.Returncode != 0 {
+	if result.ExitCode != 0 {
 		log.Warn(fmt.Sprintf("could not recreate worktree %s: %s", tree, strings.TrimSpace(result.Stderr)))
 		return ""
 	}

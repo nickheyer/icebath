@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
@@ -185,5 +186,9 @@ func RelayCanonicalJSON(value any, encode func(any) any) (string, error) {
 
 // Waits up to timeout seconds for every operation lease to be released
 func (r *RelayRuntime) WaitOperationsIdle(timeout float64) bool {
-	return r.operationsIdle.Wait(timeout)
+	if timeout < 0 {
+		r.operationsIdle.Wait()
+		return true
+	}
+	return r.operationsIdle.WaitTimeout(time.Duration(timeout * float64(time.Second)))
 }

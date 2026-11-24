@@ -15,7 +15,7 @@ import (
 	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
-func plainFormatter() *Formatter { return NewFormatter("%(message)s", "") }
+func plainFormatter() *Formatter { return NewFormatter("{message}", "") }
 
 func newTestRotating(t *testing.T, path string, maxBytes float64, backups int) *managedRotatingFileHandler {
 	t.Helper()
@@ -350,7 +350,7 @@ func TestProfileRouterNeverHoldsItsLockWhileTakingTheLoggingModuleLock(t *testin
 		defer close(done)
 		router.Handle(context.Background(), rec)
 	}()
-	if !building.Wait(5) {
+	if !building.WaitTimeout(5 * time.Second) {
 		moduleLock.Unlock()
 		t.Fatal("the router never built the profile handler")
 	}
@@ -440,7 +440,7 @@ func TestRouterNeverBuildsAChildHandlerUnderALockLoggingShutdownTakes(t *testing
 	prev := newFileHandlerFn
 	newFileHandlerFn = func(ctx context.Context, p string, l int, m float64, b int, f *Formatter) (*managedRotatingFileHandler, error) {
 		building.Set()
-		proceed.Wait(5)
+		proceed.WaitTimeout(5 * time.Second)
 		return prev(ctx, p, l, m, b, f)
 	}
 	t.Cleanup(func() { newFileHandlerFn = prev })
@@ -453,7 +453,7 @@ func TestRouterNeverBuildsAChildHandlerUnderALockLoggingShutdownTakes(t *testing
 		defer close(emitterDone)
 		router.Handle(context.Background(), rec)
 	}()
-	if !building.Wait(5) {
+	if !building.WaitTimeout(5 * time.Second) {
 		t.Fatal("no build")
 	}
 	go func() {
@@ -461,14 +461,14 @@ func TestRouterNeverBuildsAChildHandlerUnderALockLoggingShutdownTakes(t *testing
 		moduleLock.Lock()
 		defer moduleLock.Unlock()
 		holding.Set()
-		released.Wait(5)
+		released.WaitTimeout(5 * time.Second)
 		got = router.lock.TryLockFor(5 * time.Second)
 		if got {
 			_ = router.Close()
 			router.lock.Unlock()
 		}
 	}()
-	if !holding.Wait(5) {
+	if !holding.WaitTimeout(5 * time.Second) {
 		t.Fatal("clearer never took the module lock")
 	}
 	proceed.Set()

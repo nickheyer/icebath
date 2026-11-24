@@ -74,7 +74,7 @@ func unitMainPidIs(ctx context.Context, svcName, cgroupPath string, pid int) boo
 		if err != nil {
 			continue
 		}
-		if result.Returncode == 0 && strings.TrimSpace(strings.ToValidUTF8(string(result.Stdout), "\uFFFD")) == strconv.Itoa(pid) {
+		if result.ExitCode == 0 && strings.TrimSpace(strings.ToValidUTF8(string(result.Stdout), "\uFFFD")) == strconv.Itoa(pid) {
 			return true
 		}
 	}

@@ -15,11 +15,11 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -170,11 +170,7 @@ func (a *SlackAdapter) slackMentionPatterns(ctx context.Context) []*regexp2.Rege
 
 // Python pattern compiled with re.IGNORECASE semantics
 func compileIgnoreCase(pattern string) (*regexp2.Regexp, error) {
-	translated, err := pyre.Translate(pattern)
-	if err != nil {
-		return nil, err
-	}
-	return regexp2.Compile(translated, regexp2.IgnoreCase)
+	return regexutil.Compile(pattern, regexutil.IgnoreCase())
 }
 
 // Whether the text matches a configured wake word pattern

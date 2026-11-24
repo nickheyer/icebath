@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -190,7 +190,7 @@ func fetchCatalogManifestHTTP(url string, timeout time.Duration) map[string]any 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	resp, err := urllibOpen(ctx, urllibCall{url: url, timeout: timeout,
-		headers: []pyhttpx.HeaderLine{{Name: "Accept", Value: "application/json"}, {Name: "User-Agent", Value: userAgent("icebath-cli")}}})
+		headers: http.Header{"Accept": {"application/json"}, "User-Agent": {userAgent("icebath-cli")}}})
 	if err != nil {
 		pkgLog().Info("model catalog fetch failed", "url", url, "error", err)
 		return nil

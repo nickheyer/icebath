@@ -571,9 +571,9 @@ func (s *Store) openCronSessionDB(ctx context.Context, job *Job) (*state.DB, err
 // Python TimeoutError raised by the cron run path
 type pyTimeoutError struct{ msg string }
 
-func (e *pyTimeoutError) Error() string      { return e.msg }
-func (e *pyTimeoutError) PyTypeName() string { return "TimeoutError" }
-func (e *pyTimeoutError) Timeout() bool      { return true }
+func (e *pyTimeoutError) Error() string     { return e.msg }
+func (e *pyTimeoutError) ErrorKind() string { return "TimeoutError" }
+func (e *pyTimeoutError) Timeout() bool     { return true }
 
 // Logs the agent's last activity, hard interrupts it and returns the inactivity TimeoutError
 func (s *Store) raiseInactivityTimeout(a CronAgent, jobName string, limitS float64) error {

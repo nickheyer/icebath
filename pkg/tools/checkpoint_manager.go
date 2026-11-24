@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,7 +14,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Reads the import time checkpoint git timeout from ICEBATH_CHECKPOINT_TIMEOUT, clamped to ten through sixty seconds
@@ -44,17 +43,17 @@ func DefaultCheckpointManagerOptions() CheckpointManagerOptions {
 
 // Python int of a checkpoint limit the way the manager converts it, clamped to the Go int range
 func CheckpointLimit(value any) (int, error) {
-	n, err := pyint.Of(value)
+	n, err := anyutil.ToInt(value)
 	if err != nil {
 		return 0, err
 	}
 	switch {
-	case n.Cmp(big.NewInt(math.MaxInt)) > 0:
+	case n > math.MaxInt:
 		return math.MaxInt, nil
-	case n.Cmp(big.NewInt(math.MinInt)) < 0:
+	case n < math.MinInt:
 		return math.MinInt, nil
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Manager options of the checkpoint_ prefixed agent keywords, a missing limit keeping the manager default

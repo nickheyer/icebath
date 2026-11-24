@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Python sys.platform of the running OS

@@ -307,8 +307,8 @@ func settingsValueTyped(kind string, v any) bool {
 // PluginSettingsValueError is a settings edit the schema refuses, the ValueError a form shows back
 type PluginSettingsValueError struct{ Msg string }
 
-func (e *PluginSettingsValueError) Error() string      { return e.Msg }
-func (e *PluginSettingsValueError) PyTypeName() string { return "ValueError" }
+func (e *PluginSettingsValueError) Error() string     { return e.Msg }
+func (e *PluginSettingsValueError) ErrorKind() string { return "ValueError" }
 
 // Validates every edit against the schema then writes each one, returning the keys written in order
 func SavePluginSettings(ctx context.Context, h, pluginID, pluginDir string, values []PluginSettingValue) ([]string, error) {

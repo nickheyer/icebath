@@ -16,7 +16,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
@@ -69,7 +68,7 @@ func dotenvKeyNames(h string) map[string]bool {
 // Stripped stdout of git args in projectRoot, empty on any failure
 func dumpGitOutput(projectRoot string, args ...string) string {
 	res, err := executil.Run(context.Background(), append([]string{"git"}, args...), executil.Options{Dir: projectRoot, Timeout: 5 * time.Second})
-	if err != nil || res.Returncode != 0 {
+	if err != nil || res.ExitCode != 0 {
 		return ""
 	}
 	return strings.TrimSpace(strings.ToValidUTF8(string(res.Stdout), "\uFFFD"))
@@ -413,7 +412,7 @@ func RunDump(ctx context.Context, h string, ns map[string]any, w io.Writer) (int
 	lines := []string{
 		"--- icebath dump ---",
 		fmt.Sprintf("%-18s%s", "version:", dumpVersionLine(projectRoot)),
-		fmt.Sprintf("%-18s%s %s %s", "os:", pyplatform.System(), hostutil.Release(), hostutil.Machine()),
+		fmt.Sprintf("%-18s%s %s %s", "os:", hostutil.OSName(), hostutil.Release(), hostutil.Machine()),
 		fmt.Sprintf("%-18s%s", "go:", hostinfo.GoVersion()),
 		fmt.Sprintf("%-18s%s", "profile:", profile),
 		fmt.Sprintf("%-18s%s", "icebath_home:", home.Display(h)),

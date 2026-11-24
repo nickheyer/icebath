@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/goals"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Raised when a persisted goal, loop or heartbeat row cannot be parsed

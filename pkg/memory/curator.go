@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -20,8 +19,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -29,6 +26,7 @@ import (
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
@@ -199,15 +197,7 @@ func curatorConfigSection(ctx context.Context, label string, log *slog.Logger, p
 	return curatorSubdict(map[string]any(cfg), path...)
 }
 
-func curatorBigToInt(n *big.Int) int {
-	if !n.IsInt64() {
-		if n.Sign() < 0 {
-			return math.MinInt
-		}
-		return math.MaxInt
-	}
-	return int(n.Int64())
-}
+func curatorClampInt(n int64) int { return int(min(max(n, math.MinInt), math.MaxInt)) }
 
 // Curator enabled flag, on unless the settings say otherwise
 func CuratorIsEnabled(ctx context.Context) bool {
@@ -351,11 +341,11 @@ func curatorIntOrZero(v any) (int, error) {
 	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
-	n, err := pyint.Of(v)
-	if err != nil {
+	n, err := anyutil.ToInt(v)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return 0, err
 	}
-	return curatorBigToInt(n), nil
+	return curatorClampInt(n), nil
 }
 
 func curatorCounter(keys ...string) *jsonutil.Object {
@@ -1318,12 +1308,12 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*jsonutil.Ob
 	}
 	st.Set("last_run_summary", prefix+autoSummary)
 	if !opts.DryRun {
-		runCount, err := pyint.Of(curatorGetOr(st, "run_count", 0))
+		runCount, err := anyutil.ToInt(curatorGetOr(st, "run_count", 0))
 		if err != nil {
 			return nil, err
 		}
 		st.Set("last_run_at", start.UTC().Format(timeutil.RFC3339Micro))
-		st.Set("run_count", pyint.Native(new(big.Int).Add(runCount, big.NewInt(1))))
+		st.Set("run_count", int(runCount+1))
 	}
 	SaveCuratorState(ctx, st)
 	llmPass := func(ctx context.Context) {
@@ -1568,7 +1558,7 @@ var curatorResolveRuntime = func(ctx context.Context, h string, b curatorReviewB
 
 // Python re.search of the needle between word boundaries
 func curatorWordMatch(needle, hay string) bool {
-	re, err := pyre.Compile(`\b` + fnmatch.ReEscape(needle) + `\b`)
+	re, err := regexutil.Compile(`\b` + fnmatch.ReEscape(needle) + `\b`)
 	if err != nil {
 		return false
 	}
@@ -1577,7 +1567,7 @@ func curatorWordMatch(needle, hay string) bool {
 }
 
 var curatorFenceRE = sync.OnceValue(func() *regexp2.Regexp {
-	re, err := pyre.Compile("(?si)```ya?ml\\s*\\n(.*?)\\n```")
+	re, err := regexutil.Compile("(?si)```ya?ml\\s*\\n(.*?)\\n```")
 	if err != nil {
 		panic(err)
 	}

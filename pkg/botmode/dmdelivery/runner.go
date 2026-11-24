@@ -19,10 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -193,7 +193,7 @@ func transportExecutable(name string, env map[string]string) (string, error) {
 	if !ok {
 		search = "/bin:/usr/bin"
 	}
-	if found, ok := pyshutil.Which(name, &search); ok {
+	if found, err := fsutil.LookPathIn(name, search); err == nil {
 		return found, nil
 	}
 	return "", &fs.PathError{Op: "exec", Path: name, Err: syscall.ENOENT}

@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
 	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
@@ -170,7 +170,7 @@ func loadOpenAIImageBytes(ctx context.Context, env *tools.Env, ref string) ([]by
 		if ext == "" {
 			ext = "png"
 		}
-		data, err := pybase64.B64Decode(b64)
+		data, err := base64util.Decode(b64)
 		if err != nil {
 			return nil, "", err
 		}

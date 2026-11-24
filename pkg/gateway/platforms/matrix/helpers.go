@@ -20,12 +20,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const matrixVoiceWaveformBins = 30
@@ -128,7 +130,7 @@ func abs(v int) int {
 	return v
 }
 
-var matrixBangCommandRE = pyre.MustCompile(`^!([A-Za-z][A-Za-z0-9_-]*)(?=$|\s)(.*)$`)
+var matrixBangCommandRE = regexutil.MustCompile(`^!([A-Za-z][A-Za-z0-9_-]*)(?=$|\s)(.*)$`)
 
 // Whether a Python pattern matches at the start of the text like re.match, with the match
 func reMatch(re *regexp2.Regexp, s string) (*regexp2.Match, bool) {
@@ -205,7 +207,7 @@ func normalizeMatrixBangCommand(ctx context.Context, text string) string {
 	return "/" + resolved + group(*m, 2)
 }
 
-var matrixReplyFallbackPillRE = pyre.MustCompile(`^>\s*<(@[^>]+)>\s*(.*)$`)
+var matrixReplyFallbackPillRE = regexutil.MustCompile(`^>\s*<(@[^>]+)>\s*(.*)$`)
 
 // Quoted text and author mxid of the inline reply fallback, the author from the first line pill
 func extractReplyFallback(body string) (quoted, author *string) {
@@ -607,9 +609,9 @@ func scopedRecoveryKey(ctx context.Context) string {
 }
 
 var (
-	texTokenRE    = pyre.MustCompile(`ICEBATHTEX(?:DISPLAY|INLINE)(\d+)ICEBATHTEXEND`)
-	texDisplayRE  = pyre.MustCompile(`\$\$([^\n$]+?)\$\$`)
-	texInlineRE   = pyre.MustCompile(`(?<![\\$\w])\$([^\n$]+?)\$(?!\w)`)
+	texTokenRE    = regexutil.MustCompile(`ICEBATHTEX(?:DISPLAY|INLINE)(\d+)ICEBATHTEXEND`)
+	texDisplayRE  = regexutil.MustCompile(`\$\$([^\n$]+?)\$\$`)
+	texInlineRE   = regexutil.MustCompile(`(?<![\\$\w])\$([^\n$]+?)\$(?!\w)`)
 	texDisplayFmt = "ICEBATHTEXDISPLAY%dICEBATHTEXEND"
 	texInlineFmt  = "ICEBATHTEXINLINE%dICEBATHTEXEND"
 )
@@ -663,9 +665,9 @@ func redactURLForLog(raw string) string {
 }
 
 var (
-	preSanitizeScriptRE  = pyre.MustCompile(`(?is)<\s*(script|style)\b[^>]*>.*?<\s*/\s*\1\s*>`)
-	preSanitizeHandlerRE = pyre.MustCompile(`(?is)\s+on[a-z0-9_-]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
-	preSanitizeSchemeRE  = pyre.MustCompile(`(?is)\s+(href|src)\s*=\s*("[^"]*(?:javascript|data|vbscript):[^"]*"|'[^']*(?:javascript|data|vbscript):[^']*'|[^\s>]*(?:javascript|data|vbscript):[^\s>]*)`)
+	preSanitizeScriptRE  = regexutil.MustCompile(`(?is)<\s*(script|style)\b[^>]*>.*?<\s*/\s*\1\s*>`)
+	preSanitizeHandlerRE = regexutil.MustCompile(`(?is)\s+on[a-z0-9_-]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
+	preSanitizeSchemeRE  = regexutil.MustCompile(`(?is)\s+(href|src)\s*=\s*("[^"]*(?:javascript|data|vbscript):[^"]*"|'[^']*(?:javascript|data|vbscript):[^']*'|[^\s>]*(?:javascript|data|vbscript):[^\s>]*)`)
 )
 
 // Markdown with script and style blocks, event handler attributes and unsafe link schemes removed

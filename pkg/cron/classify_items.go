@@ -5,12 +5,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
@@ -145,14 +143,14 @@ func classifyPrompt(items []*jsonutil.Object, criteria string) (string, error) {
 }
 
 // Integer value of a JSON integer or boolean, true counting as one and false as zero
-func classifyInt(v any) (*big.Int, bool) {
+func classifyInt(v any) (int64, bool) {
 	if flag, ok := v.(bool); ok {
 		if flag {
-			return big.NewInt(1), true
+			return 1, true
 		}
-		return big.NewInt(0), true
+		return 0, true
 	}
-	return pyrepr.Int(v)
+	return anyutil.Int(v)
 }
 
 // Score objects of the model reply by item position, tolerating a markdown fence and prose around the array
@@ -180,7 +178,7 @@ func parseClassifyScores(content string, itemCount int, stderr io.Writer) map[in
 	if !ok {
 		return nil
 	}
-	limit := big.NewInt(int64(itemCount))
+	limit := int64(itemCount)
 	scores := map[int]*jsonutil.Object{}
 	for _, entry := range list {
 		obj, isObject := entry.(*jsonutil.Object)
@@ -188,10 +186,10 @@ func parseClassifyScores(content string, itemCount int, stderr io.Writer) map[in
 			continue
 		}
 		index, isInt := classifyInt(obj.ValueOr("index", nil))
-		if !isInt || index.Sign() < 0 || index.Cmp(limit) >= 0 {
+		if !isInt || index < 0 || index >= limit {
 			continue
 		}
-		scores[int(index.Int64())] = obj
+		scores[int(index)] = obj
 	}
 	return scores
 }
@@ -291,14 +289,14 @@ func ClassifyItemsCommand(ctx context.Context, a ClassifyArgs, stdin io.Reader, 
 		return classifyExitClassifierErr
 	}
 	scores := parseClassifyScores(content, len(items), stderr)
-	threshold := big.NewInt(int64(a.Threshold))
+	threshold := int64(a.Threshold)
 	var surfaced []classifiedItem
 	for i, item := range items {
 		score, scored := scores[i]
 		if !scored {
 			continue
 		}
-		if value, isInt := classifyInt(score.ValueOr("score", nil)); isInt && value.Cmp(threshold) >= 0 {
+		if value, isInt := classifyInt(score.ValueOr("score", nil)); isInt && value >= threshold {
 			surfaced = append(surfaced, classifiedItem{index: i, item: item, score: score})
 		}
 	}

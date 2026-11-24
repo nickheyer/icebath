@@ -3,11 +3,11 @@ package botdesktop
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/browser/quiet"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -27,7 +27,13 @@ var (
 	BrowserSeedProfile        func(userDataDir string) error
 	geteuid                   = os.Geteuid
 	accessX                   = accessExec
-	whichBinary               = func(name string) string { p, _ := pyshutil.Which(name, nil); return p }
+	whichBinary               = func(name string) string {
+		p, err := exec.LookPath(name)
+		if err != nil {
+			return ""
+		}
+		return p
+	}
 )
 
 // Flags the agent launch and the dock icon share, on the bot X screen even under a Wayland session, maximized on it

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"math/big"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -19,7 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/installidentity"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
@@ -213,11 +211,11 @@ func groupIntFlag(params map[string]any) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	n, err := pyint.Of(value)
+	n, err := anyutil.ToInt(value)
 	if err != nil {
 		return false, err
 	}
-	return n.Sign() != 0, nil
+	return n != 0, nil
 }
 
 // TypeError for a keyword argument the room function requires and params lack
@@ -522,10 +520,10 @@ func groupListing(ctx context.Context, a *SessionAuthority, actor Principal, dbP
 			rooms[i] = room
 		}
 		var next any
-		limit, _ := pyint.Instance(limitValue)
-		offset, _ := pyint.Instance(offsetValue)
-		if limit != nil && int64(len(result)) == limit.Int64() {
-			next = pyint.Native(new(big.Int).Add(offset, limit))
+		limit, _ := anyutil.Int(limitValue)
+		offset, _ := anyutil.Int(offsetValue)
+		if int64(len(result)) == limit {
+			next = int(offset + limit)
 		}
 		return jsonutil.ObjectOf("rooms", rooms, "next_offset", next), nil
 	}
@@ -551,25 +549,24 @@ func groupListing(ctx context.Context, a *SessionAuthority, actor Principal, dbP
 		if err != nil {
 			return nil, err
 		}
-		limit, _ := pyint.Instance(limitValue)
-		cursor, _ := pyint.Instance(cursorValue)
-		cursor = new(big.Int).Set(cursor)
+		limit, _ := anyutil.Int(limitValue)
+		cursor, _ := anyutil.Int(cursorValue)
 		for _, room := range batch {
 			shown, err := visible(room)
 			if err != nil {
 				return nil, err
 			}
 			if shown {
-				if int64(len(found)) == limit.Int64() {
-					next = pyint.Native(new(big.Int).Set(cursor))
+				if int64(len(found)) == limit {
+					next = int(cursor)
 					break
 				}
 				found = append(found, room)
 			}
-			cursor.Add(cursor, big.NewInt(1))
+			cursor++
 		}
-		cursorValue = pyint.Native(cursor)
-		if int64(len(batch)) < limit.Int64() {
+		cursorValue = int(cursor)
+		if int64(len(batch)) < limit {
 			break
 		}
 	}
@@ -723,14 +720,14 @@ func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomServ
 		if _, isBool := value.(bool); isBool {
 			return 0, false
 		}
-		n, ok := pyint.Instance(value)
-		if !ok || n.Sign() < 1 {
-			return 0, false
+		if n, ok := anyutil.Int(value); ok {
+			return n, n >= 1
 		}
-		if !n.IsInt64() {
+		// A whole number past what an int64 holds names a generation no room has reached
+		if f, isNumber := anyutil.Float(value); isNumber && f > 0 && anyutil.Kind(value) == "integer" {
 			return -1, true
 		}
-		return n.Int64(), true
+		return 0, false
 	}
 	switch method {
 	case "groups.send":
@@ -1066,11 +1063,11 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 			if _, isBool := value.(bool); isBool {
 				continue
 			}
-			n, ok := pyint.Instance(value)
+			n, ok := anyutil.Int(value)
 			if !ok {
 				continue
 			}
-			if n.Sign() < 0 {
+			if n < 0 {
 				revisions.Set(key, int64(0))
 			} else {
 				revisions.Set(key, value)

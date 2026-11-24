@@ -348,7 +348,7 @@ func (e *ProviderStreamError) Code() string {
 func (e *ProviderStreamError) ResponseHeaders() http.Header { return e.Headers }
 
 // Python class the stream helper raises, a plain Exception subclass
-func (e *ProviderStreamError) PyTypeName() string { return "ProviderStreamError" }
+func (e *ProviderStreamError) ErrorKind() string { return "ProviderStreamError" }
 
 // Body as JSON text for classification
 func (e *ProviderStreamError) BodyText() string {

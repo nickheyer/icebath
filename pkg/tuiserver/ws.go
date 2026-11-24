@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -284,9 +283,9 @@ func requestMethodHashable(req any) error {
 	}
 	switch obj.ValueOr("method", nil).(type) {
 	case []any:
-		return &pyjson.TypeError{Msg: "the request method must be text, got a list"}
+		return errors.New("the request method must be text, got a list")
 	case *jsonutil.Object:
-		return &pyjson.TypeError{Msg: "the request method must be text, got a mapping"}
+		return errors.New("the request method must be text, got a mapping")
 	}
 	return nil
 }

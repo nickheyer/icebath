@@ -79,7 +79,7 @@ func (f *relayFake) push(_ context.Context, name string, _ any, kwargs map[strin
 
 func (f *relayFake) pop(_ context.Context, handle any, _ map[string]any) (any, error) {
 	if f.wedgePop != nil {
-		f.wedgePop.Wait(-1)
+		f.wedgePop.Wait()
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -101,7 +101,7 @@ func (f *relayFake) pop(_ context.Context, handle any, _ map[string]any) (any, e
 
 func (f *relayFake) flush(context.Context) (any, error) {
 	if f.wedgeFlush != nil {
-		f.wedgeFlush.Wait(-1)
+		f.wedgeFlush.Wait()
 	}
 	f.mu.Lock()
 	f.flushed++

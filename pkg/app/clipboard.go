@@ -54,7 +54,7 @@ func runClipText(argv []string, timeoutSeconds int) (clipResult, error) {
 	if err != nil {
 		return clipResult{}, err
 	}
-	return clipResult{code: res.Returncode, stdout: strings.ToValidUTF8(string(res.Stdout), "\uFFFD")}, nil
+	return clipResult{code: res.ExitCode, stdout: strings.ToValidUTF8(string(res.Stdout), "\uFFFD")}, nil
 }
 
 // Reports a missing executable the way Python raises FileNotFoundError
@@ -242,7 +242,7 @@ func macosPngpaste(dest string) bool {
 		}
 		return false
 	}
-	return res.Returncode == 0 && nonEmptyFile(dest)
+	return res.ExitCode == 0 && nonEmptyFile(dest)
 }
 
 // Saves the PNG bitmap through osascript, else a Finder image file url
@@ -509,7 +509,7 @@ func convertToPNG(path string) bool {
 		if err != nil {
 			return err
 		}
-		if res.Returncode == 0 && nonEmptyFile(path) {
+		if res.ExitCode == 0 && nonEmptyFile(path) {
 			_ = os.Remove(tmp)
 			return errClipFound
 		}

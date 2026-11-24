@@ -9,12 +9,12 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
 	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
@@ -224,11 +224,11 @@ func kanbanWorkerExitCode(receipt map[string]any, params kanbanWorkerParams, boa
 	if !ok {
 		return 1, nil
 	}
-	n, err := pyint.Of(code)
+	n, err := anyutil.ToInt(code)
 	if err != nil {
 		return 0, err
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // The worker_result event of exactly this attempt read only, empty unless its claim lock matches
@@ -345,11 +345,11 @@ func kanbanWorkerParamsFromEnv() (kanbanWorkerParams, string, error) {
 	if err != nil {
 		return p, "", err
 	}
-	n, ok := pyint.Parse(rawRun)
-	if !ok || !n.IsInt64() {
+	n, err := strconv.ParseInt(strings.TrimSpace(rawRun), 10, 64)
+	if err != nil {
 		return p, "", &kanbanPyError{"ValueError", "the kanban run id " + rawRun + " is not a whole number"}
 	}
-	p.runID = n.Int64()
+	p.runID = n
 	if p.claimLock, err = get("ICEBATH_KANBAN_CLAIM_LOCK"); err != nil {
 		return p, "", err
 	}

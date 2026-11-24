@@ -21,8 +21,8 @@ import (
 // Python exception of a named class the fakes raise
 type raised struct{ class, msg string }
 
-func (e *raised) Error() string      { return e.msg }
-func (e *raised) PyTypeName() string { return e.class }
+func (e *raised) Error() string     { return e.msg }
+func (e *raised) ErrorKind() string { return e.class }
 
 // Chat completion shaped reply carrying one message content
 func judgeReply(content any) map[string]any {
